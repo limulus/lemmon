@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "allowImportingTsExtensions": true,
+    "composite": true,
+    "noEmit": true
+  },
+  "include": ["src/**/*.spec.ts", "src/mocks/**/*", "types/**/*"],
+  "references": [{ "path": "./tsconfig.build.json" }]
+}

@@ -1,0 +1,53 @@
+{
+  "name": "lemmon",
+  "version": "0.0.0",
+  "private": true,
+  "description": "A static site generator and typed, tag-based template language",
+  "workspaces": [
+    "packages/*"
+  ],
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "prebuild": "npm run clean",
+    "build": "node node_modules/typescript-7/bin/tsc --build tsconfig.build.json",
+    "clean": "del-cli \"*.tsbuildinfo\" \"packages/*/*.tsbuildinfo\" coverage \"packages/*/dist\"",
+    "lint": "eslint .",
+    "lint:fix": "npm run lint -- --fix",
+    "prepare": "is-ci || husky",
+    "test": "vitest run --coverage",
+    "tscc": "node node_modules/typescript-7/bin/tsc --build tsconfig.json packages/*/tsconfig.json",
+    "verify": "concurrently -c cyan,magenta,blue npm:lint npm:test npm:tscc"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/limulus/lemmon.git"
+  },
+  "author": {
+    "name": "Eric McCarthy",
+    "email": "eric@limulus.net",
+    "url": "https://limulus.net/"
+  },
+  "license": "UNLICENSED",
+  "bugs": {
+    "url": "https://github.com/limulus/lemmon/issues"
+  },
+  "homepage": "https://github.com/limulus/lemmon#readme",
+  "devDependencies": {
+    "@commitlint/cli": "^21.2.2",
+    "@commitlint/config-conventional": "^21.2.2",
+    "@limulus/eslint-config": "^6.2.0",
+    "@types/node": "^24.12.0",
+    "@vitest/coverage-v8": "^4.1.10",
+    "concurrently": "^10.0.5",
+    "del-cli": "^7.0.0",
+    "eslint": "^10.8.1",
+    "husky": "^9.1.7",
+    "is-ci": "^4.1.0",
+    "typescript": "^6.0.3",
+    "typescript-7": "npm:typescript@7.0.2",
+    "vitest": "^4.1.10"
+  }
+}

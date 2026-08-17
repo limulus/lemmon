@@ -1,0 +1,40 @@
+{
+  "name": "@lemmon/core",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Lemmon core: typed wrapper around the Rust/WASM compiler and VM",
+  "module": "dist/esm/index.js",
+  "types": "dist/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/types/index.d.ts",
+      "import": "./dist/esm/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/limulus/lemmon.git",
+    "directory": "packages/core"
+  },
+  "author": {
+    "name": "Eric McCarthy",
+    "email": "eric@limulus.net",
+    "url": "https://limulus.net/"
+  },
+  "license": "UNLICENSED",
+  "bugs": {
+    "url": "https://github.com/limulus/lemmon/issues"
+  },
+  "homepage": "https://github.com/limulus/lemmon/tree/main/packages/core#readme",
+  "dependencies": {
+    "tslib": "^2.8.1"
+  }
+}

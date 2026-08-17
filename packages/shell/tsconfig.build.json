@@ -1,0 +1,17 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "declaration": true,
+    "declarationDir": "./dist/types",
+    "declarationMap": true,
+    "outDir": "./dist/esm",
+    "rewriteRelativeImportExtensions": true,
+    "rootDir": "./src",
+    "sourceMap": true,
+    // Without this the build info lands in ./dist and ships in the published tarball.
+    "tsBuildInfoFile": "./tsconfig.build.tsbuildinfo"
+  },
+  "include": ["src/**/*"],
+  "exclude": ["src/**/*.spec.ts", "src/mocks/**/*"]
+}
