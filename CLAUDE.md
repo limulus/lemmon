@@ -140,12 +140,14 @@ stable API in TS 7.1. Don't "simplify" this arrangement.
 ### Project layout per package
 
 `tsconfig.base.json` at the root holds the compiler options. Each package has
-`tsconfig.build.json` (emits `dist/esm` + `dist/types` from `src/`, excludes specs) and
-`tsconfig.json` (noEmit; covers specs and references the build config). `tscc` passes
-the root `tsconfig.json` (root config files) plus `packages/*/tsconfig.json` by shell glob
-to `tsc --build`, so a new package is typechecked without editing any references. Note
-that `tscc` also emits `packages/*/dist` as a side effect of the build reference — same as
-the single-package template it derives from.
+`tsconfig.build.json` (emits `dist/esm` + `dist/types` from non-spec `src/`) and
+`tsconfig.json` (a single incremental noEmit project over `src/**`, specs included — what
+`tscc`, editors, and typed lint use). Keep them independent: a project reference from
+`tsconfig.json` to the build config would make every typecheck emit `dist/`. `tscc`
+passes the root `tsconfig.json` (root `.ts` config files) plus `packages/*/tsconfig.json`
+by shell glob to `tsc --build`, so a new package is typechecked without editing any
+references. Diagnostics raised only during declaration emit surface in `npm run build`
+(CI runs it after `verify`), not in `tscc`.
 
 ## Testing
 

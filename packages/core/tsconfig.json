@@ -2,9 +2,9 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "allowImportingTsExtensions": true,
-    "composite": true,
-    "noEmit": true
+    "incremental": true,
+    "noEmit": true,
+    "tsBuildInfoFile": "./tsconfig.tsbuildinfo"
   },
-  "include": ["src/**/*.spec.ts", "src/mocks/**/*", "types/**/*"],
-  "references": [{ "path": "./tsconfig.build.json" }]
+  "include": ["src/**/*", "types/**/*"]
 }

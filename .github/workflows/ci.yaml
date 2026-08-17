@@ -25,3 +25,6 @@ jobs:
         with:
           name: coverage (node v${{ matrix.node }})
           path: coverage/
+      # Type-checking does not emit, so build here to catch diagnostics that only
+      # surface during declaration emit (e.g. private names in exported API).
+      - run: npm run build
