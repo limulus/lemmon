@@ -13,8 +13,8 @@ and `docs/` for the language, architecture, and decision record.
 
 | Path | What |
 |---|---|
-| `packages/core/` | `@lemmon/core` — typed JS wrapper around the WASM core (stub) |
-| `packages/shell/` | `@lemmon/shell` — `lem` CLI, walker, plugin host, dev server (stub) |
+| `packages/core/` | `@limulus/lemmon-core` — typed JS wrapper around the WASM core (stub) |
+| `packages/shell/` | `@limulus/lemmon-shell` — `lem` CLI, walker, plugin host, dev server |
 | `crates/` | Rust core workspace (planned) |
 | `docs/` | `language.md`, `architecture.md`, `decisions.md`, `journal/` |
 

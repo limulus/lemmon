@@ -61,9 +61,9 @@ These hold for every change. A PR that breaks one is wrong even if its tests pas
 ```
 crates/lemmon-syntax/   scanner, parser, CST/AST, diagnostics          (planned, ∆059)
 crates/lemmon-vm/       types, checker, codegen, VM, document mode      (planned, ∆059)
-crates/lemmon-wasm/     wasm-bindgen boundary (@lemmon/core's .wasm)    (planned, ∆059)
-packages/core/          @lemmon/core — typed JS wrapper around the .wasm (stub)
-packages/shell/         @lemmon/shell — CLI, walker, plugin host, dev server (stub)
+crates/lemmon-wasm/     wasm-bindgen boundary (lemmon-core's .wasm)     (planned, ∆059)
+packages/core/          @limulus/lemmon-core — typed JS wrapper around the .wasm (stub)
+packages/shell/         @limulus/lemmon-shell — CLI, walker, plugin host, dev server (stub)
 tests/corpus/           golden inputs → expected HTML + diagnostics     (planned, ∆TEJ)
 docs/                   language.md, architecture.md, decisions.md, journal/
 ```
@@ -75,8 +75,8 @@ own. Adding a package means: create `packages/<name>/` with `package.json`,
 the root `tsconfig.build.json` references and the `packages` list in `vitest.config.ts`.
 ESLint and `tscc` pick up `packages/*` by glob.
 
-Package names use the `@lemmon` npm scope as a placeholder — scope availability is
-unverified (see docs/decisions.md D18). Both packages and the root are `"private": true`
+Published packages use the `@limulus` npm scope, named `@limulus/lemmon-<part>` (see
+docs/decisions.md D18). Both packages and the root are `"private": true`
 and CI has no publish job (see `.github/workflows/ci.yaml`): nothing is released yet, and
 how the monorepo's packages will be versioned and published (semantic-release or
 otherwise) is undecided. Do not publish anything, and do not re-enable publishing,
@@ -106,7 +106,7 @@ as they come to exist:
 
 - `cargo test --workspace` — core unit + corpus tests
 - `cargo fuzz run parser` — parser/VM fuzzing (never commit a panic repro as expected)
-- `lem build | dev | check | fmt` — the CLI, once `@lemmon/shell` exists
+- `lem build | dev | check | fmt` — the CLI, once `@limulus/lemmon-shell` exists
 
 ## TypeScript Setup
 

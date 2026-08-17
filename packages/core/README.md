@@ -1,4 +1,4 @@
-# @lemmon/core
+# @limulus/lemmon-core
 
 Typed JS wrapper around the Lemmon Rust core compiled to WebAssembly: `compile`,
 `loadData`, `plan`, `render`, and the LSP-facing `analyze`/`format` (see

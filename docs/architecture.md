@@ -18,7 +18,7 @@ Two halves, one contract:
 The same `.wasm` runs in the build, the LSP (Node process), a browser playground, and —
 later, unchanged — a Lambda (`ContentSource` seam, D14).
 
-## WASM API (`@lemmon/core`)
+## WASM API (`@limulus/lemmon-core`)
 
 ```ts
 class Core {
@@ -117,10 +117,11 @@ Plugins ship `.lem` files (functions + types) bound via `lem-import` in `site.le
 - `tree-sitter-lemmon`: embedded-template grammar; HTML injected into text, Lemmon
   injected into markdown lem-blocks. Corpus agreement with the Rust parser is
   CI-enforced.
-- `@lemmon/lsp`: Node process loading the same `@lemmon/core` .wasm; diagnostics as you
-  type, schema-driven completion, hover, go-to-def, rename, formatting, front-matter
-  validation at YAML positions. Precedent: bash-language-server, VS Code anycode, Oso's
-  Polar (Node host + wasm core); native `lsp-server` binary remains an escape hatch.
+- `@limulus/lemmon-lsp`: Node process loading the same `@limulus/lemmon-core` .wasm;
+  diagnostics as you type, schema-driven completion, hover, go-to-def, rename,
+  formatting, front-matter validation at YAML positions. Precedent: bash-language-server,
+  VS Code anycode, Oso's Polar (Node host + wasm core); native `lsp-server` binary remains
+  an escape hatch.
 
 ## Testing
 

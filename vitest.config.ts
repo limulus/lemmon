@@ -23,7 +23,7 @@ export default defineConfig({
     exclude: ['**/node_modules/**', '**/dist/**'],
     projects: packages.map((name) => ({
       extends: true,
-      test: { name: `@lemmon/${name}`, root: `packages/${name}` },
+      test: { name: `@limulus/lemmon-${name}`, root: `packages/${name}` },
     })),
   },
 })

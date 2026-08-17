@@ -1,5 +1,5 @@
 {
-  "name": "@lemmon/core",
+  "name": "@limulus/lemmon-core",
   "version": "0.0.0",
   "private": true,
   "description": "Lemmon core: typed wrapper around the Rust/WASM compiler and VM",

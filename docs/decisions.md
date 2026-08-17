@@ -21,9 +21,9 @@ Lemmon"). Treat these as fixed unless Eric reopens one; cite IDs in PRs when rel
 | D13 | Build artifact | Files on disk, uploadable anywhere. limulus.net's hash + `/assets/immutable/` conventions preserved so CloudFront config is untouched. |
 | D14 | On-demand / DB | Headroom only, via the shell's `ContentSource` seam + serializable modules + record-level `upsertRecord`. Nothing request-time is built now. |
 | D15 | Migration posture | Parity harness (old dist vs new dist, normalized, allowlisted) then a single cutover. No dual-serving. 11ty stays green on main until 0 unexpected diffs. |
-| D16 | Editor tooling | Day one: `tree-sitter-lemmon` (highlighting + injections) and `@lemmon/lsp` (Node host over the same WASM core). Corpus agreement between the two grammars is CI-enforced. |
+| D16 | Editor tooling | Day one: `tree-sitter-lemmon` (highlighting + injections) and `@limulus/lemmon-lsp` (Node host over the same WASM core). Corpus agreement between the two grammars is CI-enforced. |
 | D17 | Audience | Open source, usable by others. Public surfaces: the language, the plugin API, the WASM API. |
-| D18 | Name & prefix | **Lemmon**; tag prefix `lem`; files `.lem`; CLI `lem`. Registry notes: crates.io `lemmon` free; npm unscoped `lemmon` squatted (dormant); `@lemmon` scope unverified (fallback `@limulus/lemmon-*`); github.com/lemmon is an unrelated user → org needs a variant. |
+| D18 | Name & prefix | **Lemmon**; tag prefix `lem`; files `.lem`; CLI `lem`. Registry notes: crates.io `lemmon` free; npm unscoped `lemmon` squatted (dormant); npm packages publish under the existing `@limulus` scope as `@limulus/lemmon-*` (2026-08-16, superseding the unverified `@lemmon` scope idea); github.com/lemmon is an unrelated user → org needs a variant. |
 | D19 | Drafts & scheduling | `draft: bool` + `--drafts` dev flag. No scheduled publishing in static mode (falls out of on-demand later). |
 | D20 | CSS scoping | Convention, no rewriting: component root carries a class named after the function; styles nest under it with native CSS nesting. `lem-style` blocks → per-page hashed bundle via `lem-emit styles`. |
 | D21 | Tag shapes | Kebab `lem-*` builtins (valid custom-element names; namespace reserved — unknown `lem-*` is a compile error). `lem.` accesses (always void); keyword heads with `= expr` are void, without are blocks; voids canonically ` />`. `lem-fn` definition closes name the function (`</lem-fn.foo>`); other blocks close bare. Heads never contain `>`: `lt lte gt gte`, `\|a\| expr`, `: T`. |
@@ -45,4 +45,5 @@ in the PR when one is load-bearing:
 ## Chronology
 
 D01–D17, D19 settled 2026-08-14 (design interview); D08 revisited and D20–D21 settled
-2026-08-15; named Lemmon with D18 closed, D21 finalized, D22–D23 added 2026-08-16.
+2026-08-15; named Lemmon with D18 closed, D21 finalized, D22–D23 added 2026-08-16; D18
+npm scope fixed to `@limulus` later on 2026-08-16.

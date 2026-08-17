@@ -48,9 +48,10 @@ output, with VM render time under 1 ms/page. Everything here serves that demo.
 - ∆Ldn Document mode — fence-aware segmenter, in-core comrak rendering of joined prose,
   `<!--lem:N-->` sentinel splice with lost-sentinel build errors, untyped front matter
   passthrough for now (docs/language.md §Document mode); needs: ∆c8h
-- ∆TNT WASM boundary — wasm-bindgen build of the core, `@lemmon/core` typed wrapper
-  (compile/loadData/render), and a small Node harness that renders fixtures, measuring
-  boundary marshalling cost so the few-large-calls design is validated early; needs: ∆c8h
+- ∆TNT WASM boundary — wasm-bindgen build of the core, `@limulus/lemmon-core` typed
+  wrapper (compile/loadData/render), and a small Node harness that renders fixtures,
+  measuring boundary marshalling cost so the few-large-calls design is validated early;
+  needs: ∆c8h
 
 ### Prove it
 
@@ -78,6 +79,7 @@ further at claim time.
   collection and dedup, `lem-page` (including `for` generators with prev/next),
   serializable modules and render-reported deps for incremental dev; needs: ∆C8d
 - ∆5MM tree-sitter-lemmon + LSP skeleton — embedded-template grammar with HTML/markdown
-  injections, corpus agreement test wired into CI, `@lemmon/lsp` serving diagnostics and
-  schema completions from `core.analyze()`; editor tooling is a day-one commitment
+  injections, corpus agreement test wired into CI, `@limulus/lemmon-lsp` serving
+  diagnostics and schema completions from `core.analyze()`; editor tooling is a day-one
+  commitment
   (docs/decisions.md D16); needs: ∆TEJ, ∆C8d
