@@ -11,15 +11,20 @@
     "node": ">=24"
   },
   "scripts": {
-    "prebuild": "npm run clean",
+    "prebuild": "npm run clean:js",
     "build": "node node_modules/typescript-7/bin/tsc --build tsconfig.build.json",
-    "clean": "del-cli \"*.tsbuildinfo\" \"packages/*/*.tsbuildinfo\" coverage \"packages/*/dist\"",
+    "clean": "npm run clean:js && del-cli target artifacts",
+    "clean:js": "del-cli \"*.tsbuildinfo\" \"packages/*/*.tsbuildinfo\" coverage \"packages/*/dist\"",
     "lint": "eslint .",
     "lint:fix": "npm run lint -- --fix",
     "prepare": "is-ci || husky",
+    "rust": "cargo fmt --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace",
+    "rust:wasm": "del-cli artifacts && cargo build --release -p lemmon-wasm --target wasm32-unknown-unknown && node scripts/stage-wasm.ts",
     "test": "vitest run --coverage",
     "tscc": "node node_modules/typescript-7/bin/tsc --build tsconfig.json packages/*/tsconfig.json",
-    "verify": "concurrently -c cyan,magenta,blue npm:lint npm:test npm:tscc"
+    "verify": "concurrently -c cyan,magenta,blue,yellow npm:verify:js npm:rust",
+    "verify:js": "concurrently -c cyan,magenta,blue npm:lint npm:test npm:tscc",
+    "wasm:check": "node scripts/check-wasm.ts"
   },
   "repository": {
     "type": "git",

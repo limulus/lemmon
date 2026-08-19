@@ -107,3 +107,11 @@ dist
 
 # Delto plan-backlog-item claim ledger (sits alongside BACKLOG.md)
 .delto-claims.local.jsonl
+
+# Cargo build output. Usually redirected elsewhere via CARGO_TARGET_DIR; this is the
+# belt-and-braces for builds run without it set.
+/target
+crates/*/target
+
+# Staged wasm artifact (built by `npm run rust:wasm`, uploaded by CI)
+/artifacts

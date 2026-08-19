@@ -15,15 +15,25 @@ and `docs/` for the language, architecture, and decision record.
 |---|---|
 | `packages/core/` | `@limulus/lemmon-core` — typed JS wrapper around the WASM core (stub) |
 | `packages/shell/` | `@limulus/lemmon-shell` — `lem` CLI, walker, plugin host, dev server |
-| `crates/` | Rust core workspace (planned) |
+| `crates/` | Rust core workspace — `lemmon-syntax`, `lemmon-vm`, `lemmon-wasm` (skeletons) |
 | `docs/` | `language.md`, `architecture.md`, `decisions.md`, `journal/` |
 
 ## Development
 
+Requires Node (see `engines`) and a Rust toolchain — [rustup](https://rustup.rs) is
+enough; `rust-toolchain.toml` pins the exact version and installs the components and the
+`wasm32-unknown-unknown` target on the first `cargo` invocation.
+
 ```sh
 npm install
-npm run verify   # lint + test (100% coverage) + typecheck — what pre-push and CI run
-npm run build    # emit packages/*/dist
+npm run verify     # lint + test (100% coverage) + typecheck + cargo fmt/clippy/test
+npm run build      # emit packages/*/dist
+npm run rust:wasm  # cross-compile the boundary crate and stage the .wasm
+npm run wasm:check # compile the staged .wasm under this Node and check its boundary
 ```
+
+`npm run verify` is the whole gate for both halves of the repo and is what pre-push runs.
+CI runs its parts as separate jobs so the Rust checks run once rather than once per Node
+version, and so the `.wasm` is built once and then exercised on every supported Node.
 
 Contributor guidance, invariants, and conventions live in `CLAUDE.md`.

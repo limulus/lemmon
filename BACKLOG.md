@@ -21,13 +21,6 @@ Exit criterion (architecture doc 3): limulus.net's `the-rebound` post renders th
 minimal base→page→article layout chain from the WASM core, byte-similar to the 11ty
 output, with VM render time under 1 ms/page. Everything here serves that demo.
 
-### Scaffolding
-
-- ∆059 Repo + CI scaffolding — Rust workspace (`crates/lemmon-syntax`, `lemmon-vm`,
-  `lemmon-wasm`) with CI building and testing it alongside the existing npm workspace
-  (`packages/core`, `packages/shell`, `.github/workflows/ci.yaml`), so every later item
-  lands in a green harness. Layout per `CLAUDE.md`.
-
 ### Core spike
 
 - ∆FDQ Scanner — logos lexer with text/tag modes per `docs/language.md` §Scanner

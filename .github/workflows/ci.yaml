@@ -3,9 +3,56 @@ name: Continuous Integration
 # Publishing is deliberately absent: nothing here is released yet, and how a monorepo's
 # packages get versioned and published (semantic-release or otherwise) is an open
 # question. Re-add a publish job when the first release is planned.
+#
+# Shape: build the wasm once, consume it many times. `wasm` produces the artifact and
+# `wasm-check` exercises it on every node version, so each runtime is tested against the
+# exact bytes that would ship rather than its own rebuild. Host-target Rust checks sit in
+# `rust`, outside the node matrix, because nothing about them varies by node version.
+#
+# The cost of that split: CI no longer runs the single `npm run verify` command pre-push
+# runs. The jobs below are its parts — `rust` is `npm:rust`, `verify` is `npm:verify:js`,
+# and `verify` is defined as exactly those two. Keep that true when adding a leg.
 on: push
 
 jobs:
+  # Host-target only: fmt, clippy, cargo test. Once, not once per node version.
+  rust:
+    runs-on: ubuntu-latest
+    name: rust (fmt, clippy, test)
+    steps:
+      - uses: actions/checkout@v7
+      # rust-cache keys on the active rustc version, so the toolchain has to be resolved
+      # before it runs — any cargo invocation in the repo root makes rustup honor
+      # rust-toolchain.toml, keeping that file the single source of the pin.
+      - run: cargo --version
+      - uses: Swatinem/rust-cache@v2
+      - run: npm run rust
+
+  # Cross-compiles the boundary crate and publishes the .wasm for the jobs below. Kept out
+  # of `npm run verify` because populating a second target tree is not worth paying on
+  # every inner-loop run.
+  wasm:
+    runs-on: ubuntu-latest
+    name: build wasm32 artifact
+    steps:
+      - uses: actions/checkout@v7
+      # Staging is a .ts script run through Node's type stripping, so the runner's default
+      # Node is not necessarily new enough.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - run: cargo --version
+      - uses: Swatinem/rust-cache@v2
+      - run: npm run rust:wasm
+      - uses: actions/upload-artifact@v7
+        with:
+          name: wasm
+          path: artifacts/wasm/
+          if-no-files-found: error
+          retention-days: 1
+
+  # Deliberately has no `needs:` — lint, tests, and typecheck do not touch the wasm, and
+  # blocking them behind a cargo build would slow feedback on TypeScript-only changes.
   verify:
     runs-on: ubuntu-latest
     strategy:
@@ -19,7 +66,7 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: 'npm'
       - run: npm ci
-      - run: npm run verify
+      - run: npm run verify:js
       - uses: actions/upload-artifact@v7
         if: ${{ always() }}
         with:
@@ -28,3 +75,24 @@ jobs:
       # Type-checking does not emit, so build here to catch diagnostics that only
       # surface during declaration emit (e.g. private names in exported API).
       - run: npm run build
+
+  # Where the node matrix genuinely earns its keep: building a .wasm never consults Node,
+  # but *accepting* one does — which WebAssembly proposals a runtime enables moves between
+  # node majors. No `npm ci`: the check script has no dependencies.
+  wasm-check:
+    runs-on: ubuntu-latest
+    needs: wasm
+    strategy:
+      matrix:
+        node: [ '24', '26' ]
+    name: wasm on node v${{ matrix.node }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+      - uses: actions/download-artifact@v7
+        with:
+          name: wasm
+          path: artifacts/wasm/
+      - run: npm run wasm:check

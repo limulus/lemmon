@@ -9,8 +9,8 @@ Eleventy + WebC once a parity harness shows zero unexpected output diffs.
 
 **Status:** pre-implementation. The work is sequenced in `BACKLOG.md` (delto-managed);
 the current milestone is the Phase 0 spike — one real page rendering end-to-end from the
-WASM core. The npm half of the repo scaffolding exists (see Layout); the Rust half is
-still backlog `∆059`.
+WASM core. Both halves of the repo scaffolding exist (see Layout) — the crates are
+skeletons, and no language feature is implemented yet.
 
 ## Canonical references
 
@@ -59,12 +59,13 @@ These hold for every change. A PR that breaks one is wrong even if its tests pas
 ## Layout
 
 ```
-crates/lemmon-syntax/   scanner, parser, CST/AST, diagnostics          (planned, ∆059)
-crates/lemmon-vm/       types, checker, codegen, VM, document mode      (planned, ∆059)
-crates/lemmon-wasm/     wasm-bindgen boundary (lemmon-core's .wasm)     (planned, ∆059)
+crates/lemmon-syntax/   scanner, parser, CST/AST, diagnostics          (skeleton: Span)
+crates/lemmon-vm/       types, checker, codegen, VM, document mode      (skeleton)
+crates/lemmon-wasm/     wasm-bindgen boundary (lemmon-core's .wasm)     (skeleton)
 packages/core/          @limulus/lemmon-core — typed JS wrapper around the .wasm (stub)
 packages/shell/         @limulus/lemmon-shell — CLI, walker, plugin host, dev server (stub)
 tests/corpus/           golden inputs → expected HTML + diagnostics     (planned, ∆TEJ)
+scripts/                repo tooling run by npm scripts (wasm staging + check)
 docs/                   language.md, architecture.md, decisions.md, journal/
 ```
 
@@ -74,6 +75,20 @@ own. Adding a package means: create `packages/<name>/` with `package.json`,
 `tsconfig.json`, and `tsconfig.build.json` modelled on an existing one, then add it to
 the root `tsconfig.build.json` references and the `packages` list in `vitest.config.ts`.
 ESLint and `tscc` pick up `packages/*` by glob.
+
+It is also a Cargo workspace (`members = ["crates/*"]`) sharing one `[workspace.package]`
+block, so a new crate inherits version/edition/repository with `field.workspace = true`
+and needs no registration anywhere. `rust-toolchain.toml` pins the exact toolchain and
+lists the components and `wasm32-unknown-unknown` target; rustup reconciles an existing
+install against it on every invocation, so nobody has to `rustup target add` by hand. Pin
+new dependencies in the root `[workspace.dependencies]` and reference them as
+`{ workspace = true }`.
+
+There is deliberately **no checked-in `.cargo/config.toml` setting `build.target-dir`**,
+and none should be added. Where a checkout is shared between machines of different
+platforms, a committed target directory points both at the same path and their object
+files collide. Keep `target/` placement a per-machine concern — set `CARGO_TARGET_DIR` in
+your own environment if that applies to you.
 
 Published packages use the `@limulus` npm scope, named `@limulus/lemmon-<part>` (see
 docs/decisions.md D18). Both packages and the root are `"private": true`
@@ -85,9 +100,17 @@ without Eric.
 ## Commands
 
 ```bash
-# The gate: eslint, vitest with coverage, and tsc. Run it after making changes — it is
-# exactly what pre-push and CI run, so green here means green there.
+# The gate: eslint, vitest with coverage, tsc, and the Rust leg (cargo fmt --check,
+# clippy -D warnings, cargo test --workspace). Run it after making changes — it is what
+# pre-push runs. It needs a Rust toolchain on PATH; rust-toolchain.toml supplies
+# everything else on first invocation.
+#
+# CI runs its two halves as separate jobs rather than this one command, so that the
+# host-target Rust checks run once instead of once per node version. `verify` is defined
+# as exactly `verify:js` + `rust` — keep that true when adding a leg, or CI stops being
+# equivalent to pre-push.
 npm run verify
+npm run verify:js   # the npm half alone: lint + test + tscc
 
 # Autofix lint. Run it first, then re-run verify — never concurrently with it, since it
 # rewrites the same files verify is reading.
@@ -97,14 +120,37 @@ npm run lint:fix
 npx vitest run packages/core/src/lib/example.spec.ts
 
 npm run build     # emit packages/*/dist/{esm,types} via the native compiler
-npm run clean     # remove packages/*/dist, coverage, *.tsbuildinfo
+npm run clean     # the clean:js set, plus artifacts/ and a literal ./target. It does
+                  # NOT reach a redirected CARGO_TARGET_DIR — clean that yourself, and
+                  # prefer `cargo clean -p <crate>` over a bare `cargo clean` if the
+                  # directory is shared with other projects
+npm run clean:js  # packages/*/dist, coverage, *.tsbuildinfo — what `prebuild` runs, so
+                  # that building the TS never throws away cargo's cache or the staged wasm
 npm run tscc      # typecheck: root .ts config files + every packages/*/tsconfig.json
+
+# The Rust leg on its own — same three checks `verify` runs, for a tighter loop.
+npm run rust
+cargo test --workspace                       # core unit + (later) corpus tests
+
+# Cross-compile the boundary crate (release) and stage the .wasm into artifacts/wasm/.
+# Kept out of `verify` because it populates a second target tree.
+npm run rust:wasm
+
+# Consume the staged .wasm: compile it under this Node, assert the boundary's exports
+# and that it imports nothing outside the wasm-bindgen placeholders.
+npm run wasm:check
 ```
 
-Until the Rust scaffolding lands (backlog `∆059`) these are aspirational; keep them true
-as they come to exist:
+CI is build-once/consume-many: a `wasm` job stages the artifact and uploads it, and a
+`wasm-check` matrix downloads it so every supported Node is tested against the exact
+bytes that would ship rather than its own rebuild. Building a `.wasm` never consults
+Node; *accepting* one does, since enabled WebAssembly proposals move between Node majors.
+`wasm:check`'s import allowlist (`scripts/wasm-artifact.ts`) is a mechanical check on
+invariant 1 — a host capability pulled in by some dependency shows up there as a new
+import module.
 
-- `cargo test --workspace` — core unit + corpus tests
+Still aspirational; keep them true as they come to exist:
+
 - `cargo fuzz run parser` — parser/VM fuzzing (never commit a panic repro as expected)
 - `lem build | dev | check | fmt` — the CLI, once `@limulus/lemmon-shell` exists
 
@@ -152,7 +198,13 @@ references. Diagnostics raised only during declaration emit surface in `npm run 
 ## Testing
 
 - **BDD with 100% coverage** — no exceptions. Prefer assertions over defensive programming;
-  if you think you need a `/* v8 ignore … */`, pause and confirm with the user first
+  if you think you need a `/* v8 ignore … */`, pause and confirm with the user first.
+  This is the TypeScript rule for `packages/*/src`, which is what `vitest.config.ts`
+  scopes coverage to. Two carve-outs, both deliberate: **the Rust crates have no coverage
+  gate yet** — the tool and threshold get chosen against real code when the corpus harness
+  lands (`∆TEJ`) — and **`scripts/` is linted and typechecked but not covered**, since it
+  is build tooling exercised by running it. Weigh that second one before putting logic
+  worth testing in `scripts/`; `scripts/check-wasm.ts` is already close to the line
 - **RSpec-style nesting** — `describe` for subject/context, `it('should …')` for assertions.
   No Given/When/Then
 - **Avoid `vi.mock()`** — prefer tests that exercise real dependencies, and mock at the
@@ -164,7 +216,10 @@ references. Diagnostics raised only during declaration emit surface in `npm run 
 - Vitest runs one root config whose `projects` are listed inline with `extends: true`
   (a bare `packages/*` glob would give each package a blank config and silently drop the
   root `test` options); coverage thresholds are global across all packages
-- Rust/WASM (when it exists): wasm-bindgen-test via Node for the boundary; the golden
+- Rust: `#[cfg(test)] mod tests` in the same file as the code, one behaviour per `#[test]`
+  with a name that reads as a sentence about the subject — the closest Rust gets to the
+  `it('should …')` convention above
+- WASM (when it exists): wasm-bindgen-test via Node for the boundary; the golden
   corpus in `tests/corpus/` is the shared truth for the parser and the tree-sitter grammar
 
 ## Code Style Guidelines
@@ -176,7 +231,9 @@ references. Diagnostics raised only during declaration emit surface in `npm run 
   - Prefer explicit types over inference for public APIs
 - **Formatting**: no semicolons (rely on ASI), single quotes, 92-char lines — enforced by
   `@limulus/eslint-config` + prettier (same conventions as limulus.net)
-- **Rust** (when it exists): 2021+ edition, `cargo fmt` + `clippy -D warnings`
+- **Rust**: edition 2024, `cargo fmt` + `clippy -D warnings` (both in `npm run verify`).
+  `rustfmt.toml` sets `max_width = 92` to match the TypeScript width; take rustfmt's
+  output rather than hand-tuning around it
 - **Naming**:
   - Classes: PascalCase
   - Methods/variables: camelCase

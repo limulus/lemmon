@@ -1,0 +1,7 @@
+# Pinned to an exact patch, not "stable": `clippy -D warnings` is part of the gate, and
+# every new stable ships new lints that would otherwise turn CI red without a commit.
+# Bumping this is a deliberate change.
+[toolchain]
+channel = "1.97.1"
+components = ["rustfmt", "clippy"]
+targets = ["wasm32-unknown-unknown"]
