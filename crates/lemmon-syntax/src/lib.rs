@@ -1,7 +1,15 @@
 //! Scanner, parser, CST/AST, and diagnostics for Lemmon.
 //!
-//! Scaffolding only: the scanner arrives with `∆FDQ` and the parser with `∆7Ib`. [`Span`]
-//! is here now because every later stage needs it from its first line of code.
+//! The scanner ([`scan`]) is in place; the parser arrives with `∆7Ib`. [`Span`] is the
+//! one type every later stage depends on.
+
+mod diagnostic;
+mod scanner;
+mod token;
+
+pub use diagnostic::Diagnostic;
+pub use scanner::{ScanResult, scan};
+pub use token::{Token, TokenKind};
 
 /// A byte range into a source file.
 ///

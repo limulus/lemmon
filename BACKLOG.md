@@ -22,12 +22,9 @@ with VM render time under 1 ms/page. Everything here serves that demo.
 
 ### Core spike
 
-- ∆FDQ Scanner — logos lexer with text/tag modes per `docs/language.md` §Scanner (triggers
-  `<lem.` `<lem-` `</lem-`, first-`>` termination), plus the round-trip property test; it is
-  the substrate every stage sits on; needs: ∆059
 - ∆7Ib Parser bake-off — one-day lelwel spike against a hand-written recursive-descent start
   (docs/architecture.md §Crates names the candidates); keep whichever gives better error
-  recovery for less code, and record the loser and why in the journal; needs: ∆FDQ
+  recovery for less code, and record the loser and why in the journal
 - ∆hw4 Parser → lossless CST + typed AST for the spike subset (`lem.`, `lem-if`, `lem-for`,
   both `lem-let` forms, block `lem-fn`), spans everywhere, recovery good enough that a
   half-typed template still yields a tree; needs: ∆7Ib
