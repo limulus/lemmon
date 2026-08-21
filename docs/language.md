@@ -36,14 +36,28 @@ Three delimitability rules (D21):
 
 | Form | Meaning |
 |---|---|
-| `<lem-name head> … </lem-name>` | Block builtin. Blocks close bare — except `lem-fn`, whose close names the function: `</lem-fn.articleCard>`. |
+| `<lem-name head> … </lem-name>` | Block builtin. Every block closes bare, `lem-fn` included. |
 | `<lem-name head />` | Void builtin. The ` />` is canonical (formatter writes it); parser accepts bare `>`. |
 | `<lem.expr>` | Access: print a value or call a function — the only call form (D22). Always void, never slashed. |
-| `<lem-- … -->` | Compile-time comment, stripped. HTML comments `<!-- -->` are text and pass through. |
 | `&lt;lem` | Escape for a literal `<lem…` in a template. Code fences handle it in documents. |
 
 Whitespace: text around block tags is preserved as written; a void tag alone on a line
 consumes that line's trailing newline. Every token carries a byte span.
+
+Scanner rules the parser and the tree-sitter grammar must agree on:
+
+- The tag name after `<lem-` or `</lem-` is any run of `[A-Za-z0-9_-]`, possibly empty.
+  Whether it names a builtin is checked by the parser, which reports unknown names with
+  a did-you-mean; the scanner never turns a malformed trigger back into text.
+- A `<` inside a head ends the head: the tag is reported as unterminated, and scanning
+  resumes in text mode at the `<`. So a forgotten `>` costs one diagnostic, not the rest
+  of the file.
+- A string literal ends at its closing `"` or, failing that, at the end of its line,
+  with an unterminated-string error.
+- There is no compile-time comment tag. HTML comments are text and pass through to the
+  output — and a trigger inside one still fires.
+- `lt lte gt gte in is as true false null` are reserved words: they cannot be used as
+  identifiers or as named-argument names.
 
 ## Tags
 
@@ -54,7 +68,7 @@ consumes that line's trailing newline. Every token carries a byte span.
 | `lem-for` | `x in list` · `x, i in list` · `k, v in map` | Iteration; `<lem-else />` inside gives the empty case. Bodies cannot mutate → parallelizable later. |
 | `lem-let` | `name = expr` / `name: T = expr` → void · bare `name` → block | Immutable binding, scoped to the enclosing block. Block form binds the rendered body as `html` (the capture form; in documents the body is a document). Unused bindings warn. |
 | `lem-match` / `lem-case` / `lem-default` | subject; patterns | Patterns: subtype (`Til as t`), literal, enum variant, null. Exhaustive over enums/closed unions, else `lem-default` required. |
-| `lem-fn` | signature | **Definition only** (calls go through `lem.`). Block body returns `html`, closes `</lem-fn.name>`. Expression body `(…): T = expr` is void, returns any type. |
+| `lem-fn` | signature | **Definition only** (calls go through `lem.`). Block body returns `html`, closes `</lem-fn>`. Expression body `(…): T = expr` is void, returns any type. |
 | `lem-type` | `Name` / `Name extends Base` | Record schema; fields in the body (block). See § Schemas. |
 | `lem-enum` | `Name = a \| b \| c` | Enum (void). Bare variant names in expressions where the enum is expected; strings in front matter. |
 | `lem-collection` | `name: Type from "glob"` · `name: Type = expr` | Site-level typed collection (void; `site.lem`). |
@@ -69,7 +83,7 @@ consumes that line's trailing newline. Every token carries a byte span.
 
 | Category | Syntax | Notes |
 |---|---|---|
-| Literals | `"text"`, `"Link: {linkTitle}"`, `42`, `1.5`, `true`, `null`, `[a, b]`, `{k: v}`, `2024-11-24T11:35:00-07:00` | String interpolation `{…}` (`{{` for a literal brace — delimiter is a deferred question). Datetimes are ISO 8601. |
+| Literals | `"text"`, `"Link: {linkTitle}"`, `42`, `1.5`, `true`, `null`, `[a, b]`, `{k: v}` | String interpolation `{…}` (`{{` for a literal brace — delimiter is a deferred question); until it is settled, an interpolated expression may not itself contain a string literal. No datetime literal: a fixed date is `datetime("2024-11-24")` (stdlib, validated at compile time when the argument is a literal). |
 | Access | `a.b`, `a?.b`, `xs[i]`, `m["key"]` | `?.` propagates null; out-of-range list index is a render error, not null. |
 | Calls | `f(x)`, `f(x, nolink: true)` | Positional then named. UFCS: `x.f(y)` resolves to `f(x, y)` when `x`'s type has no method `f` — so `photo.rendition(md, jpeg)` reads naturally. |
 | Lambdas | `\|a\| a.date`, `\|a, b\| a.date lt b.date` | Parameter types inferred from the expected function type. |
@@ -104,19 +118,22 @@ for base, narrowing via `is`/`lem-match`) · enums · function types `(A, B): T`
   title: string
   subhead: string?
   date: datetime
-  author: string                      <lem-- key into site.authors, checked at load -->
-  hero: Photo? by site.photos         <lem-- reference field: id/alias in YAML, record in templates -->
+  author: string
+  hero: Photo? by site.photos
   vod: Vod?
   layout: layout = article
   scripts: [asset] = []
   draft: bool = false
-  readingTime: duration = readingTime(body)   <lem-- computed at load; body/path/self/site in scope -->
+  readingTime: duration = readingTime(body)
 </lem-type>
 ```
 
 - **Reference fields** (`by <index>`): the loader resolves the front-matter value
   (id or alias) against the named index; a miss is a load error at the YAML position.
 - **Computed defaults** evaluate once at load, in dependency order.
+  The default expression sees `body`, `path`, `self`, and `site`.
+- Plain string keys that name another record (`author: string` → `site.authors`) are
+  checked at load; a miss is a load error at the YAML position.
 - **Extra front-matter keys are errors** (opt out per type with `extra: {string: any}`).
 - Schemas are the source of truth; JSON Schema is derived output (`lem schema export`),
   never authored (rationale: the same types statically check template expressions —
@@ -171,7 +188,7 @@ One value namespace, resolved lexically: **locals/params** (innermost wins) →
     <article>…<lem.body>…</article>
   </lem-let>
   <lem.pageLayout(page, inner)>
-</lem-fn.article>
+</lem-fn>
 ```
 
 - Purity: no clock/filesystem/env access; `build.time` etc. arrive as data.
@@ -217,7 +234,6 @@ reserved but not built.
 ## Canonical example
 
 ```
-<lem-- _includes/article-card.lem -->
 <lem-fn articleCard(article: Article)>
   <article class="article-card">
     <a href="<lem.article.url>">
@@ -251,7 +267,7 @@ reserved but not built.
       img.preview { display: block; width: 100%; height: auto; }
     }
   </lem-style>
-</lem-fn.articleCard>
+</lem-fn>
 ```
 
 ## Deferred questions

@@ -26,7 +26,7 @@ Lemmon"). Treat these as fixed unless Eric reopens one; cite IDs in PRs when rel
 | D18 | Name & prefix | **Lemmon**; tag prefix `lem`; files `.lem`; CLI `lem`. Registry notes: crates.io `lemmon` free; npm unscoped `lemmon` squatted (dormant); npm packages publish under the existing `@limulus` scope as `@limulus/lemmon-*` (2026-08-16, superseding the unverified `@lemmon` scope idea); github.com/lemmon is an unrelated user → org needs a variant. |
 | D19 | Drafts & scheduling | `draft: bool` + `--drafts` dev flag. No scheduled publishing in static mode (falls out of on-demand later). |
 | D20 | CSS scoping | Convention, no rewriting: component root carries a class named after the function; styles nest under it with native CSS nesting. `lem-style` blocks → per-page hashed bundle via `lem-emit styles`. |
-| D21 | Tag shapes | Kebab `lem-*` builtins (valid custom-element names; namespace reserved — unknown `lem-*` is a compile error). `lem.` accesses (always void); keyword heads with `= expr` are void, without are blocks; voids canonically ` />`. `lem-fn` definition closes name the function (`</lem-fn.foo>`); other blocks close bare. Heads never contain `>`: `lt lte gt gte`, `\|a\| expr`, `: T`. |
+| D21 | Tag shapes | Kebab `lem-*` builtins (valid custom-element names; namespace reserved — unknown `lem-*` is a compile error). `lem.` accesses (always void); keyword heads with `= expr` are void, without are blocks; voids canonically ` />`. All blocks close bare (`</lem-fn>`; the named close `</lem-fn.foo>` was dropped 2026-08-20). Heads never contain `>`: `lt lte gt gte`, `\|a\| expr`, `: T`. |
 | D22 | Calls & slots | `<lem.f(args)>` is the only call form. Bodies pass capture-then-call (`<lem-let x>…</lem-let>` → `slot: x`). No call-with-body syntax; grammar stays head-decidable. One-shot sugar would be additive later. |
 | D23 | Namespaces | One lexical value namespace: locals/params → project-flat (all site `.lem` files; duplicates = compile error; no site-file imports) → ambient (`site`/`page`/`build` + stdlib; shadowing stdlib warns). Plugins bind qualified via `lem-import` in `site.lem`, named promotion optional. Types split from values by capitalization. |
 
@@ -46,4 +46,6 @@ in the PR when one is load-bearing:
 
 D01–D17, D19 settled 2026-08-14 (design interview); D08 revisited and D20–D21 settled
 2026-08-15; named Lemmon with D18 closed, D21 finalized, D22–D23 added 2026-08-16; D18
-npm scope fixed to `@limulus` later on 2026-08-16.
+npm scope fixed to `@limulus` later on 2026-08-16; D21 revised 2026-08-20 to close `lem-fn`
+bare like every other block, to drop the `<lem-- -->` comment tag, and to drop the datetime
+literal in favour of a `datetime("…")` stdlib constructor.
