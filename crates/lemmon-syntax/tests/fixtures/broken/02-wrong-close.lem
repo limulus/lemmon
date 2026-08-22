@@ -1,0 +1,4 @@
+<lem-if x>
+  <p>a</p>
+</lem-for>
+<p>after</p>

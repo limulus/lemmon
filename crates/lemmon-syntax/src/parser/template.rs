@@ -1,0 +1,880 @@
+//! The template level: text, access tags, and the keyword tags with their nesting.
+//!
+//! A tag's shape — void or block — is decided from its name and its head alone
+//! (invariant 4): `lem-let` and `lem-fn` look for a top-level `=` among the head's
+//! tokens, every other builtin has a fixed shape. Block bodies are parsed with a stack
+//! of open blocks, so that a close tag can be matched to what is actually open, and a
+//! mismatch can say what was expected instead.
+
+use super::{Marker, Parser, expr};
+use crate::syntax_kind::SyntaxKind;
+use crate::{Span, TokenKind};
+
+/// Every `lem-*` name the language reserves.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Builtin {
+    If,
+    ElseIf,
+    Else,
+    For,
+    Let,
+    Fn,
+    Match,
+    Case,
+    Default,
+    Type,
+    Enum,
+    Collection,
+    Data,
+    Page,
+    Import,
+    Style,
+    Head,
+    Script,
+    Emit,
+}
+
+const BUILTINS: &[(&str, Builtin)] = &[
+    ("if", Builtin::If),
+    ("else-if", Builtin::ElseIf),
+    ("else", Builtin::Else),
+    ("for", Builtin::For),
+    ("let", Builtin::Let),
+    ("fn", Builtin::Fn),
+    ("match", Builtin::Match),
+    ("case", Builtin::Case),
+    ("default", Builtin::Default),
+    ("type", Builtin::Type),
+    ("enum", Builtin::Enum),
+    ("collection", Builtin::Collection),
+    ("data", Builtin::Data),
+    ("page", Builtin::Page),
+    ("import", Builtin::Import),
+    ("style", Builtin::Style),
+    ("head", Builtin::Head),
+    ("script", Builtin::Script),
+    ("emit", Builtin::Emit),
+];
+
+impl Builtin {
+    fn lookup(name: &str) -> Option<Self> {
+        BUILTINS.iter().find(|(n, _)| *n == name).map(|(_, b)| *b)
+    }
+
+    /// The builtin closest to `name`, for a did-you-mean. Closeness is edit distance
+    /// relative to length — at most half the longer name may differ — so that a short
+    /// or unrelated name (`-`, `xx`, `widget`) gets no suggestion rather than `if`.
+    /// Case-insensitive, since `<lem-ELSE>` is a recognisable `lem-else`.
+    fn nearest(name: &str) -> Option<&'static str> {
+        let name = name.to_ascii_lowercase();
+        BUILTINS
+            .iter()
+            .map(|(n, _)| {
+                let longest = name.len().max(n.len());
+                (edit_distance(&name, n), longest, *n)
+            })
+            .filter(|(d, longest, _)| d * 2 <= *longest)
+            .min_by_key(|(d, longest, _)| (d * 1000 / longest, *d))
+            .map(|(_, _, n)| n)
+    }
+
+    /// Whether the tag is a block, given whether its head has a top-level `=`.
+    fn is_block(self, head_has_eq: bool) -> bool {
+        match self {
+            Self::Let | Self::Fn => !head_has_eq,
+            Self::If
+            | Self::For
+            | Self::Match
+            | Self::Case
+            | Self::Default
+            | Self::Type
+            | Self::Style
+            | Self::Head => true,
+            Self::ElseIf
+            | Self::Else
+            | Self::Enum
+            | Self::Collection
+            | Self::Data
+            | Self::Page
+            | Self::Import
+            | Self::Script
+            | Self::Emit => false,
+        }
+    }
+}
+
+/// Optimal string alignment distance: Levenshtein plus adjacent transposition, so that
+/// `fi` is one step from `if`, as a typist would expect.
+fn edit_distance(a: &str, b: &str) -> usize {
+    let a: Vec<char> = a.chars().collect();
+    let b: Vec<char> = b.chars().collect();
+    let mut rows: Vec<Vec<usize>> = vec![(0..=b.len()).collect()];
+    for (i, ca) in a.iter().enumerate() {
+        let mut row = vec![i + 1];
+        for (j, cb) in b.iter().enumerate() {
+            let cost = usize::from(ca != cb);
+            let mut d = (rows[i][j] + cost).min(rows[i][j + 1] + 1).min(row[j] + 1);
+            if i > 0 && j > 0 && *ca == b[j - 1] && a[i - 1] == *cb {
+                d = d.min(rows[i - 1][j - 1] + 1);
+            }
+            row.push(d);
+        }
+        rows.push(row);
+    }
+    rows[a.len()][b.len()]
+}
+
+/// What a block's body may contain besides ordinary items.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Body {
+    /// `lem-else-if`s, then at most one `lem-else`.
+    If {
+        seen_else: bool,
+    },
+    /// At most one `lem-else`.
+    For {
+        seen_else: bool,
+    },
+    Plain,
+}
+
+/// A block tag whose close has not been seen yet.
+struct Open<'src> {
+    name: &'src str,
+    body: Body,
+}
+
+/// How a block's body stopped.
+enum BodyEnd {
+    /// At its own close tag, not yet consumed.
+    Matched,
+    /// At a close tag that is neither its own nor any outer block's; reported, and
+    /// to be consumed as this block's close so that parsing resumes past it.
+    WrongClose,
+    /// At the close tag of an outer block, left for that block to consume.
+    OuterClose,
+    Eof,
+}
+
+pub(super) fn root(p: &mut Parser<'_>) {
+    let m = p.start();
+    let mut stack = Vec::new();
+    loop {
+        match items(p, &mut stack) {
+            BodyEnd::Eof => break,
+            BodyEnd::Matched | BodyEnd::WrongClose | BodyEnd::OuterClose => {
+                // With nothing open, every close tag is stray.
+                let m = p.start();
+                let name = p.current_text();
+                let span = p.current_span();
+                p.error(
+                    format!("stray `{name}>`: no `lem-{}` is open", &name[6..]),
+                    span,
+                );
+                close_tag(p);
+                m.complete(p, SyntaxKind::Error);
+            }
+        }
+    }
+    m.complete(p, SyntaxKind::Root);
+}
+
+/// Parses items until the end of input or a close tag that concerns `stack`.
+fn items<'src>(p: &mut Parser<'src>, stack: &mut Vec<Open<'src>>) -> BodyEnd {
+    loop {
+        match p.current() {
+            None => return BodyEnd::Eof,
+            Some(TokenKind::Text) => {
+                let m = p.start();
+                p.bump();
+                m.complete(p, SyntaxKind::TextRun);
+            }
+            Some(TokenKind::OpenAccess) => access_tag(p),
+            Some(TokenKind::OpenTag) => open_tag(p, stack),
+            Some(TokenKind::CloseTag) => {
+                let name = p.current_text();
+                let name = &name["</lem-".len()..];
+                let Some(top) = stack.last() else {
+                    return BodyEnd::WrongClose;
+                };
+                if top.name == name {
+                    return BodyEnd::Matched;
+                }
+                let span = p.current_span();
+                p.error(
+                    format!(
+                        "found `</lem-{name}>` while `lem-{}` is still open: expected `</lem-{}>`",
+                        top.name, top.name
+                    ),
+                    span,
+                );
+                if stack.iter().any(|o| o.name == name) {
+                    return BodyEnd::OuterClose;
+                }
+                return BodyEnd::WrongClose;
+            }
+            Some(_) => {
+                // Head tokens outside a head cannot come from the scanner; handled so
+                // that the parser is total over any token stream.
+                p.skip_to_head_end("unexpected tokens outside a tag");
+            }
+        }
+    }
+}
+
+/// `<lem.expr>`
+fn access_tag(p: &mut Parser<'_>) {
+    let m = p.start();
+    p.bump();
+    head(p, |p| {
+        expr::expression(p);
+    });
+    if p.at(TokenKind::SelfClose) {
+        let span = p.current_span();
+        p.error("access tags are never slashed: expected `>`", span);
+    }
+    void_close(p);
+    m.complete(p, SyntaxKind::AccessTag);
+}
+
+/// Parses a head: `f` parses its grammar, anything left before the `>` is an error.
+fn head(p: &mut Parser<'_>, f: impl FnOnce(&mut Parser<'_>)) {
+    let m = p.start();
+    f(p);
+    let message = format!("unexpected `{}` in tag head", p.current_text());
+    p.skip_to_head_end(&message);
+    m.complete(p, SyntaxKind::Head);
+}
+
+/// Takes the `>` or `/>` of a void tag. A head the scanner cut short has neither.
+fn void_close(p: &mut Parser<'_>) {
+    if !p.eat(TokenKind::Close) {
+        p.eat(TokenKind::SelfClose);
+    }
+}
+
+/// Takes the `>` of a block tag. A `/>` is reported and the tag is then treated as
+/// void, since that is what its head says; returns whether the tag stays a block.
+fn block_close(p: &mut Parser<'_>, name: &str) -> bool {
+    if p.at(TokenKind::SelfClose) {
+        let span = p.current_span();
+        p.error(
+            format!("`lem-{name}` is a block tag and cannot be self-closed: expected `>`"),
+            span,
+        );
+        p.bump();
+        return false;
+    }
+    p.eat(TokenKind::Close);
+    true
+}
+
+/// Whether the current head contains an `=` — the void marker of `lem-let` and
+/// `lem-fn`. Nothing else in a head can be an `=` (named arguments use `:`, there is
+/// no assignment), so no bracket counting is needed, and a stray one in malformed
+/// input still means the author wrote the void form.
+fn head_has_eq(p: &Parser<'_>) -> bool {
+    p.tokens[p.pos.min(p.tokens.len())..]
+        .iter()
+        .take_while(|t| !p.is_head_end_kind(t.kind))
+        .any(|t| t.kind == TokenKind::Eq)
+}
+
+fn open_tag<'src>(p: &mut Parser<'src>, stack: &mut Vec<Open<'src>>) {
+    let name = &p.current_text()["<lem-".len()..];
+    let span = p.current_span();
+    let m = p.start();
+    p.bump();
+    let Some(builtin) = Builtin::lookup(name) else {
+        unknown_tag(p, m, name, span, stack);
+        return;
+    };
+    match builtin {
+        Builtin::If => {
+            head(p, |p| {
+                expr::expression(p);
+            });
+            block(
+                p,
+                m,
+                SyntaxKind::IfTag,
+                name,
+                span,
+                Body::If { seen_else: false },
+                stack,
+            );
+        }
+        Builtin::For => {
+            head(p, for_head);
+            block(
+                p,
+                m,
+                SyntaxKind::ForTag,
+                name,
+                span,
+                Body::For { seen_else: false },
+                stack,
+            );
+        }
+        Builtin::ElseIf | Builtin::Else => separator(p, m, builtin, span, stack),
+        Builtin::Let => {
+            if head_has_eq(p) {
+                head(p, let_void_head);
+                void_close(p);
+                m.complete(p, SyntaxKind::LetVoid);
+            } else {
+                head(p, |p| {
+                    p.expect(TokenKind::Ident, "a name");
+                });
+                block(p, m, SyntaxKind::LetBlock, name, span, Body::Plain, stack);
+            }
+        }
+        Builtin::Fn => {
+            if head_has_eq(p) {
+                p.error("expression-bodied functions are not supported yet", span);
+                head(p, |p| {
+                    fn_signature(p);
+                    p.expect(TokenKind::Eq, "`=`");
+                    expr::expression(p);
+                });
+                void_close(p);
+                m.complete(p, SyntaxKind::FnVoid);
+            } else {
+                head(p, fn_signature);
+                block(p, m, SyntaxKind::FnBlock, name, span, Body::Plain, stack);
+            }
+        }
+        _ => {
+            p.error(format!("`lem-{name}` is not supported yet"), span);
+            let is_block = builtin.is_block(head_has_eq(p));
+            opaque_head(p);
+            if is_block {
+                block(
+                    p,
+                    m,
+                    SyntaxKind::UnsupportedTag,
+                    name,
+                    span,
+                    Body::Plain,
+                    stack,
+                );
+            } else {
+                void_close(p);
+                m.complete(p, SyntaxKind::UnsupportedTag);
+            }
+        }
+    }
+}
+
+/// A head that is kept but not parsed.
+fn opaque_head(p: &mut Parser<'_>) {
+    let m = p.start();
+    while !p.at_head_end() {
+        p.bump();
+    }
+    m.complete(p, SyntaxKind::Head);
+}
+
+/// An unrecognised `lem-*` name. When the nearest builtin is a block tag, the tag is
+/// tracked as a block under its own misspelt name, so that its close tag — which the
+/// author will have misspelt the same way — costs no second diagnostic.
+fn unknown_tag<'src>(
+    p: &mut Parser<'src>,
+    m: Marker,
+    name: &'src str,
+    span: Span,
+    stack: &mut Vec<Open<'src>>,
+) {
+    let nearest = Builtin::nearest(name);
+    let message = match nearest {
+        Some(n) => format!("unknown tag `lem-{name}`; did you mean `lem-{n}`?"),
+        None => format!("unknown tag `lem-{name}`"),
+    };
+    p.error(message, span);
+    let is_block = nearest
+        .and_then(Builtin::lookup)
+        .is_some_and(|b| b.is_block(head_has_eq(p)));
+    opaque_head(p);
+    if is_block && p.at(TokenKind::Close) {
+        block(p, m, SyntaxKind::UnknownTag, name, span, Body::Plain, stack);
+    } else {
+        void_close(p);
+        m.complete(p, SyntaxKind::UnknownTag);
+    }
+}
+
+/// The `>`, body, and close tag of a block, then completes `m` as `kind`.
+fn block<'src>(
+    p: &mut Parser<'src>,
+    m: Marker,
+    kind: SyntaxKind,
+    name: &'src str,
+    span: Span,
+    body: Body,
+    stack: &mut Vec<Open<'src>>,
+) {
+    if !block_close(p, name) {
+        m.complete(p, kind);
+        return;
+    }
+    if !p.enter() {
+        // Too deep to recurse: the body is left for the enclosing level to parse, and
+        // this block's close tag will be reported there as stray.
+        p.error(format!("`lem-{name}` is nested too deeply"), span);
+        m.complete(p, kind);
+        return;
+    }
+    stack.push(Open { name, body });
+    let body_marker = p.start();
+    let end = items(p, stack);
+    body_marker.complete(p, SyntaxKind::Block);
+    stack.pop();
+    p.leave();
+    match end {
+        BodyEnd::Matched | BodyEnd::WrongClose => close_tag(p),
+        BodyEnd::OuterClose => {}
+        BodyEnd::Eof => p.error(
+            format!("unclosed `lem-{name}`: expected `</lem-{name}>` before end of input"),
+            span,
+        ),
+    }
+    m.complete(p, kind);
+}
+
+/// `</lem-name>`
+fn close_tag(p: &mut Parser<'_>) {
+    let m = p.start();
+    p.bump();
+    p.skip_to_head_end("unexpected tokens in close tag");
+    if p.at(TokenKind::SelfClose) {
+        let span = p.current_span();
+        p.error("close tags are never slashed: expected `>`", span);
+    }
+    void_close(p);
+    m.complete(p, SyntaxKind::CloseTag);
+}
+
+/// `lem-else-if` and `lem-else`, which are only meaningful inside the right body.
+fn separator(
+    p: &mut Parser<'_>,
+    m: Marker,
+    builtin: Builtin,
+    span: Span,
+    stack: &mut [Open<'_>],
+) {
+    let (tag, kind) = match builtin {
+        Builtin::ElseIf => ("lem-else-if", SyntaxKind::ElseIfTag),
+        _ => ("lem-else", SyntaxKind::ElseTag),
+    };
+    let problem = match (stack.last_mut().map(|o| &mut o.body), builtin) {
+        (Some(Body::If { seen_else: true }), Builtin::ElseIf) => {
+            Some(format!("`{tag}` cannot follow `lem-else`"))
+        }
+        (Some(Body::For { .. }), Builtin::ElseIf) => {
+            Some(format!("`{tag}` is only allowed inside `lem-if`"))
+        }
+        (Some(Body::If { seen_else: true } | Body::For { seen_else: true }), _) => Some(
+            format!("duplicate `{tag}`: a block has at most one `lem-else`"),
+        ),
+        (Some(Body::If { .. } | Body::For { .. }), _) => None,
+        _ => Some(format!("`{tag}` outside `lem-if`")),
+    };
+    match problem {
+        Some(message) => p.error(message, span),
+        None => {
+            if let Some(Body::If { seen_else } | Body::For { seen_else }) =
+                stack.last_mut().map(|o| &mut o.body)
+                && builtin == Builtin::Else
+            {
+                *seen_else = true;
+            }
+        }
+    }
+    head(p, |p| match builtin {
+        Builtin::ElseIf => {
+            expr::expression(p);
+        }
+        _ => p.skip_to_head_end("`lem-else` takes no head"),
+    });
+    void_close(p);
+    m.complete(p, kind);
+}
+
+/// `x in xs`, `x, i in xs`, `k, v in m`
+fn for_head(p: &mut Parser<'_>) {
+    let m = p.start();
+    if p.at(TokenKind::Ident) {
+        p.bump();
+        if p.eat(TokenKind::Comma) {
+            p.expect(TokenKind::Ident, "a second loop variable");
+        }
+    } else {
+        p.error_expected("a loop variable");
+        skip_until(p, TokenKind::In, "unexpected tokens before `in`");
+    }
+    m.complete(p, SyntaxKind::ForBinding);
+    p.expect(TokenKind::In, "`in`");
+    expr::expression(p);
+}
+
+/// `name [: Type] = expr`
+fn let_void_head(p: &mut Parser<'_>) {
+    p.expect(TokenKind::Ident, "a name");
+    if p.at(TokenKind::Colon) {
+        type_annotation(p);
+    }
+    skip_until(p, TokenKind::Eq, "unexpected tokens before `=`");
+    p.expect(TokenKind::Eq, "`=`");
+    expr::expression(p);
+}
+
+/// `name(params) [: Type]`
+fn fn_signature(p: &mut Parser<'_>) {
+    p.expect(TokenKind::Ident, "a function name");
+    let m = p.start();
+    if p.expect(TokenKind::LParen, "`(`") {
+        let mut after_comma = false;
+        loop {
+            if p.at(TokenKind::RParen) || p.at_head_end() {
+                if after_comma {
+                    p.error_expected("a parameter");
+                }
+                break;
+            }
+            param(p);
+            if !p.eat(TokenKind::Comma) {
+                break;
+            }
+            after_comma = true;
+        }
+        p.expect(TokenKind::RParen, "`)`");
+    }
+    m.complete(p, SyntaxKind::Params);
+    if p.at(TokenKind::Colon) {
+        type_annotation(p);
+    }
+}
+
+/// `name: Type`
+fn param(p: &mut Parser<'_>) {
+    let m = p.start();
+    p.expect(TokenKind::Ident, "a parameter name");
+    if p.at(TokenKind::Colon) {
+        type_annotation(p);
+    } else {
+        p.error_expected("`: Type`");
+        // Make progress on anything that is not a delimiter, so the loop cannot stall.
+        if !matches!(p.current(), Some(TokenKind::Comma | TokenKind::RParen))
+            && !p.at_head_end()
+        {
+            let e = p.start();
+            p.bump();
+            e.complete(p, SyntaxKind::Error);
+        }
+    }
+    m.complete(p, SyntaxKind::Param);
+}
+
+/// `: Type` or `: Type?`. A composite type — `[T]`, `{K: V}`, `(A): T` — is recognised
+/// by its opening bracket, kept whole as an `Error` node, and reported as unsupported.
+fn type_annotation(p: &mut Parser<'_>) {
+    let m = p.start();
+    p.bump();
+    if matches!(
+        p.current(),
+        Some(TokenKind::LBracket | TokenKind::LBrace | TokenKind::LParen)
+    ) {
+        composite_type(p);
+    } else if p.expect(TokenKind::Ident, "a type name") {
+        p.eat(TokenKind::Question);
+    }
+    m.complete(p, SyntaxKind::TypeAnnotation);
+}
+
+/// Consumes a bracketed type, plus a `: T` return type after a `(…)`, up to its
+/// balancing close bracket.
+fn composite_type(p: &mut Parser<'_>) {
+    let stale = p.in_error_state();
+    let start = p.current_span().start;
+    let mut end = start;
+    let m = p.start();
+    let mut depth = 0usize;
+    while !p.at_head_end() {
+        match p.current() {
+            Some(TokenKind::LParen | TokenKind::LBracket | TokenKind::LBrace) => depth += 1,
+            Some(TokenKind::RParen | TokenKind::RBracket | TokenKind::RBrace) => {
+                depth -= 1;
+            }
+            _ => {}
+        }
+        end = p.current_span().end;
+        p.bump();
+        if depth == 0 {
+            break;
+        }
+    }
+    if p.at(TokenKind::Colon) && p.nth(1) == Some(TokenKind::Ident) {
+        p.bump();
+        end = p.current_span().end;
+        p.bump();
+    }
+    p.eat(TokenKind::Question);
+    m.complete(p, SyntaxKind::Error);
+    if !stale {
+        p.error(
+            "composite types are not supported yet: only `T` and `T?`",
+            Span::new(start, end),
+        );
+    }
+}
+
+/// Wraps everything before `kind` (or the head's end) in an `Error` node.
+fn skip_until(p: &mut Parser<'_>, kind: TokenKind, message: &str) {
+    if p.at(kind) || p.at_head_end() {
+        return;
+    }
+    let stale = p.in_error_state();
+    let start = p.current_span().start;
+    let m = p.start();
+    let mut end = start;
+    while !p.at(kind) && !p.at_head_end() {
+        end = p.current_span().end;
+        p.bump();
+    }
+    m.complete(p, SyntaxKind::Error);
+    if !stale {
+        p.error(message, Span::new(start, end));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn measures_edit_distance() {
+        assert_eq!(edit_distance("iff", "if"), 1);
+        assert_eq!(edit_distance("lett", "let"), 1);
+        assert_eq!(edit_distance("frobnicate", "for"), 8);
+        assert_eq!(edit_distance("", "if"), 2);
+        assert_eq!(edit_distance("fi", "if"), 1);
+    }
+
+    #[test]
+    fn suggests_only_a_close_builtin() {
+        assert_eq!(Builtin::nearest("iff"), Some("if"));
+        assert_eq!(Builtin::nearest("lett"), Some("let"));
+        assert_eq!(Builtin::nearest("elif"), Some("else-if"));
+        assert_eq!(Builtin::nearest("fi"), Some("if"));
+        assert_eq!(Builtin::nearest("ELSE"), Some("else"));
+        assert_eq!(Builtin::nearest("frobnicate"), None);
+        assert_eq!(Builtin::nearest("widget"), None);
+        assert_eq!(Builtin::nearest("-"), None);
+        assert_eq!(Builtin::nearest("xx"), None);
+        assert_eq!(Builtin::nearest(""), None);
+    }
+
+    #[test]
+    fn decides_let_and_fn_shape_by_the_equals_sign() {
+        assert!(Builtin::Let.is_block(false));
+        assert!(!Builtin::Let.is_block(true));
+        assert!(Builtin::Fn.is_block(false));
+        assert!(!Builtin::Else.is_block(false));
+    }
+}
+
+#[cfg(test)]
+mod parse_tests {
+    use crate::{Span, parse};
+
+    fn diagnostics(src: &str) -> Vec<(Span, String)> {
+        parse(src)
+            .diagnostics
+            .into_iter()
+            .map(|d| (d.span, d.message))
+            .collect()
+    }
+
+    fn messages(src: &str) -> Vec<String> {
+        diagnostics(src).into_iter().map(|(_, m)| m).collect()
+    }
+
+    #[test]
+    fn takes_any_equals_sign_in_a_head_as_the_void_marker() {
+        assert_eq!(
+            messages("<lem-let (x = 1 />"),
+            vec!["expected a name, found `(`"]
+        );
+    }
+
+    #[test]
+    fn rejects_a_slashed_access_tag() {
+        assert_eq!(
+            diagnostics("<lem.x />"),
+            vec![(
+                Span::new(7, 9),
+                "access tags are never slashed: expected `>`".into()
+            )]
+        );
+    }
+
+    #[test]
+    fn reports_an_expression_bodied_fn_as_unsupported() {
+        assert_eq!(
+            messages("<lem-fn f(a: int): int = a />"),
+            vec!["expression-bodied functions are not supported yet"]
+        );
+    }
+
+    #[test]
+    fn tracks_the_nesting_of_an_unsupported_block_builtin() {
+        assert_eq!(
+            messages("<lem-match x><lem-case 1>a</lem-case></lem-match>"),
+            vec![
+                "`lem-match` is not supported yet",
+                "`lem-case` is not supported yet"
+            ]
+        );
+    }
+
+    #[test]
+    fn treats_a_self_closed_block_tag_as_void() {
+        assert_eq!(
+            messages("<lem-if x /><p>a</p>"),
+            vec!["`lem-if` is a block tag and cannot be self-closed: expected `>`"]
+        );
+    }
+
+    #[test]
+    fn allows_one_else_in_a_for_body() {
+        assert_eq!(
+            messages("<lem-for x in xs><lem-else /></lem-for>"),
+            Vec::<String>::new()
+        );
+        assert_eq!(
+            messages("<lem-for x in xs><lem-else /><lem-else /></lem-for>"),
+            vec!["duplicate `lem-else`: a block has at most one `lem-else`"]
+        );
+    }
+
+    #[test]
+    fn rejects_a_head_on_else() {
+        assert_eq!(
+            messages("<lem-if x><lem-else y /></lem-if>"),
+            vec!["`lem-else` takes no head"]
+        );
+    }
+
+    #[test]
+    fn names_the_open_block_when_an_inner_close_is_missing() {
+        assert_eq!(
+            messages("<lem-if a><lem-for x in xs>b</lem-if>"),
+            vec!["found `</lem-if>` while `lem-for` is still open: expected `</lem-for>`"]
+        );
+    }
+
+    #[test]
+    fn reports_a_nameless_tag_without_a_suggestion() {
+        assert_eq!(messages("<lem->"), vec!["unknown tag `lem-`"]);
+    }
+
+    #[test]
+    fn requires_a_second_loop_variable_after_a_comma() {
+        assert_eq!(
+            messages("<lem-for x, in xs></lem-for>"),
+            vec!["expected a second loop variable, found `in`"]
+        );
+    }
+
+    #[test]
+    fn requires_a_type_on_every_parameter() {
+        assert_eq!(
+            messages("<lem-fn f(a, b: int)></lem-fn>"),
+            vec!["expected `: Type`, found `,`"]
+        );
+    }
+
+    #[test]
+    fn reports_junk_inside_a_close_tag() {
+        assert_eq!(
+            messages("<lem-if x></lem-if y>"),
+            vec!["unexpected tokens in close tag"]
+        );
+    }
+
+    #[test]
+    fn stays_silent_about_what_a_cut_head_was_missing() {
+        assert_eq!(
+            messages("<lem.(a +\n<lem.b>"),
+            vec!["unterminated tag: expected `>` before `<`"]
+        );
+    }
+
+    #[test]
+    fn rejects_a_slashed_close_tag() {
+        assert_eq!(
+            messages("<lem-if x></lem-if />"),
+            vec!["close tags are never slashed: expected `>`"]
+        );
+    }
+
+    #[test]
+    fn still_reports_an_unclosed_block_after_an_error_at_its_opener() {
+        assert_eq!(
+            messages("<lem-iff x>hello"),
+            vec![
+                "unknown tag `lem-iff`; did you mean `lem-if`?",
+                "unclosed `lem-iff`: expected `</lem-iff>` before end of input",
+            ]
+        );
+        assert_eq!(
+            messages("<lem-match x>hello"),
+            vec![
+                "`lem-match` is not supported yet",
+                "unclosed `lem-match`: expected `</lem-match>` before end of input",
+            ]
+        );
+    }
+
+    #[test]
+    fn tells_an_else_if_inside_a_for_from_a_duplicate_else() {
+        assert_eq!(
+            messages("<lem-for x in xs><lem-else /><lem-else-if y /></lem-for>"),
+            vec!["`lem-else-if` is only allowed inside `lem-if`"]
+        );
+        assert_eq!(
+            messages("<lem-for x in xs><lem-else /><lem-else /></lem-for>"),
+            vec!["duplicate `lem-else`: a block has at most one `lem-else`"]
+        );
+    }
+
+    #[test]
+    fn reports_composite_types_as_unsupported() {
+        let message = "composite types are not supported yet: only `T` and `T?`";
+        assert_eq!(
+            messages("<lem-fn f(xs: [Article])></lem-fn>"),
+            vec![message]
+        );
+        assert_eq!(messages("<lem-let m: {string: int} = {} />"), vec![message]);
+        assert_eq!(
+            messages("<lem-fn f(a: int): (int): html></lem-fn>"),
+            vec![message]
+        );
+        assert_eq!(
+            diagnostics("<lem-fn f(a: int): (int): html></lem-fn>")[0].0,
+            Span::new(19, 30)
+        );
+    }
+
+    #[test]
+    fn stops_recursing_into_pathologically_nested_blocks() {
+        let src = format!(
+            "{}a{}",
+            "<lem-if x>".repeat(50_000),
+            "</lem-if>".repeat(50_000)
+        );
+        let found = messages(&src);
+        assert_eq!(found[0], "`lem-if` is nested too deeply");
+        assert!(found.iter().all(|m| !m.contains("unclosed")));
+    }
+}

@@ -1,0 +1,3 @@
+<lem-if x>
+  <lem-for p in posts>
+    <li><lem.p.title></li>

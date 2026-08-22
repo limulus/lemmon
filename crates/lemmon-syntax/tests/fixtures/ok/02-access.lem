@@ -1,0 +1,18 @@
+<h1><lem.article.title></h1>
+<p><lem.article.subhead ?? "no subhead"></p>
+<p><lem.(article.subhead ?? article.teaser ?? "")></p>
+<lem.article.hero?.alt>
+<lem.items[0]>
+<lem.m["key"]>
+<lem.f(x, y, nolink: true, size: small)>
+<lem.f()>
+<lem.photo.rendition(md, jpeg)>
+<lem.xs.sortBy(|a, b| a.date lt b.date)>
+<lem.(-a + b * c - d / e % f)>
+<lem.(a == b && c != d || !e)>
+<lem.(a lte b ? "small" : "big")>
+<lem.(x in xs)>
+<lem.(article is LinkPost)>
+<lem.([1, 2.5, true, false, null])>
+<lem.({a: 1, "b": [2]})>
+<lem.("Link: {linkTitle}")>

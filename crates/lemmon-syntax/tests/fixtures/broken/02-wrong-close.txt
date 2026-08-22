@@ -1,0 +1,19 @@
+Root@0..46
+  IfTag@0..32
+    OpenTag@0..7 "<lem-if"
+    Trivia@7..8 " "
+    Head@8..9
+      NameRef@8..9
+        Ident@8..9 "x"
+    Close@9..10 ">"
+    Block@10..22
+      Text@10..22
+        Text@10..22 "\n  <p>a</p>\n"
+    CloseTag@22..32
+      CloseTag@22..31 "</lem-for"
+      Close@31..32 ">"
+  Text@32..46
+    Text@32..46 "\n<p>after</p>\n"
+
+--- diagnostics
+22..31: found `</lem-for>` while `lem-if` is still open: expected `</lem-if>`

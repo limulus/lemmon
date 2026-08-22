@@ -1,0 +1,7 @@
+<!doctype html>
+<html>
+  <body>
+    <p>Plain HTML with a <lemon> element, a bare <lem> and an escaped &lt;lem.x&gt;.</p>
+    <!-- comments are text too -->
+  </body>
+</html>

@@ -1,0 +1,68 @@
+Root@0..53
+  AccessTag@0..16
+    OpenAccess@0..5 "<lem."
+    Head@5..15
+      CallExpr@5..15
+        NameRef@5..6
+          Ident@5..6 "f"
+        ArgList@6..15
+          LParen@6..7 "("
+          NameRef@7..8
+            Ident@7..8 "a"
+          Comma@8..9 ","
+          Trivia@9..10 " "
+          ListLit@10..15
+            LBracket@10..11 "["
+            Literal@11..12
+              Int@11..12 "1"
+            Comma@12..13 ","
+            Trivia@13..14 " "
+            Literal@14..15
+              Int@14..15 "2"
+    Close@15..16 ">"
+  Text@16..17
+    Text@16..17 "\n"
+  AccessTag@17..28
+    OpenAccess@17..22 "<lem."
+    Head@22..27
+      IndexExpr@22..27
+        NameRef@22..23
+          Ident@22..23 "m"
+        LBracket@23..24 "["
+        Literal@24..27
+          StringLit@24..27 "\"k\""
+    Close@27..28 ">"
+  Text@28..29
+    Text@28..29 "\n"
+  AccessTag@29..43
+    OpenAccess@29..34 "<lem."
+    Head@34..42
+      ParenExpr@34..41
+        LParen@34..35 "("
+        BinaryExpr@35..40
+          NameRef@35..36
+            Ident@35..36 "a"
+          Trivia@36..37 " "
+          Plus@37..38 "+"
+          Trivia@38..39 " "
+          NameRef@39..40
+            Ident@39..40 "b"
+        RParen@40..41 ")"
+      Error@41..42
+        RParen@41..42 ")"
+    Close@42..43 ">"
+  Text@43..44
+    Text@43..44 "\n"
+  AccessTag@44..52
+    OpenAccess@44..49 "<lem."
+    Head@49..51
+      NameRef@49..51
+        Ident@49..51 "ok"
+    Close@51..52 ">"
+  Text@52..53
+    Text@52..53 "\n"
+
+--- diagnostics
+15..16: expected `]` before `>`
+27..28: expected `]` before `>`
+41..42: unexpected `)` in tag head

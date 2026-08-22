@@ -1,0 +1,72 @@
+Root@0..116
+  ElseTag@0..12
+    OpenTag@0..9 "<lem-else"
+    Trivia@9..10 " "
+    Head@10..10
+    SelfClose@10..12 "/>"
+  Text@12..13
+    Text@12..13 "\n"
+  ForTag@13..66
+    OpenTag@13..21 "<lem-for"
+    Trivia@21..22 " "
+    Head@22..32
+      ForBinding@22..23
+        Ident@22..23 "p"
+      Trivia@23..24 " "
+      In@24..26 "in"
+      Trivia@26..27 " "
+      NameRef@27..32
+        Ident@27..32 "posts"
+    Close@32..33 ">"
+    Block@33..56
+      Text@33..36
+        Text@33..36 "\n  "
+      ElseIfTag@36..55
+        OpenTag@36..48 "<lem-else-if"
+        Trivia@48..49 " "
+        Head@49..52
+          MemberExpr@49..52
+            NameRef@49..50
+              Ident@49..50 "p"
+            Dot@50..51 "."
+            Ident@51..52 "x"
+        Trivia@52..53 " "
+        SelfClose@53..55 "/>"
+      Text@55..56
+        Text@55..56 "\n"
+    CloseTag@56..66
+      CloseTag@56..65 "</lem-for"
+      Close@65..66 ">"
+  Text@66..67
+    Text@66..67 "\n"
+  IfTag@67..115
+    OpenTag@67..74 "<lem-if"
+    Trivia@74..75 " "
+    Head@75..76
+      NameRef@75..76
+        Ident@75..76 "a"
+    Close@76..77 ">"
+    Block@77..106
+      ElseTag@77..89
+        OpenTag@77..86 "<lem-else"
+        Trivia@86..87 " "
+        Head@87..87
+        SelfClose@87..89 "/>"
+      ElseIfTag@89..106
+        OpenTag@89..101 "<lem-else-if"
+        Trivia@101..102 " "
+        Head@102..103
+          NameRef@102..103
+            Ident@102..103 "b"
+        Trivia@103..104 " "
+        SelfClose@104..106 "/>"
+    CloseTag@106..115
+      CloseTag@106..114 "</lem-if"
+      Close@114..115 ">"
+  Text@115..116
+    Text@115..116 "\n"
+
+--- diagnostics
+0..9: `lem-else` outside `lem-if`
+36..48: `lem-else-if` is only allowed inside `lem-if`
+89..101: `lem-else-if` cannot follow `lem-else`

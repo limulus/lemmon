@@ -1,0 +1,12 @@
+<lem-let preview = article.image ?? article.hero />
+<lem-let count: int = xs.length>
+<lem-let label: string? = null />
+<lem-let chips>
+  <li><lem.authorChip(article, nolink: true)></li>
+</lem-let>
+<lem-fn articleCard(article: Article, size: Size?)>
+  <article><lem.article.title></article>
+</lem-fn>
+<lem-fn spacer()>
+  <hr>
+</lem-fn>

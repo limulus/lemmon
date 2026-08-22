@@ -1,0 +1,326 @@
+Root@0..998
+  FnBlock@0..997
+    OpenTag@0..7 "<lem-fn"
+    Trivia@7..8 " "
+    Head@8..37
+      Ident@8..19 "articleCard"
+      Params@19..37
+        LParen@19..20 "("
+        Param@20..36
+          Ident@20..27 "article"
+          TypeAnnotation@27..36
+            Colon@27..28 ":"
+            Trivia@28..29 " "
+            Ident@29..36 "Article"
+        RParen@36..37 ")"
+    Close@37..38 ">"
+    Block@38..988
+      Text@38..85
+        Text@38..85 "\n  <article class=\"article-card\">\n    <a"…
+      AccessTag@85..102
+        OpenAccess@85..90 "<lem."
+        Head@90..101
+          MemberExpr@90..101
+            NameRef@90..97
+              Ident@90..97 "article"
+            Dot@97..98 "."
+            Ident@98..101 "url"
+        Close@101..102 ">"
+      Text@102..111
+        Text@102..111 "\">\n      "
+      LetVoid@111..162
+        OpenTag@111..119 "<lem-let"
+        Trivia@119..120 " "
+        Head@120..159
+          Ident@120..127 "preview"
+          Trivia@127..128 " "
+          Eq@128..129 "="
+          Trivia@129..130 " "
+          BinaryExpr@130..159
+            MemberExpr@130..143
+              NameRef@130..137
+                Ident@130..137 "article"
+              Dot@137..138 "."
+              Ident@138..143 "image"
+            Trivia@143..144 " "
+            QuestionQuestion@144..146 "??"
+            Trivia@146..147 " "
+            MemberExpr@147..159
+              NameRef@147..154
+                Ident@147..154 "article"
+              Dot@154..155 "."
+              Ident@155..159 "hero"
+        Trivia@159..160 " "
+        SelfClose@160..162 "/>"
+      Text@162..169
+        Text@162..169 "\n      "
+      IfTag@169..379
+        OpenTag@169..176 "<lem-if"
+        Trivia@176..177 " "
+        Head@177..184
+          NameRef@177..184
+            Ident@177..184 "preview"
+        Close@184..185 ">"
+        Block@185..370
+          Text@185..194
+            Text@185..194 "\n        "
+          AccessTag@194..240
+            OpenAccess@194..199 "<lem."
+            Head@199..239
+              CallExpr@199..239
+                NameRef@199..206
+                  Ident@199..206 "picture"
+                ArgList@206..239
+                  LParen@206..207 "("
+                  NameRef@207..214
+                    Ident@207..214 "preview"
+                  Comma@214..215 ","
+                  Trivia@215..216 " "
+                  ListLit@216..220
+                    LBracket@216..217 "["
+                    NameRef@217..219
+                      Ident@217..219 "md"
+                    RBracket@219..220 "]"
+                  Comma@220..221 ","
+                  Trivia@221..222 " "
+                  NamedArg@222..238
+                    Ident@222..227 "class"
+                    Colon@227..228 ":"
+                    Trivia@228..229 " "
+                    Literal@229..238
+                      StringLit@229..238 "\"preview\""
+                  RParen@238..239 ")"
+            Close@239..240 ">"
+          Text@240..247
+            Text@240..247 "\n      "
+          ElseIfTag@247..274
+            OpenTag@247..259 "<lem-else-if"
+            Trivia@259..260 " "
+            Head@260..271
+              MemberExpr@260..271
+                NameRef@260..267
+                  Ident@260..267 "article"
+                Dot@267..268 "."
+                Ident@268..271 "vod"
+            Trivia@271..272 " "
+            SelfClose@272..274 "/>"
+          Text@274..293
+            Text@274..293 "\n        <img src=\""
+          AccessTag@293..317
+            OpenAccess@293..298 "<lem."
+            Head@298..316
+              MemberExpr@298..316
+                MemberExpr@298..309
+                  NameRef@298..305
+                    Ident@298..305 "article"
+                  Dot@305..306 "."
+                  Ident@306..309 "vod"
+                Dot@309..310 "."
+                Ident@310..316 "poster"
+            Close@316..317 ">"
+          Text@317..324
+            Text@317..324 "\" alt=\""
+          AccessTag@324..345
+            OpenAccess@324..329 "<lem."
+            Head@329..344
+              MemberExpr@329..344
+                MemberExpr@329..340
+                  NameRef@329..336
+                    Ident@329..336 "article"
+                  Dot@336..337 "."
+                  Ident@337..340 "vod"
+                Dot@340..341 "."
+                Ident@341..344 "alt"
+            Close@344..345 ">"
+          Text@345..370
+            Text@345..370 "\" class=\"preview\">\n      "
+        CloseTag@370..379
+          CloseTag@370..378 "</lem-if"
+          Close@378..379 ">"
+      Text@379..444
+        Text@379..444 "\n      <div class=\"text-content\">\n      "…
+      AccessTag@444..463
+        OpenAccess@444..449 "<lem."
+        Head@449..462
+          MemberExpr@449..462
+            NameRef@449..456
+              Ident@449..456 "article"
+            Dot@456..457 "."
+            Ident@457..462 "title"
+        Close@462..463 ">"
+      Text@463..479
+        Text@463..479 "</h1>\n          "
+      LetBlock@479..820
+        OpenTag@479..487 "<lem-let"
+        Trivia@487..488 " "
+        Head@488..493
+          Ident@488..493 "chips"
+        Close@493..494 ">"
+        Block@494..810
+          Text@494..511
+            Text@494..511 "\n            <li>"
+          AccessTag@511..550
+            OpenAccess@511..516 "<lem."
+            Head@516..549
+              CallExpr@516..549
+                NameRef@516..526
+                  Ident@516..526 "authorChip"
+                ArgList@526..549
+                  LParen@526..527 "("
+                  NameRef@527..534
+                    Ident@527..534 "article"
+                  Comma@534..535 ","
+                  Trivia@535..536 " "
+                  NamedArg@536..548
+                    Ident@536..542 "nolink"
+                    Colon@542..543 ":"
+                    Trivia@543..544 " "
+                    Literal@544..548
+                      True@544..548 "true"
+                  RParen@548..549 ")"
+            Close@549..550 ">"
+          Text@550..572
+            Text@550..572 "</li>\n            <li>"
+          AccessTag@572..600
+            OpenAccess@572..577 "<lem."
+            Head@577..599
+              CallExpr@577..599
+                NameRef@577..590
+                  Ident@577..590 "publishedChip"
+                ArgList@590..599
+                  LParen@590..591 "("
+                  NameRef@591..598
+                    Ident@591..598 "article"
+                  RParen@598..599 ")"
+            Close@599..600 ">"
+          Text@600..618
+            Text@600..618 "</li>\n            "
+          IfTag@618..799
+            OpenTag@618..625 "<lem-if"
+            Trivia@625..626 " "
+            Head@626..645
+              TypeTest@626..645
+                NameRef@626..633
+                  Ident@626..633 "article"
+                Trivia@633..634 " "
+                Is@634..636 "is"
+                Trivia@636..637 " "
+                Ident@637..645 "LinkPost"
+            Close@645..646 ">"
+            Block@646..790
+              Text@646..665
+                Text@646..665 "\n              <li>"
+              AccessTag@665..702
+                OpenAccess@665..670 "<lem."
+                Head@670..701
+                  CallExpr@670..701
+                    NameRef@670..678
+                      Ident@670..678 "linkChip"
+                    ArgList@678..701
+                      LParen@678..679 "("
+                      NameRef@679..686
+                        Ident@679..686 "article"
+                      Comma@686..687 ","
+                      Trivia@687..688 " "
+                      NamedArg@688..700
+                        Ident@688..694 "nolink"
+                        Colon@694..695 ":"
+                        Trivia@695..696 " "
+                        Literal@696..700
+                          True@696..700 "true"
+                      RParen@700..701 ")"
+                Close@701..702 ">"
+              Text@702..720
+                Text@702..720 "</li>\n            "
+              ElseTag@720..730
+                OpenTag@720..729 "<lem-else"
+                Head@729..729
+                Close@729..730 ">"
+              Text@730..749
+                Text@730..749 "\n              <li>"
+              AccessTag@749..772
+                OpenAccess@749..754 "<lem."
+                Head@754..771
+                  CallExpr@754..771
+                    NameRef@754..762
+                      Ident@754..762 "timeChip"
+                    ArgList@762..771
+                      LParen@762..763 "("
+                      NameRef@763..770
+                        Ident@763..770 "article"
+                      RParen@770..771 ")"
+                Close@771..772 ">"
+              Text@772..790
+                Text@772..790 "</li>\n            "
+            CloseTag@790..799
+              CloseTag@790..798 "</lem-if"
+              Close@798..799 ">"
+          Text@799..810
+            Text@799..810 "\n          "
+        CloseTag@810..820
+          CloseTag@810..819 "</lem-let"
+          Close@819..820 ">"
+      Text@820..831
+        Text@820..831 "\n          "
+      AccessTag@831..871
+        OpenAccess@831..836 "<lem."
+        Head@836..870
+          CallExpr@836..870
+            NameRef@836..844
+              Ident@836..844 "chipList"
+            ArgList@844..870
+              LParen@844..845 "("
+              NamedArg@845..856
+                Ident@845..849 "size"
+                Colon@849..850 ":"
+                Trivia@850..851 " "
+                NameRef@851..856
+                  Ident@851..856 "small"
+              Comma@856..857 ","
+              Trivia@857..858 " "
+              NamedArg@858..869
+                Ident@858..862 "slot"
+                Colon@862..863 ":"
+                Trivia@863..864 " "
+                NameRef@864..869
+                  Ident@864..869 "chips"
+              RParen@869..870 ")"
+        Close@870..871 ">"
+      Text@871..901
+        Text@871..901 "\n        </header>\n        <p>"
+      AccessTag@901..948
+        OpenAccess@901..906 "<lem."
+        Head@906..947
+          ParenExpr@906..947
+            LParen@906..907 "("
+            BinaryExpr@907..946
+              BinaryExpr@907..940
+                MemberExpr@907..922
+                  NameRef@907..914
+                    Ident@907..914 "article"
+                  Dot@914..915 "."
+                  Ident@915..922 "subhead"
+                Trivia@922..923 " "
+                QuestionQuestion@923..925 "??"
+                Trivia@925..926 " "
+                MemberExpr@926..940
+                  NameRef@926..933
+                    Ident@926..933 "article"
+                  Dot@933..934 "."
+                  Ident@934..940 "teaser"
+              Trivia@940..941 " "
+              QuestionQuestion@941..943 "??"
+              Trivia@943..944 " "
+              Literal@944..946
+                StringLit@944..946 "\"\""
+            RParen@946..947 ")"
+        Close@947..948 ">"
+      Text@948..988
+        Text@948..988 "</p>\n      </div>\n    </a>\n  </article>\n"
+    CloseTag@988..997
+      CloseTag@988..996 "</lem-fn"
+      Close@996..997 ">"
+  Text@997..998
+    Text@997..998 "\n"
+
+--- diagnostics

@@ -1,14 +1,19 @@
 //! Scanner, parser, CST/AST, and diagnostics for Lemmon.
 //!
-//! The scanner ([`scan`]) is in place; the parser arrives with `∆7Ib`. [`Span`] is the
+//! The scanner ([`scan`]) lexes a file into lossless tokens; the parser ([`parse`])
+//! builds a rowan syntax tree over them and reports every problem with a [`Span`] — the
 //! one type every later stage depends on.
 
 mod diagnostic;
+mod parser;
 mod scanner;
+mod syntax_kind;
 mod token;
 
 pub use diagnostic::Diagnostic;
+pub use parser::{Parse, dump, parse};
 pub use scanner::{ScanResult, scan};
+pub use syntax_kind::{Lemmon, SyntaxElement, SyntaxKind, SyntaxNode, SyntaxToken};
 pub use token::{Token, TokenKind};
 
 /// A byte range into a source file.

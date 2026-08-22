@@ -1,0 +1,11 @@
+<ul>
+  <lem-for post in posts>
+    <li><lem.post.title></li>
+  <lem-else />
+    <li>No posts</li>
+  </lem-for>
+</ul>
+<lem-for x, i in xs><lem.i>: <lem.x></lem-for>
+<lem-for k, v in m>
+  <dt><lem.k></dt><dd><lem.v></dd>
+</lem-for>

@@ -1,0 +1,9 @@
+<lem-unknown>
+<lem-if a>
+  <lem.(1 +)>
+  <lem-let v = >
+<lem-else>
+  <lem-for in xs></lem-for>
+</lem-if>
+<lem-fn card(a: Article)>
+  <lem.card(a)>

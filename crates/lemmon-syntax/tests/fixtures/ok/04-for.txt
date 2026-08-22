@@ -1,0 +1,117 @@
+Root@0..230
+  Text@0..7
+    Text@0..7 "<ul>\n  "
+  ForTag@7..110
+    OpenTag@7..15 "<lem-for"
+    Trivia@15..16 " "
+    Head@16..29
+      ForBinding@16..20
+        Ident@16..20 "post"
+      Trivia@20..21 " "
+      In@21..23 "in"
+      Trivia@23..24 " "
+      NameRef@24..29
+        Ident@24..29 "posts"
+    Close@29..30 ">"
+    Block@30..100
+      Text@30..39
+        Text@30..39 "\n    <li>"
+      AccessTag@39..55
+        OpenAccess@39..44 "<lem."
+        Head@44..54
+          MemberExpr@44..54
+            NameRef@44..48
+              Ident@44..48 "post"
+            Dot@48..49 "."
+            Ident@49..54 "title"
+        Close@54..55 ">"
+      Text@55..63
+        Text@55..63 "</li>\n  "
+      ElseTag@63..75
+        OpenTag@63..72 "<lem-else"
+        Trivia@72..73 " "
+        Head@73..73
+        SelfClose@73..75 "/>"
+      Text@75..100
+        Text@75..100 "\n    <li>No posts</li>\n  "
+    CloseTag@100..110
+      CloseTag@100..109 "</lem-for"
+      Close@109..110 ">"
+  Text@110..117
+    Text@110..117 "\n</ul>\n"
+  ForTag@117..163
+    OpenTag@117..125 "<lem-for"
+    Trivia@125..126 " "
+    Head@126..136
+      ForBinding@126..130
+        Ident@126..127 "x"
+        Comma@127..128 ","
+        Trivia@128..129 " "
+        Ident@129..130 "i"
+      Trivia@130..131 " "
+      In@131..133 "in"
+      Trivia@133..134 " "
+      NameRef@134..136
+        Ident@134..136 "xs"
+    Close@136..137 ">"
+    Block@137..153
+      AccessTag@137..144
+        OpenAccess@137..142 "<lem."
+        Head@142..143
+          NameRef@142..143
+            Ident@142..143 "i"
+        Close@143..144 ">"
+      Text@144..146
+        Text@144..146 ": "
+      AccessTag@146..153
+        OpenAccess@146..151 "<lem."
+        Head@151..152
+          NameRef@151..152
+            Ident@151..152 "x"
+        Close@152..153 ">"
+    CloseTag@153..163
+      CloseTag@153..162 "</lem-for"
+      Close@162..163 ">"
+  Text@163..164
+    Text@163..164 "\n"
+  ForTag@164..229
+    OpenTag@164..172 "<lem-for"
+    Trivia@172..173 " "
+    Head@173..182
+      ForBinding@173..177
+        Ident@173..174 "k"
+        Comma@174..175 ","
+        Trivia@175..176 " "
+        Ident@176..177 "v"
+      Trivia@177..178 " "
+      In@178..180 "in"
+      Trivia@180..181 " "
+      NameRef@181..182
+        Ident@181..182 "m"
+    Close@182..183 ">"
+    Block@183..219
+      Text@183..190
+        Text@183..190 "\n  <dt>"
+      AccessTag@190..197
+        OpenAccess@190..195 "<lem."
+        Head@195..196
+          NameRef@195..196
+            Ident@195..196 "k"
+        Close@196..197 ">"
+      Text@197..206
+        Text@197..206 "</dt><dd>"
+      AccessTag@206..213
+        OpenAccess@206..211 "<lem."
+        Head@211..212
+          NameRef@211..212
+            Ident@211..212 "v"
+        Close@212..213 ">"
+      Text@213..219
+        Text@213..219 "</dd>\n"
+    CloseTag@219..229
+      CloseTag@219..228 "</lem-for"
+      Close@228..229 ">"
+  Text@229..230
+    Text@229..230 "\n"
+
+--- diagnostics

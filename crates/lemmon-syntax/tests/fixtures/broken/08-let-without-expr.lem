@@ -1,0 +1,8 @@
+<lem-let x = />
+<lem-let : int = 1 />
+<lem-let>
+  body
+</lem-let>
+<lem-fn (a: int)>
+</lem-fn>
+<lem.x>

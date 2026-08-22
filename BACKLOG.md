@@ -22,12 +22,14 @@ with VM render time under 1 ms/page. Everything here serves that demo.
 
 ### Core spike
 
-- ∆7Ib Parser bake-off — one-day lelwel spike against a hand-written recursive-descent start
-  (docs/architecture.md §Crates names the candidates); keep whichever gives better error
-  recovery for less code, and record the loser and why in the journal
-- ∆hw4 Parser → lossless CST + typed AST for the spike subset (`lem.`, `lem-if`, `lem-for`,
-  both `lem-let` forms, block `lem-fn`), spans everywhere, recovery good enough that a
-  half-typed template still yields a tree; needs: ∆7Ib
+- ∆jHE Recovery policy — when a tag's terminator or close contradicts its shape, the name
+  wins: `<lem-if x />` stays a block, a scanner-cut head adds no second diagnostic, a wrong
+  close never adopts and the real close is never "stray", unknown tags get one consistent
+  shape, scanner Error tokens enter the error state (no consequential diagnostic); rules
+  written into docs/language.md so tree-sitter can match them
+- ∆hw4 Typed AST over the ∆7Ib rowan CST for the spike subset — `AstNode` views with typed
+  accessors (`IfTag::condition()`, `ForTag::binding()`, `Expr`…) for the checker and
+  codegen, plus trailing commas decided in decisions.md; needs: ∆jHE
 - ∆TEJ Golden corpus harness — `tests/corpus/` inputs with expected trees/diagnostics (later
   expected HTML), cargo-test driven, so language changes are locked by tests from the first
   week and the future tree-sitter grammar has an agreement target; needs: ∆hw4

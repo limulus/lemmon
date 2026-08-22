@@ -1,0 +1,108 @@
+Root@0..147
+  UnknownTag@0..13
+    OpenTag@0..12 "<lem-unknown"
+    Head@12..12
+    Close@12..13 ">"
+  Text@13..14
+    Text@13..14 "\n"
+  IfTag@14..104
+    OpenTag@14..21 "<lem-if"
+    Trivia@21..22 " "
+    Head@22..23
+      NameRef@22..23
+        Ident@22..23 "a"
+    Close@23..24 ">"
+    Block@24..95
+      Text@24..27
+        Text@24..27 "\n  "
+      AccessTag@27..38
+        OpenAccess@27..32 "<lem."
+        Head@32..37
+          ParenExpr@32..37
+            LParen@32..33 "("
+            BinaryExpr@33..36
+              Literal@33..34
+                Int@33..34 "1"
+              Trivia@34..35 " "
+              Plus@35..36 "+"
+            RParen@36..37 ")"
+        Close@37..38 ">"
+      Text@38..41
+        Text@38..41 "\n  "
+      LetVoid@41..55
+        OpenTag@41..49 "<lem-let"
+        Trivia@49..50 " "
+        Head@50..53
+          Ident@50..51 "v"
+          Trivia@51..52 " "
+          Eq@52..53 "="
+        Trivia@53..54 " "
+        Close@54..55 ">"
+      Text@55..56
+        Text@55..56 "\n"
+      ElseTag@56..66
+        OpenTag@56..65 "<lem-else"
+        Head@65..65
+        Close@65..66 ">"
+      Text@66..69
+        Text@66..69 "\n  "
+      ForTag@69..94
+        OpenTag@69..77 "<lem-for"
+        Trivia@77..78 " "
+        Head@78..83
+          ForBinding@78..78
+          In@78..80 "in"
+          Trivia@80..81 " "
+          NameRef@81..83
+            Ident@81..83 "xs"
+        Close@83..84 ">"
+        Block@84..84
+        CloseTag@84..94
+          CloseTag@84..93 "</lem-for"
+          Close@93..94 ">"
+      Text@94..95
+        Text@94..95 "\n"
+    CloseTag@95..104
+      CloseTag@95..103 "</lem-if"
+      Close@103..104 ">"
+  Text@104..105
+    Text@104..105 "\n"
+  FnBlock@105..147
+    OpenTag@105..112 "<lem-fn"
+    Trivia@112..113 " "
+    Head@113..129
+      Ident@113..117 "card"
+      Params@117..129
+        LParen@117..118 "("
+        Param@118..128
+          Ident@118..119 "a"
+          TypeAnnotation@119..128
+            Colon@119..120 ":"
+            Trivia@120..121 " "
+            Ident@121..128 "Article"
+        RParen@128..129 ")"
+    Close@129..130 ">"
+    Block@130..147
+      Text@130..133
+        Text@130..133 "\n  "
+      AccessTag@133..146
+        OpenAccess@133..138 "<lem."
+        Head@138..145
+          CallExpr@138..145
+            NameRef@138..142
+              Ident@138..142 "card"
+            ArgList@142..145
+              LParen@142..143 "("
+              NameRef@143..144
+                Ident@143..144 "a"
+              RParen@144..145 ")"
+        Close@145..146 ">"
+      Text@146..147
+        Text@146..147 "\n"
+
+--- diagnostics
+0..12: unknown tag `lem-unknown`
+36..37: expected an expression, found `)`
+54..55: expected an expression before `>`
+78..80: expected a loop variable, found `in`
+105..112: unclosed `lem-fn`: expected `</lem-fn>` before end of input

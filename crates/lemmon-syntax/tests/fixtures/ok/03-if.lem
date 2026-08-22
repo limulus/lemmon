@@ -1,0 +1,8 @@
+<lem-if article.draft>
+  <p>Draft</p>
+<lem-else-if article.vod />
+  <p>Video</p>
+<lem-else>
+  <p>Published</p>
+</lem-if>
+<lem-if preview><img src="<lem.preview.url>"></lem-if>

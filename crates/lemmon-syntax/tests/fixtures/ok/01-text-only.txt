@@ -1,0 +1,5 @@
+Root@0..174
+  Text@0..174
+    Text@0..174 "<!doctype html>\n<html>\n  <body>\n    <p>P"…
+
+--- diagnostics

@@ -1,0 +1,164 @@
+Root@0..335
+  LetVoid@0..51
+    OpenTag@0..8 "<lem-let"
+    Trivia@8..9 " "
+    Head@9..48
+      Ident@9..16 "preview"
+      Trivia@16..17 " "
+      Eq@17..18 "="
+      Trivia@18..19 " "
+      BinaryExpr@19..48
+        MemberExpr@19..32
+          NameRef@19..26
+            Ident@19..26 "article"
+          Dot@26..27 "."
+          Ident@27..32 "image"
+        Trivia@32..33 " "
+        QuestionQuestion@33..35 "??"
+        Trivia@35..36 " "
+        MemberExpr@36..48
+          NameRef@36..43
+            Ident@36..43 "article"
+          Dot@43..44 "."
+          Ident@44..48 "hero"
+    Trivia@48..49 " "
+    SelfClose@49..51 "/>"
+  Text@51..52
+    Text@51..52 "\n"
+  LetVoid@52..84
+    OpenTag@52..60 "<lem-let"
+    Trivia@60..61 " "
+    Head@61..83
+      Ident@61..66 "count"
+      TypeAnnotation@66..71
+        Colon@66..67 ":"
+        Trivia@67..68 " "
+        Ident@68..71 "int"
+      Trivia@71..72 " "
+      Eq@72..73 "="
+      Trivia@73..74 " "
+      MemberExpr@74..83
+        NameRef@74..76
+          Ident@74..76 "xs"
+        Dot@76..77 "."
+        Ident@77..83 "length"
+    Close@83..84 ">"
+  Text@84..85
+    Text@84..85 "\n"
+  LetVoid@85..118
+    OpenTag@85..93 "<lem-let"
+    Trivia@93..94 " "
+    Head@94..115
+      Ident@94..99 "label"
+      TypeAnnotation@99..108
+        Colon@99..100 ":"
+        Trivia@100..101 " "
+        Ident@101..107 "string"
+        Question@107..108 "?"
+      Trivia@108..109 " "
+      Eq@109..110 "="
+      Trivia@110..111 " "
+      Literal@111..115
+        Null@111..115 "null"
+    Trivia@115..116 " "
+    SelfClose@116..118 "/>"
+  Text@118..119
+    Text@118..119 "\n"
+  LetBlock@119..196
+    OpenTag@119..127 "<lem-let"
+    Trivia@127..128 " "
+    Head@128..133
+      Ident@128..133 "chips"
+    Close@133..134 ">"
+    Block@134..186
+      Text@134..141
+        Text@134..141 "\n  <li>"
+      AccessTag@141..180
+        OpenAccess@141..146 "<lem."
+        Head@146..179
+          CallExpr@146..179
+            NameRef@146..156
+              Ident@146..156 "authorChip"
+            ArgList@156..179
+              LParen@156..157 "("
+              NameRef@157..164
+                Ident@157..164 "article"
+              Comma@164..165 ","
+              Trivia@165..166 " "
+              NamedArg@166..178
+                Ident@166..172 "nolink"
+                Colon@172..173 ":"
+                Trivia@173..174 " "
+                Literal@174..178
+                  True@174..178 "true"
+              RParen@178..179 ")"
+        Close@179..180 ">"
+      Text@180..186
+        Text@180..186 "</li>\n"
+    CloseTag@186..196
+      CloseTag@186..195 "</lem-let"
+      Close@195..196 ">"
+  Text@196..197
+    Text@196..197 "\n"
+  FnBlock@197..299
+    OpenTag@197..204 "<lem-fn"
+    Trivia@204..205 " "
+    Head@205..247
+      Ident@205..216 "articleCard"
+      Params@216..247
+        LParen@216..217 "("
+        Param@217..233
+          Ident@217..224 "article"
+          TypeAnnotation@224..233
+            Colon@224..225 ":"
+            Trivia@225..226 " "
+            Ident@226..233 "Article"
+        Comma@233..234 ","
+        Trivia@234..235 " "
+        Param@235..246
+          Ident@235..239 "size"
+          TypeAnnotation@239..246
+            Colon@239..240 ":"
+            Trivia@240..241 " "
+            Ident@241..245 "Size"
+            Question@245..246 "?"
+        RParen@246..247 ")"
+    Close@247..248 ">"
+    Block@248..290
+      Text@248..260
+        Text@248..260 "\n  <article>"
+      AccessTag@260..279
+        OpenAccess@260..265 "<lem."
+        Head@265..278
+          MemberExpr@265..278
+            NameRef@265..272
+              Ident@265..272 "article"
+            Dot@272..273 "."
+            Ident@273..278 "title"
+        Close@278..279 ">"
+      Text@279..290
+        Text@279..290 "</article>\n"
+    CloseTag@290..299
+      CloseTag@290..298 "</lem-fn"
+      Close@298..299 ">"
+  Text@299..300
+    Text@299..300 "\n"
+  FnBlock@300..334
+    OpenTag@300..307 "<lem-fn"
+    Trivia@307..308 " "
+    Head@308..316
+      Ident@308..314 "spacer"
+      Params@314..316
+        LParen@314..315 "("
+        RParen@315..316 ")"
+    Close@316..317 ">"
+    Block@317..325
+      Text@317..325
+        Text@317..325 "\n  <hr>\n"
+    CloseTag@325..334
+      CloseTag@325..333 "</lem-fn"
+      Close@333..334 ">"
+  Text@334..335
+    Text@334..335 "\n"
+
+--- diagnostics

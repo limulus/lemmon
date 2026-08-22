@@ -84,14 +84,16 @@ pub(crate) fn string_literal(lex: &mut Lexer<TokenKind>) -> Result<(), ScanError
     let mut chars = rest.char_indices();
     while let Some((at, c)) = chars.next() {
         match c {
-            '\\' if !matches!(chars.clone().next(), Some((_, '\n'))) => {
+            '\\' if !matches!(chars.clone().next(), Some((_, '\n' | '\r'))) => {
                 chars.next();
             }
             '"' => {
                 lex.bump(at + 1);
                 return Ok(());
             }
-            '\n' => {
+            // A bare `\r` counts as a line end too, so that CRLF sources never get
+            // the `\r` inside an unterminated string's span.
+            '\n' | '\r' => {
                 lex.bump(at);
                 return Err(ScanError::UnterminatedString);
             }
@@ -508,6 +510,26 @@ mod tests {
                 ),
             ]
         );
+    }
+
+    #[test]
+    fn ends_an_unterminated_string_before_a_carriage_return() {
+        assert_eq!(
+            lex("<lem.(\"abc\r\n)>"),
+            vec![
+                (TokenKind::OpenAccess, "<lem."),
+                (TokenKind::LParen, "("),
+                (TokenKind::Error, "\"abc"),
+                (TokenKind::Trivia, "\r\n"),
+                (TokenKind::RParen, ")"),
+                (TokenKind::Close, ">"),
+            ]
+        );
+    }
+
+    #[test]
+    fn does_not_let_a_backslash_escape_a_carriage_return() {
+        assert_eq!(lex("<lem.(\"a\\\r\n)>")[2], (TokenKind::Error, "\"a\\"));
     }
 
     #[test]

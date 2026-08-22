@@ -1,0 +1,5 @@
+<lem-else />
+<lem-for p in posts>
+  <lem-else-if p.x />
+</lem-for>
+<lem-if a><lem-else /><lem-else-if b /></lem-if>

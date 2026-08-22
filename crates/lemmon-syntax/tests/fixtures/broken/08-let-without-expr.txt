@@ -1,0 +1,77 @@
+Root@0..102
+  LetVoid@0..15
+    OpenTag@0..8 "<lem-let"
+    Trivia@8..9 " "
+    Head@9..12
+      Ident@9..10 "x"
+      Trivia@10..11 " "
+      Eq@11..12 "="
+    Trivia@12..13 " "
+    SelfClose@13..15 "/>"
+  Text@15..16
+    Text@15..16 "\n"
+  LetVoid@16..37
+    OpenTag@16..24 "<lem-let"
+    Trivia@24..25 " "
+    Head@25..34
+      TypeAnnotation@25..30
+        Colon@25..26 ":"
+        Trivia@26..27 " "
+        Ident@27..30 "int"
+      Trivia@30..31 " "
+      Eq@31..32 "="
+      Trivia@32..33 " "
+      Literal@33..34
+        Int@33..34 "1"
+    Trivia@34..35 " "
+    SelfClose@35..37 "/>"
+  Text@37..38
+    Text@37..38 "\n"
+  LetBlock@38..65
+    OpenTag@38..46 "<lem-let"
+    Head@46..46
+    Close@46..47 ">"
+    Block@47..55
+      Text@47..55
+        Text@47..55 "\n  body\n"
+    CloseTag@55..65
+      CloseTag@55..64 "</lem-let"
+      Close@64..65 ">"
+  Text@65..66
+    Text@65..66 "\n"
+  FnBlock@66..93
+    OpenTag@66..73 "<lem-fn"
+    Trivia@73..74 " "
+    Head@74..82
+      Params@74..82
+        LParen@74..75 "("
+        Param@75..81
+          Ident@75..76 "a"
+          TypeAnnotation@76..81
+            Colon@76..77 ":"
+            Trivia@77..78 " "
+            Ident@78..81 "int"
+        RParen@81..82 ")"
+    Close@82..83 ">"
+    Block@83..84
+      Text@83..84
+        Text@83..84 "\n"
+    CloseTag@84..93
+      CloseTag@84..92 "</lem-fn"
+      Close@92..93 ">"
+  Text@93..94
+    Text@93..94 "\n"
+  AccessTag@94..101
+    OpenAccess@94..99 "<lem."
+    Head@99..100
+      NameRef@99..100
+        Ident@99..100 "x"
+    Close@100..101 ">"
+  Text@101..102
+    Text@101..102 "\n"
+
+--- diagnostics
+13..15: expected an expression before `/>`
+25..26: expected a name, found `:`
+46..47: expected a name before `>`
+74..75: expected a function name, found `(`

@@ -1,0 +1,55 @@
+Root@0..114
+  UnknownTag@0..36
+    OpenTag@0..8 "<lem-iff"
+    Trivia@8..9 " "
+    Head@9..10
+      Ident@9..10 "x"
+    Close@10..11 ">"
+    Block@11..26
+      Text@11..26
+        Text@11..26 "\n  <p>body</p>\n"
+    CloseTag@26..36
+      CloseTag@26..35 "</lem-iff"
+      Close@35..36 ">"
+  Text@36..37
+    Text@36..37 "\n"
+  UnknownTag@37..55
+    OpenTag@37..46 "<lem-lett"
+    Trivia@46..47 " "
+    Head@47..52
+      Ident@47..48 "y"
+      Trivia@48..49 " "
+      Eq@49..50 "="
+      Trivia@50..51 " "
+      Int@51..52 "1"
+    Trivia@52..53 " "
+    SelfClose@53..55 "/>"
+  Text@55..56
+    Text@55..56 "\n"
+  UnknownTag@56..74
+    OpenTag@56..71 "<lem-frobnicate"
+    Trivia@71..72 " "
+    Head@72..72
+    SelfClose@72..74 "/>"
+  Text@74..75
+    Text@74..75 "\n"
+  IfTag@75..113
+    OpenTag@75..82 "<lem-if"
+    Trivia@82..83 " "
+    Head@83..84
+      NameRef@83..84
+        Ident@83..84 "y"
+    Close@84..85 ">"
+    Block@85..104
+      Text@85..104
+        Text@85..104 "<i>still parsed</i>"
+    CloseTag@104..113
+      CloseTag@104..112 "</lem-if"
+      Close@112..113 ">"
+  Text@113..114
+    Text@113..114 "\n"
+
+--- diagnostics
+0..8: unknown tag `lem-iff`; did you mean `lem-if`?
+37..46: unknown tag `lem-lett`; did you mean `lem-let`?
+56..71: unknown tag `lem-frobnicate`

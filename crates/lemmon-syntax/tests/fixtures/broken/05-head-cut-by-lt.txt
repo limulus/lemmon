@@ -1,0 +1,33 @@
+Root@0..52
+  IfTag@0..52
+    OpenTag@0..7 "<lem-if"
+    Trivia@7..8 " "
+    Head@8..12
+      BinaryExpr@8..12
+        NameRef@8..9
+          Ident@8..9 "x"
+        Trivia@9..10 " "
+        Lt@10..12 "lt"
+    Trivia@12..13 "\n"
+    Block@13..52
+      Text@13..23
+        Text@13..23 "<p>hi</p>\n"
+      IfTag@23..51
+        OpenTag@23..30 "<lem-if"
+        Trivia@30..31 " "
+        Head@31..32
+          NameRef@31..32
+            Ident@31..32 "z"
+        Close@32..33 ">"
+        Block@33..42
+          Text@33..42
+            Text@33..42 "<i>ok</i>"
+        CloseTag@42..51
+          CloseTag@42..50 "</lem-if"
+          Close@50..51 ">"
+      Text@51..52
+        Text@51..52 "\n"
+
+--- diagnostics
+0..7: unclosed `lem-if`: expected `</lem-if>` before end of input
+0..13: unterminated tag: expected `>` before `<`
