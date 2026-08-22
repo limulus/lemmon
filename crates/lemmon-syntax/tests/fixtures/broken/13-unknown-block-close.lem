@@ -1,0 +1,4 @@
+<lem-fore x in xs>
+  <p>a</p>
+</lem-fore>
+<lem-if y><i>still parsed</i></lem-if>

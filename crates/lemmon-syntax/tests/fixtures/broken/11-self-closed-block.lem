@@ -1,0 +1,4 @@
+<lem-if x />
+  <p>still the body</p>
+</lem-if>
+<p>after</p>

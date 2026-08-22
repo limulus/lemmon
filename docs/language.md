@@ -59,6 +59,39 @@ Scanner rules the parser and the tree-sitter grammar must agree on:
 - `lt lte gt gte in is as true false null` are reserved words: they cannot be used as
   identifiers or as named-argument names.
 
+Parser recovery rules — what a tag's shape is when its terminator or close tag
+contradicts it, and what each such mistake costs. The tree-sitter grammar must agree
+with the tag boundaries these imply; the diagnostic counts are the Rust parser's
+contract. The name wins in every case; nothing is decided by lookahead or by what
+follows:
+
+- A block tag's name decides its shape. `<lem-if x />` is reported (a block tag cannot
+  be self-closed) but stays a block: its body and close tag are parsed as usual.
+- A head the scanner cut short (at a `<` or the end of input) still opens its block,
+  so a block whose `>` was forgotten but whose close tag is present costs exactly the
+  scanner's diagnostic. Such a block reaching the end of input adds no "unclosed"
+  diagnostic: that is a consequence of the cut, not a second mistake.
+- A close tag that matches nothing open is never adopted as the innermost block's
+  close. It is reported and kept as an error node inside that block's body, and the
+  author's real close tag, when it comes, closes the block — it is never "stray". A
+  close tag that matches an *outer* open block implicitly closes every block inside
+  it, with one diagnostic at the close tag naming the innermost; with nothing open at
+  all, a close tag is stray. A close tag the scanner cut short closes the innermost
+  block if its name matches and is otherwise kept as an error node, adding no
+  diagnostic of its own.
+- A block still open at the end of input is reported as unclosed, at its opener, even
+  when a mistaken `/>` or a wrong close tag inside it was already reported: the
+  parser cannot tell a forgotten close from either, so both mistakes are named.
+- An unknown `lem-*` tag is always void, whatever its did-you-mean neighbour's shape
+  and whether it ends in `>` or `/>`. A block shape would need its close tag matched
+  by name, which a context-free grammar cannot express. Its close tag is an unknown
+  tag too, reported with the same did-you-mean wherever it appears.
+- A scanner error token inside a head (an unlexable character, an unterminated
+  string) is the scanner's to report: whatever the grammar expected in that token's
+  place goes unsaid, while mistakes in the tokens that are present — a `/>` on a
+  block tag, a reserved word as a name, a close tag after the head — are still
+  reported.
+
 ## Tags
 
 | Tag | Head | Semantics |

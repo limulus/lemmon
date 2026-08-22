@@ -1,13 +1,13 @@
 Root@0..114
-  UnknownTag@0..36
+  UnknownTag@0..11
     OpenTag@0..8 "<lem-iff"
     Trivia@8..9 " "
     Head@9..10
       Ident@9..10 "x"
     Close@10..11 ">"
-    Block@11..26
-      Text@11..26
-        Text@11..26 "\n  <p>body</p>\n"
+  Text@11..26
+    Text@11..26 "\n  <p>body</p>\n"
+  Error@26..36
     CloseTag@26..36
       CloseTag@26..35 "</lem-iff"
       Close@35..36 ">"
@@ -51,5 +51,6 @@ Root@0..114
 
 --- diagnostics
 0..8: unknown tag `lem-iff`; did you mean `lem-if`?
+26..35: unknown tag `lem-iff`; did you mean `lem-if`?
 37..46: unknown tag `lem-lett`; did you mean `lem-let`?
 56..71: unknown tag `lem-frobnicate`

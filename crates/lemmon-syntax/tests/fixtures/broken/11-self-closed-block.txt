@@ -1,0 +1,20 @@
+Root@0..60
+  IfTag@0..46
+    OpenTag@0..7 "<lem-if"
+    Trivia@7..8 " "
+    Head@8..9
+      NameRef@8..9
+        Ident@8..9 "x"
+    Trivia@9..10 " "
+    SelfClose@10..12 "/>"
+    Block@12..37
+      Text@12..37
+        Text@12..37 "\n  <p>still the body</p>\n"
+    CloseTag@37..46
+      CloseTag@37..45 "</lem-if"
+      Close@45..46 ">"
+  Text@46..60
+    Text@46..60 "\n<p>after</p>\n"
+
+--- diagnostics
+10..12: `lem-if` is a block tag and cannot be self-closed: expected `>`

@@ -29,5 +29,4 @@ Root@0..52
         Text@51..52 "\n"
 
 --- diagnostics
-0..7: unclosed `lem-if`: expected `</lem-if>` before end of input
 0..13: unterminated tag: expected `>` before `<`

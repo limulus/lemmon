@@ -10,9 +10,15 @@
 //!
 //! Recovery is deliberately shallow and never guesses: an unexpected token sequence is
 //! wrapped in an `Error` node with one diagnostic, a missing token is reported where it
-//! should have been and parsing carries on as if it were there. Two errors are never
-//! reported at the same byte, which keeps one mistake at one diagnostic even when
-//! several nested constructs are all cut short by the same `>`.
+//! should have been and parsing carries on as if it were there. After a diagnostic
+//! about the current token the parser is in an *error state* until it consumes a
+//! token, and further diagnostics about that same token are dropped as restatements —
+//! which keeps one mistake at one diagnostic even when several nested constructs are
+//! all cut short by the same `>`. A diagnostic anchored elsewhere (an unclosed block,
+//! reported at its opener) is a separate mistake: it is always kept and never enters
+//! the error state. The policies for what a tag's shape is when its terminator or
+//! close contradicts it are listed in `docs/language.md` (§Scanner, parser rules) and
+//! implemented in [`template`].
 
 mod expr;
 mod template;
@@ -159,10 +165,15 @@ struct Parser<'src> {
     pos: usize,
     events: Vec<Event>,
     diagnostics: Vec<Diagnostic>,
-    /// Token position of the last diagnostic. Until a token is consumed the parser is
-    /// in an error state, and further diagnostics would only restate the first: one
-    /// `>` cutting several nested constructs short is one mistake.
+    /// Token position of the last diagnostic about the current token. Until a token is
+    /// consumed the parser is in an error state, and further diagnostics about that
+    /// token would only restate the first: one `>` cutting several nested constructs
+    /// short is one mistake.
     error_pos: Option<usize>,
+    /// Whether a scanner error token was skipped since the last consumed token. The
+    /// scanner reported it; whatever the grammar expected in its place goes unsaid,
+    /// while diagnostics about the tokens that are present are still reported.
+    displaced: bool,
     /// Current nesting of blocks and bracketed expressions, capped at [`MAX_DEPTH`].
     depth: u32,
 }
@@ -181,6 +192,7 @@ impl<'src> Parser<'src> {
             events: Vec::new(),
             diagnostics: Vec::new(),
             error_pos: None,
+            displaced: false,
             depth: 0,
         };
         parser.skip_insignificant();
@@ -188,11 +200,13 @@ impl<'src> Parser<'src> {
     }
 
     /// Trivia and scanner-error tokens are invisible to the grammar; the sink emits
-    /// them in place. Error tokens carry no extra diagnostic — the scanner reported them.
+    /// them in place. An error token carries no extra diagnostic — the scanner reported
+    /// it — but it marks the parser as [`displaced`](Self::displaced).
     fn skip_insignificant(&mut self) {
         while let Some(token) = self.tokens.get(self.pos)
             && matches!(token.kind, TokenKind::Trivia | TokenKind::Error)
         {
+            self.displaced |= token.kind == TokenKind::Error;
             self.pos += 1;
         }
     }
@@ -259,6 +273,7 @@ impl<'src> Parser<'src> {
         assert!(self.pos < self.tokens.len(), "bump at end of input");
         self.events.push(Event::Token);
         self.pos += 1;
+        self.displaced = false;
         self.skip_insignificant();
     }
 
@@ -282,9 +297,10 @@ impl<'src> Parser<'src> {
     }
 
     /// Reports that `what` was expected at the current token. Silent when the head was
-    /// cut by the scanner, which has already said so.
+    /// cut by the scanner or a scanner error token was just skipped: the scanner has
+    /// already said so, and this would only name what its mistake displaced.
     fn error_expected(&mut self, what: &str) {
-        if self.at_cut_head() {
+        if self.at_cut_head() || self.displaced {
             return;
         }
         let span = self.current_span();
@@ -299,14 +315,26 @@ impl<'src> Parser<'src> {
     }
 
     /// Records a diagnostic. One about the current token is dropped while in the error
-    /// state — it would only restate the last one. A diagnostic anchored elsewhere (an
-    /// unclosed block, reported at its opener) is a separate mistake and always kept.
+    /// state — it would only restate the last one — and otherwise enters it. A
+    /// diagnostic anchored elsewhere (an unclosed block, reported at its opener) is a
+    /// separate mistake: always kept, and it says nothing about the current token, so
+    /// it does not enter the error state either.
     fn error(&mut self, message: impl Into<String>, span: Span) {
-        if self.in_error_state() && span.start == self.current_span().start {
-            return;
+        if span.start == self.current_span().start {
+            if self.in_error_state() {
+                return;
+            }
+            self.error_pos = Some(self.pos);
         }
-        self.error_pos = Some(self.pos);
         self.diagnostics.push(Diagnostic::new(message, span));
+    }
+
+    /// Records a diagnostic about a run of tokens just skipped, up to the current
+    /// token. What the grammar wanted next is fallout of that run, so the current
+    /// token enters the error state as if the diagnostic were about it.
+    fn error_skipped(&mut self, message: impl Into<String>, span: Span) {
+        self.diagnostics.push(Diagnostic::new(message, span));
+        self.error_pos = Some(self.pos);
     }
 
     /// Enters one nesting level; `false` when [`MAX_DEPTH`] is reached, in which case
@@ -329,13 +357,28 @@ impl<'src> Parser<'src> {
         self.error_pos == Some(self.pos)
     }
 
+    /// Whether the tokens about to be skipped are fallout of something already
+    /// reported: a diagnostic at the current position, or a scanner error token.
+    fn stale(&self) -> bool {
+        self.in_error_state() || self.displaced
+    }
+
+    /// Whether the tag starting at the current token ends in a scanner cut rather than
+    /// a `>` or `/>`.
+    fn current_tag_is_cut(&self) -> bool {
+        self.tokens[(self.pos + 1).min(self.tokens.len())..]
+            .iter()
+            .find(|t| self.is_head_end_kind(t.kind))
+            .is_none_or(|t| !matches!(t.kind, TokenKind::Close | TokenKind::SelfClose))
+    }
+
     /// Wraps every token up to the end of the head in an `Error` node, with one
     /// diagnostic covering them. Nothing happens when already at the head's end.
     fn skip_to_head_end(&mut self, message: &str) {
         if self.at_head_end() {
             return;
         }
-        let stale = self.in_error_state();
+        let stale = self.stale();
         let start = self.current_span().start;
         let marker = self.start();
         let mut end = start;
@@ -345,7 +388,7 @@ impl<'src> Parser<'src> {
         }
         marker.complete(self, SyntaxKind::Error);
         if !stale {
-            self.error(message, Span::new(start, end));
+            self.error_skipped(message, Span::new(start, end));
         }
     }
 
@@ -499,6 +542,68 @@ mod tests {
     fn truncates_on_a_character_boundary() {
         let text = format!("{}é", "x".repeat(39));
         assert_eq!(quoted(&text), format!("\"{}\"…", "x".repeat(39)));
+    }
+
+    fn messages(src: &str) -> Vec<String> {
+        parse(src)
+            .diagnostics
+            .into_iter()
+            .map(|d| d.message)
+            .collect()
+    }
+
+    #[test]
+    fn stays_silent_about_what_a_scanner_error_displaced() {
+        assert_eq!(messages("<lem.x @ y>"), vec!["unexpected character in tag"]);
+        assert_eq!(messages("<lem.@>"), vec!["unexpected character in tag"]);
+        assert_eq!(
+            messages("<lem-for @ in xs></lem-for>"),
+            vec!["unexpected character in tag"]
+        );
+    }
+
+    #[test]
+    fn still_reports_the_tokens_present_after_a_scanner_error() {
+        assert_eq!(
+            messages("<lem-if x @ />a</lem-if>"),
+            vec![
+                "unexpected character in tag",
+                "`lem-if` is a block tag and cannot be self-closed: expected `>`",
+            ]
+        );
+        assert_eq!(
+            messages("<lem.x @\n</lem-if>"),
+            vec![
+                "unterminated tag: expected `>` before `<`",
+                "unexpected character in tag",
+                "stray `</lem-if>`: no `lem-if` is open",
+            ]
+        );
+        assert_eq!(
+            messages("<lem.x.@in>"),
+            vec![
+                "unexpected character in tag",
+                "`in` is a reserved word and cannot be used as a member name",
+            ]
+        );
+        assert_eq!(
+            messages("<lem-let x: @[int] = 1 />"),
+            vec![
+                "unexpected character in tag",
+                "composite types are not supported yet: only `T` and `T?`",
+            ]
+        );
+    }
+
+    #[test]
+    fn enters_the_error_state_only_for_a_diagnostic_about_the_current_token() {
+        assert_eq!(
+            messages("<lem-style /></lem-style>"),
+            vec![
+                "`lem-style` is not supported yet",
+                "`lem-style` is a block tag and cannot be self-closed: expected `>`",
+            ]
+        );
     }
 
     #[test]

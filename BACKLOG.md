@@ -22,14 +22,9 @@ with VM render time under 1 ms/page. Everything here serves that demo.
 
 ### Core spike
 
-- ∆jHE Recovery policy — when a tag's terminator or close contradicts its shape, the name
-  wins: `<lem-if x />` stays a block, a scanner-cut head adds no second diagnostic, a wrong
-  close never adopts and the real close is never "stray", unknown tags get one consistent
-  shape, scanner Error tokens enter the error state (no consequential diagnostic); rules
-  written into docs/language.md so tree-sitter can match them
 - ∆hw4 Typed AST over the ∆7Ib rowan CST for the spike subset — `AstNode` views with typed
   accessors (`IfTag::condition()`, `ForTag::binding()`, `Expr`…) for the checker and
-  codegen, plus trailing commas decided in decisions.md; needs: ∆jHE
+  codegen, plus trailing commas decided in decisions.md
 - ∆TEJ Golden corpus harness — `tests/corpus/` inputs with expected trees/diagnostics (later
   expected HTML), cargo-test driven, so language changes are locked by tests from the first
   week and the future tree-sitter grammar has an agreement target; needs: ∆hw4
