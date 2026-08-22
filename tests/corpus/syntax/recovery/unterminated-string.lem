@@ -1,0 +1,6 @@
+<lem-let title = "The Rebound />
+<p>Body text that follows the mistake.</p>
+<lem-if published>
+  <h1><lem.title></h1>
+</lem-if>
+<p>And the end of the file.</p>

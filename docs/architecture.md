@@ -124,8 +124,17 @@ they cannot inject build-time JS (D06). The shell also exposes a content API
 
 ## Testing
 
-- Golden corpus `tests/corpus/`: input → expected HTML + expected diagnostics; shared with
-  the tree-sitter agreement test.
+- Golden corpus `tests/corpus/`: one `.lem` input per case plus one expectation file per
+  stage, grouped by what a case is for (`syntax/` today; `render/` and `document/` follow)
+  and by language feature below that. `lemmon-syntax` owns `.cst` (the lossless tree with
+  its diagnostics trailer) and `.tags` (the tag-boundary projection); the VM adds `.html`.
+  Whether a case parses clean is data — an empty diagnostics section — not a directory.
+  `crates/lemmon-corpus` does discovery, blessing (`npm run corpus:bless`), and failure
+  reporting for every stage. Gates: no orphaned expectations, and every `SyntaxKind`
+  reached by some case.
+- `.tags` is the tree-sitter agreement target: tags, close tags, text runs, and item-level
+  error nodes, with heads, expressions, and `Block` wrappers elided — the boundaries a
+  context-free grammar can be held to, and no more.
 - Scanner property tests: text without `<lem.`/`<lem-`/`</lem-` round-trips byte-for-byte;
   escaping never emits `<`.
 - cargo-fuzz on parser and VM (the LSP feeds them half-typed garbage).

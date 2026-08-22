@@ -1,0 +1,21 @@
+Root@0..64
+  ForTag@0..50
+    OpenTag@0..8 "<lem-for"
+    Trivia@8..9 " "
+    Head@9..16
+      ForBinding@9..13
+        Ident@9..13 "post"
+      Trivia@13..14 " "
+      In@14..16 "in"
+    Trivia@16..17 "\n"
+    Block@17..40
+      Text@17..40
+        Text@17..40 "<ul><li>item</li></ul>\n"
+    CloseTag@40..50
+      CloseTag@40..49 "</lem-for"
+      Close@49..50 ">"
+  Text@50..64
+    Text@50..64 "\n<p>after</p>\n"
+
+--- diagnostics
+0..17: unterminated tag: expected `>` before `<`

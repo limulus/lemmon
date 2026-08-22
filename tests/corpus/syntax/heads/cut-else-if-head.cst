@@ -1,0 +1,25 @@
+Root@0..67
+  IfTag@0..66
+    OpenTag@0..7 "<lem-if"
+    Trivia@7..8 " "
+    Head@8..9
+      NameRef@8..9
+        Ident@8..9 "a"
+    Close@9..10 ">"
+    Block@10..57
+      Text@10..25
+        Text@10..25 "\n  <p>then</p>\n"
+      ElseIfTag@25..40
+        OpenTag@25..37 "<lem-else-if"
+        Trivia@37..40 "\n  "
+        Head@40..40
+      Text@40..57
+        Text@40..57 "<p>otherwise</p>\n"
+    CloseTag@57..66
+      CloseTag@57..65 "</lem-if"
+      Close@65..66 ">"
+  Text@66..67
+    Text@66..67 "\n"
+
+--- diagnostics
+25..40: unterminated tag: expected `>` before `<`

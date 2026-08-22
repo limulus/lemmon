@@ -136,6 +136,13 @@ syntax_kinds! {
 }
 
 impl SyntaxKind {
+    /// Every kind, in discriminant order.
+    ///
+    /// Exposed for the corpus's coverage gate, which is how invariant 9 ("any change to
+    /// syntax lands with corpus coverage") stops being a convention: a kind no corpus
+    /// case reaches fails the build.
+    pub const ALL: &'static [Self] = ALL_KINDS;
+
     /// The name the dump format prints for this kind.
     ///
     /// The two kinds that collide with a token's name in the shared vocabulary — the

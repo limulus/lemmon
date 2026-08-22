@@ -58,12 +58,13 @@ These hold for every change. A PR that breaks one is wrong even if its tests pas
 ## Layout
 
 ```
-crates/lemmon-syntax/   scanner, parser, CST/AST, diagnostics          (scanner landing, ∆FDQ)
+crates/lemmon-syntax/   scanner, parser, CST/AST, diagnostics           (scanner → typed AST)
+crates/lemmon-corpus/   corpus discovery + blessing, used by every stage's tests
 crates/lemmon-vm/       types, checker, codegen, VM, document mode      (skeleton)
 crates/lemmon-wasm/     wasm-bindgen boundary (lemmon-core's .wasm)     (skeleton)
 packages/core/          @limulus/lemmon-core — typed JS wrapper around the .wasm (stub)
 packages/shell/         @limulus/lemmon-shell — CLI, walker, plugin host, dev server (stub)
-tests/corpus/           golden inputs → expected HTML + diagnostics     (planned, ∆TEJ)
+tests/corpus/           golden inputs → expected trees + diagnostics; see its README
 scripts/                repo tooling run by npm scripts (wasm staging + check)
 docs/                   language.md, architecture.md, decisions.md, journal/
 ```
@@ -128,7 +129,16 @@ npm run tscc      # typecheck: root .ts config files + every packages/*/tsconfig
 
 # The Rust leg on its own — same three checks `verify` runs, for a tighter loop.
 npm run rust
-cargo test --workspace                       # core unit + (later) corpus tests
+cargo test --workspace                       # core unit + golden corpus tests
+
+# Rewrite every corpus expectation from what the code currently produces, then READ THE
+# DIFF — blessing is a proposal, not a fix. See tests/corpus/README.md.
+npm run corpus:bless
+
+# Rust coverage. Needs `cargo install cargo-llvm-cov --locked` (rust-toolchain.toml
+# supplies the llvm-tools-preview component). Kept out of `verify` and run as its own CI
+# job because instrumentation needs different RUSTFLAGS and so a second target tree.
+npm run rust:cov
 
 # Cross-compile the boundary crate (release) and stage the .wasm into artifacts/wasm/.
 # Kept out of `verify` because it populates a second target tree.
@@ -198,11 +208,13 @@ Diagnostics raised only during declaration emit surface in `npm run build` (CI r
 - **BDD with 100% coverage** — no exceptions. Prefer assertions over defensive programming;
   if you think you need a `/* v8 ignore … */`, pause and confirm with the user first. This
   is the TypeScript rule for `packages/*/src`, which is what `vitest.config.ts` scopes
-  coverage to. Two carve-outs, both deliberate: **the Rust crates have no coverage gate
-  yet** — the tool and threshold get chosen against real code when the corpus harness lands
-  (`∆TEJ`) — and **`scripts/` is linted and typechecked but not covered**, since it is build
-  tooling exercised by running it. Weigh that second one before putting logic worth testing
-  in `scripts/`; `scripts/check-wasm.ts` is already close to the line
+  coverage to. **The Rust crates gate on `cargo-llvm-cov` instead** (`npm run rust:cov`,
+  CI-only), at a lower bar — a line ratchet set from the measured baseline, currently 97%.
+  It is a floor to raise as the number rises, never to lower to make a build pass, and it
+  counts the colocated `#[cfg(test)]` modules along with the code. One carve-out remains:
+  **`scripts/` is linted and typechecked but not covered**, since it is build tooling
+  exercised by running it. Weigh that before putting logic worth testing in `scripts/`;
+  `scripts/check-wasm.ts` is already close to the line
 - **RSpec-style nesting** — `describe` for subject/context, `it('should …')` for assertions.
   No Given/When/Then
 - **Avoid `vi.mock()`** — prefer tests that exercise real dependencies, and mock at the
@@ -217,8 +229,13 @@ Diagnostics raised only during declaration emit surface in `npm run build` (CI r
 - Rust: `#[cfg(test)] mod tests` in the same file as the code, one behaviour per `#[test]`
   with a name that reads as a sentence about the subject — the closest Rust gets to the
   `it('should …')` convention above
-- WASM (when it exists): wasm-bindgen-test via Node for the boundary; the golden corpus in
-  `tests/corpus/` is the shared truth for the parser and the tree-sitter grammar
+- The golden corpus in `tests/corpus/` is the shared truth across stages: a `.lem` input
+  plus one expectation file per stage (`.cst` and `.tags` from `lemmon-syntax` today).
+  `crates/lemmon-corpus` does discovery and blessing for all of them — add an extension
+  there and one `check` call, never a second walker. Its `.tags` projection is the
+  tree-sitter agreement target (invariant 9), and a `SyntaxKind` no case reaches fails the
+  build, which is what makes "lands with corpus coverage" mechanical
+- WASM (when it exists): wasm-bindgen-test via Node for the boundary
 
 ## Code Style Guidelines
 

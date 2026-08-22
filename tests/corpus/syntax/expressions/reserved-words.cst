@@ -1,0 +1,91 @@
+Root@0..72
+  AccessTag@0..14
+    OpenAccess@0..5 "<lem."
+    Head@5..13
+      ParenExpr@5..7
+        LParen@5..6 "("
+        NameRef@6..7
+          Ident@6..7 "a"
+      Trivia@7..8 " "
+      Error@8..13
+        As@8..10 "as"
+        Trivia@10..11 " "
+        Ident@11..12 "B"
+        RParen@12..13 ")"
+    Close@13..14 ">"
+  Text@14..15
+    Text@14..15 "\n"
+  AccessTag@15..29
+    OpenAccess@15..20 "<lem."
+    Head@20..28
+      CallExpr@20..28
+        NameRef@20..21
+          Ident@20..21 "f"
+        ArgList@21..28
+          LParen@21..22 "("
+          NamedArg@22..27
+            Error@22..24
+              As@22..24 "as"
+            Colon@24..25 ":"
+            Trivia@25..26 " "
+            Literal@26..27
+              Int@26..27 "1"
+          RParen@27..28 ")"
+    Close@28..29 ">"
+  Text@29..30
+    Text@29..30 "\n"
+  AccessTag@30..40
+    OpenAccess@30..35 "<lem."
+    Head@35..39
+      MemberExpr@35..39
+        NameRef@35..36
+          Ident@35..36 "x"
+        Dot@36..37 "."
+        Error@37..39
+          As@37..39 "as"
+    Close@39..40 ">"
+  Text@40..41
+    Text@40..41 "\n"
+  AccessTag@41..62
+    OpenAccess@41..46 "<lem."
+    Head@46..61
+      CallExpr@46..61
+        NameRef@46..47
+          Ident@46..47 "f"
+        ArgList@47..61
+          LParen@47..48 "("
+          NamedArg@48..53
+            Error@48..50
+              In@48..50 "in"
+            Colon@50..51 ":"
+            Trivia@51..52 " "
+            Literal@52..53
+              Int@52..53 "1"
+          Comma@53..54 ","
+          Trivia@54..55 " "
+          NamedArg@55..60
+            Error@55..57
+              Is@55..57 "is"
+            Colon@57..58 ":"
+            Trivia@58..59 " "
+            Literal@59..60
+              Int@59..60 "2"
+          RParen@60..61 ")"
+    Close@61..62 ">"
+  Text@62..63
+    Text@62..63 "\n"
+  AccessTag@63..71
+    OpenAccess@63..68 "<lem."
+    Head@68..70
+      NameRef@68..70
+        Ident@68..70 "ok"
+    Close@70..71 ">"
+  Text@71..72
+    Text@71..72 "\n"
+
+--- diagnostics
+8..10: expected `)`, found `as`
+22..24: `as` is a reserved word and cannot be used as a named-argument name
+37..39: `as` is a reserved word and cannot be used as a member name
+48..50: `in` is a reserved word and cannot be used as a named-argument name
+55..57: `is` is a reserved word and cannot be used as a named-argument name

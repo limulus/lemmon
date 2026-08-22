@@ -1,0 +1,8 @@
+Root@0..69
+  UnknownTag@0..11
+  Text@11..26
+  ElseTag@26..38
+  Text@38..58
+  Error@58..68
+    CloseTag@58..68
+  Text@68..69

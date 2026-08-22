@@ -1,0 +1,4 @@
+<lem.(a ? : b)>
+<lem.(a ? b :)>
+<lem.(a ?)>
+<lem.ok>

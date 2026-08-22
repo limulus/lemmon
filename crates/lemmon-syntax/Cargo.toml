@@ -11,4 +11,5 @@ logos = { workspace = true }
 rowan = { workspace = true }
 
 [dev-dependencies]
+lemmon-corpus = { workspace = true }
 proptest = { workspace = true }

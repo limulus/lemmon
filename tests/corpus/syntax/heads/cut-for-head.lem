@@ -1,0 +1,4 @@
+<lem-for post in
+<ul><li>item</li></ul>
+</lem-for>
+<p>after</p>

@@ -1,0 +1,133 @@
+Root@0..482
+  FnBlock@0..481
+    OpenTag@0..7 "<lem-fn"
+    Trivia@7..8 " "
+    Head@8..56
+      Ident@8..19 "articleList"
+      Params@19..56
+        LParen@19..20 "("
+        Param@20..39
+          Ident@20..28 "articles"
+          TypeAnnotation@28..39
+            Colon@28..29 ":"
+            Trivia@29..30 " "
+            Error@30..39
+              LBracket@30..31 "["
+              Ident@31..38 "Article"
+              RBracket@38..39 "]"
+        Comma@39..40 ","
+        Trivia@40..41 " "
+        Param@41..56
+          Ident@41..48 "heading"
+          TypeAnnotation@48..56
+            Colon@48..49 ":"
+            Trivia@49..50 " "
+            Ident@50..56 "string"
+    Trivia@56..59 "\n  "
+    Block@59..472
+      Text@59..98
+        Text@59..98 "<section class=\"article-list\">\n    <h2>"
+      AccessTag@98..111
+        OpenAccess@98..103 "<lem."
+        Head@103..110
+          NameRef@103..110
+            Ident@103..110 "heading"
+        Close@110..111 ">"
+      Text@111..132
+        Text@111..132 "</h2>\n    <ul>\n      "
+      ForTag@132..448
+        OpenTag@132..140 "<lem-for"
+        Trivia@140..141 " "
+        Head@141..160
+          ForBinding@141..148
+            Ident@141..148 "article"
+          Trivia@148..149 " "
+          In@149..151 "in"
+          Trivia@151..152 " "
+          NameRef@152..160
+            Ident@152..160 "articles"
+        Close@160..161 ">"
+        Block@161..438
+          Text@161..194
+            Text@161..194 "\n        <li>\n          <a href=\""
+          AccessTag@194..211
+            OpenAccess@194..199 "<lem."
+            Head@199..210
+              MemberExpr@199..210
+                NameRef@199..206
+                  Ident@199..206 "article"
+                Dot@206..207 "."
+                Ident@207..210 "url"
+            Close@210..211 ">"
+          Text@211..213
+            Text@211..213 "\">"
+          AccessTag@213..232
+            OpenAccess@213..218 "<lem."
+            Head@218..231
+              MemberExpr@218..231
+                NameRef@218..225
+                  Ident@218..225 "article"
+                Dot@225..226 "."
+                Ident@226..231 "title"
+            Close@231..232 ">"
+          Text@232..263
+            Text@232..263 "</a>\n          <time datetime=\""
+          AccessTag@263..291
+            OpenAccess@263..268 "<lem."
+            Head@268..290
+              CallExpr@268..290
+                MemberExpr@268..288
+                  MemberExpr@268..280
+                    NameRef@268..275
+                      Ident@268..275 "article"
+                    Dot@275..276 "."
+                    Ident@276..280 "date"
+                  Dot@280..281 "."
+                  Ident@281..288 "rfc3339"
+                ArgList@288..290
+                  LParen@288..289 "("
+                  RParen@289..290 ")"
+            Close@290..291 ">"
+          Text@291..306
+            Text@291..306 "\">\n            "
+          AccessTag@306..341
+            OpenAccess@306..311 "<lem."
+            Head@311..340
+              CallExpr@311..340
+                MemberExpr@311..330
+                  MemberExpr@311..323
+                    NameRef@311..318
+                      Ident@311..318 "article"
+                    Dot@318..319 "."
+                    Ident@319..323 "date"
+                  Dot@323..324 "."
+                  Ident@324..330 "format"
+                ArgList@330..340
+                  LParen@330..331 "("
+                  Literal@331..339
+                    StringLit@331..339 "\"MMMM d\""
+                  RParen@339..340 ")"
+            Close@340..341 ">"
+          Text@341..380
+            Text@341..380 "\n          </time>\n        </li>\n      "
+          ElseTag@380..392
+            OpenTag@380..389 "<lem-else"
+            Trivia@389..390 " "
+            Head@390..390
+            SelfClose@390..392 "/>"
+          Text@392..438
+            Text@392..438 "\n        <li>Nothing published yet</li>\n"…
+        CloseTag@438..448
+          CloseTag@438..447 "</lem-for"
+          Close@447..448 ">"
+      Text@448..472
+        Text@448..472 "\n    </ul>\n  </section>\n"
+    CloseTag@472..481
+      CloseTag@472..480 "</lem-fn"
+      Close@480..481 ">"
+  Text@481..482
+    Text@481..482 "\n"
+
+--- diagnostics
+0..59: unterminated tag: expected `>` before `<`
+30..39: composite types are not supported yet: only `T` and `T?`

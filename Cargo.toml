@@ -14,7 +14,9 @@ publish = false
 # come (comrak, …) are recorded in docs/architecture.md §Crates; listing
 # them before anything imports them would be a pin nobody is testing.
 [workspace.dependencies]
+lemmon-corpus = { path = "crates/lemmon-corpus" }
 wasm-bindgen = "0.2.127"
 logos = "0.16.1"
 proptest = "1.11.0"
+tempfile = "3.24.0"
 rowan = "0.17.0"

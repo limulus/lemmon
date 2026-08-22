@@ -14,7 +14,7 @@ mod token;
 
 pub use ast::AstNode;
 pub use diagnostic::Diagnostic;
-pub use parser::{Parse, dump, parse};
+pub use parser::{Parse, dump, parse, tag_dump};
 pub use scanner::{ScanResult, scan};
 pub use syntax_kind::{Lemmon, SyntaxElement, SyntaxKind, SyntaxNode, SyntaxToken};
 pub use token::{Token, TokenKind};

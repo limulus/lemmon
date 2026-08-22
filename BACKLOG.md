@@ -22,9 +22,6 @@ with VM render time under 1 ms/page. Everything here serves that demo.
 
 ### Core spike
 
-- ∆TEJ Golden corpus harness — `tests/corpus/` inputs with expected trees/diagnostics (later
-  expected HTML), cargo-test driven, so language changes are locked by tests from the first
-  week and the future tree-sitter grammar has an agreement target
 - ∆c8h Codegen + VM — stack machine per docs/architecture.md §VM (output buffer,
   Capture/EndCapture for `lem-let` blocks and slots, calls with named-arg reordering,
   spanned runtime errors), enough to run the spike subset

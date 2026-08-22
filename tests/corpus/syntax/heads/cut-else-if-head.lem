@@ -1,0 +1,5 @@
+<lem-if a>
+  <p>then</p>
+<lem-else-if
+  <p>otherwise</p>
+</lem-if>

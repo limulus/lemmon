@@ -1,0 +1,27 @@
+Root@0..69
+  UnknownTag@0..11
+    OpenTag@0..8 "<lem-iff"
+    Trivia@8..9 " "
+    Head@9..10
+      Ident@9..10 "x"
+    Close@10..11 ">"
+  Text@11..26
+    Text@11..26 "\n  <p>then</p>\n"
+  ElseTag@26..38
+    OpenTag@26..35 "<lem-else"
+    Trivia@35..36 " "
+    Head@36..36
+    SelfClose@36..38 "/>"
+  Text@38..58
+    Text@38..58 "\n  <p>otherwise</p>\n"
+  Error@58..68
+    CloseTag@58..68
+      CloseTag@58..67 "</lem-iff"
+      Close@67..68 ">"
+  Text@68..69
+    Text@68..69 "\n"
+
+--- diagnostics
+0..8: unknown tag `lem-iff`; did you mean `lem-if`?
+26..35: `lem-else` outside `lem-if`
+58..67: unknown tag `lem-iff`; did you mean `lem-if`?

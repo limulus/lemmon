@@ -3,5 +3,5 @@
 # Bumping this is a deliberate change.
 [toolchain]
 channel = "1.97.1"
-components = ["rustfmt", "clippy"]
+components = ["rustfmt", "clippy", "llvm-tools-preview"]
 targets = ["wasm32-unknown-unknown"]

@@ -1,0 +1,3 @@
+<lem-fn slug(s: string): string = s.slugify() />
+<lem-fn siteTitle(): string = "Lemmon" />
+<lem.slug("The Rebound")>

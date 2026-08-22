@@ -1,0 +1,138 @@
+Root@0..130
+  AccessTag@0..14
+    OpenAccess@0..5 "<lem."
+    Head@5..13
+      ParenExpr@5..13
+        LParen@5..6 "("
+        BinaryExpr@6..12
+          NameRef@6..7
+            Ident@6..7 "a"
+          Trivia@7..8 " "
+          Lt@8..10 "lt"
+          Trivia@10..11 " "
+          NameRef@11..12
+            Ident@11..12 "b"
+        RParen@12..13 ")"
+    Close@13..14 ">"
+  Text@14..15
+    Text@14..15 "\n"
+  AccessTag@15..30
+    OpenAccess@15..20 "<lem."
+    Head@20..29
+      ParenExpr@20..29
+        LParen@20..21 "("
+        BinaryExpr@21..28
+          NameRef@21..22
+            Ident@21..22 "a"
+          Trivia@22..23 " "
+          Lte@23..26 "lte"
+          Trivia@26..27 " "
+          NameRef@27..28
+            Ident@27..28 "b"
+        RParen@28..29 ")"
+    Close@29..30 ">"
+  Text@30..31
+    Text@30..31 "\n"
+  AccessTag@31..45
+    OpenAccess@31..36 "<lem."
+    Head@36..44
+      ParenExpr@36..44
+        LParen@36..37 "("
+        BinaryExpr@37..43
+          NameRef@37..38
+            Ident@37..38 "a"
+          Trivia@38..39 " "
+          Gt@39..41 "gt"
+          Trivia@41..42 " "
+          NameRef@42..43
+            Ident@42..43 "b"
+        RParen@43..44 ")"
+    Close@44..45 ">"
+  Text@45..46
+    Text@45..46 "\n"
+  AccessTag@46..61
+    OpenAccess@46..51 "<lem."
+    Head@51..60
+      ParenExpr@51..60
+        LParen@51..52 "("
+        BinaryExpr@52..59
+          NameRef@52..53
+            Ident@52..53 "a"
+          Trivia@53..54 " "
+          Gte@54..57 "gte"
+          Trivia@57..58 " "
+          NameRef@58..59
+            Ident@58..59 "b"
+        RParen@59..60 ")"
+    Close@60..61 ">"
+  Text@61..62
+    Text@61..62 "\n"
+  AccessTag@62..87
+    OpenAccess@62..67 "<lem."
+    Head@67..86
+      ParenExpr@67..86
+        LParen@67..68 "("
+        BinaryExpr@68..85
+          BinaryExpr@68..74
+            NameRef@68..69
+              Ident@68..69 "a"
+            Trivia@69..70 " "
+            Lt@70..72 "lt"
+            Trivia@72..73 " "
+            NameRef@73..74
+              Ident@73..74 "b"
+          Trivia@74..75 " "
+          AmpAmp@75..77 "&&"
+          Trivia@77..78 " "
+          BinaryExpr@78..85
+            NameRef@78..79
+              Ident@78..79 "c"
+            Trivia@79..80 " "
+            Gte@80..83 "gte"
+            Trivia@83..84 " "
+            NameRef@84..85
+              Ident@84..85 "d"
+        RParen@85..86 ")"
+    Close@86..87 ">"
+  Text@87..88
+    Text@87..88 "\n"
+  AccessTag@88..129
+    OpenAccess@88..93 "<lem."
+    Head@93..128
+      CallExpr@93..128
+        MemberExpr@93..102
+          NameRef@93..95
+            Ident@93..95 "xs"
+          Dot@95..96 "."
+          Ident@96..102 "sortBy"
+        ArgList@102..128
+          LParen@102..103 "("
+          Lambda@103..127
+            LambdaParams@103..109
+              Pipe@103..104 "|"
+              Ident@104..105 "x"
+              Comma@105..106 ","
+              Trivia@106..107 " "
+              Ident@107..108 "y"
+              Pipe@108..109 "|"
+            Trivia@109..110 " "
+            BinaryExpr@110..127
+              MemberExpr@110..116
+                NameRef@110..111
+                  Ident@110..111 "x"
+                Dot@111..112 "."
+                Ident@112..116 "rank"
+              Trivia@116..117 " "
+              Gte@117..120 "gte"
+              Trivia@120..121 " "
+              MemberExpr@121..127
+                NameRef@121..122
+                  Ident@121..122 "y"
+                Dot@122..123 "."
+                Ident@123..127 "rank"
+          RParen@127..128 ")"
+    Close@128..129 ">"
+  Text@129..130
+    Text@129..130 "\n"
+
+--- diagnostics

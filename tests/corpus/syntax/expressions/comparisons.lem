@@ -1,0 +1,6 @@
+<lem.(a lt b)>
+<lem.(a lte b)>
+<lem.(a gt b)>
+<lem.(a gte b)>
+<lem.(a lt b && c gte d)>
+<lem.xs.sortBy(|x, y| x.rank gte y.rank)>

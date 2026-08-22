@@ -1,0 +1,169 @@
+Root@0..503
+  UnsupportedTag@0..149
+    OpenTag@0..10 "<lem-match"
+    Trivia@10..11 " "
+    Head@11..23
+      Ident@11..18 "article"
+      Dot@18..19 "."
+      Ident@19..23 "kind"
+    Close@23..24 ">"
+    Block@24..137
+      Text@24..27
+        Text@24..27 "\n  "
+      UnsupportedTag@27..81
+        OpenTag@27..36 "<lem-case"
+        Trivia@36..37 " "
+        Head@37..43
+          StringLit@37..43 "\"link\""
+        Close@43..44 ">"
+        Block@44..70
+          Text@44..70
+            Text@44..70 "\n    <p>A link post</p>\n  "
+        CloseTag@70..81
+          CloseTag@70..80 "</lem-case"
+          Close@80..81 ">"
+      Text@81..84
+        Text@81..84 "\n  "
+      UnsupportedTag@84..136
+        OpenTag@84..96 "<lem-default"
+        Head@96..96
+        Close@96..97 ">"
+        Block@97..122
+          Text@97..122
+            Text@97..122 "\n    <p>An article</p>\n  "
+        CloseTag@122..136
+          CloseTag@122..135 "</lem-default"
+          Close@135..136 ">"
+      Text@136..137
+        Text@136..137 "\n"
+    CloseTag@137..149
+      CloseTag@137..148 "</lem-match"
+      Close@148..149 ">"
+  Text@149..150
+    Text@149..150 "\n"
+  UnsupportedTag@150..215
+    OpenTag@150..160 "<lem-style"
+    Head@160..160
+    Close@160..161 ">"
+    Block@161..203
+      Text@161..203
+        Text@161..203 "\n  .article-card { color: rebeccapurple "…
+    CloseTag@203..215
+      CloseTag@203..214 "</lem-style"
+      Close@214..215 ">"
+  Text@215..216
+    Text@215..216 "\n"
+  UnsupportedTag@216..278
+    OpenTag@216..225 "<lem-head"
+    Head@225..225
+    Close@225..226 ">"
+    Block@226..267
+      Text@226..267
+        Text@226..267 "\n  <meta name=\"description\" content=\"x\">"…
+    CloseTag@267..278
+      CloseTag@267..277 "</lem-head"
+      Close@277..278 ">"
+  Text@278..279
+    Text@278..279 "\n"
+  UnsupportedTag@279..333
+    OpenTag@279..288 "<lem-type"
+    Trivia@288..289 " "
+    Head@289..296
+      Ident@289..296 "Article"
+    Close@296..297 ">"
+    Block@297..322
+      Text@297..322
+        Text@297..322 "\n  <p>fields go here</p>\n"
+    CloseTag@322..333
+      CloseTag@322..332 "</lem-type"
+      Close@332..333 ">"
+  Text@333..334
+    Text@333..334 "\n"
+  UnsupportedTag@334..359
+    OpenTag@334..343 "<lem-enum"
+    Trivia@343..344 " "
+    Head@344..356
+      Ident@344..348 "Size"
+      Trivia@348..349 " "
+      Eq@349..350 "="
+      Trivia@350..351 " "
+      Ident@351..356 "small"
+    Trivia@356..357 " "
+    SelfClose@357..359 "/>"
+  Text@359..360
+    Text@359..360 "\n"
+  UnsupportedTag@360..387
+    OpenTag@360..375 "<lem-collection"
+    Trivia@375..376 " "
+    Head@376..384
+      Ident@376..384 "articles"
+    Trivia@384..385 " "
+    SelfClose@385..387 "/>"
+  Text@387..388
+    Text@387..388 "\n"
+  UnsupportedTag@388..406
+    OpenTag@388..397 "<lem-data"
+    Trivia@397..398 " "
+    Head@398..403
+      Ident@398..403 "posts"
+    Trivia@403..404 " "
+    SelfClose@404..406 "/>"
+  Text@406..407
+    Text@406..407 "\n"
+  UnsupportedTag@407..433
+    OpenTag@407..416 "<lem-page"
+    Trivia@416..417 " "
+    Head@417..430
+      StringLit@417..430 "\"/index.html\""
+    Trivia@430..431 " "
+    SelfClose@431..433 "/>"
+  Text@433..434
+    Text@433..434 "\n"
+  UnsupportedTag@434..455
+    OpenTag@434..445 "<lem-import"
+    Trivia@445..446 " "
+    Head@446..452
+      Ident@446..452 "photos"
+    Trivia@452..453 " "
+    SelfClose@453..455 "/>"
+  Text@455..456
+    Text@455..456 "\n"
+  UnsupportedTag@456..470
+    OpenTag@456..467 "<lem-script"
+    Trivia@467..468 " "
+    Head@468..468
+    SelfClose@468..470 "/>"
+  Text@470..471
+    Text@470..471 "\n"
+  UnsupportedTag@471..490
+    OpenTag@471..480 "<lem-emit"
+    Trivia@480..481 " "
+    Head@481..487
+      Ident@481..487 "styles"
+    Trivia@487..488 " "
+    SelfClose@488..490 "/>"
+  Text@490..491
+    Text@490..491 "\n"
+  AccessTag@491..502
+    OpenAccess@491..496 "<lem."
+    Head@496..501
+      NameRef@496..501
+        Ident@496..501 "after"
+    Close@501..502 ">"
+  Text@502..503
+    Text@502..503 "\n"
+
+--- diagnostics
+0..10: `lem-match` is not supported yet
+27..36: `lem-case` is not supported yet
+84..96: `lem-default` is not supported yet
+150..160: `lem-style` is not supported yet
+216..225: `lem-head` is not supported yet
+279..288: `lem-type` is not supported yet
+334..343: `lem-enum` is not supported yet
+360..375: `lem-collection` is not supported yet
+388..397: `lem-data` is not supported yet
+407..416: `lem-page` is not supported yet
+434..445: `lem-import` is not supported yet
+456..467: `lem-script` is not supported yet
+471..480: `lem-emit` is not supported yet

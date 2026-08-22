@@ -12,6 +12,10 @@ name: Continuous Integration
 # The cost of that split: CI no longer runs the single `npm run verify` command pre-push
 # runs. The jobs below are its parts — `rust` is `npm:rust`, `verify` is `npm:verify:js`,
 # and `verify` is defined as exactly those two. Keep that true when adding a leg.
+#
+# `rust-coverage` is the deliberate exception, alongside `wasm`/`wasm-check`: coverage
+# instrumentation needs different RUSTFLAGS and therefore a second target tree, which is
+# not worth rebuilding on every pre-push run. It is CI-only on purpose.
 on: push
 
 jobs:
@@ -27,6 +31,22 @@ jobs:
       - run: cargo --version
       - uses: Swatinem/rust-cache@v2
       - run: npm run rust
+
+  # A ratchet, not an aspiration: the threshold in `rust:cov` is the measured baseline
+  # floored to a whole percent. Raise it when the number rises; never lower it to make a
+  # build pass. It counts the `#[cfg(test)] mod tests` blocks too, because this repo's
+  # Rust convention colocates them with the code they test.
+  rust-coverage:
+    runs-on: ubuntu-latest
+    name: rust coverage
+    steps:
+      - uses: actions/checkout@v7
+      - run: cargo --version
+      - uses: Swatinem/rust-cache@v2
+      # A prebuilt binary; `cargo install cargo-llvm-cov` would build it from source on
+      # every run.
+      - uses: taiki-e/install-action@cargo-llvm-cov
+      - run: npm run rust:cov
 
   # Cross-compiles the boundary crate and publishes the .wasm for the jobs below. Kept out
   # of `npm run verify` because populating a second target tree is not worth paying on

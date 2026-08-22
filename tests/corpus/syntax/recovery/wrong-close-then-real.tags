@@ -1,0 +1,8 @@
+Root@0..54
+  IfTag@0..53
+    Text@10..22
+    Error@22..32
+      CloseTag@22..32
+    Text@32..44
+    CloseTag@44..53
+  Text@53..54

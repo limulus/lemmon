@@ -1,0 +1,17 @@
+<lem-fn articleList(articles: [Article], heading: string
+  <section class="article-list">
+    <h2><lem.heading></h2>
+    <ul>
+      <lem-for article in articles>
+        <li>
+          <a href="<lem.article.url>"><lem.article.title></a>
+          <time datetime="<lem.article.date.rfc3339()>">
+            <lem.article.date.format("MMMM d")>
+          </time>
+        </li>
+      <lem-else />
+        <li>Nothing published yet</li>
+      </lem-for>
+    </ul>
+  </section>
+</lem-fn>
