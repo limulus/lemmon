@@ -22,6 +22,9 @@ if (!existsSync(built)) {
   )
 }
 
+// This script owns clearing the staging dir. Doing it here rather than with `del-cli` in
+// `rust:wasm` is what keeps the CI wasm job free of `npm ci` — it needs a cargo
+// toolchain and a new enough Node, nothing from node_modules.
 rmSync(STAGING_DIR, { force: true, recursive: true })
 mkdirSync(STAGING_DIR, { recursive: true })
 copyFileSync(built, STAGED_WASM)

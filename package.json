@@ -19,7 +19,7 @@
     "lint:fix": "npm run lint -- --fix",
     "prepare": "is-ci || husky",
     "rust": "cargo fmt --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace",
-    "rust:wasm": "del-cli artifacts && cargo build --release -p lemmon-wasm --target wasm32-unknown-unknown && node scripts/stage-wasm.ts",
+    "rust:wasm": "cargo build --release -p lemmon-wasm --target wasm32-unknown-unknown && node scripts/stage-wasm.ts",
     "test": "vitest run --coverage",
     "tscc": "node node_modules/typescript-7/bin/tsc --build tsconfig.json packages/*/tsconfig.json",
     "verify": "concurrently -c cyan,magenta,blue,yellow npm:verify:js npm:rust",
