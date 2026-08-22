@@ -1,0 +1,18 @@
+<lem-fn card(
+  article: Article,
+  size: Size?,
+)>
+  <lem-let tags = [
+    "one",
+    "two",
+  ] />
+  <lem-let meta = {
+    title: article.title,
+    "kind": "card",
+  } />
+  <lem.chipList(
+    article,
+    size: size,
+  )>
+  <lem.tags.map(|tag, i,| tag)>
+</lem-fn>

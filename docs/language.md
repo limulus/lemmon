@@ -77,8 +77,8 @@ follows:
   close tag that matches an *outer* open block implicitly closes every block inside
   it, with one diagnostic at the close tag naming the innermost; with nothing open at
   all, a close tag is stray. A close tag the scanner cut short closes the innermost
-  block if its name matches and is otherwise kept as an error node, adding no
-  diagnostic of its own.
+  block if its name matches and is otherwise kept as an error node — never reaching an
+  outer block — adding no diagnostic of its own.
 - A block still open at the end of input is reported as unclosed, at its opener, even
   when a mistaken `/>` or a wrong close tag inside it was already reported: the
   parser cannot tell a forgotten close from either, so both mistakes are named.
@@ -125,6 +125,8 @@ follows:
 | Membership | `x in xs` | Lists; map keys. |
 | Type tests | `x is LinkPost` | Narrows in the branch, like `lem-match`. |
 
+Every comma-separated list — list and map literals, call arguments, `lem-fn` parameters,
+lambda parameters — accepts one optional trailing comma (D24); an empty slot is an error.
 Precedence follows JavaScript for shared operators. **Immutability throughout**: `lem-let`
 binds, never assigns; no `while`; recursion is allowed.
 

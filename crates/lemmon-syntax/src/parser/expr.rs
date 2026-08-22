@@ -8,6 +8,7 @@
 
 use super::{CompletedMarker, Parser};
 use crate::TokenKind;
+use crate::ast::BinaryOp;
 use crate::syntax_kind::SyntaxKind;
 
 /// Binding powers, lowest first. Unary and postfix sit above every infix operator.
@@ -15,21 +16,23 @@ const TERNARY: (u8, u8) = (1, 1);
 const UNARY: u8 = 17;
 const POSTFIX: u8 = 19;
 
-fn infix_bp(kind: TokenKind) -> Option<(u8, u8)> {
-    Some(match kind {
-        TokenKind::QuestionQuestion => (3, 4),
-        TokenKind::PipePipe => (5, 6),
-        TokenKind::AmpAmp => (7, 8),
-        TokenKind::EqEq | TokenKind::BangEq => (9, 10),
-        TokenKind::Lt
-        | TokenKind::Lte
-        | TokenKind::Gt
-        | TokenKind::Gte
-        | TokenKind::In
-        | TokenKind::Is => (11, 12),
-        TokenKind::Plus | TokenKind::Minus => (13, 14),
-        TokenKind::Star | TokenKind::Slash | TokenKind::Percent => (15, 16),
-        _ => return None,
+/// The binding powers of the infix operator `kind` spells, if any. Which tokens are
+/// binary operators is [`BinaryOp`]'s knowledge; `is` is the one infix that is not one.
+fn infix_bp(kind: SyntaxKind) -> Option<(u8, u8)> {
+    use BinaryOp::{
+        Add, And, Coalesce, Div, Eq, Gt, Gte, In, Lt, Lte, Mul, NotEq, Or, Rem, Sub,
+    };
+    if kind == SyntaxKind::Is {
+        return Some((11, 12));
+    }
+    Some(match BinaryOp::from_kind(kind)? {
+        Coalesce => (3, 4),
+        Or => (5, 6),
+        And => (7, 8),
+        Eq | NotEq => (9, 10),
+        Lt | Lte | Gt | Gte | In => (11, 12),
+        Add | Sub => (13, 14),
+        Mul | Div | Rem => (15, 16),
     })
 }
 
@@ -116,14 +119,16 @@ fn expr_bp_in(p: &mut Parser<'_>, min_bp: u8) -> Option<CompletedMarker> {
                 expr_bp(p, TERNARY.1);
                 lhs = m.complete(p, SyntaxKind::TernaryExpr);
             }
-            TokenKind::Is if infix_bp(kind).is_some_and(|(l, _)| l >= min_bp) => {
+            TokenKind::Is if infix_bp(kind.into()).is_some_and(|(l, _)| l >= min_bp) => {
                 let m = p.precede(lhs);
                 p.bump();
                 p.expect(TokenKind::Ident, "a type name");
                 lhs = m.complete(p, SyntaxKind::TypeTest);
             }
             _ => {
-                let Some((l, r)) = infix_bp(kind) else { break };
+                let Some((l, r)) = infix_bp(kind.into()) else {
+                    break;
+                };
                 if l < min_bp {
                     break;
                 }
@@ -174,31 +179,22 @@ fn prefix(p: &mut Parser<'_>) -> Option<CompletedMarker> {
     Some(m.complete(p, kind))
 }
 
-/// Drives a comma-separated list up to `close`, calling `item` for each element. A
-/// trailing comma is an error: the element after it is missing.
-fn comma_list(
+/// Drives a comma-separated list up to `close`, calling `item` for each element. One
+/// trailing comma is allowed (D24); an empty slot between commas is left to `item` to
+/// report, one diagnostic per slot. The loop cannot stall: an item that consumes
+/// nothing is followed either by a comma, which is eaten, or by anything else, which
+/// ends the list.
+pub(super) fn comma_list(
     p: &mut Parser<'_>,
     close: TokenKind,
-    what: &str,
     mut item: impl FnMut(&mut Parser<'_>),
 ) {
-    let mut after_comma = false;
     loop {
         if p.at(close) || p.at_head_end() {
-            if after_comma {
-                p.error_expected(what);
-            }
             break;
         }
-        let before = p.pos;
         item(p);
         if !p.eat(TokenKind::Comma) {
-            break;
-        }
-        after_comma = true;
-        // An item that consumed nothing has already been reported; stop rather than
-        // report the same token again on every iteration.
-        if p.pos == before {
             break;
         }
     }
@@ -216,7 +212,7 @@ fn arg_list(p: &mut Parser<'_>) {
     let m = p.start();
     p.bump();
     let mut seen_named = false;
-    comma_list(p, TokenKind::RParen, "an argument", |p| {
+    comma_list(p, TokenKind::RParen, |p| {
         if (p.at(TokenKind::Ident) || is_reserved(p.current()))
             && p.nth(1) == Some(TokenKind::Colon)
         {
@@ -242,7 +238,7 @@ fn arg_list(p: &mut Parser<'_>) {
 fn list(p: &mut Parser<'_>) -> CompletedMarker {
     let m = p.start();
     p.bump();
-    comma_list(p, TokenKind::RBracket, "an element", |p| {
+    comma_list(p, TokenKind::RBracket, |p| {
         expr_bp(p, 0);
     });
     m.complete(p, SyntaxKind::ListLit)
@@ -252,17 +248,19 @@ fn list(p: &mut Parser<'_>) -> CompletedMarker {
 fn map(p: &mut Parser<'_>) -> CompletedMarker {
     let m = p.start();
     p.bump();
-    comma_list(p, TokenKind::RBrace, "an entry", |p| {
+    comma_list(p, TokenKind::RBrace, |p| {
+        // An empty slot gets a diagnostic and no node: a zero-width `MapEntry` would
+        // be a boundary tree-sitter has nothing to agree with.
+        if p.at(TokenKind::Comma) || p.at(TokenKind::RBrace) || p.at_head_end() {
+            p.error_expected("a key");
+            return;
+        }
         let m = p.start();
         if !p.eat(TokenKind::Ident) && !p.eat(TokenKind::StringLit) {
             p.error_expected("a key");
             // Take whatever stands in for the key, so that the `:` and value after it
             // still parse and the one mistake stays one diagnostic.
-            if !matches!(
-                p.current(),
-                Some(TokenKind::Colon | TokenKind::Comma | TokenKind::RBrace)
-            ) && !p.at_head_end()
-            {
+            if !p.at(TokenKind::Colon) {
                 let e = p.start();
                 p.bump();
                 e.complete(p, SyntaxKind::Error);
@@ -281,7 +279,7 @@ fn lambda(p: &mut Parser<'_>) -> CompletedMarker {
     let params = p.start();
     if !p.eat(TokenKind::PipePipe) {
         p.bump();
-        comma_list(p, TokenKind::Pipe, "a parameter", |p| {
+        comma_list(p, TokenKind::Pipe, |p| {
             p.expect(TokenKind::Ident, "a parameter name");
         });
     }
@@ -446,6 +444,49 @@ mod tests {
             messages("<lem.f(a: 1, b)>"),
             vec!["positional argument after a named argument"]
         );
+    }
+
+    #[test]
+    fn accepts_one_trailing_comma_in_every_list() {
+        for src in [
+            "<lem.[a, b,]>",
+            "<lem.{k: v,}>",
+            "<lem.f(a, b,)>",
+            "<lem.f(a, b: c,)>",
+            "<lem.f(|a, b,| a)>",
+        ] {
+            assert_eq!(messages(src), Vec::<String>::new(), "{src}");
+        }
+    }
+
+    #[test]
+    fn still_reports_an_empty_slot_between_commas() {
+        let missing = vec!["expected an expression, found `,`"];
+        assert_eq!(messages("<lem.[a,,b]>"), missing);
+        assert_eq!(messages("<lem.f(,)>"), missing);
+        assert_eq!(messages("<lem.[,]>"), missing);
+        assert_eq!(
+            messages("<lem.{a: 1,,}>"),
+            vec!["expected a key, found `,`"]
+        );
+        assert_eq!(messages("<lem.{,}>"), vec!["expected a key, found `,`"]);
+    }
+
+    #[test]
+    fn reports_every_empty_slot_separately() {
+        assert_eq!(messages("<lem.[,,,]>").len(), 3);
+        assert_eq!(messages("<lem.{,,}>").len(), 2);
+    }
+
+    #[test]
+    fn opens_no_node_for_an_empty_map_slot() {
+        assert_eq!(shape("<lem.{a: 1,,}>"), "MapLit(MapEntry(Literal))");
+        assert_eq!(shape("<lem.{1: 2}>"), "MapLit(MapEntry(Error Literal))");
+    }
+
+    #[test]
+    fn reports_a_list_cut_after_a_trailing_comma_once() {
+        assert_eq!(messages("<lem.[a,>"), vec!["expected `]` before `>`"]);
     }
 
     #[test]

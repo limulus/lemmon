@@ -1,0 +1,149 @@
+Root@0..267
+  FnBlock@0..266
+    OpenTag@0..7 "<lem-fn"
+    Trivia@7..8 " "
+    Head@8..50
+      Ident@8..12 "card"
+      Params@12..50
+        LParen@12..13 "("
+        Trivia@13..16 "\n  "
+        Param@16..32
+          Ident@16..23 "article"
+          TypeAnnotation@23..32
+            Colon@23..24 ":"
+            Trivia@24..25 " "
+            Ident@25..32 "Article"
+        Comma@32..33 ","
+        Trivia@33..36 "\n  "
+        Param@36..47
+          Ident@36..40 "size"
+          TypeAnnotation@40..47
+            Colon@40..41 ":"
+            Trivia@41..42 " "
+            Ident@42..46 "Size"
+            Question@46..47 "?"
+        Comma@47..48 ","
+        Trivia@48..49 "\n"
+        RParen@49..50 ")"
+    Close@50..51 ">"
+    Block@51..257
+      Text@51..54
+        Text@51..54 "\n  "
+      LetVoid@54..100
+        OpenTag@54..62 "<lem-let"
+        Trivia@62..63 " "
+        Head@63..97
+          Ident@63..67 "tags"
+          Trivia@67..68 " "
+          Eq@68..69 "="
+          Trivia@69..70 " "
+          ListLit@70..97
+            LBracket@70..71 "["
+            Trivia@71..76 "\n    "
+            Literal@76..81
+              StringLit@76..81 "\"one\""
+            Comma@81..82 ","
+            Trivia@82..87 "\n    "
+            Literal@87..92
+              StringLit@87..92 "\"two\""
+            Comma@92..93 ","
+            Trivia@93..96 "\n  "
+            RBracket@96..97 "]"
+        Trivia@97..98 " "
+        SelfClose@98..100 "/>"
+      Text@100..103
+        Text@100..103 "\n  "
+      LetVoid@103..173
+        OpenTag@103..111 "<lem-let"
+        Trivia@111..112 " "
+        Head@112..170
+          Ident@112..116 "meta"
+          Trivia@116..117 " "
+          Eq@117..118 "="
+          Trivia@118..119 " "
+          MapLit@119..170
+            LBrace@119..120 "{"
+            Trivia@120..125 "\n    "
+            MapEntry@125..145
+              Ident@125..130 "title"
+              Colon@130..131 ":"
+              Trivia@131..132 " "
+              MemberExpr@132..145
+                NameRef@132..139
+                  Ident@132..139 "article"
+                Dot@139..140 "."
+                Ident@140..145 "title"
+            Comma@145..146 ","
+            Trivia@146..151 "\n    "
+            MapEntry@151..165
+              StringLit@151..157 "\"kind\""
+              Colon@157..158 ":"
+              Trivia@158..159 " "
+              Literal@159..165
+                StringLit@159..165 "\"card\""
+            Comma@165..166 ","
+            Trivia@166..169 "\n  "
+            RBrace@169..170 "}"
+        Trivia@170..171 " "
+        SelfClose@171..173 "/>"
+      Text@173..176
+        Text@173..176 "\n  "
+      AccessTag@176..224
+        OpenAccess@176..181 "<lem."
+        Head@181..223
+          CallExpr@181..223
+            NameRef@181..189
+              Ident@181..189 "chipList"
+            ArgList@189..223
+              LParen@189..190 "("
+              Trivia@190..195 "\n    "
+              NameRef@195..202
+                Ident@195..202 "article"
+              Comma@202..203 ","
+              Trivia@203..208 "\n    "
+              NamedArg@208..218
+                Ident@208..212 "size"
+                Colon@212..213 ":"
+                Trivia@213..214 " "
+                NameRef@214..218
+                  Ident@214..218 "size"
+              Comma@218..219 ","
+              Trivia@219..222 "\n  "
+              RParen@222..223 ")"
+        Close@223..224 ">"
+      Text@224..227
+        Text@224..227 "\n  "
+      AccessTag@227..256
+        OpenAccess@227..232 "<lem."
+        Head@232..255
+          CallExpr@232..255
+            MemberExpr@232..240
+              NameRef@232..236
+                Ident@232..236 "tags"
+              Dot@236..237 "."
+              Ident@237..240 "map"
+            ArgList@240..255
+              LParen@240..241 "("
+              Lambda@241..254
+                LambdaParams@241..250
+                  Pipe@241..242 "|"
+                  Ident@242..245 "tag"
+                  Comma@245..246 ","
+                  Trivia@246..247 " "
+                  Ident@247..248 "i"
+                  Comma@248..249 ","
+                  Pipe@249..250 "|"
+                Trivia@250..251 " "
+                NameRef@251..254
+                  Ident@251..254 "tag"
+              RParen@254..255 ")"
+        Close@255..256 ">"
+      Text@256..257
+        Text@256..257 "\n"
+    CloseTag@257..266
+      CloseTag@257..265 "</lem-fn"
+      Close@265..266 ">"
+  Text@266..267
+    Text@266..267 "\n"
+
+--- diagnostics

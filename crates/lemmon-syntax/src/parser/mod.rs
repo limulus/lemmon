@@ -25,6 +25,7 @@ mod template;
 
 use rowan::{GreenNode, GreenNodeBuilder};
 
+use crate::ast::{AstNode, Root};
 use crate::syntax_kind::{SyntaxKind, SyntaxNode};
 use crate::{Diagnostic, Span, Token, TokenKind, scan};
 
@@ -42,6 +43,12 @@ impl Parse {
     #[must_use]
     pub fn syntax(&self) -> SyntaxNode {
         SyntaxNode::new_root(self.green.clone())
+    }
+
+    /// The typed view of the whole file.
+    #[must_use]
+    pub fn root(&self) -> Root {
+        Root::cast(self.syntax()).expect("the parser always emits a `Root`")
     }
 }
 

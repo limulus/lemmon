@@ -1,4 +1,4 @@
-Root@0..62
+Root@0..63
   AccessTag@0..12
     OpenAccess@0..5 "<lem."
     Head@5..11
@@ -24,40 +24,41 @@ Root@0..62
     Close@20..21 ">"
   Text@21..22
     Text@21..22 "\n"
-  AccessTag@22..34
+  AccessTag@22..35
     OpenAccess@22..27 "<lem."
-    Head@27..33
-      CallExpr@27..33
+    Head@27..34
+      CallExpr@27..34
         NameRef@27..28
           Ident@27..28 "f"
-        ArgList@28..33
+        ArgList@28..34
           LParen@28..29 "("
           NameRef@29..30
             Ident@29..30 "x"
           Comma@30..31 ","
           Trivia@31..32 " "
-          RParen@32..33 ")"
-    Close@33..34 ">"
-  Text@34..35
-    Text@34..35 "\n"
-  AccessTag@35..48
-    OpenAccess@35..40 "<lem."
-    Head@40..47
-      ParenExpr@40..47
-        LParen@40..41 "("
-        BinaryExpr@41..45
-          NameRef@41..42
-            Ident@41..42 "a"
-          Trivia@42..43 " "
-          QuestionQuestion@43..45 "??"
-        Trivia@45..46 " "
-        RParen@46..47 ")"
-    Close@47..48 ">"
-  Text@48..62
-    Text@48..62 "\n<p>after</p>\n"
+          Comma@32..33 ","
+          RParen@33..34 ")"
+    Close@34..35 ">"
+  Text@35..36
+    Text@35..36 "\n"
+  AccessTag@36..49
+    OpenAccess@36..41 "<lem."
+    Head@41..48
+      ParenExpr@41..48
+        LParen@41..42 "("
+        BinaryExpr@42..46
+          NameRef@42..43
+            Ident@42..43 "a"
+          Trivia@43..44 " "
+          QuestionQuestion@44..46 "??"
+        Trivia@46..47 " "
+        RParen@47..48 ")"
+    Close@48..49 ">"
+  Text@49..63
+    Text@49..63 "\n<p>after</p>\n"
 
 --- diagnostics
 10..11: expected an expression, found `)`
 20..21: expected a member name before `>`
-32..33: expected an argument, found `)`
-46..47: expected an expression, found `)`
+32..33: expected an expression, found `,`
+47..48: expected an expression, found `)`

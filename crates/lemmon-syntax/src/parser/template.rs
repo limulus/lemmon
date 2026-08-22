@@ -191,7 +191,8 @@ fn items<'src>(p: &mut Parser<'src>, stack: &mut Vec<Open<'src>>) -> BodyEnd {
                     return BodyEnd::Matched;
                 }
                 let span = p.current_span();
-                if p.current_tag_is_cut() {
+                let cut = p.current_tag_is_cut();
+                if cut {
                     // The scanner has reported the cut; what the author meant to
                     // close is not yet written.
                 } else if Builtin::lookup(name).is_none() {
@@ -210,7 +211,9 @@ fn items<'src>(p: &mut Parser<'src>, stack: &mut Vec<Open<'src>>) -> BodyEnd {
                         span,
                     );
                 }
-                if stack.iter().any(|o| o.name == name) {
+                // A cut close never reaches past the innermost block: closing outer
+                // blocks on its say-so would lose the author's real closes as strays.
+                if !cut && stack.iter().any(|o| o.name == name) {
                     return BodyEnd::OuterClose;
                 }
                 let m = p.start();
@@ -526,21 +529,7 @@ fn fn_signature(p: &mut Parser<'_>) {
     p.expect(TokenKind::Ident, "a function name");
     let m = p.start();
     if p.expect(TokenKind::LParen, "`(`") {
-        let mut after_comma = false;
-        loop {
-            if p.at(TokenKind::RParen) || p.at_head_end() {
-                if after_comma {
-                    p.error_expected("a parameter");
-                }
-                break;
-            }
-            param(p);
-            if !p.eat(TokenKind::Comma) {
-                break;
-            }
-            after_comma = true;
-        }
-        p.expect(TokenKind::RParen, "`)`");
+        expr::comma_list(p, TokenKind::RParen, param);
     }
     m.complete(p, SyntaxKind::Params);
     if p.at(TokenKind::Colon) {
@@ -550,6 +539,11 @@ fn fn_signature(p: &mut Parser<'_>) {
 
 /// `name: Type`
 fn param(p: &mut Parser<'_>) {
+    // An empty slot gets a diagnostic and no node, as in a map literal.
+    if p.at(TokenKind::Comma) || p.at(TokenKind::RParen) || p.at_head_end() {
+        p.error_expected("a parameter name");
+        return;
+    }
     let m = p.start();
     p.expect(TokenKind::Ident, "a parameter name");
     if p.at(TokenKind::Colon) {
@@ -784,6 +778,23 @@ mod parse_tests {
     }
 
     #[test]
+    fn keeps_a_cut_close_naming_an_outer_block_inside_the_inner_one() {
+        let cut = "unterminated tag: expected `>` before `<`";
+        assert_eq!(
+            messages("<lem-for a in b><lem-if c>x</lem-for\n<p>z</p></lem-if></lem-for>"),
+            vec![cut]
+        );
+        assert_eq!(
+            messages("<lem-for a in b><lem-if c>x</lem-for\n<p>z</p>"),
+            vec![
+                "unclosed `lem-for`: expected `</lem-for>` before end of input",
+                "unclosed `lem-if`: expected `</lem-if>` before end of input",
+                cut,
+            ]
+        );
+    }
+
+    #[test]
     fn adds_nothing_to_a_close_tag_the_scanner_cut() {
         let cut = "unterminated tag: expected `>` before end of input";
         assert_eq!(messages("<lem-if x>a</lem-if"), vec![cut]);
@@ -862,6 +873,29 @@ mod parse_tests {
             messages("<lem-for x, in xs></lem-for>"),
             vec!["expected a second loop variable, found `in`"]
         );
+    }
+
+    #[test]
+    fn accepts_a_trailing_comma_in_a_parameter_list() {
+        assert_eq!(
+            messages("<lem-fn f(a: int, b: string,)></lem-fn>"),
+            Vec::<String>::new()
+        );
+    }
+
+    #[test]
+    fn opens_no_node_for_an_empty_parameter_slot() {
+        assert_eq!(
+            messages("<lem-fn f(,)></lem-fn>"),
+            vec!["expected a parameter name, found `,`"]
+        );
+        let parse = crate::parse("<lem-fn f(,)></lem-fn>");
+        let params = parse
+            .syntax()
+            .descendants()
+            .find(|n| n.kind() == crate::SyntaxKind::Params)
+            .expect("params");
+        assert_eq!(params.children().count(), 0);
     }
 
     #[test]

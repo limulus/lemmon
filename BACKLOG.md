@@ -22,15 +22,12 @@ with VM render time under 1 ms/page. Everything here serves that demo.
 
 ### Core spike
 
-- ∆hw4 Typed AST over the ∆7Ib rowan CST for the spike subset — `AstNode` views with typed
-  accessors (`IfTag::condition()`, `ForTag::binding()`, `Expr`…) for the checker and
-  codegen, plus trailing commas decided in decisions.md
 - ∆TEJ Golden corpus harness — `tests/corpus/` inputs with expected trees/diagnostics (later
   expected HTML), cargo-test driven, so language changes are locked by tests from the first
-  week and the future tree-sitter grammar has an agreement target; needs: ∆hw4
+  week and the future tree-sitter grammar has an agreement target
 - ∆c8h Codegen + VM — stack machine per docs/architecture.md §VM (output buffer,
   Capture/EndCapture for `lem-let` blocks and slots, calls with named-arg reordering,
-  spanned runtime errors), enough to run the spike subset; needs: ∆hw4
+  spanned runtime errors), enough to run the spike subset
 - ∆Ldn Document mode — fence-aware segmenter, in-core comrak rendering of joined prose,
   `<!--lem:N-->` sentinel splice with lost-sentinel build errors, untyped front matter
   passthrough for now (docs/language.md §Document mode); needs: ∆c8h
@@ -53,7 +50,7 @@ further at claim time.
 - ∆C8d Type checker + schemas — `lem-type`/`lem-enum`, reference fields (`by`), computed
   defaults, narrowing, project-flat + ambient namespaces (docs/language.md §Types, §Names),
   diagnostics with primary/secondary spans; turns limulus.net's build-time throws into
-  compile errors; needs: ∆hw4
+  compile errors
 - ∆Q6L Stdlib — strings/lists/maps, `datetime("…")` (compile-time checked on a literal
   argument; there is no datetime literal) + rfc3339/rfc822 formatting, `slugify`,
   `readingTime`, `url()`, `asset()`, `raw()`, `uniqueId()`, with typed signatures the

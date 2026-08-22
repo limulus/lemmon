@@ -2,14 +2,17 @@
 //!
 //! The scanner ([`scan`]) lexes a file into lossless tokens; the parser ([`parse`])
 //! builds a rowan syntax tree over them and reports every problem with a [`Span`] — the
-//! one type every later stage depends on.
+//! one type every later stage depends on. The [`ast`] module is the typed view of that
+//! tree the checker and code generator read.
 
+pub mod ast;
 mod diagnostic;
 mod parser;
 mod scanner;
 mod syntax_kind;
 mod token;
 
+pub use ast::AstNode;
 pub use diagnostic::Diagnostic;
 pub use parser::{Parse, dump, parse};
 pub use scanner::{ScanResult, scan};
@@ -21,12 +24,18 @@ pub use token::{Token, TokenKind};
 /// Every Lemmon diagnostic — compile, load, and runtime alike — carries one, so this is
 /// the single type the entire core depends on. Byte offsets, not character offsets: they
 /// are what the scanner produces and what editors expect back over LSP.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Span {
     /// Byte offset of the first byte in the range.
     pub start: u32,
     /// Byte offset one past the last byte in the range.
     pub end: u32,
+}
+
+impl From<rowan::TextRange> for Span {
+    fn from(range: rowan::TextRange) -> Self {
+        Self::new(range.start().into(), range.end().into())
+    }
 }
 
 impl Span {
@@ -71,6 +80,12 @@ mod tests {
     fn treats_a_zero_width_span_as_empty() {
         assert!(Span::new(4, 4).is_empty());
         assert_eq!(Span::new(4, 4).len(), 0);
+    }
+
+    #[test]
+    fn converts_from_a_rowan_text_range() {
+        let range = rowan::TextRange::new(3.into(), 8.into());
+        assert_eq!(Span::from(range), Span::new(3, 8));
     }
 
     #[test]
