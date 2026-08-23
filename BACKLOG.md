@@ -27,7 +27,9 @@ with VM render time under 1 ms/page. Everything here serves that demo.
   passthrough for now (docs/language.md §Document mode)
 - ∆TNT WASM boundary — wasm-bindgen build of the core, `@limulus/lemmon-core` typed wrapper
   (compile/loadData/render), and a small Node harness that renders fixtures, measuring
-  boundary marshalling cost so the few-large-calls design is validated early
+  boundary marshalling cost so the few-large-calls design is validated early. `compile`
+  takes changed files only: the spike's one-pool `Module` becomes per-file units plus a
+  link step (D25), since retrofitting that under a shipped boundary would change its contract
 
 ### Prove it
 
@@ -51,10 +53,13 @@ further at claim time.
   checker understands, since feeds/sitemap/layout ports all block on these; needs: ∆C8d
 - ∆Hbw Document mode, full rules — nested `lem-let` capture bodies as sub-documents, typed
   front matter validated at YAML positions, string-literal reference resolution in prose
-  calls (docs/language.md §Document mode items 2 and 6); needs: ∆Ldn, ∆C8d
+  calls (docs/language.md §Document mode items 2 and 6) with the resolved ids reported as
+  compile-time facts (D25); needs: ∆Ldn, ∆C8d
 - ∆RGQ Side channels + generators — `lem-style`/`lem-script`/`lem-head`/`lem-emit`
   collection and dedup, `lem-page` (including `for` generators with prev/next), serializable
-  modules and render-reported deps for incremental dev; needs: ∆C8d
+  modules, render-reported deps, and compile-reported facts per file (signatures, reference
+  ids, manifest entries) so the shell's unit cache key is `hash(text) + hash(facts)` and a
+  content edit never recompiles its layouts (D25); needs: ∆C8d
 - ∆5MM tree-sitter-lemmon + LSP skeleton — embedded-template grammar with HTML/markdown
   injections, corpus agreement test wired into CI, `@limulus/lemmon-lsp` serving diagnostics
   and schema completions from `core.analyze()`; editor tooling is a day-one commitment
@@ -87,8 +92,9 @@ API); the port itself lives in limulus-dot-net on a branch while 11ty stays gree
   cutover; needs: ∆4tG, ∆RGQ
 - ∆d1N esbuild asset pipeline — bundle `**/index.ts` + `**/worker.ts` with `/lib/*`
   external and the wasm loader (D09), resolve the `XXXXXXXX` hash placeholder in client TS
-  (D10), and hand the manifest to `loadData` before compile so `asset()` is compile-checked.
-  Ports limulus-dot-net's `11ty/esbuild.ts` 1:1; needs: ∆4tG, ∆Q6L
+  (D10), and hand the manifest to `loadData` before compile so `asset()` is compile-checked,
+  the entries it checked against reported as compile-time facts (D25). Ports limulus-dot-net's
+  `11ty/esbuild.ts` 1:1; needs: ∆4tG, ∆Q6L
 - ∆PgF Plugin host — the `Plugin` hooks (data, transformDocument, assets, transformOutput,
   emit, commands, watch), plugin `.lem` bound via `lem-import` in `site.lem` (D23, D06), and
   the content API (`loadSite(config).collection('articles')`) for out-of-build tools.

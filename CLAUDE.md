@@ -11,7 +11,9 @@ a parity harness shows zero unexpected output diffs.
 current milestone is the Phase 0 spike — one real page rendering end-to-end from the WASM
 core. Both halves of the repo scaffolding exist (see Layout). The core runs scanner → parser
 → typed AST → bytecode compiler → VM for the spike subset, untyped: the checker (∆C8d),
-document mode (∆Ldn), and the WASM boundary (∆TNT) do not exist yet.
+document mode (∆Ldn), and the WASM boundary (∆TNT) do not exist yet. The spike's `Module` is
+one shared constant pool with absolute indices — a known shortcut past invariant 11 that
+∆TNT replaces with per-file units and a link step.
 
 ## Canonical references
 
@@ -55,6 +57,11 @@ These hold for every change. A PR that breaks one is wrong even if its tests pas
    tree-sitter grammar must agree on tag boundaries for every corpus snippet (CI-enforced).
 10. **Errors over guesses.** A forgotten close tag, a lost document-mode sentinel, an
     unknown name — all hard errors with precise spans. Never recover by guessing intent.
+11. **Files compile separately.** A file's compiled unit is a function of its own text plus
+    the compile-time facts it consumed (imported signatures, reference-index ids, asset
+    manifest entries), which the compiler reports. Nothing may make one file's bytecode
+    depend on another file's body — that is what lets a content edit leave its layouts'
+    compiled units untouched (docs/decisions.md D25).
 
 ## Layout
 

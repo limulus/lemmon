@@ -30,6 +30,7 @@ Lemmon"). Treat these as fixed unless Eric reopens one; cite IDs in PRs when rel
 | D22 | Calls & slots | `<lem.f(args)>` is the only call form. Bodies pass capture-then-call (`<lem-let x>…</lem-let>` → `slot: x`). No call-with-body syntax; grammar stays head-decidable. One-shot sugar would be additive later. |
 | D23 | Namespaces | One lexical value namespace: locals/params → project-flat (all site `.lem` files; duplicates = compile error; no site-file imports) → ambient (`site`/`page`/`build` + stdlib; shadowing stdlib warns). Plugins bind qualified via `lem-import` in `site.lem`, named promotion optional. Types split from values by capitalization. |
 | D24 | Trailing commas | One optional trailing comma is allowed in every comma-separated list — `[a, b,]`, `{k: v,}`, `f(a, b,)`, `lem-fn f(a: int,)`, `\|a, b,\| …` — so multi-line literals and signatures stay one-line-per-item and diff-friendly, as in JS and Rust. Empty slots (`[a,,b]`, `f(,)`) remain errors (2026-08-22). |
+| D25 | Separate compilation | Each `.lem`/`.md` compiles to its own **unit** — file-local constant pool (document prose included), cross-file references symbolic — and a cheap link step joins the units into the `Module` the VM runs and `exportModule` serializes. A unit is a function of the file's text plus the *compile-time facts* it consumed (imported signatures and types, reference-index ids, asset-manifest entries), which the compiler reports so the cache key `hash(text) + hash(facts)` is built from evidence, not guessed. No file's bytecode may depend on another file's body; the checker stays whole-program but is not a compile-unit input (2026-08-23). |
 
 ## Deliberately deferred
 
@@ -49,4 +50,6 @@ D01–D17, D19 settled 2026-08-14 (design interview); D08 revisited and D20–D2
 2026-08-15; named Lemmon with D18 closed, D21 finalized, D22–D23 added 2026-08-16; D18
 npm scope fixed to `@limulus` later on 2026-08-16; D21 revised 2026-08-20 to close `lem-fn`
 bare like every other block, to drop the `<lem-- -->` comment tag, and to drop the datetime
-literal in favour of a `datetime("…")` stdlib constructor.
+literal in favour of a `datetime("…")` stdlib constructor. D24 added 2026-08-22; D25 added
+2026-08-23 so that a content edit in `lem dev` never recompiles the layouts a document
+depends on.

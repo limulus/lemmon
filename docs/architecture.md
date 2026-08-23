@@ -22,7 +22,7 @@ later, unchanged — a Lambda (`ContentSource` seam, D14).
 
 ```ts
 class Core {
-  compile(files: {path, text}[]): Diagnostic[]        // per-file cache by content hash
+  compile(files: {path, text}[]): Diagnostic[]        // changed files only; per-file units, cached (D25)
   loadData(input: DataInput): Diagnostic[]            // records, data files, asset manifest, build info
   upsertRecord(collection, record) / removeRecord(id) // dev server + future on-demand
   plan(): PageRef[]                                   // static pages + expanded generators
@@ -46,8 +46,9 @@ lazy-load in the playground, irrelevant in Node.
 2. **Providers** (shell) — plugin data hooks, document transforms (e.g. link-post reference
    appender), asset pipeline: esbuild → manifest (before compile, because `asset()` is
    compile-checked).
-3. **Compile** (core) — every `.lem`/`.md` → bytecode module; document prose rendered by
-   comrak here and stored as constants (markdown never runs at render time).
+3. **Compile** (core) — every changed `.lem`/`.md` → its own bytecode unit, then a link step
+   joins the units into the module (D25, §Separate compilation); document prose rendered by
+   comrak here and stored in the document's unit (markdown never runs at render time).
 4. **Load** (core) — validate records against schemas, evaluate computed fields, resolve
    reference fields and assets. Failures point at YAML positions.
 5. **Plan** (core) — expand generators → full output list (url, entry, deps).
@@ -57,22 +58,52 @@ lazy-load in the playground, irrelevant in Node.
    `/assets/immutable/…` conventions preserved), passthrough.
 8. **Post-process** (shell) — optional transforms (dprint), link/asset integrity check.
 
-Dev incrementality comes from render-reported deps: template edit → recompile one file,
-re-render dependents; content edit → `upsertRecord`, re-render readers; TS edit → esbuild
-incremental, re-render referencing pages.
+Dev incrementality comes from two reported sets. Render-reported deps: template edit →
+recompile one file, re-render dependents; content edit → `upsertRecord`, re-render readers;
+TS edit → esbuild incremental, re-render referencing pages. Compile-reported facts (D25):
+the shell keys each file's unit on its text plus the facts it consumed, so a document edit
+recompiles that document and nothing else — its layouts are unchanged units, not recompiled
+ones.
+
+## Separate compilation (D25)
+
+The compile unit is the file. Each `.lem`/`.md` compiles to a **unit** with its own constant
+pool (document prose included) and symbolic cross-file references — named functions, types,
+pages — and a link step resolves those to indices when it joins units into the `Module` the
+VM runs. Linking is a pass over plain data; it is what makes relinking the whole site after
+a one-file edit cheaper than recompiling one file.
+
+A unit depends on its text and on the **compile-time facts** it consumed, nothing else:
+
+- signatures and types of the project-flat and plugin names it references (not bodies);
+- the ids of any reference index it resolves a string literal through (language.md §Document
+  mode item 6);
+- the asset-manifest entries `asset()` was checked against (D10).
+
+The compiler reports those facts per file, and the shell's cache key is
+`hash(text) + hash(facts)`. That is the guarantee: a content edit re-runs comrak and codegen
+for that one document; the layouts and components it depends on are cache hits. A new photo
+id invalidates only documents whose facts named the photo index, never the layouts. The
+checker remains whole-program (cheap: the program is small) but runs over units, so
+re-checking never requires recompiling.
+
+`∆c8h`'s `Module` — one shared constant pool, absolute function indices — is the spike
+shortcut for this; `∆TNT` replaces it with units plus link, and `∆RGQ` makes the reported
+facts and the serialized form (`exportModule`) first-class.
 
 ## VM
 
-Stack machine; serializable `Module { constants, functions, types, pages, spans }`. Values
-are immutable and Rc'd:
+Stack machine; serializable `Module { constants, functions, types, pages, spans }`, linked
+from per-file units (above). Values are immutable and Rc'd:
 `Null | Bool | Int | Float | Str | Html | DateTime | Duration | Url | Asset | List | Map | Record | Fn`.
 Records store fields in declaration order (GetField is an index). Ops sketch:
-`Const/Local/Global/Ambient`, `GetField/OptField/ Index`, `Call/CallBuiltin/CallValue` (named
-args reordered at compile time; lambdas are closures over copied captures), `Jump/JumpIfFalse`
-plus the short-circuit `JumpUnlessNull/JumpIfFalseKeep/JumpIfTrueKeep`, `IterInit/IterNext`,
-`TypeTest`, `Emit` (type-directed) and `EmitText`, `Capture/EndCapture` (slot bodies and
-`lem-let` blocks), `Channel/EmitChannel` (dedup by hash; placeholders resolved at page end),
-`Track` (dependency recording), `Return`. Runtime errors carry spans via the pc→span table.
+`Const/Local/Global/Ambient`, `GetField/OptField/ Index`, `Call/CallBuiltin/CallValue`
+(named args reordered at compile time; lambdas are closures over copied captures),
+`Jump/JumpIfFalse` plus the short-circuit `JumpUnlessNull/JumpIfFalseKeep/JumpIfTrueKeep`,
+`IterInit/IterNext`, `TypeTest`, `Emit` (type-directed) and `EmitText`, `Capture/EndCapture`
+(slot bodies and `lem-let` blocks), `Channel/EmitChannel` (dedup by hash; placeholders
+resolved at page end), `Track` (dependency recording), `Return`. Runtime errors carry spans
+via the pc→span table.
 
 What ∆c8h built is the untyped subset of that: `Value` without the stdlib types, maps in
 place of records with `GetField` by name, and no `TypeTest`/`Channel`/`Track` — those arrive
@@ -135,8 +166,8 @@ they cannot inject build-time JS (D06). The shell also exposes a content API
   its diagnostics trailer) and `.tags` (the tag-boundary projection); the VM adds `.html`.
   Whether a case parses clean is data — an empty diagnostics section — not a directory.
   `crates/lemmon-corpus` does discovery, blessing (`npm run corpus:bless`), and failure
-  reporting for every stage. Gates: no orphaned expectations, and every `SyntaxKind`
-  reached by some case.
+  reporting for every stage. Gates: no orphaned expectations, and every `SyntaxKind` reached
+  by some case.
 - `.tags` is the tree-sitter agreement target: tags, close tags, text runs, and item-level
   error nodes, with heads, expressions, and `Block` wrappers elided — the boundaries a
   context-free grammar can be held to, and no more.
