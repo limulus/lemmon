@@ -22,15 +22,12 @@ with VM render time under 1 ms/page. Everything here serves that demo.
 
 ### Core spike
 
-- ∆c8h Codegen + VM — stack machine per docs/architecture.md §VM (output buffer,
-  Capture/EndCapture for `lem-let` blocks and slots, calls with named-arg reordering,
-  spanned runtime errors), enough to run the spike subset
 - ∆Ldn Document mode — fence-aware segmenter, in-core comrak rendering of joined prose,
   `<!--lem:N-->` sentinel splice with lost-sentinel build errors, untyped front matter
-  passthrough for now (docs/language.md §Document mode); needs: ∆c8h
+  passthrough for now (docs/language.md §Document mode)
 - ∆TNT WASM boundary — wasm-bindgen build of the core, `@limulus/lemmon-core` typed wrapper
   (compile/loadData/render), and a small Node harness that renders fixtures, measuring
-  boundary marshalling cost so the few-large-calls design is validated early; needs: ∆c8h
+  boundary marshalling cost so the few-large-calls design is validated early
 
 ### Prove it
 

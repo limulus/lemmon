@@ -1,0 +1,2 @@
+<lem-let f = |a, b| a + b />
+<lem.f(1)>

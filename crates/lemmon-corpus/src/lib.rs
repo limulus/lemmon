@@ -14,10 +14,11 @@ use std::path::{Path, PathBuf};
 /// Every extension a stage may check a case against, one per stage artifact.
 ///
 /// `lemmon-syntax` owns `cst` (the tree with its diagnostics trailer) and `tags` (the
-/// tag-boundary projection the tree-sitter grammar has to agree with). The VM adds
-/// `html` with `∆c8h`. An extension listed here that no test checks is not an error;
-/// one that is *not* listed is, so a typo'd or stale expectation cannot sit unread.
-pub const EXPECTATIONS: &[&str] = &["cst", "tags"];
+/// tag-boundary projection the tree-sitter grammar has to agree with); `lemmon-vm` owns
+/// `html` (the rendered output with its diagnostics trailer). An extension listed here
+/// that no test checks is not an error; one that is *not* listed is, so a typo'd or
+/// stale expectation cannot sit unread.
+pub const EXPECTATIONS: &[&str] = &["cst", "tags", "html"];
 
 /// The extension every corpus input carries today. Documents (`.md`) join it with
 /// `∆Ldn`.
@@ -268,9 +269,9 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "no corpus group at render")]
+    #[should_panic(expected = "no corpus group at document")]
     fn refuses_a_group_that_does_not_exist_yet() {
-        let _ = cases("render");
+        let _ = cases("document");
     }
 
     #[test]

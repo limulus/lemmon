@@ -95,7 +95,7 @@ syntax_kinds! {
     LetBlock,
     /// `<lem-fn name(params)> … </lem-fn>`
     FnBlock,
-    /// `<lem-fn name(params) = expr />` — recognised, not yet supported.
+    /// `<lem-fn name(params): T = expr />`
     FnVoid,
     /// A builtin outside the parsed subset, skipped opaquely.
     UnsupportedTag,

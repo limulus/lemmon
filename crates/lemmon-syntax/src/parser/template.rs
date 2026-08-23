@@ -335,7 +335,6 @@ fn open_tag<'src>(p: &mut Parser<'src>, stack: &mut Vec<Open<'src>>) {
         }
         Builtin::Fn => {
             if head_has_eq(p) {
-                p.error("expression-bodied functions are not supported yet", span);
                 head(p, |p| {
                     fn_signature(p);
                     p.expect(TokenKind::Eq, "`=`");
@@ -705,10 +704,10 @@ mod parse_tests {
     }
 
     #[test]
-    fn reports_an_expression_bodied_fn_as_unsupported() {
+    fn parses_an_expression_bodied_fn_clean() {
         assert_eq!(
             messages("<lem-fn f(a: int): int = a />"),
-            vec!["expression-bodied functions are not supported yet"]
+            Vec::<String>::new()
         );
     }
 

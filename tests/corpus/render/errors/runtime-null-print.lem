@@ -1,0 +1,2 @@
+<lem-let article = {subhead: null} />
+<p><lem.article.subhead></p>

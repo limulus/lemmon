@@ -1,0 +1,11 @@
+<lem-let text = "Tom & Jerry <3 \"quoted\" 'single'" />
+<p><lem.text></p>
+<p title="<lem.text>"></p>
+<lem-let markup>
+  <b><lem.text></b>
+</lem-let>
+<lem.markup>
+<lem.raw("<i>vouched for</i>")>
+<lem.raw(markup)>
+<lem.42> <lem.-7> <lem.1.5> <lem.10 / 4.0>
+<lem.text + " & more">

@@ -17,8 +17,8 @@ pub fn version() -> String {
 
 /// Renders a spanned runtime error the way the shell will receive one.
 #[wasm_bindgen]
-pub fn describe_error(start: u32, end: u32, message: String) -> String {
-    RuntimeError::new(Span::new(start, end), message).to_string()
+pub fn describe_error(path: String, start: u32, end: u32, message: String) -> String {
+    RuntimeError::new(path, Span::new(start, end), message).to_string()
 }
 
 #[cfg(test)]
@@ -33,8 +33,8 @@ mod tests {
     #[test]
     fn renders_a_runtime_error_across_the_boundary() {
         assert_eq!(
-            describe_error(3, 8, "no such field".to_owned()),
-            "3..8: no such field"
+            describe_error("a.lem".to_owned(), 3, 8, "no such field".to_owned()),
+            "a.lem:3..8: no such field"
         );
     }
 }

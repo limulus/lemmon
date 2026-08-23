@@ -9,8 +9,9 @@ a parity harness shows zero unexpected output diffs.
 
 **Status:** early implementation. The work is sequenced in `BACKLOG.md` (delto-managed); the
 current milestone is the Phase 0 spike — one real page rendering end-to-end from the WASM
-core. Both halves of the repo scaffolding exist (see Layout); the scanner is landing with
-∆FDQ, and nothing above it (parser, checker, VM) exists yet.
+core. Both halves of the repo scaffolding exist (see Layout). The core runs scanner → parser
+→ typed AST → bytecode compiler → VM for the spike subset, untyped: the checker (∆C8d),
+document mode (∆Ldn), and the WASM boundary (∆TNT) do not exist yet.
 
 ## Canonical references
 
@@ -60,7 +61,7 @@ These hold for every change. A PR that breaks one is wrong even if its tests pas
 ```
 crates/lemmon-syntax/   scanner, parser, CST/AST, diagnostics           (scanner → typed AST)
 crates/lemmon-corpus/   corpus discovery + blessing, used by every stage's tests
-crates/lemmon-vm/       types, checker, codegen, VM, document mode      (skeleton)
+crates/lemmon-vm/       codegen + VM today; checker and document mode to come
 crates/lemmon-wasm/     wasm-bindgen boundary (lemmon-core's .wasm)     (skeleton)
 packages/core/          @limulus/lemmon-core — typed JS wrapper around the .wasm (stub)
 packages/shell/         @limulus/lemmon-shell — CLI, walker, plugin host, dev server (stub)
@@ -230,11 +231,12 @@ Diagnostics raised only during declaration emit surface in `npm run build` (CI r
   with a name that reads as a sentence about the subject — the closest Rust gets to the
   `it('should …')` convention above
 - The golden corpus in `tests/corpus/` is the shared truth across stages: a `.lem` input
-  plus one expectation file per stage (`.cst` and `.tags` from `lemmon-syntax` today).
-  `crates/lemmon-corpus` does discovery and blessing for all of them — add an extension
-  there and one `check` call, never a second walker. Its `.tags` projection is the
-  tree-sitter agreement target (invariant 9), and a `SyntaxKind` no case reaches fails the
-  build, which is what makes "lands with corpus coverage" mechanical
+  plus one expectation file per stage (`.cst` and `.tags` from `lemmon-syntax`, `.html` from
+  `lemmon-vm`). `crates/lemmon-corpus` does discovery and blessing for all of them — add an
+  extension there and one `check` call, never a second walker. Its `.tags` projection is the
+  tree-sitter agreement target (invariant 9), and a `SyntaxKind` no case reaches — or an
+  `Op` no `render/` case emits — fails the build, which is what makes "lands with corpus
+  coverage" mechanical
 - WASM (when it exists): wasm-bindgen-test via Node for the boundary
 
 ## Code Style Guidelines

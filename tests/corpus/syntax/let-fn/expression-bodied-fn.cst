@@ -70,5 +70,3 @@ Root@0..117
     Text@116..117 "\n"
 
 --- diagnostics
-0..7: expression-bodied functions are not supported yet
-49..56: expression-bodied functions are not supported yet

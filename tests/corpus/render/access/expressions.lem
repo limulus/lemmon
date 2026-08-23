@@ -1,0 +1,15 @@
+<lem-let article = {title: "The Rebound", subhead: null, tags: ["article", "glaciers"], "quoted key": true} />
+<lem-let n = 7 />
+arithmetic: <lem.n + 1> <lem.n - 1> <lem.n * 2> <lem.n / 2> <lem.n % 2> <lem.-n> <lem.(n + 1) * 2>
+floats: <lem.1.5 + n> <lem.7 / 2.0> <lem.2 * 1.25>
+ordering: <lem.n lt 8 ? "lt" : "-"> <lem.n lte 7 ? "lte" : "-"> <lem.n gt 7 ? "gt" : "-"> <lem.n gte 7 ? "gte" : "-">
+strings: <lem."b" gt "a" ? "ordered" : "-"> <lem."a" + "b">
+equality: <lem.n == 7 ? "eq" : "-"> <lem.n != 7 ? "-" : "ne"> <lem.[1, 2] == [1, 2] ? "structural" : "-">
+logic: <lem.true && false ? "-" : "and"> <lem.false || true ? "or" : "-"> <lem.!false ? "not" : "-">
+short-circuit: <lem.false && article.missing ? "-" : "skipped"> <lem.true || article.missing ? "skipped" : "-">
+coalesce: <lem.article.subhead ?? "no subhead"> <lem.article.title ?? "unused">
+optional: <lem.article?.title> <lem.article.subhead?.length ?? "null propagated">
+membership: <lem."article" in article.tags ? "in list" : "-"> <lem."title" in article ? "in map" : "-"> <lem.3 in [1, 2] ? "-" : "absent">
+index: <lem.article.tags[1]> <lem.article["quoted key"] ? "quoted" : "-">
+ternary chain: <lem.n gt 10 ? "big" : n gt 5 ? "medium" : "small">
+trailing commas: <lem.[1, 2,][1]> <lem.{a: 1,}.a>

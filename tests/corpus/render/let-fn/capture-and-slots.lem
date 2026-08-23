@@ -1,0 +1,29 @@
+<lem-fn chipList(slot: html, size: string)>
+  <ul class="chips <lem.size>">
+    <lem.slot>
+  </ul>
+</lem-fn>
+<lem-fn authorChip(article: map, nolink: bool)>
+  <lem-if nolink>
+    <span><lem.article.author></span>
+  <lem-else />
+    <a href="/<lem.article.author>/"><lem.article.author></a>
+  </lem-if>
+</lem-fn>
+<lem-fn countdown(n: int)>
+  <lem-if n gt 0><lem.n> <lem.countdown(n - 1)><lem-else />liftoff</lem-if>
+</lem-fn>
+<lem-let article = {author: "eric"} />
+<lem-let chips>
+  <li><lem.authorChip(article, nolink: true)></li>
+  <li><lem.authorChip(nolink: false, article: article)></li>
+</lem-let>
+<lem.chipList(size: "small", slot: chips)>
+<lem.chipList(chips, "large")>
+<p><lem.countdown(3)></p>
+<lem-let inner = "a block-scoped binding" />
+<lem-if true>
+  <lem-let inner = "shadows the outer one inside the block" />
+  <lem.inner>
+</lem-if>
+<lem.inner>

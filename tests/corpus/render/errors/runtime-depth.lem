@@ -1,0 +1,2 @@
+<lem-fn forever(n: int): int = forever(n + 1) />
+<lem.forever(0)>

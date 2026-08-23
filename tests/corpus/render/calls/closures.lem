@@ -1,0 +1,18 @@
+<lem-fn apply(f: function, x: int): int = f(x) />
+<lem-fn twice(f: function, x: int): int = f(f(x)) />
+<lem-fn increment(x: int): int = x + 1 />
+<lem-let n = 10 />
+<lem-let addN = |x| x + n />
+<lem-let pair = |a, b| a * b />
+<lem-let constant = || 42 />
+<lem.addN(1)> <lem.pair(6, 7)> <lem.constant()>
+<lem.apply(addN, 5)> <lem.apply(|x| x * x, 5)> <lem.apply(increment, 5)>
+<lem.twice(addN, 0)>
+<lem-let outer = 100 />
+<lem-let nested = |a| (|b| a + b + outer)(1) />
+<lem.nested(10)>
+<lem-let f = increment />
+<lem.f(1)>
+<lem-let fns = {inc: increment} />
+<lem.fns.inc(2)>
+<lem.page.title> at <lem.page.url> on <lem.site.name>

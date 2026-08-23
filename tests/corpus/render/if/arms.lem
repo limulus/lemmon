@@ -1,0 +1,20 @@
+<lem-let article = {title: "T", hero: null, vod: {poster: "p.jpg"}, draft: false} />
+<lem-if article.hero>
+  <p>hero</p>
+<lem-else-if article.vod />
+  <p>poster: <lem.article.vod.poster></p>
+<lem-else />
+  <p>neither</p>
+</lem-if>
+<lem-if article.draft>
+  <p>draft</p>
+</lem-if>
+<lem-if !article.draft><span>published</span></lem-if>
+<lem-if article.hero><p>hero</p><lem-else /><p>inline else</p></lem-if>
+<lem-if article.title == "T">
+  <lem-if article.vod>
+    <p>nested</p>
+  </lem-if>
+<lem-else />
+  never
+</lem-if>

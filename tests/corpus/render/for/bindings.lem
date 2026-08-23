@@ -1,0 +1,30 @@
+<lem-let articles = [{title: "A", tags: ["x"]}, {title: "B", tags: []}] />
+<ul>
+  <lem-for article in articles>
+  <li><lem.article.title></li>
+  </lem-for>
+</ul>
+<ol>
+  <lem-for article, i in articles>
+  <li><lem.i + 1>. <lem.article.title>
+    <lem-for tag in article.tags>
+    #<lem.tag>
+    <lem-else />
+    (untagged)
+    </lem-for>
+  </li>
+  </lem-for>
+</ol>
+<dl>
+  <lem-for key, value in {a: 1, b: 2}>
+  <dt><lem.key></dt><dd><lem.value></dd>
+  </lem-for>
+  <lem-for key in {c: 3}><dt><lem.key></dt></lem-for>
+</dl>
+<lem-for x in []>
+  never
+<lem-else />
+  empty
+</lem-for>
+<lem-let outer = "shadowed?" />
+<lem-for outer in ["inner"]><lem.outer></lem-for> <lem.outer>

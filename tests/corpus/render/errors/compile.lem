@@ -1,0 +1,26 @@
+<lem-fn f(a: int, b: int): int = a + b />
+<lem-fn f(x: int): int = x />
+<lem.f(1, 2, 3)>
+<lem.f(1, c: 2)>
+<lem.f(1, a: 2)>
+<lem.f(1)>
+<lem.nope>
+<lem.nope(1)>
+<lem.raw>
+<lem.raw(1, 2)>
+<lem.raw(x: 1)>
+<lem.(|x| x)(y: 1)>
+<lem-let g = |x| x />
+<lem.g(x: 1)>
+<lem.page(x: 1)>
+<lem.1 is Article>
+<lem-let n = 1 />
+<lem-let n = 2 />
+<lem-let big = 99999999999999999999 />
+<lem-let page = "shadowing an ambient record" />
+<lem-fn build(): int = 1 />
+<lem-fn dup(a: int, a: int): int = a />
+<lem-let m = {k: 1, k: 2} />
+<lem-if true>
+  <lem-fn nested(): int = 1 />
+</lem-if>

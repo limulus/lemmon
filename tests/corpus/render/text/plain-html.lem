@@ -1,0 +1,8 @@
+<!doctype html>
+<html>
+  <body>
+    <!-- a comment passes through; so does a custom element -->
+    <my-element data-x="1">&lt;lem is an escape for a literal trigger</my-element>
+    <p>A bare <lem> is text, as is a stray > here.</p>
+  </body>
+</html>

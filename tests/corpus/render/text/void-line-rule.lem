@@ -1,0 +1,16 @@
+<lem-let first = "at the top of the file" />
+<ul>
+  <lem-let a = 1 />
+  <li>alone on its line: the line above is gone</li>
+  <lem-let b = 2 /> <li>shares a line: kept</li>
+  <lem-let d = 4 /><lem-let e = 5 />
+  <li>two void tags on one line: the line goes too</li>
+  <lem-let g = 6 /><li>a void tag beside markup keeps its line</li>
+  <li><lem-let c = 3 /></li>
+  <li>
+    <lem.a + b + c + d + e + g>
+  </li>
+  <lem-fn f(x: int): int = x />
+</ul>
+<lem.first>
+<lem-let last = "at the very end" />

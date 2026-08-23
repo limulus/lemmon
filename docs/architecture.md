@@ -67,11 +67,16 @@ Stack machine; serializable `Module { constants, functions, types, pages, spans 
 are immutable and Rc'd:
 `Null | Bool | Int | Float | Str | Html | DateTime | Duration | Url | Asset | List | Map | Record | Fn`.
 Records store fields in declaration order (GetField is an index). Ops sketch:
-`Const/Local/Global`, `GetField/OptField/ Index`, `Call/CallBuiltin/CallValue` (named args
-reordered at compile time), `Jump/JumpIfFalse/JumpIfNull`, `IterInit/IterNext`, `TypeTest`,
-`EmitText/EmitHtml/EmitTyped`, `Capture/EndCapture` (slot bodies and `lem-let` blocks),
-`Channel/EmitChannel` (dedup by hash; placeholders resolved at page end), `Track`
-(dependency recording), `Return`. Runtime errors carry spans via the pc→span table.
+`Const/Local/Global/Ambient`, `GetField/OptField/ Index`, `Call/CallBuiltin/CallValue` (named
+args reordered at compile time; lambdas are closures over copied captures), `Jump/JumpIfFalse`
+plus the short-circuit `JumpUnlessNull/JumpIfFalseKeep/JumpIfTrueKeep`, `IterInit/IterNext`,
+`TypeTest`, `Emit` (type-directed) and `EmitText`, `Capture/EndCapture` (slot bodies and
+`lem-let` blocks), `Channel/EmitChannel` (dedup by hash; placeholders resolved at page end),
+`Track` (dependency recording), `Return`. Runtime errors carry spans via the pc→span table.
+
+What ∆c8h built is the untyped subset of that: `Value` without the stdlib types, maps in
+place of records with `GetField` by name, and no `TypeTest`/`Channel`/`Track` — those arrive
+with the checker (∆C8d), the stdlib (∆Q6L), and side channels (∆RGQ).
 
 Calibration, not promise: whole site tens of ms inside WASM; single page well under 1 ms of
 VM time (that number is the Phase 0 exit criterion).
