@@ -1,0 +1,350 @@
+//! Document mode's markdown stage: the prose of a `.md` file, rendered at compile time.
+//!
+//! The segmenter (`lemmon_syntax::parse_document`) says where the lem-blocks are; this
+//! module renders everything between them. The prose runs are joined with
+//! `<!--lem:N-->` sentinel lines and rendered by comrak as one document, so that
+//! reference links and footnotes resolve across blocks, then the output is cut at the
+//! sentinels into one HTML chunk per gap. A sentinel line is a CommonMark type-2 HTML
+//! block, so when it is where it should be it renders verbatim as a sibling of the
+//! paragraphs around it; when markdown swallowed it — into a paragraph, a list, a
+//! blockquote, indented code — the block's output would land somewhere its author did
+//! not put it, and that is a compile error at the block (`docs/language.md` §Document
+//! mode, item 4). So is a lem tag left in the prose: tags are block-level only in v1.
+//!
+//! [`options`] lives here rather than with the adapters because it is not only a set of
+//! markdown preferences: `render.unsafe` is what lets a sentinel line through to be cut
+//! on, so it is part of the splice below. What comrak cannot do at all — heading ids
+//! today, syntax highlighting when it lands — is supplied through its plugin seams by
+//! [`adapters`].
+
+mod adapters;
+
+use comrak::nodes::{NodeValue, Sourcepos};
+use comrak::{Arena, Options, format_html_with_plugins, options::Plugins, parse_document};
+use lemmon_syntax::{DocumentParse, Span};
+
+use crate::compile::CompileError;
+use adapters::Headings;
+
+/// comrak's configuration (D08): CommonMark plus footnotes, `{#id}` heading attributes,
+/// and raw HTML passed through — prose is the author's own. Heading ids are
+/// [`Headings`](adapters::Headings)' job: comrak parses `{#id}` but its renderer does
+/// not apply it, and its own id option appends an anchor link to every heading
+/// besides.
+fn options() -> Options<'static> {
+    let mut options = Options::default();
+    options.extension.footnotes = true;
+    options.extension.header_attributes = true;
+    options.render.r#unsafe = true;
+    options
+}
+
+fn sentinel(index: usize) -> String {
+    format!("<!--lem:{index}-->")
+}
+
+/// Renders a document's prose to one HTML chunk per gap between its blocks: the
+/// chunk at `i` stands before block `i`, the last one after every block.
+///
+/// # Errors
+///
+/// One per lem-block that markdown swallowed, per lem tag that reached the prose, and
+/// per reserved sentinel written into the prose by hand.
+pub(crate) fn render_prose(
+    path: &str,
+    src: &str,
+    doc: &DocumentParse,
+) -> Result<Vec<String>, Vec<CompileError>> {
+    let mut errors = Vec::new();
+    let error = |errors: &mut Vec<CompileError>, span: Span, message: &str| {
+        errors.push(CompileError {
+            path: path.to_owned(),
+            span,
+            message: message.to_owned(),
+        });
+    };
+
+    // The joined prose, and where each run of it came from.
+    let mut joined = String::new();
+    let mut runs: Vec<(usize, Span)> = Vec::new();
+    for (index, run) in doc.prose.iter().enumerate() {
+        let text = &src[run.start as usize..run.end as usize];
+        if let Some(at) = text.find("<!--lem:") {
+            let at = run.start + index_u32(at);
+            error(
+                &mut errors,
+                Span::new(at, at + 8),
+                "`<!--lem:` is reserved for document mode's own sentinels",
+            );
+        }
+        runs.push((joined.len(), *run));
+        joined.push_str(text);
+        if index < doc.blocks.len() {
+            joined.push_str(&sentinel(index));
+            joined.push('\n');
+        }
+    }
+    if !errors.is_empty() {
+        return Err(errors);
+    }
+
+    let arena = Arena::new();
+    let root = parse_document(&arena, &joined, &options());
+    let lines = line_starts(&joined);
+    // Every span below is measured on the *source* the node came from, never on the
+    // text comrak decoded from it: `&lt;lem.x&gt;` and `\<lem.x>` are a tag once
+    // decoded and are not one as written, and an entity earlier in a line shifts every
+    // offset after it besides.
+    let source_range = |pos: Sourcepos| -> (usize, usize) {
+        let start = (lines[pos.start.line - 1] + pos.start.column - 1).min(joined.len());
+        let mut end = (lines[pos.end.line - 1] + pos.end.column).min(joined.len());
+        while end < joined.len() && !joined.is_char_boundary(end) {
+            end += 1;
+        }
+        (start, end.max(start))
+    };
+    let to_source = |offset: usize, len: usize| -> Span {
+        let &(joined_start, run) = runs
+            .iter()
+            .rev()
+            .find(|(start, _)| *start <= offset)
+            .expect("every offset follows the first run");
+        let start = run.start + index_u32(offset - joined_start);
+        Span::new(start.min(run.end), (start + index_u32(len)).min(run.end))
+    };
+
+    let mut found = vec![false; doc.blocks.len()];
+    for node in root.descendants() {
+        let data = node.data.borrow();
+        let at_root = match &data.value {
+            NodeValue::HtmlBlock(_) => node.parent().is_some_and(|p| p.parent().is_none()),
+            NodeValue::HtmlInline(_) | NodeValue::Text(_) => false,
+            _ => continue,
+        };
+        let (start, end) = source_range(data.sourcepos);
+        if at_root
+            && let Some(index) = joined[start..end]
+                .trim_end()
+                .strip_prefix("<!--lem:")
+                .and_then(|rest| rest.strip_suffix("-->"))
+                .and_then(|digits| digits.parse::<usize>().ok())
+        {
+            found[index] = true;
+            continue;
+        }
+        if let Some(at) = tag_start(&joined, start..end) {
+            let len = joined[at..end].find('>').map_or(end - at, |i| i + 1);
+            error(
+                &mut errors,
+                to_source(at, len),
+                "lem tags in prose must stand alone on a line: inline tags are not supported",
+            );
+        }
+    }
+    for (index, block) in doc.blocks.iter().enumerate() {
+        if !found[index] {
+            error(
+                &mut errors,
+                *block,
+                "markdown swallowed this lem-block: a block must stand at the top level of \
+                 the document — not inside a paragraph, list, blockquote, indented code, or \
+                 a raw HTML block, which a blank line above and below the block ends",
+            );
+        }
+    }
+    if !errors.is_empty() {
+        return Err(errors);
+    }
+
+    let headings = Headings::new(root);
+    let mut plugins = Plugins::default();
+    plugins.render.heading_adapter = Some(&headings);
+    let mut html = String::new();
+    format_html_with_plugins(root, &options(), &mut html, &plugins)
+        .expect("writing to a String cannot fail");
+    let mut chunks = Vec::with_capacity(doc.blocks.len() + 1);
+    let mut rest = html.as_str();
+    for index in 0..doc.blocks.len() {
+        let marker = sentinel(index);
+        let at = rest
+            .find(&marker)
+            .expect("a sentinel found in the tree is in the output");
+        chunks.push(rest[..at].to_owned());
+        // The sentinel's own newline stays with the chunk after it: a block is a line
+        // of the document, and its output ends that line the way the prose's does.
+        rest = &rest[at + marker.len()..];
+    }
+    chunks.push(rest.to_owned());
+    Ok(chunks)
+}
+
+/// The byte offset of each line's first byte.
+fn line_starts(text: &str) -> Vec<usize> {
+    std::iter::once(0)
+        .chain(text.match_indices('\n').map(|(i, _)| i + 1))
+        .collect()
+}
+
+/// Where a lem tag starts within `text[range]`, as an offset into `text`, if one does.
+///
+/// Takes the whole text rather than the slice because the byte that decides whether a
+/// tag is a tag can lie outside it: comrak starts an escaped node *at* the `<`, leaving
+/// the backslash that escaped it behind. An odd number of backslashes escapes the `<`,
+/// as CommonMark says; an even number is escaped backslashes and a real tag.
+fn tag_start(text: &str, range: std::ops::Range<usize>) -> Option<usize> {
+    let (start, end) = (range.start, range.end);
+    let mut from = start;
+    while let Some(at) = text[from..end].find('<').map(|i| from + i) {
+        let backslashes = text[..at].bytes().rev().take_while(|&b| b == b'\\').count();
+        if backslashes % 2 == 0
+            && ["<lem.", "<lem-", "</lem-"]
+                .iter()
+                .any(|tag| text[at..].starts_with(tag))
+        {
+            return Some(at);
+        }
+        from = at + 1;
+    }
+    None
+}
+
+fn index_u32(index: usize) -> u32 {
+    u32::try_from(index).expect("sources are smaller than 4 GiB")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn render(src: &str) -> Result<Vec<String>, Vec<CompileError>> {
+        let doc = lemmon_syntax::parse_document(src);
+        render_prose("doc.md", src, &doc)
+    }
+
+    fn messages(result: Result<Vec<String>, Vec<CompileError>>) -> Vec<String> {
+        result
+            .expect_err("an error")
+            .iter()
+            .map(ToString::to_string)
+            .collect()
+    }
+
+    #[test]
+    fn renders_prose_without_blocks_as_one_chunk() {
+        assert_eq!(
+            render("Hi *there*\n").unwrap(),
+            vec!["<p>Hi <em>there</em></p>\n"]
+        );
+    }
+
+    #[test]
+    fn splits_the_output_around_each_block() {
+        let chunks = render("a\n\n<lem.x>\n\nb\n").unwrap();
+        assert_eq!(chunks, vec!["<p>a</p>\n", "\n<p>b</p>\n"]);
+    }
+
+    #[test]
+    fn leaves_an_empty_chunk_where_blocks_are_adjacent() {
+        let chunks = render("<lem.x>\n<lem.y>\n").unwrap();
+        assert_eq!(chunks, vec!["", "\n", "\n"]);
+    }
+
+    #[test]
+    fn resolves_reference_links_across_blocks() {
+        let chunks = render("[a]\n\n<lem.x>\n\n[a]: /a\n").unwrap();
+        assert_eq!(chunks[0], "<p><a href=\"/a\">a</a></p>\n");
+    }
+
+    #[test]
+    fn writes_an_escaped_tag_in_prose_as_text() {
+        let chunks = render("Writing &lt;lem.x&gt; and \\<lem.y> in prose.\n").unwrap();
+        assert_eq!(
+            chunks[0],
+            "<p>Writing &lt;lem.x&gt; and &lt;lem.y&gt; in prose.</p>\n"
+        );
+    }
+
+    #[test]
+    fn takes_an_even_run_of_backslashes_before_a_tag_as_a_tag() {
+        let msgs = messages(render("a \\\\<lem.x> b\n"));
+        assert_eq!(msgs.len(), 1);
+        assert!(msgs[0].starts_with("doc.md:4..11: lem tags"), "{msgs:?}");
+    }
+
+    #[test]
+    fn points_at_the_tag_itself_after_an_entity_earlier_in_the_line() {
+        let msgs = messages(render("&amp;&amp;é <lem.x> here\n"));
+        assert_eq!(msgs.len(), 1);
+        assert!(msgs[0].starts_with("doc.md:13..20: lem tags"), "{msgs:?}");
+    }
+
+    #[test]
+    fn passes_raw_html_through() {
+        assert_eq!(render("<div>x</div>\n").unwrap(), vec!["<div>x</div>\n"]);
+    }
+
+    #[test]
+    fn rejects_a_tag_inside_a_blockquote_as_prose() {
+        let msgs = messages(render("> quote\n> <lem.x>\n"));
+        assert_eq!(msgs.len(), 1);
+        assert!(
+            msgs[0].starts_with("doc.md:10..17: lem tags in prose"),
+            "{msgs:?}"
+        );
+    }
+
+    #[test]
+    fn rejects_a_block_inside_indented_code() {
+        let msgs = messages(render("text\n\n    <lem.x>\n"));
+        assert!(
+            msgs[0].starts_with("doc.md:10..17: markdown swallowed"),
+            "{msgs:?}"
+        );
+    }
+
+    #[test]
+    fn rejects_a_block_inside_a_list_item() {
+        let msgs = messages(render("- item\n  <lem.x>\n"));
+        assert!(msgs[0].contains("swallowed"), "{msgs:?}");
+    }
+
+    #[test]
+    fn lets_a_block_interrupt_a_paragraph() {
+        assert_eq!(
+            render("text\n<lem.x>\n").unwrap(),
+            vec!["<p>text</p>\n", "\n"]
+        );
+    }
+
+    #[test]
+    fn rejects_a_tag_in_the_middle_of_a_paragraph() {
+        let msgs = messages(render("---\nf: 1\n---\nsee <lem.x> here\n"));
+        assert_eq!(msgs.len(), 1);
+        assert!(
+            msgs[0].starts_with("doc.md:17..24: lem tags in prose"),
+            "{msgs:?}"
+        );
+    }
+
+    #[test]
+    fn rejects_a_keyword_tag_in_a_list_item() {
+        let msgs = messages(render("- <lem-if x>\n"));
+        assert!(msgs[0].starts_with("doc.md:2..12: lem tags"), "{msgs:?}");
+    }
+
+    #[test]
+    fn allows_tags_inside_code() {
+        let chunks = render("`<lem.x>`\n\n```\n<lem-if y>\n```\n").unwrap();
+        assert!(chunks[0].contains("&lt;lem.x&gt;"));
+        assert!(chunks[0].contains("&lt;lem-if y&gt;"));
+    }
+
+    #[test]
+    fn rejects_a_hand_written_sentinel() {
+        let msgs = messages(render("x\n\n<!--lem:0-->\n\n<lem.y>\n"));
+        assert!(
+            msgs[0].starts_with("doc.md:3..11: `<!--lem:` is reserved"),
+            "{msgs:?}"
+        );
+    }
+}

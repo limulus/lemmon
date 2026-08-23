@@ -243,9 +243,13 @@ renders prose; the VM renders Lemmon blocks; outputs are spliced.
 
 1. A **lem-block** starts on a line whose first non-whitespace is `<lem.` or `<lem-`,
    outside fenced code. It ends at its matching close (or the void tag's own `>`/`/>`),
-   possibly many lines later; fences inside a block body are respected.
+   possibly many lines later; fences inside a block body are respected. Nothing but
+   whitespace may follow the close on its line — a block ends its line, in the source
+   and in the output, and text after it is an error rather than a guess at prose.
 2. A block's body is itself a **document** — markdown prose plus nested blocks — so
    `<lem-let note>Some *emphasised* text</lem-let>` captures rendered markdown.
+   _Not yet (∆Hbw): today a body is a template, as in a `.lem` file, and the fence
+   rule in item 1 has nothing to apply to inside one._
 3. Prose runs are joined with `<!--lem:N-->` sentinel lines and rendered as **one**
    markdown document (reference links and footnotes resolve document-wide). A sentinel
    line is a CommonMark type-2 HTML block, so splice points are always siblings of
@@ -259,11 +263,17 @@ renders prose; the VM renders Lemmon blocks; outputs are spliced.
 6. Front matter is a typed record (the collection's schema); the body has `page` and
    `site` in scope. String literals where a record is expected resolve through reference
    indexes at compile time: `<lem.photo("middle-falls-letchworth-state-park",
-   placement: right)>` — a typo'd id is a build error.
+   placement: right)>` — a typo'd id is a build error. _Not yet (∆Hbw, ∆C8d): the core
+   skips a leading `---` block without reading it — the shell's YAML parser owns it —
+   and a string literal is a string._
+7. A void keyword tag (`<lem-let x = … />`) takes its line with it, as in a template
+   (§Tags); an access tag or a block keeps the line ending after it, so that two
+   blocks' output stand on two lines.
 
-comrak configuration: CommonMark + footnotes, attribute-style heading ids,
-`header_attributes` (`{#id}`), syntect highlighting (class-based, generated theme CSS),
-`render.unsafe` (raw HTML passes through). A shell-side `markdown` override hook is
+comrak configuration: CommonMark + footnotes, attribute-style heading ids (`<h2 id="…">`,
+slugged from the text and made unique, no anchor link injected), `header_attributes`
+(`{#id}`), syntect highlighting (class-based, generated theme CSS — _not yet_, its own
+item), `render.unsafe` (raw HTML passes through). A shell-side `markdown` override hook is
 reserved but not built.
 
 ## Canonical example

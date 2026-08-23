@@ -15,14 +15,15 @@ that did not exist when it was written.
 tests/corpus/
   syntax/<feature>/<name>.lem     a template, parsed by lemmon-syntax
   render/<feature>/<name>.lem     a template, compiled and rendered by lemmon-vm
+  document/<feature>/<name>.md    a document, segmented by lemmon-syntax and rendered by lemmon-vm
 ```
 
 The top level groups by **what a case is for**. `syntax/` is parse-only; `render/` runs the
 compiler and VM, and supplies its own data with `lem-let` literals (`page` and `site` are
-bound to small fixed records by the test); `document/` (∆Ldn, `.md` in document mode) joins
-them when that stage lands. Below that, directories group by **language feature**, and names
-are descriptive — no numeric prefixes, because a corpus that only grows makes them
-meaningless.
+bound to small fixed records by the test); `document/` is `.md` in document mode, checked by
+both crates — its `.cst` shows the segmentation and its `.html` the spliced output. Below
+that, directories group by **language feature**, and names are descriptive — no numeric
+prefixes, because a corpus that only grows makes them meaningless.
 
 There is no `ok/` versus `broken/` split. Whether a case parses clean is _data_: its
 diagnostics section is empty. That keeps a case in the directory that says what it tests
@@ -30,11 +31,12 @@ even after a language change turns it from clean to broken, or back.
 
 ## Expectations
 
-Each case is a `.lem` input plus one expectation file per stage, sharing its basename:
+Each case is a `.lem` or `.md` input plus one expectation file per stage, sharing its
+basename:
 
 | File          | Produced by                    | Contents                                                                                                                                                         |
 | ------------- | ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `<name>.cst`  | `lemmon_syntax::dump`          | The lossless tree, one node or token per line, then `--- diagnostics` and one `start..end: message` per line                                                     |
+| `<name>.cst`  | `lemmon_syntax::dump`          | The lossless tree, one node or token per line, then `--- diagnostics` and one `start..end: message` per line; for a `.md`, the tree `parse_document` assembled   |
 | `<name>.tags` | `lemmon_syntax::tag_dump`      | The tag-boundary projection: text runs, tag nodes, close tags, and the errors standing where an item would, with heads, expressions, and `Block` wrappers elided |
 | `<name>.html` | `lemmon_vm::{compile, render}` | The rendered output, then `--- diagnostics` and one `path:start..end: message` per compile error, or for the runtime error that stopped the render               |
 
@@ -68,7 +70,7 @@ it is a proposal.** Read the resulting `git diff` before keeping it:
 Write the `.lem`, run `npm run corpus:bless`, read the diff, commit both. The harness
 enforces the rest:
 
-- **No orphans.** Every file here is a `.lem`, an expectation belonging to one, or this
+- **No orphans.** Every file here is an input, an expectation belonging to one, or this
   README. A renamed case cannot leave stale expectations behind.
 - **Every `SyntaxKind` is reached.** A node or token kind that no case produces fails the
   build, so a new piece of syntax cannot land without a case. The only escape is the

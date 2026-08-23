@@ -1,0 +1,16 @@
+Root@0..31
+  Text@0..14
+    Text@0..14 "<!--lem:0-->\n\n"
+  AccessTag@14..30
+    OpenAccess@14..19 "<lem."
+    Head@19..29
+      MemberExpr@19..29
+        NameRef@19..23
+          Ident@19..23 "page"
+        Dot@23..24 "."
+        Ident@24..29 "title"
+    Close@29..30 ">"
+  Text@30..31
+    Text@30..31 "\n"
+
+--- diagnostics

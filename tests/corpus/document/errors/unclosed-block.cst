@@ -1,0 +1,17 @@
+Root@0..71
+  IfTag@0..71
+    OpenTag@0..7 "<lem-if"
+    Trivia@7..8 " "
+    Head@8..16
+      MemberExpr@8..16
+        NameRef@8..12
+          Ident@8..12 "page"
+        Dot@12..13 "."
+        Ident@13..16 "url"
+    Close@16..17 ">"
+    Block@17..71
+      Text@17..71
+        Text@17..71 "\n  never closed\n\nMore prose that the blo"…
+
+--- diagnostics
+0..7: unclosed `lem-if`: expected `</lem-if>` before end of input

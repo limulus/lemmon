@@ -1,0 +1,16 @@
+Root@0..90
+  Text@0..55
+    Text@0..55 "---\ntitle: ignored by the core\n---\n\nBefo"…
+  AccessTag@55..71
+    OpenAccess@55..60 "<lem."
+    Head@60..70
+      MemberExpr@60..70
+        NameRef@60..64
+          Ident@60..64 "page"
+        Dot@64..65 "."
+        Ident@65..70 "title"
+    Close@70..71 ">"
+  Text@71..90
+    Text@71..90 "\n\nAfter the block.\n"
+
+--- diagnostics

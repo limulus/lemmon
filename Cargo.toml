@@ -11,7 +11,7 @@ repository = "https://github.com/limulus/lemmon"
 publish = false
 
 # Only crates actually in use are pinned here. The vetted choices for the stages still to
-# come (comrak, …) are recorded in docs/architecture.md §Crates; listing
+# come (syntect, …) are recorded in docs/architecture.md §Crates; listing
 # them before anything imports them would be a pin nobody is testing.
 [workspace.dependencies]
 lemmon-corpus = { path = "crates/lemmon-corpus" }
@@ -20,3 +20,6 @@ logos = "0.16.1"
 proptest = "1.11.0"
 tempfile = "3.24.0"
 rowan = "0.17.0"
+# No default features: they pull in the CLI and syntect, which the core does not use yet
+# and which would grow the .wasm by about a megabyte when it does.
+comrak = { version = "0.54.0", default-features = false, features = ["attributes"] }

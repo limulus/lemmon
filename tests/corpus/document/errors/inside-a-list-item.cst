@@ -1,0 +1,16 @@
+Root@0..46
+  Text@0..15
+    Text@0..15 "- first item\n  "
+  AccessTag@15..31
+    OpenAccess@15..20 "<lem."
+    Head@20..30
+      MemberExpr@20..30
+        NameRef@20..24
+          Ident@20..24 "page"
+        Dot@24..25 "."
+        Ident@25..30 "title"
+    Close@30..31 ">"
+  Text@31..46
+    Text@31..46 "\n- second item\n"
+
+--- diagnostics

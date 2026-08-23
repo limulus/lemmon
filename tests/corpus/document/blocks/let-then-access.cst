@@ -1,0 +1,50 @@
+Root@0..137
+  LetVoid@0..32
+    OpenTag@0..8 "<lem-let"
+    Trivia@8..9 " "
+    Head@9..29
+      Ident@9..17 "greeting"
+      Trivia@17..18 " "
+      Eq@18..19 "="
+      Trivia@19..20 " "
+      Literal@20..29
+        StringLit@20..29 "\"Hello, \""
+    Trivia@29..30 " "
+    SelfClose@30..32 "/>"
+  Text@32..33
+    Text@32..33 "\n"
+  LetVoid@33..61
+    OpenTag@33..41 "<lem-let"
+    Trivia@41..42 " "
+    Head@42..58
+      Ident@42..45 "who"
+      Trivia@45..46 " "
+      Eq@46..47 "="
+      Trivia@47..48 " "
+      MemberExpr@48..58
+        NameRef@48..52
+          Ident@48..52 "page"
+        Dot@52..53 "."
+        Ident@53..58 "title"
+    Trivia@58..59 " "
+    SelfClose@59..61 "/>"
+  Text@61..112
+    Text@61..112 "\n\nA `lem-let` binds for the rest of the "…
+  AccessTag@112..126
+    OpenAccess@112..117 "<lem."
+    Head@117..125
+      NameRef@117..125
+        Ident@117..125 "greeting"
+    Close@125..126 ">"
+  Text@126..127
+    Text@126..127 "\n"
+  AccessTag@127..136
+    OpenAccess@127..132 "<lem."
+    Head@132..135
+      NameRef@132..135
+        Ident@132..135 "who"
+    Close@135..136 ">"
+  Text@136..137
+    Text@136..137 "\n"
+
+--- diagnostics

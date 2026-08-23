@@ -15,33 +15,76 @@ use std::collections::BTreeSet;
 
 use lemmon_corpus::Case;
 use lemmon_syntax::ast::{AstNode, Block, Expr, IfArm, Item, Params, TypeAnnotation};
-use lemmon_syntax::{Span, SyntaxKind, SyntaxNode, dump, parse, tag_dump};
+use lemmon_syntax::{
+    Parse, Span, SyntaxKind, SyntaxNode, dump, parse, parse_document, tag_dump,
+};
 
 #[test]
 fn dumps_every_case_as_expected() {
-    lemmon_corpus::check("syntax", "cst", |case| dump(&case.source));
+    lemmon_corpus::check("syntax", "cst", |case| dump(&parse(&case.source)));
 }
 
 #[test]
 fn projects_the_tag_boundaries_of_every_case_as_expected() {
-    lemmon_corpus::check("syntax", "tags", |case| tag_dump(&case.source));
+    lemmon_corpus::check("syntax", "tags", |case| tag_dump(&parse(&case.source)));
+}
+
+/// Documents get the same two expectations from their assembled tree: `.cst` shows
+/// the segmentation — prose as text runs, each lem-block as its item — and `.tags` is
+/// what a tree-sitter grammar with a markdown injection has to agree with.
+#[test]
+fn dumps_every_document_as_expected() {
+    lemmon_corpus::check("document", "cst", |case| {
+        dump(&parse_document(&case.source).parse)
+    });
+}
+
+#[test]
+fn projects_the_tag_boundaries_of_every_document_as_expected() {
+    lemmon_corpus::check("document", "tags", |case| {
+        tag_dump(&parse_document(&case.source).parse)
+    });
+}
+
+/// Every case of every group with its tree — a template's parsed, a document's
+/// assembled by the segmenter. The structural gates below run over both: a document's
+/// tree is hand-built from spliced green nodes rather than produced by the parser, so
+/// it is exactly the tree that most needs holding to the same shape rules.
+fn every_case() -> Vec<(Case, Parse)> {
+    ["syntax", "document"]
+        .into_iter()
+        .flat_map(lemmon_corpus::cases)
+        .map(|case| {
+            let parse = tree(&case);
+            (case, parse)
+        })
+        .collect()
+}
+
+/// The tree of a case, by the group its input's extension puts it in.
+fn tree(case: &Case) -> Parse {
+    if case.input.extension().is_some_and(|e| e == "md") {
+        parse_document(&case.source).parse
+    } else {
+        parse(&case.source)
+    }
 }
 
 /// Whether a case is meant to parse clean. Derived rather than declared by a directory:
 /// the checked-in `.cst` carries the diagnostics either way, so a case that starts
 /// erroring shows up as lines appearing in a trailer that was empty.
-fn is_clean(case: &Case) -> bool {
-    parse(&case.source).diagnostics.is_empty()
+fn is_clean(parse: &Parse) -> bool {
+    parse.diagnostics.is_empty()
 }
 
 /// Every kind the corpus reaches, over every case — the gate that makes invariant 9
 /// mechanical. Walks the tree rather than the dump text because `TextRun`/`Text` and
 /// `CloseTagToken`/`CloseTag` share a printed name and would be conflated.
 fn reached_kinds() -> BTreeSet<SyntaxKind> {
-    lemmon_corpus::cases("syntax")
+    every_case()
         .iter()
-        .flat_map(|case| {
-            parse(&case.source)
+        .flat_map(|(_, parse)| {
+            parse
                 .syntax()
                 .descendants_with_tokens()
                 .map(|element| element.kind())
@@ -91,9 +134,9 @@ fn keeps_the_unreachable_list_to_kinds_that_are_really_unreachable() {
 
 /// Every node the typed views reach from the root, by byte range, so that a node kind
 /// without a view — or an accessor that drops a child — shows up as a missing range.
-fn visit_ast(src: &str) -> Vec<(u32, u32)> {
+fn visit_ast(parse: &Parse) -> Vec<(u32, u32)> {
     let mut out = Vec::new();
-    visit_items(parse(src).root().items(), &mut out);
+    visit_items(parse.root().items(), &mut out);
     out.sort_unstable();
     out
 }
@@ -237,32 +280,30 @@ fn is_structural(kind: SyntaxKind) -> bool {
 
 #[test]
 fn reaches_every_node_of_every_clean_case_through_the_typed_views() {
-    let clean: Vec<Case> = lemmon_corpus::cases("syntax")
-        .into_iter()
-        .filter(is_clean)
-        .collect();
+    let cases = every_case();
+    let clean: Vec<&(Case, Parse)> =
+        cases.iter().filter(|(_, parse)| is_clean(parse)).collect();
     assert!(!clean.is_empty(), "no clean case to walk");
-    for case in clean {
-        let mut expected: Vec<(u32, u32)> = parse(&case.source)
+    for (case, parse) in clean {
+        let mut expected: Vec<(u32, u32)> = parse
             .syntax()
             .descendants()
             .filter(|n| !is_structural(n.kind()))
             .map(|n| range(&n))
             .collect();
         expected.sort_unstable();
-        assert_eq!(visit_ast(&case.source), expected, "{}", case.name);
+        assert_eq!(visit_ast(parse), expected, "{}", case.name);
     }
 }
 
 #[test]
 fn walks_every_case_with_diagnostics_without_panicking() {
-    let broken: Vec<Case> = lemmon_corpus::cases("syntax")
-        .into_iter()
-        .filter(|case| !is_clean(case))
-        .collect();
+    let cases = every_case();
+    let broken: Vec<&(Case, Parse)> =
+        cases.iter().filter(|(_, parse)| !is_clean(parse)).collect();
     assert!(!broken.is_empty(), "no case with diagnostics to walk");
-    for case in broken {
-        let _ = visit_ast(&case.source);
+    for (_, parse) in broken {
+        let _ = visit_ast(parse);
     }
 }
 
@@ -278,8 +319,8 @@ fn walks_every_case_with_diagnostics_without_panicking() {
 /// `LetVoid@0..16`.
 #[test]
 fn projects_tag_boundaries_that_nest_and_never_overlap() {
-    for case in lemmon_corpus::cases("syntax") {
-        let spans = boundary_spans(&tag_dump(&case.source));
+    for (case, parse) in every_case() {
+        let spans = boundary_spans(&tag_dump(&parse));
         let (root, rest) = spans.split_first().expect("a root line");
         assert_eq!(root.0, 0, "{}: root is not at depth zero", case.name);
         assert_eq!(

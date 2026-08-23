@@ -34,14 +34,26 @@ fn globals() -> Vec<(&'static str, Value)> {
     vec![("page", Value::map(page)), ("site", Value::map(site))]
 }
 
+/// The path a case is compiled under: its name with the input's extension, since the
+/// compiler decides document mode by the path the way it will for a site.
+fn path(case: &Case) -> String {
+    let ext = case
+        .input
+        .extension()
+        .and_then(|e| e.to_str())
+        .expect("an input extension");
+    format!("{}.{ext}", case.name)
+}
+
 /// Renders a case: its output, then `--- diagnostics` and one line per compile error
 /// or for the runtime error, in the shape `.cst` uses for the parser's.
 fn html(case: &Case) -> String {
-    let files = [SourceFile::new(&case.name, &case.source)];
+    let path = path(case);
+    let files = [SourceFile::new(&path, &case.source)];
     let mut out = String::new();
     let mut diagnostics = Vec::new();
     match compile(&files) {
-        Ok(module) => match render(&module, &case.name, &globals()) {
+        Ok(module) => match render(&module, &path, &globals()) {
             Ok(rendered) => out = rendered,
             Err(error) => diagnostics.push(error.to_string()),
         },
@@ -59,13 +71,18 @@ fn renders_every_case_as_expected() {
     lemmon_corpus::check(GROUP, "html", html);
 }
 
+#[test]
+fn renders_every_document_as_expected() {
+    lemmon_corpus::check("document", "html", html);
+}
+
 /// Every op some case compiles to. Read from the modules rather than from a trace so
 /// that an op behind a branch no case takes still counts as covered by the corpus —
 /// the VM's own tests cover execution paths.
 fn emitted_ops() -> BTreeSet<&'static str> {
     lemmon_corpus::cases(GROUP)
         .iter()
-        .filter_map(|case| compile(&[SourceFile::new(&case.name, &case.source)]).ok())
+        .filter_map(|case| compile(&[SourceFile::new(path(case), &case.source)]).ok())
         .flat_map(|module: Module| {
             module
                 .functions

@@ -19,10 +19,11 @@ use std::fmt;
 use std::rc::Rc;
 
 use lemmon_syntax::ast::{Item, Spanned};
-use lemmon_syntax::{Span, SyntaxToken, parse};
+use lemmon_syntax::{DocumentParse, Parse, Span, SyntaxToken, parse_document};
 
 use crate::builtins;
 use crate::bytecode::{Function, Module, Op};
+use crate::document;
 use crate::{SourceFile, Value};
 
 /// The ambient record names every template may read. Bound at render time and never
@@ -64,12 +65,12 @@ impl std::error::Error for CompileError {}
 ///
 /// Every diagnostic, each with the path and span it is about.
 pub fn compile(files: &[SourceFile]) -> Result<Module, Vec<CompileError>> {
-    let parses: Vec<_> = files.iter().map(|f| parse(&f.text)).collect();
+    let sources: Vec<Source> = files.iter().map(Source::of).collect();
     let parse_errors: Vec<CompileError> = files
         .iter()
-        .zip(&parses)
-        .flat_map(|(file, parse)| {
-            parse.diagnostics.iter().map(|d| CompileError {
+        .zip(&sources)
+        .flat_map(|(file, source)| {
+            source.parse().diagnostics.iter().map(|d| CompileError {
                 path: file.path.clone(),
                 span: d.span,
                 message: d.message.clone(),
@@ -80,6 +81,31 @@ pub fn compile(files: &[SourceFile]) -> Result<Module, Vec<CompileError>> {
         return Err(parse_errors);
     }
 
+    // Prose is rendered before anything is lowered, and a document markdown rejected
+    // stops compilation the way a parse error does: its blocks may be fine, but where
+    // their output would go is not known.
+    let mut prose_errors = Vec::new();
+    let documents: Vec<Option<Vec<String>>> = files
+        .iter()
+        .zip(&sources)
+        .map(|(file, source)| match source {
+            Source::Template(_) => None,
+            Source::Document(doc) => {
+                match document::render_prose(&file.path, &file.text, doc) {
+                    Ok(chunks) => Some(chunks),
+                    Err(errors) => {
+                        prose_errors.extend(errors);
+                        None
+                    }
+                }
+            }
+        })
+        .collect();
+    if !prose_errors.is_empty() {
+        return Err(prose_errors);
+    }
+
+    let parses: Vec<&Parse> = sources.iter().map(Source::parse).collect();
     let mut compiler = Compiler {
         files,
         module: Module::default(),
@@ -91,7 +117,7 @@ pub fn compile(files: &[SourceFile]) -> Result<Module, Vec<CompileError>> {
     };
     compiler.declare_files(&parses);
     compiler.compile_functions(&parses);
-    compiler.compile_entries(&parses);
+    compiler.compile_entries(&sources, &documents);
     if compiler.errors.is_empty() {
         return Ok(compiler.module);
     }
@@ -103,6 +129,32 @@ pub fn compile(files: &[SourceFile]) -> Result<Module, Vec<CompileError>> {
     };
     compiler.errors.sort_by_key(order);
     Err(compiler.errors)
+}
+
+/// A file as parsed: a template, or a document in document mode. Decided by the path,
+/// as it is in a site — `.md` is a document, anything else a template.
+enum Source {
+    Template(Parse),
+    Document(DocumentParse),
+}
+
+impl Source {
+    fn of(file: &SourceFile) -> Self {
+        if file.path.ends_with(".md") {
+            Self::Document(parse_document(&file.text))
+        } else {
+            Self::Template(lemmon_syntax::parse(&file.text))
+        }
+    }
+
+    /// The tree either way: a document's has its prose as text runs and its blocks as
+    /// items, so every pass but the entry's reads it exactly like a template's.
+    fn parse(&self) -> &Parse {
+        match self {
+            Self::Template(parse) => parse,
+            Self::Document(doc) => &doc.parse,
+        }
+    }
 }
 
 /// Unwraps an accessor that only returns `None` on a tree the parser recovered — which
@@ -194,7 +246,7 @@ impl Compiler<'_> {
 
     /// Reserves a function per file and per top-level `lem-fn`, collecting signatures
     /// so calls can be compiled before their callee's body is.
-    fn declare_files(&mut self, parses: &[lemmon_syntax::Parse]) {
+    fn declare_files(&mut self, parses: &[&Parse]) {
         for (index, (file, parse)) in self.files.iter().zip(parses).enumerate() {
             self.file = index_u32(index);
             self.module.files.push(file.path.clone());
@@ -258,7 +310,7 @@ impl Compiler<'_> {
         index_u32(self.module.functions.len() - 1)
     }
 
-    fn compile_functions(&mut self, parses: &[lemmon_syntax::Parse]) {
+    fn compile_functions(&mut self, parses: &[&Parse]) {
         for (index, parse) in parses.iter().enumerate() {
             self.file = index_u32(index);
             for item in parse.root().items() {
@@ -307,11 +359,19 @@ impl Compiler<'_> {
         }
     }
 
-    fn compile_entries(&mut self, parses: &[lemmon_syntax::Parse]) {
-        for (index, parse) in parses.iter().enumerate() {
+    fn compile_entries(&mut self, sources: &[Source], documents: &[Option<Vec<String>>]) {
+        for (index, (source, chunks)) in sources.iter().zip(documents).enumerate() {
             self.file = index_u32(index);
             self.ctxs.push(FnCtx::new());
-            self.lower_block(parse.root().items().collect(), true);
+            let parse = source.parse();
+            let items = parse.root().items().collect();
+            match (source, chunks) {
+                (Source::Document(doc), Some(chunks)) => {
+                    self.lower_document(items, &doc.prose, chunks);
+                }
+                (Source::Template(_), None) => self.lower_block(items, true),
+                _ => unreachable!("a document has its chunks and a template has none"),
+            }
             let span = parse.root().span();
             let null = self.constant(Value::Null);
             self.emit(Op::Const { index: null }, span);

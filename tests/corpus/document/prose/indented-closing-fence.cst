@@ -1,0 +1,16 @@
+Root@0..139
+  Text@0..122
+    Text@0..122 "```\na fence whose closing marker is inde"…
+  AccessTag@122..138
+    OpenAccess@122..127 "<lem."
+    Head@127..137
+      MemberExpr@127..137
+        NameRef@127..131
+          Ident@127..131 "page"
+        Dot@131..132 "."
+        Ident@132..137 "title"
+    Close@137..138 ">"
+  Text@138..139
+    Text@138..139 "\n"
+
+--- diagnostics

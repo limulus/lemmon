@@ -1,0 +1,15 @@
+Root@0..54
+  AccessTag@0..16
+    OpenAccess@0..5 "<lem."
+    Head@5..15
+      MemberExpr@5..15
+        NameRef@5..9
+          Ident@5..9 "page"
+        Dot@9..10 "."
+        Ident@10..15 "title"
+    Close@15..16 ">"
+  Text@16..54
+    Text@16..54 " and then some prose on the same line\n"
+
+--- diagnostics
+17..53: unexpected text after a lem-block on its line: a block ends its line

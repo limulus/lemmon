@@ -8,6 +8,7 @@ publish.workspace = true
 
 [dependencies]
 lemmon-syntax = { path = "../lemmon-syntax" }
+comrak = { workspace = true }
 
 [dev-dependencies]
 lemmon-corpus = { workspace = true }

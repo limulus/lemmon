@@ -20,9 +20,14 @@ use std::path::{Path, PathBuf};
 /// stale expectation cannot sit unread.
 pub const EXPECTATIONS: &[&str] = &["cst", "tags", "html"];
 
-/// The extension every corpus input carries today. Documents (`.md`) join it with
-/// `∆Ldn`.
-const INPUT: &str = "lem";
+/// The extensions a corpus input may carry: a template, or a document in document mode.
+/// Which one a case is reaches the stage through [`Case::input`], so a stage that treats
+/// the two differently — the compiler does — decides by the path, as it does in a site.
+const INPUTS: &[&str] = &["lem", "md"];
+
+fn is_input(ext: &str) -> bool {
+    INPUTS.contains(&ext)
+}
 
 /// Set this to rewrite every expectation file from what the stage currently produces.
 const UPDATE: &str = "UPDATE_CORPUS";
@@ -76,7 +81,11 @@ pub fn cases(group: &str) -> Vec<Case> {
     assert!(dir.is_dir(), "no corpus group at {group}");
     let mut cases = Vec::new();
     walk(&dir, &mut |path| {
-        if path.extension().is_some_and(|e| e == INPUT) {
+        if path
+            .extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(is_input)
+        {
             cases.push(Case {
                 name: relative(path)
                     .with_extension("")
@@ -88,6 +97,17 @@ pub fn cases(group: &str) -> Vec<Case> {
         }
     });
     assert!(!cases.is_empty(), "no corpus cases under {group}");
+    // A case is known by its name without the extension, and so are its expectations:
+    // two inputs of the same name would compare against — and bless over — one set of
+    // files, the second silently winning.
+    let mut names: Vec<&str> = cases.iter().map(|case| case.name.as_str()).collect();
+    names.sort_unstable();
+    if let Some(pair) = names.windows(2).find(|pair| pair[0] == pair[1]) {
+        panic!(
+            "two corpus inputs are named {}: they would share expectations",
+            pair[0]
+        );
+    }
     cases
 }
 
@@ -224,11 +244,10 @@ mod tests {
                 return;
             }
             match path.extension().and_then(|e| e.to_str()) {
-                Some(INPUT) => {}
+                Some(ext) if is_input(ext) => {}
                 Some(ext) if EXPECTATIONS.contains(&ext) => {
-                    if !path.with_extension(INPUT).exists() {
-                        problems
-                            .push(format!("{shown}: expectation with no `.{INPUT}` input"));
+                    if !INPUTS.iter().any(|i| path.with_extension(i).exists()) {
+                        problems.push(format!("{shown}: expectation with no input"));
                     }
                 }
                 Some(ext) => {
@@ -269,9 +288,22 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "no corpus group at document")]
+    #[should_panic(expected = "they would share expectations")]
+    fn refuses_two_inputs_that_would_share_one_set_of_expectations() {
+        let dir = root().join("document/prose");
+        let twin = dir.join("no-front-matter.lem");
+        fs::write(&twin, "").expect("write");
+        let result = std::panic::catch_unwind(|| cases("document"));
+        fs::remove_file(&twin).expect("remove");
+        if let Err(panic) = result {
+            std::panic::resume_unwind(panic);
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "no corpus group at plan")]
     fn refuses_a_group_that_does_not_exist_yet() {
-        let _ = cases("document");
+        let _ = cases("plan");
     }
 
     #[test]
@@ -316,7 +348,7 @@ mod tests {
             "kept.lem",
             "kept.cst",
             "renamed-away.cst",
-            "notes.md",
+            "notes.txt",
             "Makefile",
         ] {
             fs::write(dir.path().join(name), "").expect("write");
@@ -329,8 +361,7 @@ mod tests {
         let dir = broken_corpus();
         let problems = orphans_in(dir.path());
         assert!(
-            problems
-                .contains(&"renamed-away.cst: expectation with no `.lem` input".to_owned()),
+            problems.contains(&"renamed-away.cst: expectation with no input".to_owned()),
             "{problems:?}"
         );
     }
@@ -340,7 +371,7 @@ mod tests {
         let dir = broken_corpus();
         let problems = orphans_in(dir.path());
         assert!(
-            problems.contains(&"notes.md: `.md` is not a corpus extension".to_owned()),
+            problems.contains(&"notes.txt: `.txt` is not a corpus extension".to_owned()),
             "{problems:?}"
         );
     }

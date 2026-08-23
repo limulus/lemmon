@@ -22,9 +22,6 @@ with VM render time under 1 ms/page. Everything here serves that demo.
 
 ### Core spike
 
-- ∆Ldn Document mode — fence-aware segmenter, in-core comrak rendering of joined prose,
-  `<!--lem:N-->` sentinel splice with lost-sentinel build errors, untyped front matter
-  passthrough for now (docs/language.md §Document mode)
 - ∆TNT WASM boundary — wasm-bindgen build of the core, `@limulus/lemmon-core` typed wrapper
   (compile/loadData/render), and a small Node harness that renders fixtures, measuring
   boundary marshalling cost so the few-large-calls design is validated early. `compile`
@@ -36,7 +33,7 @@ with VM render time under 1 ms/page. Everything here serves that demo.
 - ∆xWs Render `the-rebound` end to end — port minimal base/page/article layouts to `.lem`,
   render the post (document mode included) through the Node harness, diff against the
   11ty-built HTML, and record VM + boundary timings against the <1 ms/page exit criterion;
-  needs: ∆Ldn, ∆TNT
+  needs: ∆TNT
 
 ## Phase 1 — Language complete, tooling from day one
 
@@ -54,7 +51,11 @@ further at claim time.
 - ∆Hbw Document mode, full rules — nested `lem-let` capture bodies as sub-documents, typed
   front matter validated at YAML positions, string-literal reference resolution in prose
   calls (docs/language.md §Document mode items 2 and 6) with the resolved ids reported as
-  compile-time facts (D25); needs: ∆Ldn, ∆C8d
+  compile-time facts (D25); needs: ∆C8d
+- ∆BfR Syntax highlighting for code fences — comrak's `SyntaxHighlighterAdapter` wired to
+  syntect with class-based output plus a generated theme stylesheet (D08,
+  docs/architecture.md §Crates). Deferred out of document mode: it adds ~1 MB to the .wasm
+  and the spike's page has no fences, but limulus.net's archive does, so the port needs it
 - ∆RGQ Side channels + generators — `lem-style`/`lem-script`/`lem-head`/`lem-emit`
   collection and dedup, `lem-page` (including `for` generators with prev/next), serializable
   modules, render-reported deps, and compile-reported facts per file (signatures, reference
@@ -129,7 +130,7 @@ API); the port itself lives in limulus-dot-net on a branch while 11ty stays gree
   replacing `eleventyComputed.js` (title from linkTitle, tilTopic/tags from path, link/via
   domains, readingTime), link-post reference appender as `transformDocument`, and comrak
   configured to match markdown-it output (footnote section markup, task lists, attrs,
-  heading anchors, highlight classes); needs: ∆Hbw, ∆rT5
+  heading anchors, highlight classes); needs: ∆Hbw, ∆rT5, ∆BfR
 - ∆ePP Generated and non-HTML pages — TIL topic pages, links and photo pages via
   `lem-page` generators, the three feeds (rss + two atom, `/feed.xsl`), `sitemap.xml`
   with video entries, 404 — the last things still depending on 11ty plugins

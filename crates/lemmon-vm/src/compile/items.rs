@@ -6,6 +6,7 @@
 //! output. `<lem.…>` is not a keyword and keeps its line: `<h1>\n<lem.title>\n</h1>`
 //! renders the newlines it shows.
 
+use lemmon_syntax::Span;
 use lemmon_syntax::ast::{ForTag, IfTag, Item, LetBlock, LetVoid, Spanned};
 
 use super::{Compiler, TokenSpan, required};
@@ -73,6 +74,16 @@ impl Body {
     }
 }
 
+/// A document chunk as emitted: without the line ending a void keyword tag's sentinel
+/// left at its head, when one stands before it.
+fn chunk(chunk: &str, after_void: bool) -> &str {
+    if after_void {
+        chunk.strip_prefix('\n').unwrap_or(chunk)
+    } else {
+        chunk
+    }
+}
+
 /// Whether `item` is a void keyword tag — the tags the void-line rule is about.
 /// `<lem.…>` is not one: it renders in place, so it keeps the line it is written on.
 const fn is_void(item: &Item) -> bool {
@@ -124,33 +135,76 @@ impl Compiler<'_> {
     fn lower_body(&mut self, body: Body) {
         let file_level = body.file_level;
         for (item, text) in body.items.into_iter().zip(body.texts) {
-            match &item {
-                Item::Text(_) => {
-                    let text = text.expect("a text run keeps its text");
-                    if !text.is_empty() {
-                        let index = self.intern(&text);
-                        self.emit(Op::EmitText { index }, item.span());
-                    }
+            if let Item::Text(_) = &item {
+                let text = text.expect("a text run keeps its text");
+                if !text.is_empty() {
+                    let index = self.intern(&text);
+                    self.emit(Op::EmitText { index }, item.span());
                 }
-                Item::Access(tag) => {
-                    self.expr(&required(tag.expr()));
-                    self.emit(Op::Emit, tag.span());
-                }
-                Item::If(tag) => self.lower_if(tag),
-                Item::For(tag) => self.lower_for(tag),
-                Item::LetVoid(tag) => self.lower_let_void(tag),
-                Item::LetBlock(tag) => self.lower_let_block(tag),
-                // Top-level definitions were compiled into their own functions already;
-                // they stand in the item list only so the void-line rule sees them.
-                Item::FnBlock(_) | Item::FnVoid(_) if file_level => {}
-                Item::FnBlock(_) | Item::FnVoid(_) => {
-                    self.error(item.span(), "`lem-fn` must be at the top level of a file")
-                }
-                Item::Unsupported(_) | Item::Unknown(_) => {
-                    unreachable!(
-                        "the parser reports these, and a parse with diagnostics is never compiled"
-                    )
-                }
+            } else {
+                self.lower_item(&item, file_level);
+            }
+        }
+    }
+
+    /// Lowers a document's top level: its prose, rendered to HTML already, around its
+    /// lem-blocks. The text runs in the tree are the prose as written and are not
+    /// emitted; what stands in their place is the chunk rendered for that gap — which
+    /// may exist where no text run does, as an empty last gap still collects the
+    /// document's footnotes. Of the void-line rule only one half applies — a block is
+    /// alone on its line by construction, so the only line a void keyword tag can take
+    /// with it is the line ending its sentinel left at the head of the next chunk.
+    pub(super) fn lower_document(
+        &mut self,
+        items: Vec<Item>,
+        prose: &[Span],
+        chunks: &[String],
+    ) {
+        self.push_scope();
+        let mut block = 0;
+        let mut after_void = false;
+        for item in items {
+            if let Item::Text(_) = item {
+                continue;
+            }
+            self.emit_chunk(prose[block], chunk(&chunks[block], after_void));
+            self.lower_item(&item, true);
+            after_void = is_void(&item);
+            block += 1;
+        }
+        self.emit_chunk(prose[block], chunk(&chunks[block], after_void));
+        self.pop_scope();
+    }
+
+    fn emit_chunk(&mut self, span: Span, chunk: &str) {
+        if !chunk.is_empty() {
+            let index = self.intern(chunk);
+            self.emit(Op::EmitText { index }, span);
+        }
+    }
+
+    /// Lowers one item that is not a text run.
+    fn lower_item(&mut self, item: &Item, file_level: bool) {
+        match item {
+            Item::Text(_) => unreachable!("text runs are lowered by their body"),
+            Item::Access(tag) => {
+                self.expr(&required(tag.expr()));
+                self.emit(Op::Emit, tag.span());
+            }
+            Item::If(tag) => self.lower_if(tag),
+            Item::For(tag) => self.lower_for(tag),
+            Item::LetVoid(tag) => self.lower_let_void(tag),
+            Item::LetBlock(tag) => self.lower_let_block(tag),
+            // Top-level definitions were compiled into their own functions already;
+            // they stand in the item list only so the void-line rule sees them.
+            Item::FnBlock(_) | Item::FnVoid(_) if file_level => {}
+            Item::FnBlock(_) | Item::FnVoid(_) => {
+                self.error(item.span(), "`lem-fn` must be at the top level of a file");
+            }
+            Item::Unsupported(_) | Item::Unknown(_) => {
+                unreachable!(
+                    "the parser reports these, and a parse with diagnostics is never compiled"
+                )
             }
         }
     }

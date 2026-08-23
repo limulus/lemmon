@@ -1,0 +1,16 @@
+Root@0..46
+  Text@0..22
+    Text@0..22 "<div class=\"wrapper\">\n"
+  AccessTag@22..38
+    OpenAccess@22..27 "<lem."
+    Head@27..37
+      MemberExpr@27..37
+        NameRef@27..31
+          Ident@27..31 "page"
+        Dot@31..32 "."
+        Ident@32..37 "title"
+    Close@37..38 ">"
+  Text@38..46
+    Text@38..46 "\n</div>\n"
+
+--- diagnostics

@@ -1,0 +1,48 @@
+Root@0..170
+  FnBlock@0..84
+    OpenTag@0..7 "<lem-fn"
+    Trivia@7..8 " "
+    Head@8..29
+      Ident@8..15 "callout"
+      Params@15..29
+        LParen@15..16 "("
+        Param@16..28
+          Ident@16..20 "text"
+          TypeAnnotation@20..28
+            Colon@20..21 ":"
+            Trivia@21..22 " "
+            Ident@22..28 "string"
+        RParen@28..29 ")"
+    Close@29..30 ">"
+    Block@30..75
+      Text@30..56
+        Text@30..56 "\n  <aside class=\"callout\">"
+      AccessTag@56..66
+        OpenAccess@56..61 "<lem."
+        Head@61..65
+          NameRef@61..65
+            Ident@61..65 "text"
+        Close@65..66 ">"
+      Text@66..75
+        Text@66..75 "</aside>\n"
+    CloseTag@75..84
+      CloseTag@75..83 "</lem-fn"
+      Close@83..84 ">"
+  Text@84..139
+    Text@84..139 "\n\nA function defined in a document is ca"…
+  AccessTag@139..169
+    OpenAccess@139..144 "<lem."
+    Head@144..168
+      CallExpr@144..168
+        NameRef@144..151
+          Ident@144..151 "callout"
+        ArgList@151..168
+          LParen@151..152 "("
+          Literal@152..167
+            StringLit@152..167 "\"Mind the gap.\""
+          RParen@167..168 ")"
+    Close@168..169 ">"
+  Text@169..170
+    Text@169..170 "\n"
+
+--- diagnostics

@@ -1,0 +1,41 @@
+Root@0..211
+  Text@0..8
+    Text@0..8 "Intro.\n\n"
+  IfTag@8..138
+    OpenTag@8..15 "<lem-if"
+    Trivia@15..16 " "
+    Head@16..24
+      MemberExpr@16..24
+        NameRef@16..20
+          Ident@16..20 "page"
+        Dot@20..21 "."
+        Ident@21..24 "url"
+    Close@24..25 ">"
+    Block@25..129
+      Text@25..63
+        Text@25..63 "\n  <p class=\"permalink\">\n    <a href=\""
+      AccessTag@63..77
+        OpenAccess@63..68 "<lem."
+        Head@68..76
+          MemberExpr@68..76
+            NameRef@68..72
+              Ident@68..72 "page"
+            Dot@72..73 "."
+            Ident@73..76 "url"
+        Close@76..77 ">"
+      Text@77..100
+        Text@77..100 "\">permalink</a>\n  </p>\n"
+      ElseTag@100..112
+        OpenTag@100..109 "<lem-else"
+        Trivia@109..110 " "
+        Head@110..110
+        SelfClose@110..112 "/>"
+      Text@112..129
+        Text@112..129 "\n  <p>no url</p>\n"
+    CloseTag@129..138
+      CloseTag@129..137 "</lem-if"
+      Close@137..138 ">"
+  Text@138..211
+    Text@138..211 "\n\nOutro, with a [reference][ref] resolve"…
+
+--- diagnostics

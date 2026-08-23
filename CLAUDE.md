@@ -10,10 +10,11 @@ a parity harness shows zero unexpected output diffs.
 **Status:** early implementation. The work is sequenced in `BACKLOG.md` (delto-managed); the
 current milestone is the Phase 0 spike — one real page rendering end-to-end from the WASM
 core. Both halves of the repo scaffolding exist (see Layout). The core runs scanner → parser
-→ typed AST → bytecode compiler → VM for the spike subset, untyped: the checker (∆C8d),
-document mode (∆Ldn), and the WASM boundary (∆TNT) do not exist yet. The spike's `Module` is
-one shared constant pool with absolute indices — a known shortcut past invariant 11 that
-∆TNT replaces with per-file units and a link step.
+→ typed AST → bytecode compiler → VM for the spike subset, untyped, and `.md` files go
+through document mode (segmenter in `lemmon-syntax`, comrak + splice in `lemmon-vm`): the
+checker (∆C8d) and the WASM boundary (∆TNT) do not exist yet. The spike's `Module` is one
+shared constant pool with absolute indices — a known shortcut past invariant 11 that ∆TNT
+replaces with per-file units and a link step.
 
 ## Canonical references
 
@@ -66,9 +67,9 @@ These hold for every change. A PR that breaks one is wrong even if its tests pas
 ## Layout
 
 ```
-crates/lemmon-syntax/   scanner, parser, CST/AST, diagnostics           (scanner → typed AST)
+crates/lemmon-syntax/   scanner, parser, CST/AST, diagnostics, document segmenter
 crates/lemmon-corpus/   corpus discovery + blessing, used by every stage's tests
-crates/lemmon-vm/       codegen + VM today; checker and document mode to come
+crates/lemmon-vm/       codegen + VM, document mode's markdown stage; checker to come
 crates/lemmon-wasm/     wasm-bindgen boundary (lemmon-core's .wasm)     (skeleton)
 packages/core/          @limulus/lemmon-core — typed JS wrapper around the .wasm (stub)
 packages/shell/         @limulus/lemmon-shell — CLI, walker, plugin host, dev server (stub)
@@ -243,7 +244,7 @@ Diagnostics raised only during declaration emit surface in `npm run build` (CI r
   extension there and one `check` call, never a second walker. Its `.tags` projection is the
   tree-sitter agreement target (invariant 9), and a `SyntaxKind` no case reaches — or an
   `Op` no `render/` case emits — fails the build, which is what makes "lands with corpus
-  coverage" mechanical
+  coverage" mechanical. `document/` holds the `.md` cases, checked by both crates
 - WASM (when it exists): wasm-bindgen-test via Node for the boundary
 
 ## Code Style Guidelines

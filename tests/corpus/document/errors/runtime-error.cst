@@ -1,0 +1,19 @@
+Root@0..59
+  Text@0..34
+    Text@0..34 "Compiles clean, fails at render:\n\n"
+  AccessTag@34..58
+    OpenAccess@34..39 "<lem."
+    Head@39..57
+      MemberExpr@39..57
+        MemberExpr@39..51
+          NameRef@39..43
+            Ident@39..43 "page"
+          Dot@43..44 "."
+          Ident@44..51 "missing"
+        Dot@51..52 "."
+        Ident@52..57 "field"
+    Close@57..58 ">"
+  Text@58..59
+    Text@58..59 "\n"
+
+--- diagnostics

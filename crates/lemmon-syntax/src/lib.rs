@@ -7,6 +7,7 @@
 
 pub mod ast;
 mod diagnostic;
+mod document;
 mod parser;
 mod scanner;
 mod syntax_kind;
@@ -14,6 +15,7 @@ mod token;
 
 pub use ast::AstNode;
 pub use diagnostic::Diagnostic;
+pub use document::{DocumentParse, parse_document};
 pub use parser::{Parse, dump, parse, tag_dump};
 pub use scanner::{ScanResult, scan};
 pub use syntax_kind::{Lemmon, SyntaxElement, SyntaxKind, SyntaxNode, SyntaxToken};

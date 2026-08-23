@@ -1,0 +1,27 @@
+Root@0..144
+  Text@0..31
+    Text@0..31 "Prose with a footnote.[^note]\n\n"
+  AccessTag@31..47
+    OpenAccess@31..36 "<lem."
+    Head@36..46
+      MemberExpr@36..46
+        NameRef@36..40
+          Ident@36..40 "page"
+        Dot@40..41 "."
+        Ident@41..46 "title"
+    Close@46..47 ">"
+  Text@47..48
+    Text@47..48 "\n"
+  AccessTag@48..63
+    OpenAccess@48..53 "<lem."
+    Head@53..62
+      MemberExpr@53..62
+        NameRef@53..57
+          Ident@53..57 "site"
+        Dot@57..58 "."
+        Ident@58..62 "name"
+    Close@62..63 ">"
+  Text@63..144
+    Text@63..144 "\n\n[^note]: Footnotes render after the la"…
+
+--- diagnostics

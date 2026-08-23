@@ -1,0 +1,16 @@
+Root@0..114
+  Text@0..18
+    Text@0..18 "A paragraph.\n\n    "
+  AccessTag@18..34
+    OpenAccess@18..23 "<lem."
+    Head@23..33
+      MemberExpr@23..33
+        NameRef@23..27
+          Ident@23..27 "page"
+        Dot@27..28 "."
+        Ident@28..33 "title"
+    Close@33..34 ">"
+  Text@34..114
+    Text@34..114 "\n\nIndented four spaces, the block is cod"…
+
+--- diagnostics

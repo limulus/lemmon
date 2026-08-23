@@ -71,13 +71,44 @@ pub fn parse(src: &str) -> Parse {
     Parse { green, diagnostics }
 }
 
-/// Renders the tree and diagnostics for `src` in the bake-off's dump format.
+/// Parses only the item at the start of `src` — a tag, since document mode calls this
+/// at a `<lem` it found — into a `Root` holding that one item and nothing after it.
+///
+/// This is how document mode answers "where does this lem-block end?". The segmenter
+/// finds where a block *starts* by looking at lines; how far it runs is a question only
+/// the grammar can answer, and the root's text length is that answer. Delegating it
+/// here is what keeps the segmenter from growing a tag matcher of its own — a second
+/// thing that would have to know void shapes from block ones and how closes match, and
+/// the first place document mode and template mode would drift apart. Asking for one
+/// item is well defined because a tag's shape is decidable from its head alone
+/// (invariant 4), so nothing past the item can change what the item is.
+///
+/// Diagnostics are limited to that range: the scanner lexes all of `src`, but what it
+/// found past the item is prose that was never meant to lex as Lemmon.
+pub(crate) fn parse_item_prefix(src: &str) -> Parse {
+    let scanned = scan(src);
+    let mut parser = Parser::new(src, &scanned.tokens);
+    template::item_prefix(&mut parser);
+    let (green, mut diagnostics) = parser.finish();
+    let end = green.text_len().into();
+    diagnostics.extend(
+        scanned
+            .diagnostics
+            .into_iter()
+            .filter(|d| d.span.start < end),
+    );
+    diagnostics.sort_by_key(|d| (d.span.start, d.span.end));
+    Parse { green, diagnostics }
+}
+
+/// Renders a tree and its diagnostics in the bake-off's dump format.
 ///
 /// A test and debugging aid, not an API: one node or token per line, indented two
 /// spaces per depth, then a blank line, `--- diagnostics`, and one diagnostic per line.
+/// Takes a [`Parse`] rather than source so that a document's tree — assembled by
+/// [`parse_document`](crate::parse_document), not parsed — dumps the same way.
 #[must_use]
-pub fn dump(src: &str) -> String {
-    let parse = parse(src);
+pub fn dump(parse: &Parse) -> String {
     let mut out = String::new();
     let mut depth = 0usize;
     for event in parse.syntax().preorder_with_tokens() {
@@ -110,7 +141,7 @@ pub fn dump(src: &str) -> String {
     out
 }
 
-/// Renders the tag boundaries of `src`: the tree with every tag interior elided.
+/// Renders the tag boundaries of a tree: every tag interior elided.
 ///
 /// This is the agreement target invariant 9 names — what the future `tree-sitter-lemmon`
 /// grammar has to reproduce for every corpus case. A context-free grammar can say where
@@ -128,9 +159,9 @@ pub fn dump(src: &str) -> String {
 /// consumed rather than at the cut. Those gaps are visible in `tests/corpus/**/*.tags`
 /// and are the parser's shape, not the projection's.
 #[must_use]
-pub fn tag_dump(src: &str) -> String {
+pub fn tag_dump(parse: &Parse) -> String {
     let mut out = String::new();
-    project(&parse(src).syntax(), 0, false, &mut out);
+    project(&parse.syntax(), 0, false, &mut out);
     out
 }
 
@@ -696,6 +727,6 @@ mod tests {
 
     #[test]
     fn dumps_an_empty_source_as_a_bare_root() {
-        assert_eq!(dump(""), "Root@0..0\n\n--- diagnostics\n");
+        assert_eq!(dump(&parse("")), "Root@0..0\n\n--- diagnostics\n");
     }
 }

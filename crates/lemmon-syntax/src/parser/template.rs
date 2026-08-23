@@ -168,65 +168,88 @@ pub(super) fn root(p: &mut Parser<'_>) {
     m.complete(p, SyntaxKind::Root);
 }
 
+/// Parses the one item at the start of the input as a `Root` of its own — what
+/// document mode uses to find where a lem-block ends (`docs/language.md` §Document
+/// mode). The input must start at a tag opener, so the item is never a text run.
+pub(super) fn item_prefix(p: &mut Parser<'_>) {
+    let m = p.start();
+    let mut stack = Vec::new();
+    match item(p, &mut stack) {
+        None | Some(BodyEnd::Eof) => {}
+        Some(BodyEnd::Matched | BodyEnd::OuterClose) => {
+            unreachable!("no block is open around the prefix item")
+        }
+    }
+    m.complete(p, SyntaxKind::Root);
+}
+
 /// Parses items until the end of input or a close tag of a block on `stack`.
-///
-/// Any other close tag is kept here as an `Error` node and parsing carries on: a close
-/// that matches nothing open is never adopted as the innermost block's close, since
-/// the author's real close is still to come. A close the scanner cut short adds no
-/// diagnostic of its own.
 fn items<'src>(p: &mut Parser<'src>, stack: &mut Vec<Open<'src>>) -> BodyEnd {
     loop {
-        match p.current() {
-            None => return BodyEnd::Eof,
-            Some(TokenKind::Text) => {
-                let m = p.start();
-                p.bump();
-                m.complete(p, SyntaxKind::TextRun);
+        if let Some(end) = item(p, stack) {
+            return end;
+        }
+    }
+}
+
+/// Parses one item, or returns how the body it stands in stopped instead.
+///
+/// A close tag matching nothing open is kept here as an `Error` node and parsing
+/// carries on: it is never adopted as the innermost block's close, since the author's
+/// real close is still to come. A close the scanner cut short adds no diagnostic of
+/// its own.
+fn item<'src>(p: &mut Parser<'src>, stack: &mut Vec<Open<'src>>) -> Option<BodyEnd> {
+    match p.current() {
+        None => return Some(BodyEnd::Eof),
+        Some(TokenKind::Text) => {
+            let m = p.start();
+            p.bump();
+            m.complete(p, SyntaxKind::TextRun);
+        }
+        Some(TokenKind::OpenAccess) => access_tag(p),
+        Some(TokenKind::OpenTag) => open_tag(p, stack),
+        Some(TokenKind::CloseTag) => {
+            let name = &p.current_text()["</lem-".len()..];
+            if stack.last().is_some_and(|top| top.name == name) {
+                return Some(BodyEnd::Matched);
             }
-            Some(TokenKind::OpenAccess) => access_tag(p),
-            Some(TokenKind::OpenTag) => open_tag(p, stack),
-            Some(TokenKind::CloseTag) => {
-                let name = &p.current_text()["</lem-".len()..];
-                if stack.last().is_some_and(|top| top.name == name) {
-                    return BodyEnd::Matched;
-                }
-                let span = p.current_span();
-                let cut = p.current_tag_is_cut();
-                if cut {
-                    // The scanner has reported the cut; what the author meant to
-                    // close is not yet written.
-                } else if Builtin::lookup(name).is_none() {
-                    p.error(unknown_message(name), span);
-                } else if let Some(top) = stack.last() {
-                    p.error(
+            let span = p.current_span();
+            let cut = p.current_tag_is_cut();
+            if cut {
+                // The scanner has reported the cut; what the author meant to
+                // close is not yet written.
+            } else if Builtin::lookup(name).is_none() {
+                p.error(unknown_message(name), span);
+            } else if let Some(top) = stack.last() {
+                p.error(
                         format!(
                             "found `</lem-{name}>` while `lem-{}` is still open: expected `</lem-{}>`",
                             top.name, top.name
                         ),
                         span,
                     );
-                } else {
-                    p.error(
-                        format!("stray `</lem-{name}>`: no `lem-{name}` is open"),
-                        span,
-                    );
-                }
-                // A cut close never reaches past the innermost block: closing outer
-                // blocks on its say-so would lose the author's real closes as strays.
-                if !cut && stack.iter().any(|o| o.name == name) {
-                    return BodyEnd::OuterClose;
-                }
-                let m = p.start();
-                close_tag(p);
-                m.complete(p, SyntaxKind::Error);
+            } else {
+                p.error(
+                    format!("stray `</lem-{name}>`: no `lem-{name}` is open"),
+                    span,
+                );
             }
-            Some(_) => {
-                // Head tokens outside a head cannot come from the scanner; handled so
-                // that the parser is total over any token stream.
-                p.skip_to_head_end("unexpected tokens outside a tag");
+            // A cut close never reaches past the innermost block: closing outer
+            // blocks on its say-so would lose the author's real closes as strays.
+            if !cut && stack.iter().any(|o| o.name == name) {
+                return Some(BodyEnd::OuterClose);
             }
+            let m = p.start();
+            close_tag(p);
+            m.complete(p, SyntaxKind::Error);
+        }
+        Some(_) => {
+            // Head tokens outside a head cannot come from the scanner; handled so
+            // that the parser is total over any token stream.
+            p.skip_to_head_end("unexpected tokens outside a tag");
         }
     }
+    None
 }
 
 /// `<lem.expr>`
