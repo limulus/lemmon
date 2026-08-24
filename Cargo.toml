@@ -16,6 +16,11 @@ publish = false
 [workspace.dependencies]
 lemmon-corpus = { path = "crates/lemmon-corpus" }
 wasm-bindgen = "0.2.127"
+wasm-bindgen-test = "0.3.77"
+serde = { version = "1.0.228", features = ["derive"] }
+# `preserve_order`, because JSON objects become the VM's insertion-ordered `Map`s and
+# `lem-for` walks a map in that order — alphabetising here would reorder every loop.
+serde_json = { version = "1.0.145", features = ["preserve_order"] }
 logos = "0.16.1"
 proptest = "1.11.0"
 tempfile = "3.24.0"

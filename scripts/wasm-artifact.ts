@@ -1,22 +1,42 @@
 import { join } from 'node:path'
 
 /**
- * Where the staged `.wasm` lives: built once by the `wasm` CI job, uploaded, and
- * downloaded by every job that consumes it. Provisional — `∆TNT` decides where the
- * artifact finally lands inside `@limulus/lemmon-core` and what it is called there.
+ * Where the staged wasm-bindgen output lives: built once by the `wasm` CI job,
+ * uploaded, and downloaded by every job that consumes it. Locally, `npm run rust:wasm`
+ * populates it and everything wasm-consuming (vitest, the bench harness) reads from it.
+ * The set is `wasm-bindgen --target web` output — environment-agnostic ESM glue whose
+ * caller supplies the bytes (`initSync`) — so the same files serve Node today and a
+ * browser playground later. A home inside the published `@limulus/lemmon-core` package
+ * waits until something publishes.
  */
 export const STAGING_DIR = 'artifacts/wasm'
 
-/**
- * Cargo's own output name for the `lemmon-wasm` cdylib, kept as-is to avoid inventing a
- * naming convention `∆TNT` is the one to settle.
- */
-export const WASM_FILENAME = 'lemmon_wasm.wasm'
+/** The `--out-name` given to wasm-bindgen: the artifact set's shared basename. */
+export const OUT_NAME = 'lemmon-core'
+
+/** The processed `.wasm`, named by wasm-bindgen's `_bg` convention. */
+export const WASM_FILENAME = `${OUT_NAME}_bg.wasm`
+
+/** The ESM glue module consumers import: `initSync({ module })` plus the `Core` class. */
+export const GLUE_FILENAME = `${OUT_NAME}.js`
 
 export const STAGED_WASM = join(STAGING_DIR, WASM_FILENAME)
+export const STAGED_GLUE = join(STAGING_DIR, GLUE_FILENAME)
 
-/** Every function the boundary is expected to expose to the shell. */
-export const EXPECTED_EXPORTS = ['version', 'describe_error']
+/**
+ * Every export the boundary is expected to expose — the `Core` class surface as
+ * wasm-bindgen names it, plus the runtime internals its glue calls. Regenerated from
+ * the actual module whenever the surface changes; `npm run wasm:check` fails on a
+ * missing name.
+ */
+export const EXPECTED_EXPORTS = [
+  'version',
+  'core_new',
+  'core_compile',
+  'core_loadData',
+  'core_render',
+  '__wbg_core_free',
+]
 
 /**
  * wasm-bindgen suffixes generated import shims with a 16-hex-digit hash that moves with
@@ -29,21 +49,23 @@ export const withoutShimHash = (name: string): string => name.replace(SHIM_HASH,
 /**
  * The only imports a pure core may reference, by hash-stripped name.
  *
- * Deliberately checked by *name*, not by import module: on `wasm32-unknown-unknown` there
- * is no WASI module to catch, and every host capability reached through `js-sys`/`web-sys`
- * arrives as one more name under `__wbindgen_placeholder__`. Checking modules would let
- * `js_sys::Date::now()` — a clock, exactly what invariant 1 forbids — through untouched;
- * it shows up here as `__wbg_now`.
+ * Deliberately checked by *name*, not by import module: on `wasm32-unknown-unknown`
+ * there is no WASI module to catch, and every host capability reached through
+ * `js-sys`/`web-sys` arrives as one more named shim from the glue. Checking modules
+ * would let `js_sys::Date::now()` — a clock, exactly what invariant 1 forbids — through
+ * untouched; it would show up here as `__wbg_now`.
  *
  * The list fails closed: a name that is not here is either a new wasm-bindgen runtime
  * internal (verify that is what it is, then add it) or a host capability that must be
- * removed. `∆TNT` will need to revisit this once `wasm-bindgen-cli` runs, since the CLI
- * rewrites the placeholder imports into its own JS shim.
+ * removed. Since `wasm-bindgen-cli` runs in staging, these are the names of the
+ * `./lemmon-core_bg.js` glue's own runtime functions — each one verified against the
+ * generated glue, none reaching outside it.
  */
 export const ALLOWED_IMPORT_NAMES = [
-  '__wbindgen_describe',
-  '__wbindgen_externref_table_set_null',
-  '__wbindgen_externref_table_grow',
-  // wasm-bindgen's panic path. Throwing is not a host capability.
+  // The error path: `JsError::new` builds the JS `Error` a shim throws. Neither is a
+  // host capability.
+  '__wbg_Error',
   '__wbg___wbindgen_throw',
+  // Glue-internal externref table setup, run once at `initSync`.
+  '__wbindgen_init_externref_table',
 ]

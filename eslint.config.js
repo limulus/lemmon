@@ -3,7 +3,8 @@ import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
   ...config,
-  globalIgnores(['**/dist/**/*', 'coverage/**']),
+  // `artifacts/` holds generated wasm-bindgen output, not source.
+  globalIgnores(['**/dist/**/*', 'coverage/**', 'artifacts/**']),
   {
     files: ['**/*.ts', '**/*.tsx', '**/*.d.ts', '**/*.js'],
 

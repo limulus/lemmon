@@ -10,6 +10,7 @@ mod builtins;
 mod bytecode;
 mod compile;
 mod document;
+mod unit;
 mod value;
 mod vm;
 
@@ -20,7 +21,10 @@ use std::fmt;
 pub use lemmon_syntax::Span;
 
 pub use bytecode::{Function, Module, Op};
-pub use compile::{CompileError, compile};
+pub use compile::{
+    CompileError, PreparedFile, SignatureTable, compile, compile_unit, prepare,
+};
+pub use unit::{ExportedSignature, ImportRef, ImportedSignature, Unit, link};
 pub use value::{Closure, Map, Value};
 pub use vm::render;
 

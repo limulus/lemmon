@@ -20,20 +20,11 @@ Exit criterion (architecture doc 3): limulus.net's `the-rebound` post renders th
 minimal base→page→article layout chain from the WASM core, byte-similar to the 11ty output,
 with VM render time under 1 ms/page. Everything here serves that demo.
 
-### Core spike
-
-- ∆TNT WASM boundary — wasm-bindgen build of the core, `@limulus/lemmon-core` typed wrapper
-  (compile/loadData/render), and a small Node harness that renders fixtures, measuring
-  boundary marshalling cost so the few-large-calls design is validated early. `compile`
-  takes changed files only: the spike's one-pool `Module` becomes per-file units plus a
-  link step (D25), since retrofitting that under a shipped boundary would change its contract
-
 ### Prove it
 
 - ∆xWs Render `the-rebound` end to end — port minimal base/page/article layouts to `.lem`,
   render the post (document mode included) through the Node harness, diff against the
-  11ty-built HTML, and record VM + boundary timings against the <1 ms/page exit criterion;
-  needs: ∆TNT
+  11ty-built HTML, and record VM + boundary timings against the <1 ms/page exit criterion
 
 ## Phase 1 — Language complete, tooling from day one
 
@@ -85,7 +76,7 @@ API); the port itself lives in limulus-dot-net on a branch while 11ty stays gree
   (document/template/data/passthrough), parses front matter with YAML positions, loads
   `lemmon.config.ts`, and drives the core (compile → loadData → plan → render) across a
   worker pool, one WASM instance per worker; `lem check` prints spanned diagnostics without
-  writing. The backbone every other shell item plugs into; needs: ∆TNT
+  writing. The backbone every other shell item plugs into
 - ∆7Xs Output writer — HTML to disk, per-page hashed CSS bundles collected from `lem-emit
   styles` (`name.<8hex>.ext` under `/assets/immutable/…`, D13/D20), passthrough copy by
   glob (limulus.net copies `assets/**` plus png/svg/jpg/xsd/xsl/txt/pdf), and a link/asset

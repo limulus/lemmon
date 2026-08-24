@@ -24,6 +24,7 @@ use lemmon_syntax::{DocumentParse, Parse, Span, SyntaxToken, parse_document};
 use crate::builtins;
 use crate::bytecode::{Function, Module, Op};
 use crate::document;
+use crate::unit::{ExportedSignature, ImportRef, ImportedSignature, Unit, link};
 use crate::{SourceFile, Value};
 
 /// The ambient record names every template may read. Bound at render time and never
@@ -55,71 +56,46 @@ impl fmt::Display for CompileError {
 
 impl std::error::Error for CompileError {}
 
-/// Compiles every file of a site into one module.
+/// Compiles every file of a site into one module: each file [`prepare`]d and compiled
+/// into its own [`Unit`] against the table of every file's signatures, then [`link`]ed.
 ///
-/// Files that do not parse clean stop compilation with their parse diagnostics; nothing
-/// is lowered from a tree the parser had to recover. Otherwise every file is lowered
-/// and every problem found is reported, not just the first.
+/// A file that does not parse clean yields no unit — nothing is lowered from a tree the
+/// parser had to recover — but the other files still compile, and every problem found
+/// in every file is reported, not just the first.
 ///
 /// # Errors
 ///
 /// Every diagnostic, each with the path and span it is about.
 pub fn compile(files: &[SourceFile]) -> Result<Module, Vec<CompileError>> {
-    let sources: Vec<Source> = files.iter().map(Source::of).collect();
-    let parse_errors: Vec<CompileError> = files
-        .iter()
-        .zip(&sources)
-        .flat_map(|(file, source)| {
-            source.parse().diagnostics.iter().map(|d| CompileError {
-                path: file.path.clone(),
-                span: d.span,
-                message: d.message.clone(),
-            })
-        })
-        .collect();
-    if !parse_errors.is_empty() {
-        return Err(parse_errors);
-    }
-
-    // Prose is rendered before anything is lowered, and a document markdown rejected
-    // stops compilation the way a parse error does: its blocks may be fine, but where
-    // their output would go is not known.
-    let mut prose_errors = Vec::new();
-    let documents: Vec<Option<Vec<String>>> = files
-        .iter()
-        .zip(&sources)
-        .map(|(file, source)| match source {
-            Source::Template(_) => None,
-            Source::Document(doc) => {
-                match document::render_prose(&file.path, &file.text, doc) {
-                    Ok(chunks) => Some(chunks),
-                    Err(errors) => {
-                        prose_errors.extend(errors);
-                        None
-                    }
-                }
+    let mut errors = Vec::new();
+    let mut prepared = Vec::new();
+    for file in files {
+        match prepare(file) {
+            Ok(p) => prepared.push(Some(p)),
+            Err(errs) => {
+                errors.extend(errs);
+                prepared.push(None);
             }
-        })
-        .collect();
-    if !prose_errors.is_empty() {
-        return Err(prose_errors);
+        }
     }
-
-    let parses: Vec<&Parse> = sources.iter().map(Source::parse).collect();
-    let mut compiler = Compiler {
-        files,
-        module: Module::default(),
-        strings: HashMap::new(),
-        signatures: Vec::new(),
-        errors: Vec::new(),
-        ctxs: Vec::new(),
-        file: 0,
-    };
-    compiler.declare_files(&parses);
-    compiler.compile_functions(&parses);
-    compiler.compile_entries(&sources, &documents);
-    if compiler.errors.is_empty() {
-        return Ok(compiler.module);
+    let (table, table_errors) = SignatureTable::build(
+        prepared
+            .iter()
+            .flatten()
+            .map(|p| (p.path.as_str(), p.exports.as_slice())),
+    );
+    errors.extend(table_errors);
+    let mut units = Vec::new();
+    for p in prepared.iter().flatten() {
+        match compile_unit(p, &table) {
+            Ok(unit) => units.push(unit),
+            Err(errs) => errors.extend(errs),
+        }
+    }
+    if errors.is_empty() {
+        // Every unit was compiled against this same table, so nothing can be
+        // unresolved or doubled at link time.
+        return link(&units);
     }
     // In source order, like the parser's diagnostics — the order the passes above happen
     // to find things in is an implementation detail nobody reading a file wants to see.
@@ -127,8 +103,231 @@ pub fn compile(files: &[SourceFile]) -> Result<Module, Vec<CompileError>> {
         let file = files.iter().position(|f| f.path == error.path);
         (file, error.span.start, error.span.end)
     };
-    compiler.errors.sort_by_key(order);
-    Err(compiler.errors)
+    errors.sort_by_key(order);
+    Err(errors)
+}
+
+/// A file parsed, its prose rendered, and its exports collected — everything
+/// [`compile_unit`] needs that comes from this file alone.
+pub struct PreparedFile {
+    path: String,
+    source: Source,
+    /// A document's prose, rendered by comrak here so markdown never runs later.
+    chunks: Option<Vec<String>>,
+    exports: Vec<ExportedSignature>,
+    /// Problems found collecting the exports (ambient names, same-file duplicates),
+    /// reported by [`compile_unit`] alongside the rest of the file's errors.
+    errors: Vec<CompileError>,
+}
+
+impl PreparedFile {
+    /// The path the file is known by.
+    #[must_use]
+    pub fn path(&self) -> &str {
+        &self.path
+    }
+
+    /// The top-level `lem-fn`s the file defines — a [`SignatureTable`]'s input.
+    #[must_use]
+    pub fn exports(&self) -> &[ExportedSignature] {
+        &self.exports
+    }
+}
+
+/// Parses `file`, renders a document's prose, and collects its exported signatures.
+///
+/// # Errors
+///
+/// The file's parse or prose diagnostics — a file that does not parse clean yields
+/// nothing to compile.
+pub fn prepare(file: &SourceFile) -> Result<PreparedFile, Vec<CompileError>> {
+    let source = Source::of(file);
+    let parse_errors: Vec<CompileError> = source
+        .parse()
+        .diagnostics
+        .iter()
+        .map(|d| CompileError {
+            path: file.path.clone(),
+            span: d.span,
+            message: d.message.clone(),
+        })
+        .collect();
+    if !parse_errors.is_empty() {
+        return Err(parse_errors);
+    }
+    // Prose is rendered before anything is lowered, and a document markdown rejected
+    // fails the file the way a parse error does: its blocks may be fine, but where
+    // their output would go is not known.
+    let chunks = match &source {
+        Source::Template(_) => None,
+        Source::Document(doc) => Some(document::render_prose(&file.path, &file.text, doc)?),
+    };
+    let (exports, errors) = collect_exports(&file.path, source.parse());
+    Ok(PreparedFile {
+        path: file.path.clone(),
+        source,
+        chunks,
+        exports,
+        errors,
+    })
+}
+
+/// Collects the signatures of a parsed file's top-level `lem-fn`s, assigning each its
+/// unit-local function index — the entry is 0, so they count from 1. An ambient or
+/// repeated name is an error and exports nothing.
+fn collect_exports(
+    path: &str,
+    parse: &Parse,
+) -> (Vec<ExportedSignature>, Vec<CompileError>) {
+    let mut exports: Vec<ExportedSignature> = Vec::new();
+    let mut errors = Vec::new();
+    for item in parse.root().items() {
+        let (name, params) = match &item {
+            Item::FnBlock(f) => (required(f.name()), f.params()),
+            Item::FnVoid(f) => (required(f.name()), f.params()),
+            _ => continue,
+        };
+        if AMBIENT.contains(&name.text()) {
+            errors.push(CompileError {
+                path: path.to_owned(),
+                span: name.span(),
+                message: ambient_message(name.text()),
+            });
+            continue;
+        }
+        if let Some(existing) = exports.iter().find(|e| &*e.name == name.text()) {
+            errors.push(CompileError {
+                path: path.to_owned(),
+                span: name.span(),
+                message: duplicate_message(name.text(), path, existing.span),
+            });
+            continue;
+        }
+        let params: Vec<Rc<str>> = params
+            .map(|params| {
+                params
+                    .params()
+                    .map(|p| Rc::from(required(p.name()).text()))
+                    .collect()
+            })
+            .unwrap_or_default();
+        exports.push(ExportedSignature {
+            name: Rc::from(name.text()),
+            params,
+            func: index_u32(exports.len() + 1),
+            name_span: name.span(),
+            span: item.span(),
+        });
+    }
+    (exports, errors)
+}
+
+/// Every project-flat function signature, whichever file defines it — what a file's
+/// calls compile against (D25: signatures and where they live, never bodies).
+pub struct SignatureTable {
+    entries: Vec<TableEntry>,
+}
+
+struct TableEntry {
+    path: String,
+    export: ExportedSignature,
+}
+
+impl SignatureTable {
+    /// Builds the table from every file's exports, in file order. A name two files
+    /// export is an error at the later definition, citing the first — which the table
+    /// keeps.
+    pub fn build<'a>(
+        files: impl IntoIterator<Item = (&'a str, &'a [ExportedSignature])>,
+    ) -> (Self, Vec<CompileError>) {
+        let mut table = Self {
+            entries: Vec::new(),
+        };
+        let mut errors = Vec::new();
+        for (path, exports) in files {
+            for export in exports {
+                match table.entries.iter().find(|e| e.export.name == export.name) {
+                    Some(existing) => errors.push(CompileError {
+                        path: path.to_owned(),
+                        span: export.name_span,
+                        message: duplicate_message(
+                            &export.name,
+                            &existing.path,
+                            existing.export.span,
+                        ),
+                    }),
+                    None => table.entries.push(TableEntry {
+                        path: path.to_owned(),
+                        export: export.clone(),
+                    }),
+                }
+            }
+        }
+        (table, errors)
+    }
+
+    fn position(&self, name: &str) -> Option<usize> {
+        self.entries.iter().position(|e| &*e.export.name == name)
+    }
+}
+
+/// Compiles one prepared file into its [`Unit`], resolving names against `table`. A
+/// call to a function another file defines stays a symbolic import, and the signature
+/// it was compiled against is recorded as one of the unit's facts.
+///
+/// # Errors
+///
+/// Every problem in the file, in source order.
+pub fn compile_unit(
+    prepared: &PreparedFile,
+    table: &SignatureTable,
+) -> Result<Unit, Vec<CompileError>> {
+    let mut compiler = Compiler {
+        path: &prepared.path,
+        unit: Unit {
+            path: prepared.path.clone(),
+            constants: Vec::new(),
+            functions: Vec::new(),
+            imports: Vec::new(),
+            exports: prepared.exports.clone(),
+            facts: Vec::new(),
+        },
+        strings: HashMap::new(),
+        table,
+        errors: prepared.errors.clone(),
+        ctxs: Vec::new(),
+    };
+    let entry = compiler.reserve(&prepared.path);
+    debug_assert_eq!(entry, 0, "the entry is a unit's first function");
+    for export in &prepared.exports {
+        let func = compiler.reserve(&export.name);
+        debug_assert_eq!(
+            func, export.func,
+            "exports are reserved in collection order"
+        );
+    }
+    compiler.compile_functions(prepared.source.parse());
+    compiler.compile_entry(&prepared.source, prepared.chunks.as_deref());
+    compiler.resolve_import_operands();
+    if compiler.errors.is_empty() {
+        return Ok(compiler.unit);
+    }
+    let mut errors = compiler.errors;
+    errors.sort_by_key(|error| (error.span.start, error.span.end));
+    Err(errors)
+}
+
+/// The message a duplicate definition gets wherever it is found — the same words when
+/// two files compiled together collide as when two units disagree at link time.
+pub(crate) fn duplicate_message(name: &str, path: &str, span: Span) -> String {
+    format!(
+        "`{name}` is already defined in {path} at {}..{}",
+        span.start, span.end
+    )
+}
+
+fn ambient_message(name: &str) -> String {
+    format!("`{name}` is provided by the shell and cannot be redefined")
 }
 
 /// A file as parsed: a template, or a document in document mode. Decided by the path,
@@ -163,21 +362,10 @@ fn required<T>(value: Option<T>) -> T {
     value.expect("a parse without diagnostics has every required node")
 }
 
-/// A project function's callable shape, known before any body is compiled so that calls
-/// can be reordered against it whichever file defines it.
-struct Signature {
-    name: Rc<str>,
-    params: Vec<Rc<str>>,
-    /// Its index in the module's functions.
-    func: u32,
-    file: u32,
-    span: Span,
-}
-
 /// How a name in an expression resolved.
 enum Resolved {
     Local(u16),
-    /// Index into `Compiler::signatures`.
+    /// Index into the [`SignatureTable`]'s entries.
     Function(usize),
     Builtin(u32),
     Ambient,
@@ -228,169 +416,168 @@ impl FnCtx {
     }
 }
 
+/// The tag marking a `Call`/`Global`/`MakeClosure` operand as an import while its unit
+/// is still being built — [`Compiler::resolve_import_operands`] rewrites it to
+/// `functions.len() + import` once the local function count is final.
+const IMPORT_TAG: u32 = 1 << 31;
+
 struct Compiler<'a> {
-    files: &'a [SourceFile],
-    module: Module,
+    /// The path of the file being compiled — what every error names.
+    path: &'a str,
+    /// The unit being built.
+    unit: Unit,
     /// Interned string constants, so a name or text run is stored once.
     strings: HashMap<String, u32>,
-    signatures: Vec<Signature>,
+    table: &'a SignatureTable,
     errors: Vec<CompileError>,
     /// The function being compiled, then every lambda open inside it, innermost last.
     ctxs: Vec<FnCtx>,
-    /// The file being compiled.
-    file: u32,
 }
 
 impl Compiler<'_> {
     // --- Driver ---------------------------------------------------------------------
 
-    /// Reserves a function per file and per top-level `lem-fn`, collecting signatures
-    /// so calls can be compiled before their callee's body is.
-    fn declare_files(&mut self, parses: &[&Parse]) {
-        for (index, (file, parse)) in self.files.iter().zip(parses).enumerate() {
-            self.file = index_u32(index);
-            self.module.files.push(file.path.clone());
-            let entry = self.reserve(&file.path);
-            self.module.entries.push(entry);
-            for item in parse.root().items() {
-                let (name, params) = match &item {
-                    Item::FnBlock(f) => (required(f.name()), f.params()),
-                    Item::FnVoid(f) => (required(f.name()), f.params()),
-                    _ => continue,
-                };
-                let params: Vec<Rc<str>> = params
-                    .map(|params| {
-                        params
-                            .params()
-                            .map(|p| Rc::from(required(p.name()).text()))
-                            .collect()
-                    })
-                    .unwrap_or_default();
-                self.declare_function(&name, params, item.span());
-            }
-        }
-    }
-
-    fn declare_function(&mut self, name: &SyntaxToken, params: Vec<Rc<str>>, span: Span) {
-        if self.reject_ambient(name) {
-            return;
-        }
-        if let Some(existing) = self.signatures.iter().find(|s| &*s.name == name.text()) {
-            let message = format!(
-                "`{}` is already defined in {} at {}..{}",
-                name.text(),
-                self.files[existing.file as usize].path,
-                existing.span.start,
-                existing.span.end
-            );
-            self.error(name.span(), message);
-            return;
-        }
-        let func = self.reserve(name.text());
-        self.signatures.push(Signature {
-            name: Rc::from(name.text()),
-            params,
-            func,
-            file: self.file,
-            span,
-        });
-    }
-
-    /// Adds an empty function named `name` and returns its index.
+    /// Adds an empty function named `name` and returns its unit-local index.
     fn reserve(&mut self, name: &str) -> u32 {
-        self.module.functions.push(Function {
+        self.unit.functions.push(Function {
             name: name.to_owned(),
             params: Vec::new(),
             captures: Vec::new(),
-            file: self.file,
+            // A unit has exactly one file; `link` rewrites this to the module's index.
+            file: 0,
             n_locals: 0,
             code: Vec::new(),
             spans: Vec::new(),
         });
-        index_u32(self.module.functions.len() - 1)
+        let index = index_u32(self.unit.functions.len() - 1);
+        assert!(index < IMPORT_TAG, "fewer than 2^31 functions");
+        index
     }
 
-    fn compile_functions(&mut self, parses: &[&Parse]) {
-        for (index, parse) in parses.iter().enumerate() {
-            self.file = index_u32(index);
-            for item in parse.root().items() {
-                let name = match &item {
-                    Item::FnBlock(f) => required(f.name()),
-                    Item::FnVoid(f) => required(f.name()),
-                    _ => continue,
-                };
-                let Some(sig) = self.signatures.iter().position(|s| {
-                    &*s.name == name.text() && s.file == self.file && s.span == item.span()
-                }) else {
-                    // A duplicate: reported when declared, and nothing to compile into.
-                    continue;
-                };
-                let (func, params) = (
-                    self.signatures[sig].func,
-                    self.signatures[sig].params.clone(),
-                );
-                self.ctxs.push(FnCtx::new());
-                // Through `declare`, so that a repeated or ambient parameter name is
-                // the same error in a signature as it is in a lambda.
-                let tokens: Vec<SyntaxToken> = match &item {
-                    Item::FnBlock(f) => f.params(),
-                    Item::FnVoid(f) => f.params(),
-                    _ => unreachable!("only functions reach here"),
-                }
-                .map(|params| params.params().map(|p| required(p.name())).collect())
-                .unwrap_or_default();
-                for token in &tokens {
-                    self.declare(token);
-                }
-                match &item {
-                    Item::FnBlock(f) => {
-                        let body = required(f.body());
-                        self.emit(Op::Capture, f.span());
-                        self.lower_block(body.items().collect(), false);
-                        self.emit(Op::EndCapture, f.span());
-                    }
-                    Item::FnVoid(f) => self.expr(&required(f.value())),
-                    _ => unreachable!("only functions reach here"),
-                }
-                self.emit(Op::Return, item.span());
-                let ctx = self.ctxs.pop().expect("the function's context");
-                self.finish(func, ctx, params);
-            }
-        }
-    }
-
-    fn compile_entries(&mut self, sources: &[Source], documents: &[Option<Vec<String>>]) {
-        for (index, (source, chunks)) in sources.iter().zip(documents).enumerate() {
-            self.file = index_u32(index);
+    fn compile_functions(&mut self, parse: &Parse) {
+        for item in parse.root().items() {
+            let name = match &item {
+                Item::FnBlock(f) => required(f.name()),
+                Item::FnVoid(f) => required(f.name()),
+                _ => continue,
+            };
+            let Some(export) = self
+                .unit
+                .exports
+                .iter()
+                .find(|e| &*e.name == name.text() && e.span == item.span())
+            else {
+                // Ambient-named or a duplicate: reported when the exports were
+                // collected, and nothing to compile into.
+                continue;
+            };
+            let (func, params) = (export.func, export.params.clone());
             self.ctxs.push(FnCtx::new());
-            let parse = source.parse();
-            let items = parse.root().items().collect();
-            match (source, chunks) {
-                (Source::Document(doc), Some(chunks)) => {
-                    self.lower_document(items, &doc.prose, chunks);
-                }
-                (Source::Template(_), None) => self.lower_block(items, true),
-                _ => unreachable!("a document has its chunks and a template has none"),
+            // Through `declare`, so that a repeated or ambient parameter name is
+            // the same error in a signature as it is in a lambda.
+            let tokens: Vec<SyntaxToken> = match &item {
+                Item::FnBlock(f) => f.params(),
+                Item::FnVoid(f) => f.params(),
+                _ => unreachable!("only functions reach here"),
             }
-            let span = parse.root().span();
-            let null = self.constant(Value::Null);
-            self.emit(Op::Const { index: null }, span);
-            self.emit(Op::Return, span);
-            let ctx = self.ctxs.pop().expect("the entry's context");
-            let func = self.module.entries[index];
-            self.finish(func, ctx, Vec::new());
+            .map(|params| params.params().map(|p| required(p.name())).collect())
+            .unwrap_or_default();
+            for token in &tokens {
+                self.declare(token);
+            }
+            match &item {
+                Item::FnBlock(f) => {
+                    let body = required(f.body());
+                    self.emit(Op::Capture, f.span());
+                    self.lower_block(body.items().collect(), false);
+                    self.emit(Op::EndCapture, f.span());
+                }
+                Item::FnVoid(f) => self.expr(&required(f.value())),
+                _ => unreachable!("only functions reach here"),
+            }
+            self.emit(Op::Return, item.span());
+            let ctx = self.ctxs.pop().expect("the function's context");
+            self.finish(func, ctx, params);
         }
+    }
+
+    fn compile_entry(&mut self, source: &Source, chunks: Option<&[String]>) {
+        self.ctxs.push(FnCtx::new());
+        let parse = source.parse();
+        let items = parse.root().items().collect();
+        match (source, chunks) {
+            (Source::Document(doc), Some(chunks)) => {
+                self.lower_document(items, &doc.prose, chunks);
+            }
+            (Source::Template(_), None) => self.lower_block(items, true),
+            _ => unreachable!("a document has its chunks and a template has none"),
+        }
+        let span = parse.root().span();
+        let null = self.constant(Value::Null);
+        self.emit(Op::Const { index: null }, span);
+        self.emit(Op::Return, span);
+        let ctx = self.ctxs.pop().expect("the entry's context");
+        self.finish(0, ctx, Vec::new());
     }
 
     /// Writes a finished context into the reserved function slot.
     fn finish(&mut self, func: u32, ctx: FnCtx, params: Vec<Rc<str>>) {
         debug_assert_eq!(ctx.code.len(), ctx.spans.len());
-        let function = &mut self.module.functions[func as usize];
+        let function = &mut self.unit.functions[func as usize];
         function.params = params;
         function.captures = ctx.captures.iter().map(|&(_, slot)| slot).collect();
         function.n_locals = ctx.n_locals;
         function.code = ctx.code;
         function.spans = ctx.spans;
+    }
+
+    /// The `func` operand for the table entry at `sig`: the local index when this file
+    /// defines the function, an import-tagged one otherwise — recorded symbolically,
+    /// with the signature consumed as a fact, the first time the name is used.
+    fn func_operand(&mut self, sig: usize, span: Span) -> u32 {
+        let table = self.table;
+        let entry = &table.entries[sig];
+        if entry.path == self.path {
+            return entry.export.func;
+        }
+        let name = &entry.export.name;
+        let index = match self.unit.imports.iter().position(|i| &i.name == name) {
+            Some(index) => index,
+            None => {
+                self.unit.imports.push(ImportRef {
+                    name: name.clone(),
+                    span,
+                });
+                self.unit.facts.push(ImportedSignature {
+                    name: name.clone(),
+                    params: entry.export.params.clone(),
+                });
+                self.unit.imports.len() - 1
+            }
+        };
+        let index = index_u32(index);
+        assert!(index < IMPORT_TAG, "fewer than 2^31 imports");
+        IMPORT_TAG | index
+    }
+
+    /// Rewrites every import-tagged operand to its final index past the local
+    /// functions, now that how many of those there are is known.
+    fn resolve_import_operands(&mut self) {
+        let locals = index_u32(self.unit.functions.len());
+        for function in &mut self.unit.functions {
+            for op in &mut function.code {
+                match op {
+                    Op::Global { func }
+                    | Op::Call { func, .. }
+                    | Op::MakeClosure { func, .. }
+                        if *func & IMPORT_TAG != 0 =>
+                    {
+                        *func = locals + (*func & !IMPORT_TAG);
+                    }
+                    _ => {}
+                }
+            }
+        }
     }
 
     // --- Emission -------------------------------------------------------------------
@@ -431,8 +618,8 @@ impl Compiler<'_> {
     }
 
     fn constant(&mut self, value: Value) -> u32 {
-        self.module.constants.push(value);
-        index_u32(self.module.constants.len() - 1)
+        self.unit.constants.push(value);
+        index_u32(self.unit.constants.len() - 1)
     }
 
     /// The constant index of `text` as a string, shared by every use.
@@ -447,7 +634,7 @@ impl Compiler<'_> {
 
     fn error(&mut self, span: Span, message: impl Into<String>) {
         self.errors.push(CompileError {
-            path: self.files[self.file as usize].path.clone(),
+            path: self.path.to_owned(),
             span,
             message: message.into(),
         });
@@ -466,13 +653,7 @@ impl Compiler<'_> {
     /// Reports `name` if it is one of the ambient records, which no binding may take.
     fn reject_ambient(&mut self, name: &SyntaxToken) -> bool {
         if AMBIENT.contains(&name.text()) {
-            self.error(
-                name.span(),
-                format!(
-                    "`{}` is provided by the shell and cannot be redefined",
-                    name.text()
-                ),
-            );
+            self.error(name.span(), ambient_message(name.text()));
             return true;
         }
         false
@@ -509,7 +690,7 @@ impl Compiler<'_> {
         if self.ctxs.iter().any(|ctx| ctx.lookup(name).is_some()) {
             return None;
         }
-        if let Some(sig) = self.signatures.iter().position(|s| &*s.name == name) {
+        if let Some(sig) = self.table.position(name) {
             return Some(Resolved::Function(sig));
         }
         builtins::lookup(name).map(Resolved::Builtin)
@@ -520,7 +701,7 @@ impl Compiler<'_> {
         if let Some(slot) = self.resolve_local(level, name) {
             return Some(Resolved::Local(slot));
         }
-        if let Some(sig) = self.signatures.iter().position(|s| &*s.name == name) {
+        if let Some(sig) = self.table.position(name) {
             return Some(Resolved::Function(sig));
         }
         if let Some(id) = builtins::lookup(name) {
@@ -554,7 +735,7 @@ impl TokenSpan for SyntaxToken {
     }
 }
 
-fn index_u32(index: usize) -> u32 {
+pub(crate) fn index_u32(index: usize) -> u32 {
     u32::try_from(index).expect("fewer than 2^32 items")
 }
 
@@ -613,6 +794,58 @@ mod tests {
     }
 
     #[test]
+    fn calls_a_function_across_files_whichever_order_the_files_come_in() {
+        // Both orders, so a link that forgot to offset a unit's local indices — under
+        // which `two` here collides with `one` or the other file's entry — misrenders.
+        let a = SourceFile::new("a.lem", "<lem-fn one(): int = 1 />");
+        let b = SourceFile::new("b.lem", "<lem-fn two(): int = 2 /><lem.one()><lem.two()>");
+        assert_eq!(run_files(&[a.clone(), b.clone()], "b.lem").unwrap(), "12");
+        assert_eq!(run_files(&[b, a], "b.lem").unwrap(), "12");
+    }
+
+    #[test]
+    fn compiles_a_unit_from_the_callee_signature_never_its_body() {
+        // Invariant 11: an edit to the callee's body leaves the caller's unit
+        // byte-identical, because all it consumed is the signature — its one fact.
+        let unit_against = |lib_body: &str| {
+            let lib = prepare(&SourceFile::new("lib.lem", lib_body)).unwrap();
+            let page =
+                prepare(&SourceFile::new("page.lem", "<lem.greet(\"you\")>")).unwrap();
+            let (table, errors) = SignatureTable::build([
+                ("lib.lem", lib.exports()),
+                ("page.lem", page.exports()),
+            ]);
+            assert_eq!(errors, Vec::new());
+            compile_unit(&page, &table).unwrap()
+        };
+        let unit = unit_against("<lem-fn greet(who: string): string = \"hi \" + who />");
+        let edited = unit_against("<lem-fn greet(who: string): string = \"HI \" + who />");
+        assert_eq!(unit, edited);
+        assert_eq!(
+            unit.facts,
+            vec![ImportedSignature {
+                name: Rc::from("greet"),
+                params: vec![Rc::from("who")],
+            }]
+        );
+        assert_eq!(unit.imports.len(), 1);
+    }
+
+    #[test]
+    fn reports_a_broken_file_alongside_the_other_files_problems() {
+        // One file's parse errors no longer suppress what is wrong elsewhere.
+        let errors = compile(&[
+            SourceFile::new("a.lem", "<lem-if x>"),
+            SourceFile::new("b.lem", "<lem.missing>"),
+        ])
+        .unwrap_err();
+        let shown: Vec<String> = errors.iter().map(ToString::to_string).collect();
+        assert_eq!(shown.len(), 2, "{shown:?}");
+        assert!(shown[0].starts_with("a.lem:"), "{shown:?}");
+        assert_eq!(shown[1], "b.lem:5..12: undefined name `missing`");
+    }
+
+    #[test]
     fn cites_the_first_definition_when_a_function_is_redefined_in_another_file() {
         let files = [
             SourceFile::new("a.lem", "<lem-fn f(): int = 1 />"),
@@ -621,6 +854,19 @@ mod tests {
         assert_eq!(
             run_files(&files, "a.lem").unwrap_err(),
             "b.lem:10..11: `f` is already defined in a.lem at 0..23"
+        );
+    }
+
+    #[test]
+    fn cites_the_first_definition_when_a_function_is_redefined_in_the_same_file() {
+        let errors = compile(&[SourceFile::new(
+            "t.lem",
+            "<lem-fn f(): int = 1 />\n<lem-fn f(): int = 2 />",
+        )])
+        .unwrap_err();
+        assert_eq!(
+            errors[0].to_string(),
+            "t.lem:32..33: `f` is already defined in t.lem at 0..23"
         );
     }
 

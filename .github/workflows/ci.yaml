@@ -48,7 +48,8 @@ jobs:
       - uses: taiki-e/install-action@cargo-llvm-cov
       - run: npm run rust:cov
 
-  # Cross-compiles the boundary crate and publishes the .wasm for the jobs below. Kept out
+  # Cross-compiles the boundary crate, runs wasm-bindgen over it, exercises the real ABI
+  # with wasm-bindgen-test, and publishes the artifact set for the jobs below. Kept out
   # of `npm run verify` because populating a second target tree is not worth paying on
   # every inner-loop run.
   wasm:
@@ -63,7 +64,14 @@ jobs:
           node-version: '24'
       - run: cargo --version
       - uses: Swatinem/rust-cache@v2
+      # Prebuilt binaries: wasm-bindgen for staging, and the test runner it ships with.
+      # The version must match the wasm-bindgen pin in Cargo.toml — the CLI refuses to
+      # run on a skew, so a drift fails loudly here.
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-bindgen-cli@0.2.127
       - run: npm run rust:wasm
+      - run: npm run rust:wasm:test
       - uses: actions/upload-artifact@v7
         with:
           name: wasm
@@ -71,10 +79,13 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  # Deliberately has no `needs:` — lint, tests, and typecheck do not touch the wasm, and
-  # blocking them behind a cargo build would slow feedback on TypeScript-only changes.
+  # `needs: wasm` because @limulus/lemmon-core's vitest specs load the staged artifact —
+  # the tests consume the exact bytes that would ship, the same trade wasm-check makes.
+  # The price is that TypeScript-only feedback waits on the (cached) cargo build; locally
+  # the same dependency reads `npm run rust:wasm` before `npm run verify`.
   verify:
     runs-on: ubuntu-latest
+    needs: wasm
     strategy:
       matrix:
         node: [ '24', '26' ]
@@ -86,6 +97,10 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: 'npm'
       - run: npm ci
+      - uses: actions/download-artifact@v7
+        with:
+          name: wasm
+          path: artifacts/wasm/
       - run: npm run verify:js
       - uses: actions/upload-artifact@v7
         if: ${{ always() }}
@@ -95,6 +110,8 @@ jobs:
       # Type-checking does not emit, so build here to catch diagnostics that only
       # surface during declaration emit (e.g. private names in exported API).
       - run: npm run build
+      # The boundary-marshalling record ∆TNT owes: numbers land in the job log.
+      - run: npm run wasm:bench
 
   # Where the node matrix genuinely earns its keep: building a .wasm never consults Node,
   # but *accepting* one does — which WebAssembly proposals a runtime enables moves between

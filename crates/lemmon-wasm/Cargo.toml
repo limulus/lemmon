@@ -14,3 +14,8 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 lemmon-vm = { path = "../lemmon-vm" }
 wasm-bindgen = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+wasm-bindgen-test = { workspace = true }

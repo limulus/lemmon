@@ -39,6 +39,33 @@ crosses as one UTF-8 JSON buffer (rmp-serde if profiling demands); one instance 
 thread, nothing shared. Whole-site data ≪ 10 MB. comrak + syntect adds ~1 MB to the .wasm —
 lazy-load in the playground, irrelevant in Node.
 
+∆TNT built the `compile`/`loadData`/`render` subset of that class (plus `version`), and
+settled the spike shapes the sketch left open — each chosen so the full form is additive,
+not a break:
+
+- `DataInput` is `{ambient: {site?, page?, build?}}`: an envelope object, so `records`,
+  data files, and the manifest arrive as new fields. `loadData` validates nothing yet
+  (schemas are ∆C8d) and always returns `[]`.
+- `PageRef` is `{path}` until `plan()` exists to mint richer references.
+- `render` returns `{html, diagnostics}` — `html: null` plus one diagnostic when the page
+  fails at runtime. `channels` and `deps` are omitted entirely until ∆RGQ, not stubbed.
+- A `Diagnostic` is `{path, span: {start, end}, message}` with byte offsets (invariant 8);
+  `severity` and `code` arrive with the checker as optional fields.
+- Errors split by kind: anything wrong with a template or document is a returned
+  diagnostic; a thrown `JsError` is reserved for caller bugs — a malformed JSON envelope,
+  rendering before a compile has succeeded, rendering a path the program does not have —
+  which have no source span to point at.
+- `compile` really does take changed files only: units stay resident in the `Core`, each
+  call compiles what it is given against the resident signatures and relinks. A file that
+  fails keeps its previous unit and the previous module — stale until fixed, failure
+  reported. Deleting a file has no boundary call yet (nothing needs it before the shell
+  exists); the link step's unresolved-import diagnostic is what makes adding one safe.
+- A caller left stale by a signature it never saw change is a link diagnostic pointing at
+  the caller, not a silent relink: named arguments are reordered against the parameter
+  list at compile time, so recompiling only the callee would otherwise swap a caller's
+  arguments with nothing reported. That check is what makes `Unit::facts` load-bearing
+  rather than bookkeeping, and it names exactly the file the shell must recompile.
+
 ## Build pipeline
 
 1. **Discover** (shell) — walk input, classify (document/template/data/passthrough), parse
@@ -87,9 +114,15 @@ id invalidates only documents whose facts named the photo index, never the layou
 checker remains whole-program (cheap: the program is small) but runs over units, so
 re-checking never requires recompiling.
 
-`∆c8h`'s `Module` — one shared constant pool, absolute function indices — is the spike
-shortcut for this; `∆TNT` replaces it with units plus link, and `∆RGQ` makes the reported
-facts and the serialized form (`exportModule`) first-class.
+∆TNT made the split real: `lemmon-vm` compiles per file (`prepare` → `SignatureTable` →
+`compile_unit`) into a `Unit` — file-local constant pool, unit-local function indices,
+imports symbolic by name — and `link` concatenates pools with offsets into the same
+`Module` shape the VM always ran, so the VM itself never changed. Cross-file duplicate
+names are caught building the signature table (and again at link, for units compiled
+apart); an import no unit exports is a spanned link diagnostic. The facts live on
+`Unit::facts` — today only the imported-signatures kind exists, and invariant 11 is a
+test: editing a callee's body leaves the caller's unit byte-identical. `∆RGQ` makes the
+reported facts cross the boundary and the serialized form (`exportModule`) first-class.
 
 ## VM
 
@@ -121,7 +154,7 @@ VM time (that number is the Phase 0 exit criterion).
 | Syntax tree    | `rowan` 0.17 green/red CST                               | lossless + recovering; no incremental reparse needed (rust-analyzer's own conclusion). `lemmon_syntax::ast` is the typed view over it that the checker and codegen read; the CST stays for the formatter and diagnostics |
 | Diagnostics    | structured JSON + `ariadne`/`annotate-snippets` renderer | spans first-class                                                                                                                                                                                                        |
 | Markdown       | `comrak` 0.54 + `syntect` 5.3 + `two-face`               | in-core (D08); wasm32-clean. comrak is in (`default-features = false` + `attributes`, with a heading adapter since its renderer ignores `{#id}`); syntect is not yet                                                     |
-| WASM           | `wasm-bindgen` 0.2.127 + `wasm-pack` 0.15                | both active under the wasm-bindgen org                                                                                                                                                                                   |
+| WASM           | `wasm-bindgen` 0.2.127, CLI direct (no wasm-pack)        | `wasm-bindgen --target web` runs in `scripts/stage-wasm.ts`: caller-supplied bytes keep loading injectable and browser-reusable, and the repo owns staging, so wasm-pack’s own package layout would only fight it (∆TNT)                                                                                                                                                                                   |
 | Serde          | `serde_json` (rmp-serde optional)                        | avoid serde-wasm-bindgen for bulk data                                                                                                                                                                                   |
 | Editor grammar | `tree-sitter` 0.26                                       | editor-only; do NOT link its C runtime into the core wasm; its `wasm` cargo feature means "host wasmtime", not "compile to wasm"                                                                                         |
 | Native later   | `napi-rs` 3.x                                            | optional perf path behind the same TS interface (D11)                                                                                                                                                                    |

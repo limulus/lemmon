@@ -9,12 +9,15 @@ a parity harness shows zero unexpected output diffs.
 
 **Status:** early implementation. The work is sequenced in `BACKLOG.md` (delto-managed); the
 current milestone is the Phase 0 spike — one real page rendering end-to-end from the WASM
-core. Both halves of the repo scaffolding exist (see Layout). The core runs scanner → parser
-→ typed AST → bytecode compiler → VM for the spike subset, untyped, and `.md` files go
-through document mode (segmenter in `lemmon-syntax`, comrak + splice in `lemmon-vm`): the
-checker (∆C8d) and the WASM boundary (∆TNT) do not exist yet. The spike's `Module` is one
-shared constant pool with absolute indices — a known shortcut past invariant 11 that ∆TNT
-replaces with per-file units and a link step.
+core. The core runs scanner → parser → typed AST → bytecode compiler → VM for the spike
+subset, untyped, and `.md` files go through document mode (segmenter in `lemmon-syntax`,
+comrak + splice in `lemmon-vm`); the checker (∆C8d) does not exist yet. Compilation is
+per-file: each file becomes a `Unit` (file-local constants, symbolic imports) and a link
+step joins units into the `Module` the VM runs (D25, invariant 11). The WASM boundary is
+real (∆TNT): `crates/lemmon-wasm` exposes a resident `Core` with
+`compile`/`loadData`/`render`, staged by wasm-bindgen into `artifacts/wasm/`, and
+`@limulus/lemmon-core` is the typed wrapper over it — its vitest specs run against the
+staged artifact, so `npm run rust:wasm` must have run before `npm run verify`.
 
 ## Canonical references
 
@@ -70,8 +73,8 @@ These hold for every change. A PR that breaks one is wrong even if its tests pas
 crates/lemmon-syntax/   scanner, parser, CST/AST, diagnostics, document segmenter
 crates/lemmon-corpus/   corpus discovery + blessing, used by every stage's tests
 crates/lemmon-vm/       codegen + VM, document mode's markdown stage; checker to come
-crates/lemmon-wasm/     wasm-bindgen boundary (lemmon-core's .wasm)     (skeleton)
-packages/core/          @limulus/lemmon-core — typed JS wrapper around the .wasm (stub)
+crates/lemmon-wasm/     wasm-bindgen boundary: the resident Core (lemmon-core's .wasm)
+packages/core/          @limulus/lemmon-core — typed JS wrapper around the .wasm
 packages/shell/         @limulus/lemmon-shell — CLI, walker, plugin host, dev server (stub)
 tests/corpus/           golden inputs → expected trees + diagnostics; see its README
 scripts/                repo tooling run by npm scripts (wasm staging + check)
@@ -110,8 +113,10 @@ undecided. Do not publish anything, and do not re-enable publishing, without Eri
 ```bash
 # The gate: eslint, vitest with coverage, tsc, and the Rust leg (cargo fmt --check,
 # clippy -D warnings, cargo test --workspace). Run it after making changes — it is what
-# pre-push runs. It needs a Rust toolchain on PATH; rust-toolchain.toml supplies
-# everything else on first invocation.
+# pre-push runs. It needs a Rust toolchain on PATH (rust-toolchain.toml supplies
+# everything else on first invocation) and a staged wasm artifact — the core package's
+# vitest specs load artifacts/wasm/, so run `npm run rust:wasm` once first, and again
+# after changing anything the boundary compiles in.
 #
 # CI runs its two halves as separate jobs rather than this one command, so that the
 # host-target Rust checks run once instead of once per node version. `verify` is defined
@@ -125,7 +130,7 @@ npm run verify:js   # the npm half alone: lint + test + tscc
 npm run lint:fix
 
 # Test (single file)
-npx vitest run packages/core/src/lib/example.spec.ts
+npx vitest run packages/core/src/lib/core.spec.ts
 
 npm run build     # emit packages/*/dist/{esm,types} via the native compiler
 npm run clean     # the clean:js set, plus artifacts/ and a literal ./target. It does
@@ -149,18 +154,30 @@ npm run corpus:bless
 # job because instrumentation needs different RUSTFLAGS and so a second target tree.
 npm run rust:cov
 
-# Cross-compile the boundary crate (release) and stage the .wasm into artifacts/wasm/.
-# Kept out of `verify` because it populates a second target tree.
+# Cross-compile the boundary crate (release), run wasm-bindgen over it, and stage the
+# artifact set (.wasm + ESM glue) into artifacts/wasm/. Kept out of `verify` because it
+# populates a second target tree — but `verify`'s vitest leg consumes what it stages.
+# Needs `cargo install wasm-bindgen-cli --version 0.2.127 --locked` (the version must
+# match the wasm-bindgen pin in Cargo.toml; the CLI refuses to run on a skew).
 npm run rust:wasm
 
 # Consume the staged .wasm: compile it under this Node, assert the boundary's exports
-# and that it imports nothing outside the wasm-bindgen placeholders.
+# and that it imports nothing outside the wasm-bindgen glue's runtime internals.
 npm run wasm:check
+
+# Exercise the boundary across the real ABI: wasm-bindgen-test under Node, via the
+# runner the wasm-bindgen-cli install provides.
+npm run rust:wasm:test
+
+# Measure boundary marshalling against the staged artifact: corpus fixtures plus a
+# synthetic site, timed host-side. Numbers only — corpus correctness is the Rust
+# corpus gate's job. CI runs it in the verify job so every run logs the record.
+npm run wasm:bench
 ```
 
-CI is build-once/consume-many: a `wasm` job stages the artifact and uploads it, and a
-`wasm-check` matrix downloads it so every supported Node is tested against the exact bytes
-that would ship rather than its own rebuild. Building a `.wasm` never consults Node;
+CI is build-once/consume-many: a `wasm` job stages the artifact and uploads it, and the
+`wasm-check` and `verify` matrices download it so every supported Node is tested against
+the exact bytes that would ship rather than its own rebuild. Building a `.wasm` never consults Node;
 _accepting_ one does, since enabled WebAssembly proposals move between Node majors.
 `wasm:check`'s import allowlist (`scripts/wasm-artifact.ts`) is a mechanical check on
 invariant 1 — a host capability pulled in by some dependency shows up there as a new import
@@ -245,7 +262,9 @@ Diagnostics raised only during declaration emit surface in `npm run build` (CI r
   tree-sitter agreement target (invariant 9), and a `SyntaxKind` no case reaches — or an
   `Op` no `render/` case emits — fails the build, which is what makes "lands with corpus
   coverage" mechanical. `document/` holds the `.md` cases, checked by both crates
-- WASM (when it exists): wasm-bindgen-test via Node for the boundary
+- WASM: the boundary's logic is host-target unit tests in `crates/lemmon-wasm`;
+  `npm run rust:wasm:test` re-exercises it across the real ABI with wasm-bindgen-test
+  under Node, and `packages/core`'s specs cover the wrapper against the staged artifact
 
 ## Code Style Guidelines
 

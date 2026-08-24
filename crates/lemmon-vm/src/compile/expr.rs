@@ -109,7 +109,7 @@ impl Compiler<'_> {
         match self.resolve(token.text()) {
             Some(Resolved::Local(slot)) => self.emit(Op::Local { slot }, span),
             Some(Resolved::Function(sig)) => {
-                let func = self.signatures[sig].func;
+                let func = self.func_operand(sig, span);
                 self.emit(Op::Global { func }, span);
             }
             Some(Resolved::Builtin(_)) => self.error(
@@ -346,9 +346,9 @@ impl Compiler<'_> {
         named: &[NamedArg],
         span: Span,
     ) {
-        let (func, fn_name, params) = {
-            let sig = &self.signatures[sig];
-            (sig.func, sig.name.clone(), sig.params.clone())
+        let (fn_name, params) = {
+            let entry = &self.table.entries[sig];
+            (entry.export.name.clone(), entry.export.params.clone())
         };
         let mut slots: Vec<Option<Expr>> = vec![None; params.len()];
         let given = receiver.into_iter().chain(positional.iter().cloned());
@@ -396,6 +396,7 @@ impl Compiler<'_> {
             self.expr(&slot);
         }
         let argc = u16::try_from(params.len()).expect("fewer than 65536 parameters");
+        let func = self.func_operand(sig, span);
         self.emit(Op::Call { func, argc }, span);
     }
 }
