@@ -146,7 +146,9 @@ npm run rust
 cargo test --workspace                       # core unit + golden corpus tests
 
 # Rewrite every corpus expectation from what the code currently produces, then READ THE
-# DIFF — blessing is a proposal, not a fix. See tests/corpus/README.md.
+# DIFF — blessing is a proposal, not a fix. Read the blessed output against what the
+# source asked for, not for whether it looks plausible: wrong output has been blessed in
+# as the expectation twice. See tests/corpus/README.md.
 npm run corpus:bless
 
 # Rust coverage. Needs `cargo install cargo-llvm-cov --locked` (rust-toolchain.toml
@@ -262,9 +264,26 @@ Diagnostics raised only during declaration emit surface in `npm run build` (CI r
   tree-sitter agreement target (invariant 9), and a `SyntaxKind` no case reaches — or an
   `Op` no `render/` case emits — fails the build, which is what makes "lands with corpus
   coverage" mechanical. `document/` holds the `.md` cases, checked by both crates
+- Write corpus cases from the author's seat — the inputs a template author would actually
+  type (an escaped tag expected to survive as text, a typo'd close, a head cut mid-file),
+  not the shapes the implementation suggests; broken inputs should break _early_ in a
+  realistic file, not only at EOF
+- An unreached `SyntaxKind` or `Op` is a design question as much as a coverage gap:
+  "nothing should reach this" is a legitimate answer, and deleting the unreached thing
+  can be the honest fix — don't reflexively write a case to cover it
+- When a rule suppresses diagnostics, its tests carry both halves: what is silenced _and_
+  what must still be reported on a neighbouring input. Suppression keyed on a coincidence
+  (same start byte, token adjacency) has hidden real errors more than once
+- A check claimed to enforce an invariant gets negative-tested first: feed it a real
+  violation and watch it fail before describing it as enforcement anywhere. Likewise a
+  recorded fact: when the point is "the compiler reports X", the test that matters is one
+  where consuming X changes an outcome — asserting X's shape can pass forever while X is
+  inert
 - WASM: the boundary's logic is host-target unit tests in `crates/lemmon-wasm`;
   `npm run rust:wasm:test` re-exercises it across the real ABI with wasm-bindgen-test
-  under Node, and `packages/core`'s specs cover the wrapper against the staged artifact
+  under Node, and `packages/core`'s specs cover the wrapper against the staged artifact.
+  Don't put ABI test files behind `#![cfg(target_arch = "wasm32")]` — the test macro
+  already no-ops off-wasm32, and the cfg only hides the file from clippy and `cargo test`
 
 ## Code Style Guidelines
 
@@ -290,7 +309,9 @@ Diagnostics raised only during declaration emit surface in `npm run build` (CI r
     that)
   - Use JSDoc for public API documentation where appropriate
 - Don't re-invent the wheel — prefer a well-used npm package over your own implementation
-  that may miss important edge cases
+  that may miss important edge cases. The same rule covers Rust dependencies: read what a
+  crate already ships before writing the trait or helper yourself (rowan's `ast` module
+  was re-implemented once before anyone looked)
 
 ## Project Structure (per package)
 
@@ -311,6 +332,15 @@ entry in `docs/journal/`. Mint new deltoids with
   pick the provisional reading the docs already use, note it in the PR, move on.
 - The eventual acceptance bar is the limulus.net parity harness (doc 3 of the architecture
   set); nothing in the core may assume that site's specifics to pass it.
+- Fix a confirmed finding now when it is small and in scope of the crate being touched,
+  even if it predates the diff; defer only what needs its own design. "Not in the diff"
+  alone has been the wrong reason twice.
+- When a new stage lands, grep the stages above it for the "not supported yet"
+  diagnostics they aimed at it — those messages become false the moment the stage exists,
+  and no test notices.
+- A syntax or semantics change updates `docs/language.md`, `docs/decisions.md`, and the
+  owning artifact in the same pass; when a design point moves, sweep nearby prose for
+  sentences the change just falsified — no gate ever reads the docs.
 
 ## Committing
 

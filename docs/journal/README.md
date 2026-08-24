@@ -20,7 +20,7 @@ Journal entries are periodically reviewed and their durable lessons distilled in
 `CLAUDE.md`. Everything completed at or before the watermark below is settled —
 incorporated or deliberately excluded — and is not revisited on later runs.
 
-**Last distilled: 2026-08-16 12:43:59 -07:00.**
+**Last distilled: 2026-08-23 18:29:57 -07:00.**
 
 To find the entries a new run needs to review, compare each entry's `completed`
 frontmatter against the watermark:
