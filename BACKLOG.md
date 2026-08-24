@@ -20,12 +20,6 @@ Exit criterion (architecture doc 3): limulus.net's `the-rebound` post renders th
 minimal base→page→article layout chain from the WASM core, byte-similar to the 11ty output,
 with VM render time under 1 ms/page. Everything here serves that demo.
 
-### Prove it
-
-- ∆xWs Render `the-rebound` end to end — port minimal base/page/article layouts to `.lem`,
-  render the post (document mode included) through the Node harness, diff against the
-  11ty-built HTML, and record VM + boundary timings against the <1 ms/page exit criterion
-
 ## Phase 1 — Language complete, tooling from day one
 
 Seed items for the next phase (architecture doc 3, phase 1); expect these to be split

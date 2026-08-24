@@ -23,6 +23,7 @@
     "rust:cov": "cargo llvm-cov --workspace --fail-under-lines 97",
     "rust:wasm": "cargo build --release -p lemmon-wasm --target wasm32-unknown-unknown && node scripts/stage-wasm.ts",
     "rust:wasm:test": "CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER=wasm-bindgen-test-runner cargo test -p lemmon-wasm --target wasm32-unknown-unknown --test boundary",
+    "spike:the-rebound": "node scripts/render-the-rebound.ts",
     "test": "vitest run --coverage",
     "tscc": "node node_modules/typescript-7/bin/tsc --build tsconfig.json packages/*/tsconfig.json",
     "verify": "concurrently -c cyan,magenta,blue,yellow npm:verify:js npm:rust",
@@ -47,16 +48,19 @@
   "devDependencies": {
     "@commitlint/cli": "^21.2.2",
     "@commitlint/config-conventional": "^21.2.2",
+    "@dprint/formatter": "0.4.1",
     "@limulus/eslint-config": "^6.2.0",
     "@types/node": "^24.12.0",
     "@vitest/coverage-v8": "^4.1.10",
     "concurrently": "^10.0.5",
     "del-cli": "^7.0.0",
+    "dprint-plugin-markup": "0.24.0",
     "eslint": "^10.8.1",
     "husky": "^9.1.7",
     "is-ci": "^4.1.0",
     "typescript": "^6.0.3",
     "typescript-7": "npm:typescript@7.0.2",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.10",
+    "yaml": "^2.8.1"
   }
 }

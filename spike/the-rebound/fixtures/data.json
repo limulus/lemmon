@@ -1,0 +1,182 @@
+{
+  "site": {
+    "name": "limulus.net",
+    "url": "https://limulus.net",
+    "feedUrl": "/feed.xml",
+    "photos": {
+      "upper-falls-letchworth-state-park": {
+        "blurhash": "LWEo}iNg00t6.A%NVrIUkZogxtf+",
+        "width": 3000,
+        "height": 2000,
+        "srcsetAvif": "https://pho.limulus.net/ogMP7Pbu/lg.70YUaaCm.avif 3000w, https://pho.limulus.net/ogMP7Pbu/md.XU2dR5Dl.avif 1500w",
+        "srcsetJpeg": "https://pho.limulus.net/ogMP7Pbu/lg.L8p7ZjtV.jpeg 3000w, https://pho.limulus.net/ogMP7Pbu/md.0D8v28Qk.jpeg 1500w",
+        "srcLg": "https://pho.limulus.net/ogMP7Pbu/lg.L8p7ZjtV.jpeg",
+        "alt": "A waterfall in a gorge, surrounded by trees beginning to take on fall colors. The midday sun brightly lights the falls and the mist filling the gorge. A long train bridge spans the gorge over the falls.",
+        "pageUrl": "/photos/upper-falls-letchworth-state-park/",
+        "title": "Upper Falls, Letchworth State Park"
+      },
+      "middle-falls-letchworth-state-park": {
+        "blurhash": "LLF$eQ%2M{oe}OMIWWt7^hs;t7V?",
+        "width": 3000,
+        "height": 2250,
+        "srcsetAvif": "https://pho.limulus.net/9S_9E3mC/lg.k1DmqvnF.avif 3000w, https://pho.limulus.net/9S_9E3mC/md.kcfUWaQS.avif 1500w",
+        "srcsetJpeg": "https://pho.limulus.net/9S_9E3mC/lg.agZzvjVn.jpeg 3000w, https://pho.limulus.net/9S_9E3mC/md.QvAT4NB7.jpeg 1500w",
+        "srcLg": "https://pho.limulus.net/9S_9E3mC/lg.agZzvjVn.jpeg",
+        "alt": "The Genesee River flows over the Middle Falls in Letchworth State Park. Trees on the bank of the river are turning to fall covers as the low sun illuminates them. In the foreground, several people stand on an overlook photographing the falls. One of them is somewhat precariously standing on a wet rock wall with a tripod.",
+        "pageUrl": "/photos/middle-falls-letchworth-state-park/",
+        "title": "Middle Falls, Letchworth State Park"
+      },
+      "mist-middle-falls-letchworth-state-park": {
+        "blurhash": "LGDl~9_NE14n-:RPofxusiIUM|tR",
+        "width": 3000,
+        "height": 2250,
+        "srcsetAvif": "https://pho.limulus.net/PlumNgPF/lg.AxTZYQKH.avif 3000w, https://pho.limulus.net/PlumNgPF/md.tvGtgmZu.avif 1500w",
+        "srcsetJpeg": "https://pho.limulus.net/PlumNgPF/lg.BrTe_Czt.jpeg 3000w, https://pho.limulus.net/PlumNgPF/md.2Xg2WBYZ.jpeg 1500w",
+        "srcLg": "https://pho.limulus.net/PlumNgPF/lg.BrTe_Czt.jpeg",
+        "alt": "Sun-lit mist scatters in the foreground. A blurry person in a hat with a backpack uses their phone to take a photograph of a waterfall.",
+        "pageUrl": "/photos/mist-middle-falls-letchworth-state-park/",
+        "title": "Mist, Middle Falls, Letchworth State Park"
+      },
+      "base-of-the-genesee-arch-bridge-letchworth-state-park": {
+        "blurhash": "LFG8o]yV?tnO}n%fS0xGx]oynPWA",
+        "width": 3000,
+        "height": 4000,
+        "srcsetAvif": "https://pho.limulus.net/lnvAq0F9/lg.IxoJIjJL.avif 3000w, https://pho.limulus.net/lnvAq0F9/md.1P0d1_Mv.avif 1500w",
+        "srcsetJpeg": "https://pho.limulus.net/lnvAq0F9/lg.Wqu2RASy.jpeg 3000w, https://pho.limulus.net/lnvAq0F9/md.MDvFdUnz.jpeg 1500w",
+        "srcLg": "https://pho.limulus.net/lnvAq0F9/lg.Wqu2RASy.jpeg",
+        "alt": "A telephoto shot of the eastern base of the Genesee Arch Bridge (also known as the Portage Viaduct). The red steel arch extends beyond the frame. The base is embedded into an area likely excavated out of the gorge’s wall. Various stairs and catwalks line the sides of the base.",
+        "pageUrl": "/photos/base-of-the-genesee-arch-bridge-letchworth-state-park/",
+        "title": "Base of the Genesee Arch Bridge, Letchworth State Park"
+      }
+    },
+    "recommended": [
+      {
+        "url": "/links/2026/07/04/why-usa-1-0-failed/",
+        "title": "Link: Why USA 1.0 failed",
+        "preview": null,
+        "publishedIso": "2026-07-04T16:40:00.000Z",
+        "publishedUtc": "Sat, 04 Jul 2026 16:40:00 GMT",
+        "publishedDisplay": "July 4, 2026",
+        "descNewspaper": 1,
+        "minutesLabel": null,
+        "descScroll": null,
+        "linkDomain": "youtube.com",
+        "descLink": 0,
+        "teaser": "Today is a good day to watch this video and be reminded that change is possible and that revolutions don’t always require blood. Even the Constitution can be amended."
+      },
+      {
+        "url": "/links/2026/06/28/make-ai-boring-again/",
+        "title": "Link: Is it ethical to use AI?",
+        "preview": null,
+        "publishedIso": "2026-06-28T18:45:00.000Z",
+        "publishedUtc": "Sun, 28 Jun 2026 18:45:00 GMT",
+        "publishedDisplay": "June 28, 2026",
+        "descNewspaper": 2,
+        "minutesLabel": null,
+        "descScroll": null,
+        "linkDomain": "charity.wtf",
+        "descLink": 1,
+        "teaser": "I previously suggested that I might write about my thoughts on the ethics of generative AI. Now I don’t need to, because Charity Majors covered just about everything I wanted to. Of course she did it way better than I could have."
+      },
+      {
+        "url": "/feed/lima-agent-isolation/",
+        "title": "Using Lima for Coding Agent Isolation",
+        "preview": {
+          "blurhash": "LBE{g@of00D*~oog%LM{00M|%LxZ",
+          "width": 1500,
+          "height": 1200,
+          "srcsetAvif": "https://pho.limulus.net/_felbJPu/md.0ZNn3qcW.avif 1500w",
+          "srcsetJpeg": "https://pho.limulus.net/_felbJPu/md.BNeaWcPk.jpeg 1500w",
+          "srcMd": "https://pho.limulus.net/_felbJPu/md.BNeaWcPk.jpeg",
+          "alt": "A close-up photograph captures the white flowers of a saguaro cactus in full bloom. The large blooms feature delicate, layered petals that form ruffled cups around golden-yellow centers filled with visible stamens. Multiple flowers cluster together on the tall desert cactus, their creamy white petals catching the bright sunlight. Small insects can be seen on some of the blossoms. The contrast is notable between the soft petals of the flowers and the sturdy, ribbed surface of the saguaro that supports them. In the softly blurred background, more desert vegetation creates a backdrop of green tones."
+        },
+        "publishedIso": "2026-06-19T22:28:00.000Z",
+        "publishedUtc": "Fri, 19 Jun 2026 22:28:00 GMT",
+        "publishedDisplay": "June 19, 2026",
+        "descNewspaper": 4,
+        "minutesLabel": "5 min read",
+        "descScroll": 1,
+        "linkDomain": null,
+        "descLink": null,
+        "teaser": "With a bit of configuration, I started using Lima to contain Claude Code running in auto mode."
+      },
+      {
+        "url": "/links/2026/04/07/eight-years-wanting-building-ai/",
+        "title": "Link: Eight years of wanting, three months of building with AI",
+        "preview": null,
+        "publishedIso": "2026-04-08T04:10:01.000Z",
+        "publishedUtc": "Wed, 08 Apr 2026 04:10:01 GMT",
+        "publishedDisplay": "April 7, 2026",
+        "descNewspaper": 3,
+        "minutesLabel": null,
+        "descScroll": null,
+        "linkDomain": "lalitm.com",
+        "descLink": 2,
+        "teaser": "Lalit Maganti and I have a similar experience with the need to constantly refactor when building a project with a coding agent."
+      },
+      {
+        "url": "/feed/better-software-with-ai/",
+        "title": "Choosing to Make Better Software With AI",
+        "preview": {
+          "blurhash": "LDGu:r00~qRj%MM|t6t700xuofM{",
+          "width": 1500,
+          "height": 1071,
+          "srcsetAvif": "https://pho.limulus.net/9qxkPdx9/md.Id5hl37s.avif 1500w",
+          "srcsetJpeg": "https://pho.limulus.net/9qxkPdx9/md.9wZX1KUJ.jpeg 1500w",
+          "srcMd": "https://pho.limulus.net/9qxkPdx9/md.9wZX1KUJ.jpeg",
+          "alt": "A large-scale glass and mixed-media sculpture by Beth Lipman titled \" all in all,\" displayed at the corning museum of glass. piece centers on a long white table, itself part work, with dozens clear glass forms rising from its surface — tall columnar shapes resembling cacti or architectural spires, surrounded by sweeping frondLike elements and smaller delicate flower forms, emerging base. vessels are affixed to underside visible beneath. sculpture is set against floorToCeiling windows looking out onto seemingly misty, overcast landscape, giving entire scene quiet, monochrome quality."
+        },
+        "publishedIso": "2026-04-04T17:30:00.000Z",
+        "publishedUtc": "Sat, 04 Apr 2026 17:30:00 GMT",
+        "publishedDisplay": "April 4, 2026",
+        "descNewspaper": 5,
+        "minutesLabel": "9 min read",
+        "descScroll": 2,
+        "linkDomain": null,
+        "descLink": null,
+        "teaser": "It feels like software quality has been on the decline. It’s understandable to think AI will make it all worse. Yet agentic engineering gives us a real opportunity to do better."
+      }
+    ]
+  },
+  "page": {
+    "url": "/feed/the-rebound/",
+    "docTitle": "limulus.net  / feed / the-rebound",
+    "publishedIso": "2024-11-24T18:35:00.000Z",
+    "publishedUtc": "Sun, 24 Nov 2024 18:35:00 GMT",
+    "publishedDisplay": "November 24, 2024",
+    "modifiedIso": "2024-11-28T13:32:12-07:00",
+    "minutesLabel": "6 min read",
+    "ogImage": {
+      "url": "https://pho.limulus.net/ogMP7Pbu/md.0D8v28Qk.jpeg",
+      "width": 1500,
+      "height": 1000,
+      "alt": "A waterfall in a gorge, surrounded by trees beginning to take on fall colors. The midday sun brightly lights the falls and the mist filling the gorge. A long train bridge spans the gorge over the falls."
+    },
+    "fediverseCreator": "eric@limulus.net",
+    "sourceUrl": "https://github.com/limulus/limulus-dot-net/blob/main/www/feed/the-rebound/index.md",
+    "crumbs": [{ "href": "/feed/", "label": "feed" }],
+    "revisions": [
+      {
+        "commitUrl": "https://github.com/limulus/limulus-dot-net/commit/a0cf31b",
+        "iso": "2024-11-28T20:32:12.000Z",
+        "utc": "Thu, 28 Nov 2024 20:32:12 GMT",
+        "display": "2024-11-28 20:32:12",
+        "message": "feat: aliases for photos"
+      },
+      {
+        "commitUrl": "https://github.com/limulus/limulus-dot-net/commit/b704bf3",
+        "iso": "2024-11-24T18:51:00.000Z",
+        "utc": "Sun, 24 Nov 2024 18:51:00 GMT",
+        "display": "2024-11-24 18:51:00",
+        "message": "fix(article): make the-rebound conclusion a bit more firm"
+      }
+    ],
+    "revisionsLabel": "2 Revisions"
+  },
+  "build": {
+    "cssBundleUrl": "/assets/immutable/11ty/bundle/ObF0q0O62B.css",
+    "commonJsUrl": "/lib/common/index.YDUDOD6U.js",
+    "rumJsUrl": "/lib/rum/index.VATR7HHP.js",
+    "generator": "Eleventy v3.1.2"
+  }
+}
