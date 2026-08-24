@@ -20,6 +20,14 @@ Exit criterion (architecture doc 3): limulus.net's `the-rebound` post renders th
 minimal base→page→article layout chain from the WASM core, byte-similar to the 11ty output,
 with VM render time under 1 ms/page. Everything here serves that demo.
 
+### Fix what the spike found
+
+- ∆2vO Normalize whitespace in value-producing bodies — implement D26: trim and dedent
+  `lem-fn` block bodies and `lem-let` capture bodies, leaving `lem-if`/`lem-for` verbatim.
+  Today a component's own indentation leaks into the output bytes of every page that calls
+  it, and changing that once templates exist re-blesses every corpus expectation and
+  re-derives the parity allowlist
+
 ## Phase 1 — Language complete, tooling from day one
 
 Seed items for the next phase (architecture doc 3, phase 1); expect these to be split

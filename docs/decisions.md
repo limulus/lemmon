@@ -31,6 +31,7 @@ Lemmon"). Treat these as fixed unless Eric reopens one; cite IDs in PRs when rel
 | D23 | Namespaces | One lexical value namespace: locals/params → project-flat (all site `.lem` files; duplicates = compile error; no site-file imports) → ambient (`site`/`page`/`build` + stdlib; shadowing stdlib warns). Plugins bind qualified via `lem-import` in `site.lem`, named promotion optional. Types split from values by capitalization. |
 | D24 | Trailing commas | One optional trailing comma is allowed in every comma-separated list — `[a, b,]`, `{k: v,}`, `f(a, b,)`, `lem-fn f(a: int,)`, `\|a, b,\| …` — so multi-line literals and signatures stay one-line-per-item and diff-friendly, as in JS and Rust. Empty slots (`[a,,b]`, `f(,)`) remain errors (2026-08-22). |
 | D25 | Separate compilation | Each `.lem`/`.md` compiles to its own **unit** — file-local constant pool (document prose included), cross-file references symbolic — and a cheap link step joins the units into the `Module` the VM runs and `exportModule` serializes. A unit is a function of the file's text plus the *compile-time facts* it consumed (imported signatures and types, reference-index ids, asset-manifest entries), which the compiler reports so the cache key `hash(text) + hash(facts)` is built from evidence, not guessed. No file's bytecode may depend on another file's body; the checker stays whole-program but is not a compile-unit input (2026-08-23). |
+| D26 | Body whitespace | Value-producing block bodies are normalized at compile time: a `lem-fn` block body and a `lem-let` capture body (D22's slots) lose the newline-and-indent at each edge and are dedented by the common indentation of the lines that remain, so a definition's own indentation never reaches the output. Flow constructs stay verbatim — `lem-if`/`lem-for` bodies are untouched, since a loop body's leading newline is what separates iterations. The rule is lexical, over the template's literal text only: it runs after the void-line rule (a line that rule deletes must not set the margin), ignores blank lines, and never touches interpolated values, which arrive at run time. No element awareness (invariant 2): `<pre>`/`<textarea>` content dedents like everything else — only the shared margin goes, relative indentation survives (2026-08-23). |
 
 ## Deliberately deferred
 
@@ -52,4 +53,5 @@ npm scope fixed to `@limulus` later on 2026-08-16; D21 revised 2026-08-20 to clo
 bare like every other block, to drop the `<lem-- -->` comment tag, and to drop the datetime
 literal in favour of a `datetime("…")` stdlib constructor. D24 added 2026-08-22; D25 added
 2026-08-23 so that a content edit in `lem dev` never recompiles the layouts a document
-depends on.
+depends on. D26 added 2026-08-23, after the Phase 0 spike showed a component's source
+indentation leaking into the output bytes of every page that calls it.

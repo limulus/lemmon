@@ -42,7 +42,11 @@ Three delimitability rules (D21):
 | `&lt;lem` | Escape for a literal `<lem…` in a template. Code fences handle it in documents. |
 
 Whitespace: text around block tags is preserved as written; a void tag alone on a line
-consumes that line's trailing newline. Every token carries a byte span.
+consumes that line's trailing newline. A `lem-fn` block body and a `lem-let` capture body
+lose the newline-and-indent at each edge and are dedented by their common indentation, so a
+definition's own indentation never reaches the output (D26); `lem-if`/`lem-for` bodies are
+not, since a loop body's leading newline separates iterations. _Not yet (∆2vO): bodies
+are verbatim today._ Every token carries a byte span.
 
 Scanner rules the parser and the tree-sitter grammar must agree on:
 
