@@ -74,7 +74,8 @@ crates/lemmon-wasm/     wasm-bindgen boundary: the resident Core (lemmon-core's 
 packages/core/          @limulus/lemmon-core — typed JS wrapper around the .wasm
 packages/shell/         @limulus/lemmon-shell — CLI, walker, plugin host, dev server (stub)
 tests/corpus/           golden inputs → expected trees + diagnostics; see its README
-scripts/                repo tooling run by npm scripts (wasm staging + check)
+scripts/                repo tooling run by npm scripts (wasm staging + check, the spike);
+                        scripts/lib/ is the logic they share, covered like a package
 docs/                   language.md, architecture.md, decisions.md, journal/
 ```
 
@@ -169,12 +170,12 @@ Diagnostics raised only during declaration emit surface in `npm run build`, not 
 
 ## Testing
 
-- **BDD with 100% coverage** for `packages/*/src` — no exceptions. Prefer assertions over
-  defensive programming, and ask Eric before any `/* v8 ignore */`. The Rust crates gate
-  on `cargo-llvm-cov` instead (`npm run rust:cov`, CI-only): a line ratchet, currently
-  97% — a floor to raise, never to lower to make a build pass. One carve-out: `scripts/`
-  is linted and typechecked but not covered — weigh that before putting logic worth
-  testing there
+- **BDD with 100% coverage** for `packages/*/src` and `scripts/lib` — no exceptions.
+  Prefer assertions over defensive programming, and ask Eric before any
+  `/* v8 ignore */`. The Rust crates gate on `cargo-llvm-cov` instead (`npm run
+  rust:cov`, CI-only): a line ratchet, currently 97% — a floor to raise, never to lower
+  to make a build pass. One carve-out: the scripts in `scripts/` themselves are linted
+  and typechecked but not covered — logic worth testing goes in `scripts/lib/`
 - **RSpec-style nesting** — `describe` for subject/context, `it('should …')` for
   assertions, no Given/When/Then. Rust mirrors it: `#[cfg(test)] mod tests` in the same
   file, one behaviour per `#[test]`, named as a sentence about the subject

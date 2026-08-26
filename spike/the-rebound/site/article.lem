@@ -1,73 +1,48 @@
-<lem-fn articleHeader()><lem-let hero = site.photos[page.hero] /><article-header class="w4k-xl22k"><article-photo placement="hero" class="wdam8yees">
-  <figure>
-    <a href="<lem.hero.pageUrl>"><lem.phoPhoto(hero, "hero")></a>
-    <figcaption>
-      <span><lem.hero.title></span>
-    </figcaption>
-  </figure>
+<lem-fn articleHeader()>
+  <lem-let hero = site.photos[page.hero] />
+  <article-header class="w4k-xl22k">
+    <article-photo placement="hero" class="wdam8yees">
+      <figure>
+        <a href="<lem.hero.pageUrl>"><lem.phoPhoto(hero, "hero")></a>
+        <figcaption>
+          <span><lem.hero.title></span>
+        </figcaption>
+      </figure>
+    </article-photo>
+    <hgroup>
+      <h1><lem.page.title></h1>
+      <p><lem.page.subhead></p>
+    </hgroup>
+    <chip-list class="wu_v_wm2n">
+      <ul>
+        <li>
+          <a href="/eric/"><lem.authorChipBody()></a>
+        </li>
+        <li><lem.publishedChip(page.publishedIso, page.publishedUtc, page.publishedDisplay, 0)></li>
+        <li><lem.timeChip(page.minutesLabel, 0)></li>
+      </ul>
+    </chip-list>
+  </article-header>
+</lem-fn>
 
-
-
-</article-photo>
-
-<hgroup>
-  <h1><lem.page.title></h1>
-  <p><lem.page.subhead></p>
-</hgroup>
-
-<chip-list class="wu_v_wm2n"><ul>
-  
-  <li>
-    <a href="/eric/">
-    <lem.authorChipBody()>
-  </a>
-
-  </li>
-  <li>
-    <lem.publishedChip(page.publishedIso, page.publishedUtc, page.publishedDisplay, 0)>
-
-  </li>
-  <li>
-    <lem.timeChip(page.minutesLabel, 0)>
-
-  </li>
-  
-  
-
-</ul>
-
-
-</chip-list>
-
-
-</article-header></lem-fn>
-<lem-fn articleLayout(body: html)><article class="wo-ywfb1w">
-  <header class="wo-ywfb1w">
-    <lem.articleHeader()>
-  </header>
-
-  <lem.body>
-
-  <lem.revisionHistory()>
-
-  <footer class="section-separator wo-ywfb1w">
-    <section class="wo-ywfb1w">
-      <h2 class="wo-ywfb1w">You Might Enjoy…</h2>
-
-      <article-list class="wi9jish7p">
-
-<ul>
-  <lem-for card in site.recommended><li>
-    <lem.articleCard(card)>
-  </li>
-</lem-for></ul>
-
-
-</article-list>
-    </section>
-  </footer>
-</article>
-
-
-
+<lem-fn articleLayout(body: html)>
+  <article class="wo-ywfb1w">
+    <header class="wo-ywfb1w">
+      <lem.articleHeader()>
+    </header>
+    <lem.body>
+    <lem.revisionHistory()>
+    <footer class="section-separator wo-ywfb1w">
+      <section class="wo-ywfb1w">
+        <h2 class="wo-ywfb1w">You Might Enjoy…</h2>
+        <article-list class="wi9jish7p">
+          <ul>
+            <lem-for card in site.recommended>
+              <li><lem.articleCard(card)></li>
+            </lem-for>
+          </ul>
+        </article-list>
+      </section>
+    </footer>
+  </article>
 </lem-fn>

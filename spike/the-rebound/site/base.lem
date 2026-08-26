@@ -1,51 +1,48 @@
-<lem-fn base(body: html)><!doctype html>
-<html lang="en">
-<head prefix="og: https://ogp.me/ns# article: https://ogp.me/ns/article#">
-    <meta charset="utf-8">
+<lem-fn base(body: html)>
+  <!doctype html>
+  <html lang="en">
+    <head prefix="og: https://ogp.me/ns# article: https://ogp.me/ns/article#">
+      <meta charset="utf-8">
 
-    <link rel="preload" href="/assets/fonts/mona-sans-2.eb9c59a4.woff2" as="font" type="font/woff2" crossorigin>
-    <link rel="preload" href="/assets/fonts/hubot-sans.39a8d8df.woff2" as="font" type="font/woff2" crossorigin>
+      <link rel="preload" href="/assets/fonts/mona-sans-2.eb9c59a4.woff2" as="font" type="font/woff2" crossorigin>
+      <link rel="preload" href="/assets/fonts/hubot-sans.39a8d8df.woff2" as="font" type="font/woff2" crossorigin>
 
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-    <link rel="icon" href="/assets/images/ldn-inverted-128.75ea619b.png" type="image/png">
-    <link rel="icon" href="/assets/svg/ldn.dcaedd8b.svg" type="image/svg+xml">
+      <link rel="icon" href="/assets/images/ldn-inverted-128.75ea619b.png" type="image/png">
+      <link rel="icon" href="/assets/svg/ldn.dcaedd8b.svg" type="image/svg+xml">
 
-    <link rel="stylesheet" href="<lem.build.cssBundleUrl>">
-    
-    
-    
+      <link rel="stylesheet" href="<lem.build.cssBundleUrl>">
 
-    <title><lem.page.docTitle></title>
+      <title><lem.page.docTitle></title>
 
-    <link rel="alternate" type="application/rss+xml" href="/feed.xml">
+      <link rel="alternate" type="application/rss+xml" href="/feed.xml">
 
-    <meta property="og:title" content="<lem.page.title>">
-    <meta property="og:type" content="article">
-    <meta property="og:url" content="<lem.site.url><lem.page.url>">
-    <meta property="og:description" content="<lem.page.subhead>">
-    <meta property="og:site_name" content="<lem.site.name>">
-    <meta property="og:locale" content="en_US">
+      <meta property="og:title" content="<lem.page.title>">
+      <meta property="og:type" content="article">
+      <meta property="og:url" content="<lem.site.url><lem.page.url>">
+      <meta property="og:description" content="<lem.page.subhead>">
+      <meta property="og:site_name" content="<lem.site.name>">
+      <meta property="og:locale" content="en_US">
 
-    
       <meta property="article:published_time" content="<lem.page.publishedIso>">
       <meta property="article:modified_time" content="<lem.page.modifiedIso>">
-    
 
-    <meta property="og:image" content="<lem.page.ogImage.url>">
-          <meta property="og:image:type" content="image/jpeg">
-          <meta property="og:image:width" content="<lem.page.ogImage.width>">
-          <meta property="og:image:height" content="<lem.page.ogImage.height>">
-          <meta property="og:image:alt" content="<lem.page.ogImage.alt>">
-        
+      <meta property="og:image" content="<lem.page.ogImage.url>">
+      <meta property="og:image:type" content="image/jpeg">
+      <meta property="og:image:width" content="<lem.page.ogImage.width>">
+      <meta property="og:image:height" content="<lem.page.ogImage.height>">
+      <meta property="og:image:alt" content="<lem.page.ogImage.alt>">
 
-    <meta name="description" content="<lem.page.subhead>">
-    <meta name="fediverse:creator" content="<lem.page.fediverseCreator>">
+      <meta name="description" content="<lem.page.subhead>">
+      <meta name="fediverse:creator" content="<lem.page.fediverseCreator>">
 
-    <meta name="generator" content="<lem.build.generator>">
+      <meta name="generator" content="<lem.build.generator>">
 
-    <script type="module" src="<lem.build.commonJsUrl>" async></script>
-    
-  </head>
-  <body><lem.body></body>
-</html></lem-fn>
+      <script type="module" src="<lem.build.commonJsUrl>" async></script>
+    </head>
+    <body>
+      <lem.body>
+    </body>
+  </html>
+</lem-fn>

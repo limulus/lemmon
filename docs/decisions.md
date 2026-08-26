@@ -58,4 +58,6 @@ literal in favour of a `datetime("…")` stdlib constructor. D24 added 2026-08-2
 depends on. D26 added 2026-08-23, after the Phase 0 spike showed a component's source
 indentation leaking into the output bytes of every page that calls it; D26 implemented and
 D27 added 2026-08-24 (∆2vO); D28 the same day, when the spike's byte gate was found to be
-forcing exactly the templates D26 exists to abolish.
+forcing exactly the templates D26 exists to abolish — and applied 2026-08-25 (∆Ma4), when
+that gate became a rendered-HTML comparison and the spike's templates were rewritten as an
+author would write them.

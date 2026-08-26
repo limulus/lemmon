@@ -14,20 +14,6 @@ are immutable and travel with the item into its completed-work journal entry in
 Hard prerequisites use a trailing `; needs: ∆aaa[, ∆bbb]` suffix — the only dependency
 mechanism: `delto surface` trusts these edges to decide what is eligible to work on.
 
-## Phase 0 — Spike: one real page from the WASM core
-
-Exit criterion (architecture doc 3): limulus.net's `the-rebound` post renders through a
-minimal base→page→article layout chain from the WASM core, byte-similar to the 11ty output,
-with VM render time under 1 ms/page. Everything here serves that demo.
-
-### Fix what the spike found
-
-- ∆Ma4 Compare the spike's output as HTML, not as bytes — diff parse5 trees with
-  browser-style text normalization (runs collapse to a space, whitespace-only nodes between
-  block elements drop, `pre`/`textarea` stay exact), then rewrite `spike/the-rebound/site/`
-  as ordinary indented markup. Matching WebC's indentation byte for byte is what forces
-  those files to hug their bodies, against D26's point, and it settles what ∆hyz normalizes
-
 ## Phase 1 — Language complete, tooling from day one
 
 Seed items for the next phase (architecture doc 3, phase 1); expect these to be split

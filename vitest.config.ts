@@ -5,12 +5,17 @@ import { defineConfig } from 'vitest/config'
 // blank config and silently ignore everything set here.
 const packages = ['core', 'shell']
 
+const project = (name: string, root: string) => ({
+  extends: true as const,
+  test: { name, root },
+})
+
 export default defineConfig({
   test: {
     coverage: {
       provider: 'v8',
       reporter: ['html', 'json', 'text', 'text-summary'],
-      include: ['packages/*/src/**/*.ts'],
+      include: ['packages/*/src/**/*.ts', 'scripts/lib/**/*.ts'],
       exclude: ['**/node_modules/**', '**/mocks/**', '**/*.spec.ts'],
       thresholds: {
         branches: 100,
@@ -21,9 +26,11 @@ export default defineConfig({
     },
     environment: 'node',
     exclude: ['**/node_modules/**', '**/dist/**'],
-    projects: packages.map((name) => ({
-      extends: true,
-      test: { name: `@limulus/lemmon-${name}`, root: `packages/${name}` },
-    })),
+    projects: [
+      ...packages.map((name) => project(`@limulus/lemmon-${name}`, `packages/${name}`)),
+      // `scripts/lib/` holds logic the repo scripts share; unlike the scripts
+      // themselves it is covered like a package.
+      project('scripts', 'scripts'),
+    ],
   },
 })

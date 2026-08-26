@@ -1,159 +1,132 @@
-<lem-fn svgUse(name: string, num: int)><svg aria-labelledby="symbol-<lem.name>-desc-<lem.num>" role="group">
-                  <desc id="symbol-<lem.name>-desc-<lem.num>"><lem.name> icon</desc>
-                  <use href="#svg-<lem.name>"></use>
-              </svg></lem-fn>
-<lem-fn phoPhoto(photo: map, placement: string)><pho-picture placement="<lem.placement>" class="wdam8yees">
-  <blur-hash blurhash="<lem.photo.blurhash>" width="<lem.photo.width>" height="<lem.photo.height>">
-        <picture>
-          <source srcset="<lem.photo.srcsetAvif>" type="image/avif" width="<lem.photo.width>" height="<lem.photo.height>">
-          <source srcset="<lem.photo.srcsetJpeg>" type="image/jpeg" width="<lem.photo.width>" height="<lem.photo.height>">
-          <img async crossorigin="anonymous" loading="lazy" decoding="async" src="<lem.photo.srcLg>" srcset="<lem.photo.srcsetJpeg>" alt="<lem.photo.alt>" width="<lem.photo.width>" height="<lem.photo.height>" placement="<lem.placement>" class="wdam8yees">
-</picture>
-      </blur-hash>
-    
+<lem-fn svgUse(name: string, num: int)>
+  <svg aria-labelledby="symbol-<lem.name>-desc-<lem.num>" role="group">
+    <desc id="symbol-<lem.name>-desc-<lem.num>"><lem.name> icon</desc>
+    <use href="#svg-<lem.name>"></use>
+  </svg>
+</lem-fn>
 
+<lem-fn phoPhoto(photo: map, placement: string)>
+  <pho-picture placement="<lem.placement>" class="wdam8yees">
+    <blur-hash blurhash="<lem.photo.blurhash>" width="<lem.photo.width>" height="<lem.photo.height>">
+      <picture>
+        <source srcset="<lem.photo.srcsetAvif>" type="image/avif" width="<lem.photo.width>" height="<lem.photo.height>">
+        <source srcset="<lem.photo.srcsetJpeg>" type="image/jpeg" width="<lem.photo.width>" height="<lem.photo.height>">
+        <img async crossorigin="anonymous" loading="lazy" decoding="async" src="<lem.photo.srcLg>" srcset="<lem.photo.srcsetJpeg>" alt="<lem.photo.alt>" width="<lem.photo.width>" height="<lem.photo.height>" placement="<lem.placement>" class="wdam8yees">
+      </picture>
+    </blur-hash>
+  </pho-picture>
+</lem-fn>
 
+<lem-fn articlePhoto(id: string, placement: string)>
+  <lem-let photo = site.photos[id] />
+  <article-photo id="<lem.id>" placement="<lem.placement>" class="wdam8yees">
+    <figure>
+      <a href="<lem.photo.pageUrl>"><lem.phoPhoto(photo, placement)></a>
+      <figcaption>
+        <span><lem.photo.title></span>
+      </figcaption>
+    </figure>
+  </article-photo>
+</lem-fn>
 
-</pho-picture></lem-fn>
-<lem-fn articlePhoto(id: string, placement: string)><lem-let photo = site.photos[id] /><article-photo id="<lem.id>" placement="<lem.placement>" class="wdam8yees">
-  <figure>
-    <a href="<lem.photo.pageUrl>"><lem.phoPhoto(photo, placement)></a>
-    <figcaption>
-      <span><lem.photo.title></span>
-    </figcaption>
-  </figure>
-</article-photo></lem-fn>
-<lem-fn authorChipBody()><data-chip class="wvormuvo0">
-  
-  <pho-picture>
-  <blur-hash blurhash="LcEfy%oHJ.tRyZo#aebIIUV?s.V@" width="325" height="183">
+<lem-fn authorChipBody()>
+  <data-chip class="wvormuvo0">
+    <pho-picture>
+      <blur-hash blurhash="LcEfy%oHJ.tRyZo#aebIIUV?s.V@" width="325" height="183">
         <picture>
           <source srcset="https://pho.limulus.net/2TUDan0y/xs.dV3HoJT8.avif 325w" type="image/avif" width="325" height="183">
           <source srcset="https://pho.limulus.net/2TUDan0y/xs.1NA0GgsS.jpeg 325w" type="image/jpeg" width="325" height="183">
           <img async crossorigin="anonymous" loading="lazy" decoding="async" src="https://pho.limulus.net/2TUDan0y/xs.1NA0GgsS.jpeg" srcset="https://pho.limulus.net/2TUDan0y/xs.1NA0GgsS.jpeg 325w" alt width="325" height="183">
-</picture>
+        </picture>
       </blur-hash>
-    
+    </pho-picture>
+    Eric McCarthy
+  </data-chip>
+</lem-fn>
 
+<lem-fn publishedChip(iso: string, utc: string, display: string, num: int)>
+  <data-chip class="wvormuvo0">
+    <lem.svgUse("newspaper-solid", num)>
+    <time datetime="<lem.iso>" title="<lem.utc>"><lem.display></time>
+  </data-chip>
+</lem-fn>
 
-
-</pho-picture>
-  
-      Eric McCarthy
-    
-
-
-
-</data-chip></lem-fn>
-<lem-fn publishedChip(iso: string, utc: string, display: string, num: int)><data-chip class="wvormuvo0">
-  <lem.svgUse("newspaper-solid", num)>
-  
-  
-  <time datetime="<lem.iso>" title="<lem.utc>"><lem.display></time>
-
-
-
-
-</data-chip></lem-fn>
-<lem-fn timeChip(label: string, num: int)><data-chip class="wvormuvo0">
-  <lem.svgUse("scroll-solid", num)>
-  
-  
-  <lem.label>
-
-
-
-
-</data-chip></lem-fn>
-<lem-fn linkChip(domain: string, num: int)><data-chip class="wvormuvo0">
-  <lem.svgUse("link-solid-full", num)>
-  
-  
-      <lem.domain>
-    
-
-
-
-</data-chip></lem-fn>
-<lem-fn cardPreview(photo: map)><pho-picture class="preview">
-  <blur-hash blurhash="<lem.photo.blurhash>" width="<lem.photo.width>" height="<lem.photo.height>">
-        <picture>
-          <source srcset="<lem.photo.srcsetAvif>" type="image/avif" width="<lem.photo.width>" height="<lem.photo.height>">
-          <source srcset="<lem.photo.srcsetJpeg>" type="image/jpeg" width="<lem.photo.width>" height="<lem.photo.height>">
-          <img async crossorigin="anonymous" loading="lazy" decoding="async" src="<lem.photo.srcMd>" srcset="<lem.photo.srcsetJpeg>" alt="<lem.photo.alt>" width="<lem.photo.width>" height="<lem.photo.height>" class="preview">
-</picture>
-      </blur-hash>
-    
-
-
-
-</pho-picture></lem-fn>
-<lem-fn articleCard(card: map)><article-card class="wjjnq-bzf">
-  <article>
-    <a href="<lem.card.url>">
-<lem-if card.preview>      <lem.cardPreview(card.preview)>
-      
-</lem-if><lem-if card.preview == null>      
-      
-</lem-if>      <div class="text-content">
-        <header>
-          <h1><lem.card.title></h1>
-          <chip-list size="small" class="wu_v_wm2n"><ul>
-  
-            <li>
-              <lem.authorChipBody()>
-  
-
-            </li>
-            <li>
-              <lem.publishedChip(card.publishedIso, card.publishedUtc, card.publishedDisplay, card.descNewspaper)>
-
-            </li>
-<lem-if card.minutesLabel>            <li>
-              <lem.timeChip(card.minutesLabel, card.descScroll)>
-
-            </li>
-            
-            
-</lem-if><lem-if card.minutesLabel == null>            
-            
-            <li>
-              <lem.linkChip(card.linkDomain, card.descLink)>
-  
-
-            </li>
-</lem-if>          
-</ul>
-
-
-</chip-list>
-        </header>
-        <p><lem.card.teaser></p>
-      </div>
-    </a>
-  </article>
-
-
-
-</article-card></lem-fn>
-<lem-fn pillButton(href: string, icon: string, num: int, label: string)><pill-button href="<lem.href>" class="wb7dbjyrb"><a href="<lem.href>" class="wb7dbjyrb">
-  <lem.svgUse(icon, num)>
-
-  <span class="visually-hidden">
+<lem-fn timeChip(label: string, num: int)>
+  <data-chip class="wvormuvo0">
+    <lem.svgUse("scroll-solid", num)>
     <lem.label>
-  </span>
-</a>
+  </data-chip>
+</lem-fn>
 
+<lem-fn linkChip(domain: string, num: int)>
+  <data-chip class="wvormuvo0">
+    <lem.svgUse("link-solid-full", num)>
+    <lem.domain>
+  </data-chip>
+</lem-fn>
 
-</pill-button></lem-fn>
-<lem-fn revisionHistory()><revision-history class="wf0vdtkv2"><details class="section-separator">
-        <summary><lem.page.revisionsLabel></summary>
-        <ul><lem-for r, i in page.revisions><lem-if i gt 0>
-</lem-if><li>
+<lem-fn cardPreview(photo: map)>
+  <pho-picture class="preview">
+    <blur-hash blurhash="<lem.photo.blurhash>" width="<lem.photo.width>" height="<lem.photo.height>">
+      <picture>
+        <source srcset="<lem.photo.srcsetAvif>" type="image/avif" width="<lem.photo.width>" height="<lem.photo.height>">
+        <source srcset="<lem.photo.srcsetJpeg>" type="image/jpeg" width="<lem.photo.width>" height="<lem.photo.height>">
+        <img async crossorigin="anonymous" loading="lazy" decoding="async" src="<lem.photo.srcMd>" srcset="<lem.photo.srcsetJpeg>" alt="<lem.photo.alt>" width="<lem.photo.width>" height="<lem.photo.height>" class="preview">
+      </picture>
+    </blur-hash>
+  </pho-picture>
+</lem-fn>
+
+<lem-fn articleCard(card: map)>
+  <article-card class="wjjnq-bzf">
+    <article>
+      <a href="<lem.card.url>">
+        <lem-if card.preview>
+          <lem.cardPreview(card.preview)>
+        </lem-if>
+        <div class="text-content">
+          <header>
+            <h1><lem.card.title></h1>
+            <chip-list size="small" class="wu_v_wm2n">
+              <ul>
+                <li><lem.authorChipBody()></li>
+                <li><lem.publishedChip(card.publishedIso, card.publishedUtc, card.publishedDisplay, card.descNewspaper)></li>
+                <lem-if card.minutesLabel>
+                  <li><lem.timeChip(card.minutesLabel, card.descScroll)></li>
+                <lem-else />
+                  <li><lem.linkChip(card.linkDomain, card.descLink)></li>
+                </lem-if>
+              </ul>
+            </chip-list>
+          </header>
+          <p><lem.card.teaser></p>
+        </div>
+      </a>
+    </article>
+  </article-card>
+</lem-fn>
+
+<lem-fn pillButton(href: string, icon: string, num: int, label: string)>
+  <pill-button href="<lem.href>" class="wb7dbjyrb">
+    <a href="<lem.href>" class="wb7dbjyrb">
+      <lem.svgUse(icon, num)>
+      <span class="visually-hidden"><lem.label></span>
+    </a>
+  </pill-button>
+</lem-fn>
+
+<lem-fn revisionHistory()>
+  <revision-history class="wf0vdtkv2">
+    <details class="section-separator">
+      <summary><lem.page.revisionsLabel></summary>
+      <ul>
+        <lem-for r in page.revisions>
+          <li>
             <a href="<lem.r.commitUrl>"><time datetime="<lem.r.iso>" title="<lem.r.utc>"><lem.r.display></time></a>
             <pre><code><span><lem.r.message></span></code></pre>
-          </li></lem-for></ul>
-      </details>
-
-
-</revision-history></lem-fn>
+          </li>
+        </lem-for>
+      </ul>
+    </details>
+  </revision-history>
+</lem-fn>

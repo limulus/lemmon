@@ -1,66 +1,67 @@
-<lem-fn ldnHeader()><header class="w5jpt_6fe">
-  <nav>
-    <h2 class="visually-hidden">Top level navigation menu</h2>
-    <ul>
-      <li>
-        <a href="/"><lem.svgUse("ldn", 0)></a>
-      </li>
-      <li>
-        <a href="/">limulus.net</a>
-      </li>
-      <lem-for crumb in page.crumbs><li><a href="<lem.crumb.href>"><lem.crumb.label></a></li>
-</lem-for>
-    </ul>
-  </nav>
+<lem-fn ldnHeader()>
+  <header class="w5jpt_6fe">
+    <nav>
+      <h2 class="visually-hidden">Top level navigation menu</h2>
+      <ul>
+        <li>
+          <a href="/"><lem.svgUse("ldn", 0)></a>
+        </li>
+        <li>
+          <a href="/">limulus.net</a>
+        </li>
+        <lem-for crumb in page.crumbs>
+          <li><a href="<lem.crumb.href>"><lem.crumb.label></a></li>
+        </lem-for>
+      </ul>
+    </nav>
 
-  <section class="engagement">
-    <h2 class="visually-hidden">Please Engage</h2>
-    <ul>
-      <li>
-        <lem.pillButton(page.sourceUrl, "code-solid", 0, "Source")>
-      </li>
-      <li>
-        <share-button>
-          <lem.pillButton(page.url, "arrow-up-from-bracket-solid", 0, "Share")>
-        </share-button>
-      </li>
-      <li><lem.pillButton("/feed.xml", "bell-solid", 0, "Subscribe")></li>
-    </ul>
-  </section>
-</header></lem-fn>
-<lem-fn pageLayout(body: html)><lem.svgSprite()>
+    <section class="engagement">
+      <h2 class="visually-hidden">Please Engage</h2>
+      <ul>
+        <li>
+          <lem.pillButton(page.sourceUrl, "code-solid", 0, "Source")>
+        </li>
+        <li>
+          <share-button>
+            <lem.pillButton(page.url, "arrow-up-from-bracket-solid", 0, "Share")>
+          </share-button>
+        </li>
+        <li>
+          <lem.pillButton("/feed.xml", "bell-solid", 0, "Subscribe")>
+        </li>
+      </ul>
+    </section>
+  </header>
+</lem-fn>
 
-<a href="#main" class="visually-hidden">Skip to main content</a>
+<lem-fn pageLayout(body: html)>
+  <lem.svgSprite()>
 
-<lem.ldnHeader()>
+  <a href="#main" class="visually-hidden">Skip to main content</a>
 
+  <lem.ldnHeader()>
 
+  <main id="main">
+    <lem.body>
+  </main>
 
+  <footer>
+    <p xmlns:cc="http://creativecommons.org/ns#" class="copyright">
+      <span>
+        This work by
+        <a rel="cc:attributionURL dct:creator" property="cc:attributionName" href="/eric/">Eric McCarthy</a>
+        is licensed under
+        <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="license noopener noreferrer">CC BY 4.0</a>.
+      </span>
+      <a href="https://creativecommons.org/licenses/by/4.0/" class="cc-icons">
+        <lem.svgUse("creative-commons", 0)><lem.svgUse("creative-commons-by", 0)>
+      </a>
+    </p>
+  </footer>
 
-<main id="main"><lem.body></main>
-
-<footer>
-  <p xmlns:cc="http://creativecommons.org/ns#" class="copyright">
-    <span>
-      This work by
-      <a rel="cc:attributionURL dct:creator" property="cc:attributionName" href="/eric/">Eric McCarthy</a>
-      is licensed under
-      <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="license noopener noreferrer">CC BY 4.0</a>.
-    </span>
-    <a href="https://creativecommons.org/licenses/by/4.0/" class="cc-icons">
-      <lem.svgUse("creative-commons", 0)><lem.svgUse("creative-commons-by", 0)>
-    </a>
-  </p>
-</footer>
-
-
-
-
-
-<script type="module" async>
-  if (window.location.hostname.endsWith('limulus.net')) {
-    import('<lem.build.rumJsUrl>')
-  }
-</script>
-
+  <script type="module" async>
+    if (window.location.hostname.endsWith('limulus.net')) {
+      import('<lem.build.rumJsUrl>')
+    }
+  </script>
 </lem-fn>

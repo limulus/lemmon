@@ -11,9 +11,11 @@ npm run spike:the-rebound
 
 The harness (`scripts/render-the-rebound.ts`) compiles everything in one call, renders
 the document, feeds its HTML back through `loadData` as `page.content`, renders
-`driver.lem`, and diffs the result against `fixtures/reference.html`. Every diff hunk
-must match an allowlisted difference class or the run exits non-zero; timings for each
-boundary call are reported against the <1 ms/page exit criterion.
+`driver.lem`, and compares the result against `fixtures/reference.html` as rendered HTML
+(`scripts/lib/rendered-html.ts`): parse5 trees, attributes by value, text after
+browser-style white-space processing. Every remaining difference must be one of the
+forgiveness classes below or the run exits non-zero; timings for each boundary call are
+reported against the <1 ms/page exit criterion.
 
 ## Fixtures
 
@@ -39,35 +41,49 @@ the same build.
 ## Ported layouts (`site/`)
 
 Page-specific, hardcoded ports of the WebC layouts and components — including WebC's
-emitted whitespace, scoped-class hashes, and per-page svg desc counters — parameterized
-only where `data.json` feeds them. They are a rendering-fidelity fixture, not the start
-of the real limulus.net port (that arrives with the Phase 1 language features:
-schemas, stdlib, channels).
+scoped-class hashes and per-page svg desc counters — parameterized only where
+`data.json` feeds them. They are a rendering-fidelity fixture, not the start of the real
+limulus.net port (that arrives with the Phase 1 language features: schemas, stdlib,
+channels).
 
-Reproducing WebC's whitespace is why the definitions hug their opening tags
-(`<lem-fn f()><article …>`): D26 dedents a body laid out on its own lines, and hugging is
-what keeps the margin the reference emits. Where a close tag does sit on its own line, the
-body carries one newline more than it emits, since D26 takes one off each edge. The
-templates read badly because of it — ∆Ma4 replaces the byte comparison with an
-HTML-normalizing one so they can be written properly.
+They are written the way an author would write them: a definition on its own lines with
+an indented body, one statement per line, a blank line between definitions. D26 takes the
+definition's margin off, D27 takes the statement lines, and D28 says the rest of the
+whitespace is nobody's product surface — the comparison below cannot see it. Only the
+whitespace a browser renders is deliberate in these files: the two licence icons in
+`page.lem` sit adjacent because a space between two `svg`s would render, and each
+revision message stays on one line because it is inside a `pre`.
 
-## Allowlisted difference classes
+## What the comparison sees
 
-Each class is a normalization under which a hunk's two sides agree, plus a guard naming
-what the hunk must contain for that class to claim it — without the guard, a class that
-collapses whitespace absorbs every unrelated indentation change too:
+`renderedPage()` knows the UA stylesheet: block elements break the line, replaced
+elements sit on it like a character, `pre`/`textarea` keep their text byte for byte,
+`script`/`style` compare with indentation removed, and collapsible whitespace survives
+only where a browser would paint it. It knows nothing of the site's CSS, so the harness
+declares the two custom elements whose whitespace that CSS decides — `article-photo` is
+a block inside `article-header`, `data-chip` is a flex container — each checked against
+the `.webc` source, since a declaration the CSS does not back would hide a real space.
+
+## Forgiveness classes
+
+Each class is one difference the spike accepts, stated narrowly enough that it cannot
+absorb one it does not explain — a class that forgave every `p` would also forgive a
+dropped paragraph beside the one it meant to excuse. The run reports how often each
+fired; the expected counts are 6, 6, and 1.
 
 - `heading-id` — markdown-it-anchor percent-encodes heading ids and adds
-  `tabindex="-1"`; comrak emits plain slugs.
-- `md-photo-wrap` — markdown-it re-wraps the tail of each in-content `<article-photo>`
-  block in a spurious `<p>`; lemmon's sentinel splicing emits the markup unwrapped.
-- `attr-escaping` — lemmon escapes `"` inside attribute values; WebC emitted the raw
-  character.
-- `whitespace` — blank-line-only differences (currently zero hunks). Indentation deltas
-  on content lines are deliberately *not* covered: they were driven to zero by matching
-  WebC's emitted whitespace, and must fail if they come back.
+  `tabindex="-1"`; comrak emits plain slugs. Only `id` and `tabindex` are set aside on an
+  `h2`; every other attribute must still agree.
+- `md-photo-wrap` — markdown-it wraps the tail of each in-content `<article-photo>` block
+  in a spurious `<p>`, which the HTML parser's adoption agency turns into a ghost
+  `<p><a></a></p>` and an empty `<p>` inside the figure; lemmon's sentinel splicing emits
+  the markup unwrapped. Only those two shapes are forgiven, and only in a figure holding
+  a `pho-picture`.
+- `attr-escaping` — WebC emitted a raw `"` inside a double-quoted attribute value, so the
+  parsed reference has the value cut at the quote and the rest as junk attribute names;
+  lemmon escapes it. Forgiven only when the reference's value is ours cut at the first
+  quote and every junk name is a token of what was cut off.
 
-A note on formatting: the 11ty build's dprint transform silently fails on this page
-(the `md-photo-wrap` mangle is unparseable markup) and ships it unformatted, so the
-harness compares raw bytes; it only formats both sides when the reference itself can be
-formatted.
+The 11ty build's dprint transform silently fails on this page (the `md-photo-wrap`
+mangle is unparseable markup) and ships it unformatted; that no longer matters, since
+nothing here compares bytes.

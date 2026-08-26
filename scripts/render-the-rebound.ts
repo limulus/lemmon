@@ -4,19 +4,26 @@
  * base→page→article layout chain — and holds the result against the 11ty-built
  * reference in spike/the-rebound/fixtures/.
  *
- * Both sides are normalized with the same dprint markup formatter the 11ty build uses
- * (lineWidth 92), then diffed line-by-line. Every hunk must match an allowlisted
- * difference class (markdown-engine deltas the spike accepts); anything else — or a
- * page render time at or over the 1 ms exit criterion — exits non-zero.
+ * The two pages are compared as what a browser would render, not as bytes (D28,
+ * ∆Ma4): parse5 trees, attributes by value, text after white-space processing. Every
+ * remaining difference must be one of the forgiveness classes below (markdown-engine
+ * and WebC deltas the spike accepts); anything else — or a page render time at or over
+ * the 1 ms exit criterion — exits non-zero.
  */
 
-import { createFromBuffer } from '@dprint/formatter'
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { parse } from 'yaml'
 
+import {
+  compareRendered,
+  renderedPage,
+  sameAttrs,
+  type Display,
+  type Forgiveness,
+  type RenderedElement,
+} from './lib/rendered-html.ts'
 import { loadCore, type SourceFileInput } from '../packages/core/src/index.ts'
 
 const SPIKE = 'spike/the-rebound'
@@ -123,138 +130,108 @@ function expectClean(diagnostics: unknown[], doing: string): void {
   }
 }
 
-// --- dprint (mirrors limulus-dot-net's 11ty transform) ----------------------------
-
-function makeFormatter(): (html: string) => string {
-  const wasmPath = fileURLToPath(import.meta.resolve('dprint-plugin-markup/plugin.wasm'))
-  const formatter = createFromBuffer(new Uint8Array(readFileSync(wasmPath)))
-  formatter.setConfig({ lineWidth: 92 }, {})
-  return (html) => formatter.formatText({ filePath: 'index.html', fileText: html })
-}
-
-// --- Line diff (LCS) --------------------------------------------------------------
-
-interface Hunk {
-  refStart: number
-  ours: string[]
-  theirs: string[]
-}
-
-/** Hunks of a line diff: `theirs` (reference) replaced by `ours` (lemmon output). */
-function diffLines(ours: string[], theirs: string[]): Hunk[] {
-  const n = ours.length
-  const m = theirs.length
-  // LCS lengths, bottom-up; the pages are ~1k lines so O(n·m) is fine.
-  const lcs: Uint32Array[] = Array.from({ length: n + 1 }, () => new Uint32Array(m + 1))
-  for (let i = n - 1; i >= 0; i -= 1) {
-    for (let j = m - 1; j >= 0; j -= 1) {
-      lcs[i][j] =
-        ours[i] === theirs[j]
-          ? lcs[i + 1][j + 1] + 1
-          : Math.max(lcs[i + 1][j], lcs[i][j + 1])
-    }
-  }
-  const hunks: Hunk[] = []
-  let i = 0
-  let j = 0
-  let open: Hunk | null = null
-  while (i < n || j < m) {
-    if (i < n && j < m && ours[i] === theirs[j]) {
-      open = null
-      i += 1
-      j += 1
-    } else {
-      if (!open) {
-        open = { refStart: j + 1, ours: [], theirs: [] }
-        hunks.push(open)
-      }
-      if (j >= m || (i < n && lcs[i + 1][j] >= lcs[i][j + 1])) {
-        open.ours.push(ours[i])
-        i += 1
-      } else {
-        open.theirs.push(theirs[j])
-        j += 1
-      }
-    }
-  }
-  return hunks
-}
-
-// --- Hunk classification ----------------------------------------------------------
+// --- What the site's CSS does to whitespace -----------------------------------------
 
 /**
- * A difference class is a normalization under which the hunk's two sides agree —
- * D15's "normalized, allowlisted" in miniature. Each class carries a `applies` guard so
- * it can only claim a hunk it actually explains: a normalization that collapses
- * whitespace will otherwise absorb every unrelated indentation change as well, which is
- * how a suppression starts hiding real differences.
- *
- *  - whitespace: blank-line-only differences (every line on both sides is empty).
- *    Indentation deltas on content lines are deliberately NOT covered — they were
- *    driven to zero by matching WebC's emitted whitespace, and must fail if they
- *    return.
- *  - heading-id: markdown-it-anchor percent-encodes heading ids and adds
- *    tabindex="-1"; comrak emits plain slugs and no tabindex.
- *  - md-photo-wrap: markdown-it re-wraps the tail of each in-content
- *    <article-photo> block in a spurious <p>; lemmon's sentinel splice emits the
- *    markup unwrapped. Only the two <p> tags that mangle actually produces are
- *    elided, and comparison is per-line-trimmed rather than fully collapsed: a
- *    normalization that erased every <p> and all whitespace in the hunk would also
- *    absorb a genuinely dropped paragraph wrapper sitting beside the photo.
- *  - attr-escaping: lemmon escapes `"` inside attribute values where WebC emitted
- *    the raw character.
+ * The comparator knows the UA stylesheet only; these are the custom elements whose
+ * whitespace limulus.net's own CSS decides. Each is verified against the component
+ * source, not assumed: `article-header.webc` makes `article-photo` a block, and
+ * `data-chip.webc` makes its host a flex container (whose items' whitespace is never
+ * rendered). Declaring one here that the CSS does not back would hide a real space.
  */
-interface DiffClass {
-  name: string
-  /** Whether this class is even about the difference in this hunk. */
-  applies: (ours: string, theirs: string) => boolean
-  normalize: (side: string) => string
+const SITE_DISPLAY: Record<string, Display> = {
+  'article-photo': 'block',
+  'data-chip': 'flex',
 }
 
-/** Line structure kept, indentation and blank lines dropped. */
-const trimLines = (s: string): string =>
-  s
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line !== '')
-    .join('\n')
-const blank = (s: string): boolean => /^\s*$/.test(s)
+// --- Forgiveness classes ----------------------------------------------------------
 
-const DIFF_CLASSES: DiffClass[] = [
-  {
-    name: 'whitespace',
-    applies: (ours, theirs) => blank(ours) && blank(theirs),
-    normalize: () => '',
-  },
+/**
+ * Each class is D15's "allowlisted" in miniature: a difference the spike accepts,
+ * stated narrowly enough that it cannot absorb one it does not explain.
+ *
+ *  - heading-id: markdown-it-anchor percent-encodes heading ids and adds
+ *    tabindex="-1"; comrak emits plain slugs and no tabindex. Only `id` and `tabindex`
+ *    are set aside; every other attribute still has to agree.
+ *  - md-photo-wrap: markdown-it wraps the tail of each in-content <article-photo>
+ *    block in a spurious <p>, which the HTML parser's adoption agency turns into a
+ *    ghost `<p><a></a></p>` and an empty `<p>` inside the figure. Lemmon's sentinel
+ *    splice emits the markup unwrapped. Only those two shapes are forgiven, and only
+ *    in a figure holding a pho-picture: a `p` with content beside the photo is a
+ *    dropped paragraph and still fails.
+ *  - attr-escaping: WebC emitted a raw `"` inside a double-quoted attribute value;
+ *    lemmon escapes it. Parsed, the reference's value stops at the quote and the rest
+ *    becomes junk attribute names. Forgiven only when the reference's value is ours
+ *    cut at the first quote and every junk name is a token of what was cut off.
+ */
+
+/** `attrs` without the named keys. */
+function without(attrs: Map<string, string>, names: string[]): Map<string, string> {
+  return new Map([...attrs].filter(([name]) => !names.includes(name)))
+}
+
+function contains(element: RenderedElement, tag: string): boolean {
+  return element.children.some(
+    (child) => child.kind === 'element' && (child.tag === tag || contains(child, tag))
+  )
+}
+
+const FORGIVENESS: Forgiveness[] = [
   {
     name: 'heading-id',
-    applies: (ours, theirs) => ours.includes('<h2 id=') && theirs.includes('<h2 id='),
-    normalize: (side) => side.replace(/<h2 id="[^"]*"( tabindex="-1")?>/g, '<h2>'),
+    attrs: (ours, theirs) =>
+      ours.tag === 'h2' &&
+      ours.attrs.has('id') &&
+      theirs.attrs.get('tabindex') === '-1' &&
+      sameAttrs(without(ours.attrs, ['id']), without(theirs.attrs, ['id', 'tabindex'])),
   },
   {
     name: 'md-photo-wrap',
-    applies: (ours, theirs) =>
-      ours.includes('pho-picture') && theirs.includes('pho-picture'),
-    normalize: (side) =>
-      trimLines(
-        side.replace(/<p>(?=<\/pho-picture>)/g, '').replace(/(?<=<\/figcaption>)<\/p>/g, '')
-      ),
+    extra: (theirs, parent) => {
+      if (
+        parent.tag !== 'figure' ||
+        theirs.tag !== 'p' ||
+        !contains(parent, 'pho-picture')
+      ) {
+        return false
+      }
+      const [only, ...rest] = theirs.children
+      return (
+        only === undefined ||
+        (rest.length === 0 &&
+          only.kind === 'element' &&
+          only.tag === 'a' &&
+          !only.children.length)
+      )
+    },
   },
   {
     name: 'attr-escaping',
-    applies: (ours) => ours.includes('&quot;'),
-    normalize: (side) => side.replaceAll('&quot;', '"'),
+    attrs: (ours, theirs) => {
+      const cut = [...ours.attrs].find(([, value]) => value.includes('"'))
+      if (!cut) return false
+      const [name, value] = cut
+      const quote = value.indexOf('"')
+      if (theirs.attrs.get(name) !== value.slice(0, quote)) return false
+      // Attribute names come back lowercased, so match the tokens the same way.
+      const tokens = value
+        .slice(quote + 1)
+        .toLowerCase()
+        .split(/\s+/)
+      const junk = [...theirs.attrs].filter(([junkName]) => !ours.attrs.has(junkName))
+      const junkExplained = junk.every(
+        ([junkName, junkValue]) =>
+          junkValue === '' &&
+          (tokens.includes(junkName) || tokens.includes(junkName.replace(/"$/, '')))
+      )
+      const junkNames = junk.map(([junkName]) => junkName)
+      return (
+        junkExplained &&
+        sameAttrs(without(ours.attrs, [name]), without(theirs.attrs, [name, ...junkNames]))
+      )
+    },
   },
 ]
-
-function classify(hunk: Hunk): string | null {
-  const ours = hunk.ours.join('\n')
-  const theirs = hunk.theirs.join('\n')
-  for (const { name, applies, normalize } of DIFF_CLASSES) {
-    if (applies(ours, theirs) && normalize(ours) === normalize(theirs)) return name
-  }
-  return null
-}
 
 // --- Main -------------------------------------------------------------------------
 
@@ -298,74 +275,36 @@ for (let run = 0; run < RENDER_RUNS; run += 1) {
 }
 core.free()
 
-// --- Normalize + diff -------------------------------------------------------------
-
-// Mirror the 11ty build's dprint transform, fallback included: it swallows formatter
-// errors and ships the page raw — and this page IS such a page, because markdown-it's
-// re-wrap mangle (`<p></pho-picture>`) is unparseable markup. So when the reference
-// cannot be formatted, both sides are compared raw; the `whitespace` diff class then
-// absorbs indentation-only differences.
-const format = makeFormatter()
-const reference = readFileSync(join(SPIKE, 'fixtures/reference.html'), 'utf8')
-let referenceFormatted = reference
-let formatted = true
-try {
-  referenceFormatted = format(reference)
-} catch (error) {
-  console.log(`note: dprint cannot parse the reference (${(error as Error).message});`)
-  console.log('      the 11ty build ships it unformatted too — comparing raw output')
-  formatted = false
-}
-let oursFormatted = pageHtml
-if (formatted) {
-  try {
-    oursFormatted = format(pageHtml)
-  } catch (error) {
-    // Asymmetric formatting would diff apples against oranges, so drop both sides to
-    // raw — and say so loudly, since unparseable output is news about the renderer.
-    console.log(`note: dprint cannot parse LEMMON's output (${(error as Error).message});`)
-    console.log('      comparing both sides raw — check the renderer, not the reference')
-    referenceFormatted = reference
-    formatted = false
-  }
-}
-const idempotent = !formatted || referenceFormatted === reference
+// --- Compare ----------------------------------------------------------------------
 
 const outDir = join(tmpdir(), 'lemmon-the-rebound')
 mkdirSync(outDir, { recursive: true })
-writeFileSync(join(outDir, 'lemmon.html'), oursFormatted)
-writeFileSync(join(outDir, 'reference.html'), referenceFormatted)
+writeFileSync(join(outDir, 'lemmon.html'), pageHtml)
 
-const oursLines = oursFormatted.split('\n')
-const refLines = referenceFormatted.split('\n')
-const hunks = diffLines(oursLines, refLines)
-const counts = new Map<string, number>()
-const unexpected: Hunk[] = []
-for (const hunk of hunks) {
-  const cls = classify(hunk)
-  if (cls) counts.set(cls, (counts.get(cls) ?? 0) + 1)
-  else unexpected.push(hunk)
-}
+const reference = readFileSync(join(SPIKE, 'fixtures/reference.html'), 'utf8')
+const comparison = compareRendered(
+  renderedPage(pageHtml, { display: SITE_DISPLAY }),
+  renderedPage(reference, { display: SITE_DISPLAY }),
+  FORGIVENESS
+)
 
 // --- Report -----------------------------------------------------------------------
 
-console.log(`normalized output written to ${outDir}`)
+console.log(`lemmon output written to ${outDir}/lemmon.html`)
 console.log()
-const how = formatted ? 'both dprint-formatted' : 'both raw, unformatted'
-console.log(`diff summary (lemmon vs 11ty reference, ${how}):`)
-console.log(`  bytes: ${oursFormatted.length} lemmon, ${referenceFormatted.length} 11ty`)
-const changed = hunks.reduce((a, h) => a + Math.max(h.ours.length, h.theirs.length), 0)
-const identical = (100 * (refLines.length - changed)) / refLines.length
-console.log(`  lines identical: ${Math.max(0, identical).toFixed(1)}%`)
-for (const [name, count] of counts) {
-  console.log(`  expected ${name}: ${count} hunk${count === 1 ? '' : 's'}`)
+console.log('rendered comparison (lemmon vs 11ty reference):')
+console.log(`  bytes: ${pageHtml.length} lemmon, ${reference.length} 11ty`)
+console.log(`  nodes matched: ${comparison.matched}`)
+for (const [name, count] of comparison.forgiven) {
+  console.log(`  forgiven ${name}: ${count}`)
 }
+const unexpected = comparison.differences
 console.log(`  unexpected: ${unexpected.length}`)
-for (const hunk of unexpected) {
+for (const { path, ours, theirs } of unexpected) {
   console.log()
-  console.log(`--- reference.html:${hunk.refStart}`)
-  for (const line of hunk.theirs) console.log(`-${line}`)
-  for (const line of hunk.ours) console.log(`+${line}`)
+  console.log(`--- ${path}`)
+  console.log(`-${theirs ?? '(nothing)'}`)
+  console.log(`+${ours ?? '(nothing)'}`)
 }
 
 console.log()
@@ -403,16 +342,11 @@ console.log(
 )
 
 let failed = false
-if (!idempotent) {
-  failed = true
-  console.error(
-    'FAIL: dprint(reference.html) differs from reference.html — the reference was ' +
-      'not built with this formatter version/config, so the diff cannot be trusted'
-  )
-}
 if (unexpected.length > 0) {
   failed = true
-  console.error(`FAIL: ${unexpected.length} unexpected diff hunk(s), listed above`)
+  console.error(
+    `FAIL: ${unexpected.length} unexpected rendered difference(s), listed above`
+  )
 }
 if (!timeOk) {
   failed = true
