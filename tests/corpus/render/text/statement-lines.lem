@@ -11,6 +11,10 @@
     <lem.a + b + c + d + e + g>
   </li>
   <lem-fn f(x: int): int = x />
+  <lem-fn label()>a block definition alone on its lines goes with them</lem-fn>
+  <li><lem.label()>, <lem.f(7)></li>
+  <lem-let note>a definition</lem-let> <li>beside markup keeps its line</li>
+  <li><lem.note></li>
 </ul>
 <lem.first>
 <lem-let last = "at the very end" />

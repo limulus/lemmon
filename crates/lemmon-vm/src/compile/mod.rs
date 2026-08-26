@@ -13,6 +13,7 @@
 
 mod expr;
 mod items;
+mod whitespace;
 
 use std::collections::HashMap;
 use std::fmt;
@@ -489,7 +490,7 @@ impl Compiler<'_> {
                 Item::FnBlock(f) => {
                     let body = required(f.body());
                     self.emit(Op::Capture, f.span());
-                    self.lower_block(body.items().collect(), false);
+                    self.lower_block(body.items().collect(), whitespace::Kind::Value);
                     self.emit(Op::EndCapture, f.span());
                 }
                 Item::FnVoid(f) => self.expr(&required(f.value())),
@@ -509,7 +510,9 @@ impl Compiler<'_> {
             (Source::Document(doc), Some(chunks)) => {
                 self.lower_document(items, &doc.prose, chunks);
             }
-            (Source::Template(_), None) => self.lower_block(items, true),
+            (Source::Template(_), None) => {
+                self.lower_block(items, whitespace::Kind::File);
+            }
             _ => unreachable!("a document has its chunks and a template has none"),
         }
         let span = parse.root().span();

@@ -1,0 +1,36 @@
+<lem-fn tag(label: string, active: bool)>
+  <li class="tag">
+    <lem-if active>
+      <strong><lem.label></strong>
+    <lem-else />
+      <a href="/tags/<lem.label>/"><lem.label></a>
+    </lem-if>
+  </li>
+</lem-fn>
+<lem-fn note(article: map, body: html)>
+  <lem-let preview = article.image ?? article.hero />
+  <article>
+    <h2><lem.article.title></h2>
+    <img src="<lem.preview>" alt="">
+    <lem.body>
+  </article>
+</lem-fn>
+<lem-fn banner()><div class="banner">
+    a body hugging its opening tag keeps the margin it is written with
+  </div></lem-fn>
+<lem-fn sample()>
+  <pre>
+    one
+      two
+  </pre>
+</lem-fn>
+<lem-let intro>
+  <p>Notes from <lem.site.name>.</p>
+</lem-let>
+<ul>
+  <lem.tag("rust", active: true)>
+  <lem.tag("wasm", active: false)>
+</ul>
+<lem.note({title: "The Rebound", image: null, hero: "/photos/upper-falls.jpg"}, body: intro)>
+<lem.banner()>
+<lem.sample()>

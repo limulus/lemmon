@@ -44,6 +44,13 @@ only where `data.json` feeds them. They are a rendering-fidelity fixture, not th
 of the real limulus.net port (that arrives with the Phase 1 language features:
 schemas, stdlib, channels).
 
+Reproducing WebC's whitespace is why the definitions hug their opening tags
+(`<lem-fn f()><article …>`): D26 dedents a body laid out on its own lines, and hugging is
+what keeps the margin the reference emits. Where a close tag does sit on its own line, the
+body carries one newline more than it emits, since D26 takes one off each edge. The
+templates read badly because of it — ∆Ma4 replaces the byte comparison with an
+HTML-normalizing one so they can be written properly.
+
 ## Allowlisted difference classes
 
 Each class is a normalization under which a hunk's two sides agree, plus a guard naming

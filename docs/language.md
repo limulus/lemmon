@@ -41,12 +41,15 @@ Three delimitability rules (D21):
 | `<lem.expr>` | Access: print a value or call a function — the only call form (D22). Always void, never slashed. |
 | `&lt;lem` | Escape for a literal `<lem…` in a template. Code fences handle it in documents. |
 
-Whitespace: text around block tags is preserved as written; a void tag alone on a line
-consumes that line's trailing newline. A `lem-fn` block body and a `lem-let` capture body
-lose the newline-and-indent at each edge and are dedented by their common indentation, so a
-definition's own indentation never reaches the output (D26); `lem-if`/`lem-for` bodies are
-not, since a loop body's leading newline separates iterations. _Not yet (∆2vO): bodies
-are verbatim today._ Every token carries a byte span.
+Whitespace: text around block tags is preserved as written; a tag that renders nothing
+where it stands — `lem-let` or `lem-fn`, void form or block — takes its line with it when
+nothing else stands on that line (D27). A `lem-fn` block body and a `lem-let` capture body
+lose the newline-and-indent at each edge and are dedented by the indentation their lines
+share, so a definition's own indentation never reaches the output (D26); a body that opens
+on its tag's line has no indentation to give and stays verbatim, which is how a definition
+emits a margin of its own. `lem-if`/`lem-for` bodies take no edge trim and no dedent of
+their own — a loop body's leading newline is what separates iterations — but their text
+dedents with the definition around them. Every token carries a byte span.
 
 Scanner rules the parser and the tree-sitter grammar must agree on:
 

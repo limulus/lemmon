@@ -22,11 +22,11 @@ with VM render time under 1 ms/page. Everything here serves that demo.
 
 ### Fix what the spike found
 
-- ∆2vO Normalize whitespace in value-producing bodies — implement D26: trim and dedent
-  `lem-fn` block bodies and `lem-let` capture bodies, leaving `lem-if`/`lem-for` verbatim.
-  Today a component's own indentation leaks into the output bytes of every page that calls
-  it, and changing that once templates exist re-blesses every corpus expectation and
-  re-derives the parity allowlist
+- ∆Ma4 Compare the spike's output as HTML, not as bytes — diff parse5 trees with
+  browser-style text normalization (runs collapse to a space, whitespace-only nodes between
+  block elements drop, `pre`/`textarea` stay exact), then rewrite `spike/the-rebound/site/`
+  as ordinary indented markup. Matching WebC's indentation byte for byte is what forces
+  those files to hug their bodies, against D26's point, and it settles what ∆hyz normalizes
 
 ## Phase 1 — Language complete, tooling from day one
 
