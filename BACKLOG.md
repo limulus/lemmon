@@ -19,18 +19,29 @@ mechanism: `delto surface` trusts these edges to decide what is eligible to work
 Seed items for the next phase (architecture doc 3, phase 1); expect these to be split
 further at claim time.
 
-- ∆C8d Type checker + schemas — `lem-type`/`lem-enum`, reference fields (`by`), computed
-  defaults, narrowing, project-flat + ambient namespaces (docs/language.md §Types, §Names),
-  diagnostics with primary/secondary spans; turns limulus.net's build-time throws into
-  compile errors
+- ∆up2 Type syntax — composite annotations (`[T]`, `{K: V}`, `(A, B): T`, `T?`),
+  `lem-type` blocks (fields with `= default` and `by index`, one per line, lexed in a fields
+  mode the tag name selects) and `lem-enum`, `lem-match`/`lem-case`/`lem-default`: parser,
+  AST views, corpus `.cst`/`.tags`, no semantics. Split from ∆C8d so the checker starts on
+  a tree that already holds every declaration it reads
+- ∆C8d Type checker — types, bidirectional inference, narrowing (`is`, `lem-match`,
+  optionals in `lem-if`), unused warnings, diagnostics with severity and secondary spans
+  through the boundary, typed lowering (`TypeTest`, `lem-match`), project-flat + ambient
+  namespaces (docs/language.md §Names); `site`/`page`/`build` keep an internal unknown
+  type until ∆iCW gives them schemas; needs: ∆up2
+- ∆iCW Schemas at load — `lem-collection`/`lem-data` in `site.lem` typing `site` and
+  `Page.data`; `loadData` validates records against declared types at YAML positions,
+  runs computed defaults in dependency order, resolves `by` reference fields (aliases
+  included), rejects extra keys; `Value::Record` in declaration order. Turns limulus.net's
+  build throws (missing `vod.alt`, photo not found) into load errors; needs: ∆C8d
 - ∆Q6L Stdlib — strings/lists/maps, `datetime("…")` (compile-time checked on a literal
   argument; there is no datetime literal) + rfc3339/rfc822 formatting, `slugify`,
   `readingTime`, `url()`, `asset()`, `raw()`, `uniqueId()`, with typed signatures the
   checker understands, since feeds/sitemap/layout ports all block on these; needs: ∆C8d
-- ∆Hbw Document mode, full rules — nested `lem-let` capture bodies as sub-documents, typed
-  front matter validated at YAML positions, string-literal reference resolution in prose
-  calls (docs/language.md §Document mode items 2 and 6) with the resolved ids reported as
-  compile-time facts (D25); needs: ∆C8d
+- ∆Hbw Document mode, full rules — nested `lem-let` capture bodies as sub-documents, and
+  string-literal reference resolution in prose calls (docs/language.md §Document mode
+  items 2 and 6) with the resolved ids reported as compile-time facts (D25); front matter
+  itself is validated by ∆iCW; needs: ∆iCW
 - ∆BfR Syntax highlighting for code fences — comrak's `SyntaxHighlighterAdapter` wired to
   syntect with class-based output plus a generated theme stylesheet (D08,
   docs/architecture.md §Crates). Deferred out of document mode: it adds ~1 MB to the .wasm
@@ -103,7 +114,7 @@ API); the port itself lives in limulus-dot-net on a branch while 11ty stays gree
 - ∆rT5 Schemas, layouts, components — `site.lem` types for articles, link posts, TILs,
   photos, vod, authors; the base/page/article/video layouts and ~20 WebC components
   rewritten as `.lem` functions with `lem-style` scoping (D20). First real exercise of the
-  language at scale; expect it to feed fixes back into Phase 1 items; needs: ∆C8d, ∆Q6L,
+  language at scale; expect it to feed fixes back into Phase 1 items; needs: ∆iCW, ∆Q6L,
   ∆RGQ
 - ∆o24 Content + markdown parity — typed front matter for every `.md`, computed defaults
   replacing `eleventyComputed.js` (title from linkTitle, tilTopic/tags from path, link/via
