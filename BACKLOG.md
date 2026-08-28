@@ -19,13 +19,18 @@ mechanism: `delto surface` trusts these edges to decide what is eligible to work
 Seed items for the next phase (architecture doc 3, phase 1); expect these to be split
 further at claim time.
 
+- ∆1vS Well-known type declarations — void `lem-type Name = T` alias form (D21's `=` void
+  marker) and a `from` field clause beside `by` (D29), with AST views and corpus
+  `.cst`/`.tags`; `lem-collection`/`lem-data` retired from the builtin table and the
+  unsupported corpus. No semantics: it is the grammar D30 needs so the checker can type
+  `Site`/`Page`/`Build` from a site's own declarations instead of building them in
 - ∆C8d Type checker — types, bidirectional inference, narrowing (`is`, `lem-match`,
   optionals in `lem-if`), unused warnings, diagnostics with severity and secondary spans
   through the boundary, typed lowering (`TypeTest`, `lem-match`), project-flat + ambient
-  namespaces (docs/language.md §Names); `site`/`page`/`build` keep an internal unknown
-  type until ∆iCW gives them schemas
-- ∆iCW Schemas at load — `lem-collection`/`lem-data` in `site.lem` typing `site` and
-  `Page.data`; `loadData` validates records against declared types at YAML positions,
+  namespaces (docs/language.md §Names); `Site`/`Page`/`Build` typed from their `site.lem`
+  declarations, unknown where a site declares none (D30); needs: ∆1vS
+- ∆iCW Schemas at load — a site's `Site` declaration (`from` fields) and `Page.data`
+  typing the content model; `loadData` validates records at their YAML positions,
   runs computed defaults in dependency order, resolves `by` reference fields (aliases
   included), rejects extra keys; `Value::Record` in declaration order. Turns limulus.net's
   build throws (missing `vod.alt`, photo not found) into load errors; needs: ∆C8d

@@ -34,8 +34,9 @@ Three delimitability rules (D21):
    no expression parsing needed to find the boundary.
 2. **`lem.` accesses; `lem-*` keywords define.** Inside a keyword head, `= expr` marks
    the void form: `<lem-let x = e />` binds a value (void); `<lem-let x>…</lem-let>`
-   binds its rendered body (block). Same for `lem-fn`: block body vs
-   `<lem-fn f(…): T = expr />`. Every tag's shape is decided by its head alone.
+   binds its rendered body (block). Same for `lem-fn` (block body vs
+   `<lem-fn f(…): T = expr />`) and `lem-type` (fields in a block body vs the alias
+   `<lem-type Name = T />`, D30). Every tag's shape is decided by its head alone.
 3. **The `lem-` element namespace is reserved** in Lemmon files. Every builtin is a
    valid custom-element name; an unrecognized `lem-*` tag is a compile error with a
    did-you-mean. (Client-side custom elements used in templates must not be named
@@ -71,8 +72,8 @@ Scanner rules the parser and the tree-sitter grammar must agree on:
 - There is no compile-time comment tag. HTML comments are text and pass through to the
   output — and a trigger inside one still fires.
 - `lt lte gt gte in is as true false null` are reserved words: they cannot be used as
-  identifiers or as named-argument names. `extends` and `by` are contextual — keywords
-  in a `lem-type` head and a field, ordinary names anywhere else.
+  identifiers or as named-argument names. `extends`, `by` and `from` are contextual —
+  keywords in a `lem-type` head and a field, ordinary names anywhere else.
 
 Parser recovery rules — what a tag's shape is when its terminator or close tag
 contradicts it, and what each such mistake costs. The tree-sitter grammar must agree
@@ -107,7 +108,8 @@ follows:
   block tag, a reserved word as a name, a close tag after the head — are still
   reported.
 - A `lem-type` body holds fields, one per line: `name: Type`, then `by index` if the
-  field is a reference, then `= default` if it has one. Whatever else stands on a
+  field is a reference, then `from source` if it is a collection or data binding, then
+  `= default` if it has one. Whatever else stands on a
   field's line is one diagnostic; a `>` there is a mistake in the field, not its end.
   Anything the scanner handed back to text mode before the close tag — an element, a
   tag — is reported as out of place and still parsed as items, so its tags nest and
@@ -128,10 +130,8 @@ follows:
 | `lem-let` | `name = expr` / `name: T = expr` → void · bare `name` → block | Immutable binding, scoped to the enclosing block. Block form binds the rendered body as `html` (the capture form; in documents the body is a document). Unused bindings warn. |
 | `lem-match` / `lem-case` / `lem-default` | subject; patterns | Patterns: subtype (`Til as t`), literal, enum variant (a bare name), `null`. Cases are blocks, the optional `lem-default` last. Exhaustive over enums/closed unions, else `lem-default` required. |
 | `lem-fn` | signature | **Definition only** (calls go through `lem.`). Block body returns `html`, closes `</lem-fn>`. Expression body `(…): T = expr` is void, returns any type. |
-| `lem-type` | `Name` / `Name extends Base` | Record schema; fields in the body (block), one per line, lexed in fields mode (D29). See § Schemas. |
+| `lem-type` | `Name` / `Name extends Base` → block · `Name = T` → void | Record schema; fields in the body (block), one per line, lexed in fields mode (D29). The void form is a type alias (D30). See § Schemas. |
 | `lem-enum` | `Name = a \| b \| c` | Enum (void). Bare variant names in expressions where the enum is expected; strings in front matter. |
-| `lem-collection` | `name: Type from "glob"` · `name: Type = expr` | Site-level typed collection (void; `site.lem`). |
-| `lem-data` | `name: Type from "file"` · `… from plugin("name")` | Site-level data binding (void; `site.lem`). |
 | `lem-page` | bindings; optional `for x in xs` | Marks a `.lem` file as a page template; carries front-matter-equivalents as `name = expr` bindings (`layout`, `title`, `permalink`…). With `for`: one page per item; `page.prev`/`page.next` are the generated neighbours. Void. |
 | `lem-import` | `name from plugin("p")` · `{ names } from plugin("p")` | Bind a plugin's shipped functions/types — qualified or promoted (D23). Site files never import each other. Void; lives in `site.lem`. |
 | `lem-style` / `lem-head` | — | Block side channels: collected per page from every function actually called, deduplicated. |
@@ -160,8 +160,8 @@ binds, never assigns; no `while`; recursion is allowed.
 
 `string` · `int` · `float` · `bool` · `datetime` · `duration` · `url` · `html` ·
 `asset` · `[T]` · `{K: V}` · `T?` · records (nominal, single `extends`, subtype usable
-for base, narrowing via `is`/`lem-match`) · enums · function types `(A, B): T`
-(`layout` aliases `(Page, html): html`) · builtin records `Page`, `Site`, `Build`.
+for base, narrowing via `is`/`lem-match`) · enums · function types `(A, B): T` ·
+the well-known records `Page`, `Site`, `Build`, which a site declares (D30, below).
 
 As written, a type is a name, `[T]`, `{K: V}`, or `(A, B): R`, nested freely, each
 optionally followed by `?`. The `?` binds to the type just written — `(A): R?` is a
@@ -188,7 +188,7 @@ the checker's question, not the parser's.
   author: string
   hero: Photo? by site.photos
   vod: Vod?
-  layout: layout = article
+  layout: Layout = article
   scripts: [asset] = []
   draft: bool = false
   readingTime: duration = readingTime(body)
@@ -207,6 +207,53 @@ the checker's question, not the parser's.
 - Schemas are the source of truth; JSON Schema is derived output (`lem schema export`),
   never authored (rationale: the same types statically check template expressions —
   subtyping, function types, `html`/`asset` semantics, reference fields).
+
+### Well-known types (D30)
+
+The core provides no complex types. `Site`, `Page` and `Build` are *well-known*: the
+names are reserved, a site declares each as an ordinary `lem-type`, and the checker holds
+each declaration to a contract — `Page` needs `url: url`, `inputPath: string`,
+`body: html`, `prev: Page?`, `next: Page?`; `Build` needs `time: datetime`; `Site` needs
+nothing. Everything past the contract is the site's, and a name a site never declares
+keeps the checker's unknown type: declaring is how a site buys the checking, not how it
+earns permission to render.
+
+```
+<lem-type Layout = (Page, html): html />
+
+<lem-type Page>
+  url: url
+  inputPath: string
+  body: html
+  prev: Page?
+  next: Page?
+  data: PageData        <!-- the site's own root record: what a layout may read -->
+</lem-type>
+
+<lem-type Site>
+  posts: [Article] from "feed/*/index.md"
+  photos: PhotoIndex from plugin("photos")
+  authors: {string: Author} from "_data/authors.json"
+  articles: [Article] = concat(posts, links, tils, journal)
+</lem-type>
+
+<lem-type Build>
+  time: datetime
+  generator: string
+  env: BuildEnv         <!-- a missing value is a load error, not `undefined` at render -->
+</lem-type>
+```
+
+- A **`from` field** binds a collection (a glob), a data file, or a plugin's records. It
+  stands between `by` and `= default`, so field order is
+  `name: Type [by …] [from …] [= default]`; it replaces `lem-collection`/`lem-data`.
+- There is no `layout` type. A string in data resolves **by its expected type** — record
+  → its `by` index, enum → a variant, `asset` → the manifest, `datetime` → parse, and a
+  function type → a project-namespace function of that type — so `layout: Layout = article`
+  in a schema and `layout: article` in front matter need no special case.
+
+_Not yet (∆1vS): the parser knows `lem-collection`/`lem-data` as unsupported builtins, and
+has neither the `from` clause nor the alias form._
 
 ### Checking
 
@@ -231,7 +278,8 @@ One value namespace, resolved lexically: **locals/params** (innermost wins) →
   same duplicate error.
 - **Ambient:** stdlib (`slugify`, `raw`, `asset`, `url`, `rfc3339`, `rfc822`,
   `readingTime`, `uniqueId`, …) needs no import; site definitions may shadow it (warn).
-  `site`, `page`, `build` cannot be redefined.
+  `site`, `page`, `build` cannot be redefined as values, though their *types* are the
+  site's to declare (D30).
 
 ## Functions & components (D04, D22)
 
