@@ -11,7 +11,8 @@ Root@0..170
           TypeAnnotation@20..28
             Colon@20..21 ":"
             Trivia@21..22 " "
-            Ident@22..28 "string"
+            NamedType@22..28
+              Ident@22..28 "string"
         RParen@28..29 ")"
     Close@29..30 ">"
     Block@30..75

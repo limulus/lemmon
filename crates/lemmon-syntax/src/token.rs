@@ -157,6 +157,13 @@ pub enum TokenKind {
     #[token("<")]
     OpenInHead,
 
+    // --- Fields mode ---
+    /// A line ending inside a `lem-type` body, where it terminates a field. Fields mode
+    /// is the tag-mode vocabulary with this one addition: the body is lexed like a head,
+    /// except that its lines matter. Never produced anywhere else — in a head, a line
+    /// ending is [`Trivia`](Self::Trivia).
+    Newline,
+
     // --- Either mode ---
     /// Bytes the scanner could not lex. A [`Diagnostic`](crate::Diagnostic) with the same
     /// span says why; the token exists so that the stream stays lossless.

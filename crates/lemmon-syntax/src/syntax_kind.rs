@@ -70,6 +70,7 @@ syntax_kinds! {
     PipePipe,
     Pipe,
     OpenInHead,
+    Newline,
     /// Bytes the scanner could not lex — and, as a node, a run of tokens the parser
     /// skipped while recovering. Nothing is ever dropped from the tree.
     Error,
@@ -97,6 +98,16 @@ syntax_kinds! {
     FnBlock,
     /// `<lem-fn name(params): T = expr />`
     FnVoid,
+    /// `<lem-type Name> fields </lem-type>`
+    TypeDecl,
+    /// `<lem-enum Name = a | b />`
+    EnumDecl,
+    /// `<lem-match subject> cases </lem-match>`
+    MatchTag,
+    /// `<lem-case pattern> … </lem-case>` — a block only meaningful inside a `MatchTag`.
+    CaseTag,
+    /// `<lem-default> … </lem-default>` — likewise.
+    DefaultTag,
     /// A builtin outside the parsed subset, skipped opaquely.
     UnsupportedTag,
     /// A `lem-*` name that is no builtin.
@@ -111,6 +122,22 @@ syntax_kinds! {
     Param,
     /// `: Type`
     TypeAnnotation,
+    /// A bare type name: `int`, `Article`.
+    NamedType,
+    /// `Type?`
+    OptionalType,
+    /// `[Type]`
+    ListType,
+    /// `{Key: Value}`
+    MapType,
+    /// `(A, B): R`
+    FnType,
+    /// The body of a `lem-type`: its fields, one per line.
+    FieldList,
+    /// One `name: Type [by index] [= default]` field.
+    Field,
+    /// The head of a `lem-case`: a literal, `null`, a variant name, or `Type as name`.
+    Pattern,
     /// The body of a block tag.
     Block,
     /// `</lem-name>`, wrapping the close token and its `>`.
@@ -217,6 +244,7 @@ impl From<TokenKind> for SyntaxKind {
             TokenKind::PipePipe => Self::PipePipe,
             TokenKind::Pipe => Self::Pipe,
             TokenKind::OpenInHead => Self::OpenInHead,
+            TokenKind::Newline => Self::Newline,
             TokenKind::Error => Self::Error,
         }
     }

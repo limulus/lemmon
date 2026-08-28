@@ -1,21 +1,9 @@
-<lem-match article.kind>
-  <lem-case "link">
-    <p>A link post</p>
-  </lem-case>
-  <lem-default>
-    <p>An article</p>
-  </lem-default>
-</lem-match>
 <lem-style>
   .article-card { color: rebeccapurple }
 </lem-style>
 <lem-head>
   <meta name="description" content="x">
 </lem-head>
-<lem-type Article>
-  <p>fields go here</p>
-</lem-type>
-<lem-enum Size = small />
 <lem-collection articles />
 <lem-data posts />
 <lem-page "/index.html" />

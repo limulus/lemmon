@@ -1,169 +1,95 @@
-Root@0..503
-  UnsupportedTag@0..149
-    OpenTag@0..10 "<lem-match"
-    Trivia@10..11 " "
-    Head@11..23
-      Ident@11..18 "article"
-      Dot@18..19 "."
-      Ident@19..23 "kind"
-    Close@23..24 ">"
-    Block@24..137
-      Text@24..27
-        Text@24..27 "\n  "
-      UnsupportedTag@27..81
-        OpenTag@27..36 "<lem-case"
-        Trivia@36..37 " "
-        Head@37..43
-          StringLit@37..43 "\"link\""
-        Close@43..44 ">"
-        Block@44..70
-          Text@44..70
-            Text@44..70 "\n    <p>A link post</p>\n  "
-        CloseTag@70..81
-          CloseTag@70..80 "</lem-case"
-          Close@80..81 ">"
-      Text@81..84
-        Text@81..84 "\n  "
-      UnsupportedTag@84..136
-        OpenTag@84..96 "<lem-default"
-        Head@96..96
-        Close@96..97 ">"
-        Block@97..122
-          Text@97..122
-            Text@97..122 "\n    <p>An article</p>\n  "
-        CloseTag@122..136
-          CloseTag@122..135 "</lem-default"
-          Close@135..136 ">"
-      Text@136..137
-        Text@136..137 "\n"
-    CloseTag@137..149
-      CloseTag@137..148 "</lem-match"
-      Close@148..149 ">"
-  Text@149..150
-    Text@149..150 "\n"
-  UnsupportedTag@150..215
-    OpenTag@150..160 "<lem-style"
-    Head@160..160
-    Close@160..161 ">"
-    Block@161..203
-      Text@161..203
-        Text@161..203 "\n  .article-card { color: rebeccapurple "…
-    CloseTag@203..215
-      CloseTag@203..214 "</lem-style"
-      Close@214..215 ">"
-  Text@215..216
-    Text@215..216 "\n"
-  UnsupportedTag@216..278
-    OpenTag@216..225 "<lem-head"
-    Head@225..225
-    Close@225..226 ">"
-    Block@226..267
-      Text@226..267
-        Text@226..267 "\n  <meta name=\"description\" content=\"x\">"…
-    CloseTag@267..278
-      CloseTag@267..277 "</lem-head"
-      Close@277..278 ">"
-  Text@278..279
-    Text@278..279 "\n"
-  UnsupportedTag@279..333
-    OpenTag@279..288 "<lem-type"
-    Trivia@288..289 " "
-    Head@289..296
-      Ident@289..296 "Article"
-    Close@296..297 ">"
-    Block@297..322
-      Text@297..322
-        Text@297..322 "\n  <p>fields go here</p>\n"
-    CloseTag@322..333
-      CloseTag@322..332 "</lem-type"
-      Close@332..333 ">"
-  Text@333..334
-    Text@333..334 "\n"
-  UnsupportedTag@334..359
-    OpenTag@334..343 "<lem-enum"
-    Trivia@343..344 " "
-    Head@344..356
-      Ident@344..348 "Size"
-      Trivia@348..349 " "
-      Eq@349..350 "="
-      Trivia@350..351 " "
-      Ident@351..356 "small"
-    Trivia@356..357 " "
-    SelfClose@357..359 "/>"
-  Text@359..360
-    Text@359..360 "\n"
-  UnsupportedTag@360..387
-    OpenTag@360..375 "<lem-collection"
-    Trivia@375..376 " "
-    Head@376..384
-      Ident@376..384 "articles"
-    Trivia@384..385 " "
-    SelfClose@385..387 "/>"
-  Text@387..388
-    Text@387..388 "\n"
-  UnsupportedTag@388..406
-    OpenTag@388..397 "<lem-data"
-    Trivia@397..398 " "
-    Head@398..403
-      Ident@398..403 "posts"
-    Trivia@403..404 " "
-    SelfClose@404..406 "/>"
-  Text@406..407
-    Text@406..407 "\n"
-  UnsupportedTag@407..433
-    OpenTag@407..416 "<lem-page"
-    Trivia@416..417 " "
-    Head@417..430
-      StringLit@417..430 "\"/index.html\""
-    Trivia@430..431 " "
-    SelfClose@431..433 "/>"
-  Text@433..434
-    Text@433..434 "\n"
-  UnsupportedTag@434..455
-    OpenTag@434..445 "<lem-import"
-    Trivia@445..446 " "
-    Head@446..452
-      Ident@446..452 "photos"
-    Trivia@452..453 " "
-    SelfClose@453..455 "/>"
-  Text@455..456
-    Text@455..456 "\n"
-  UnsupportedTag@456..470
-    OpenTag@456..467 "<lem-script"
-    Trivia@467..468 " "
-    Head@468..468
-    SelfClose@468..470 "/>"
-  Text@470..471
-    Text@470..471 "\n"
-  UnsupportedTag@471..490
-    OpenTag@471..480 "<lem-emit"
-    Trivia@480..481 " "
-    Head@481..487
-      Ident@481..487 "styles"
-    Trivia@487..488 " "
-    SelfClose@488..490 "/>"
-  Text@490..491
-    Text@490..491 "\n"
-  AccessTag@491..502
-    OpenAccess@491..496 "<lem."
-    Head@496..501
-      NameRef@496..501
-        Ident@496..501 "after"
-    Close@501..502 ">"
-  Text@502..503
-    Text@502..503 "\n"
+Root@0..272
+  UnsupportedTag@0..65
+    OpenTag@0..10 "<lem-style"
+    Head@10..10
+    Close@10..11 ">"
+    Block@11..53
+      Text@11..53
+        Text@11..53 "\n  .article-card { color: rebeccapurple "…
+    CloseTag@53..65
+      CloseTag@53..64 "</lem-style"
+      Close@64..65 ">"
+  Text@65..66
+    Text@65..66 "\n"
+  UnsupportedTag@66..128
+    OpenTag@66..75 "<lem-head"
+    Head@75..75
+    Close@75..76 ">"
+    Block@76..117
+      Text@76..117
+        Text@76..117 "\n  <meta name=\"description\" content=\"x\">"…
+    CloseTag@117..128
+      CloseTag@117..127 "</lem-head"
+      Close@127..128 ">"
+  Text@128..129
+    Text@128..129 "\n"
+  UnsupportedTag@129..156
+    OpenTag@129..144 "<lem-collection"
+    Trivia@144..145 " "
+    Head@145..153
+      Ident@145..153 "articles"
+    Trivia@153..154 " "
+    SelfClose@154..156 "/>"
+  Text@156..157
+    Text@156..157 "\n"
+  UnsupportedTag@157..175
+    OpenTag@157..166 "<lem-data"
+    Trivia@166..167 " "
+    Head@167..172
+      Ident@167..172 "posts"
+    Trivia@172..173 " "
+    SelfClose@173..175 "/>"
+  Text@175..176
+    Text@175..176 "\n"
+  UnsupportedTag@176..202
+    OpenTag@176..185 "<lem-page"
+    Trivia@185..186 " "
+    Head@186..199
+      StringLit@186..199 "\"/index.html\""
+    Trivia@199..200 " "
+    SelfClose@200..202 "/>"
+  Text@202..203
+    Text@202..203 "\n"
+  UnsupportedTag@203..224
+    OpenTag@203..214 "<lem-import"
+    Trivia@214..215 " "
+    Head@215..221
+      Ident@215..221 "photos"
+    Trivia@221..222 " "
+    SelfClose@222..224 "/>"
+  Text@224..225
+    Text@224..225 "\n"
+  UnsupportedTag@225..239
+    OpenTag@225..236 "<lem-script"
+    Trivia@236..237 " "
+    Head@237..237
+    SelfClose@237..239 "/>"
+  Text@239..240
+    Text@239..240 "\n"
+  UnsupportedTag@240..259
+    OpenTag@240..249 "<lem-emit"
+    Trivia@249..250 " "
+    Head@250..256
+      Ident@250..256 "styles"
+    Trivia@256..257 " "
+    SelfClose@257..259 "/>"
+  Text@259..260
+    Text@259..260 "\n"
+  AccessTag@260..271
+    OpenAccess@260..265 "<lem."
+    Head@265..270
+      NameRef@265..270
+        Ident@265..270 "after"
+    Close@270..271 ">"
+  Text@271..272
+    Text@271..272 "\n"
 
 --- diagnostics
-0..10: `lem-match` is not supported yet
-27..36: `lem-case` is not supported yet
-84..96: `lem-default` is not supported yet
-150..160: `lem-style` is not supported yet
-216..225: `lem-head` is not supported yet
-279..288: `lem-type` is not supported yet
-334..343: `lem-enum` is not supported yet
-360..375: `lem-collection` is not supported yet
-388..397: `lem-data` is not supported yet
-407..416: `lem-page` is not supported yet
-434..445: `lem-import` is not supported yet
-456..467: `lem-script` is not supported yet
-471..480: `lem-emit` is not supported yet
+0..10: `lem-style` is not supported yet
+66..75: `lem-head` is not supported yet
+129..144: `lem-collection` is not supported yet
+157..166: `lem-data` is not supported yet
+176..185: `lem-page` is not supported yet
+203..214: `lem-import` is not supported yet
+225..236: `lem-script` is not supported yet
+240..249: `lem-emit` is not supported yet

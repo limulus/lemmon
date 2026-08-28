@@ -1,6 +1,9 @@
 //! Views over the template side of the tree: the file, its tags, and their bodies.
 
-use super::{AstNode, Expr, Spanned, ast_enum, ast_node, child, children, token, tokens};
+use super::{
+    AstNode, Expr, Literal, Spanned, TypeAnnotation, ast_enum, ast_node, child, children,
+    token, tokens,
+};
 use crate::{Lemmon, Span, SyntaxKind, SyntaxNode, SyntaxToken};
 
 ast_node!(
@@ -40,6 +43,12 @@ ast_enum!(
         FnBlock(FnBlock),
         /// `<lem-fn name(params) = expr />`
         FnVoid(FnVoid),
+        /// `<lem-type Name> fields </lem-type>`
+        TypeDecl(TypeDecl),
+        /// `<lem-enum Name = a | b />`
+        EnumDecl(EnumDecl),
+        /// `<lem-match subject> cases </lem-match>`
+        Match(MatchTag),
         /// A builtin outside the parsed subset.
         Unsupported(UnsupportedTag),
         /// A `lem-*` name that is no builtin.
@@ -310,6 +319,202 @@ impl FnVoid {
 }
 
 ast_node!(
+    /// `<lem-type Name> fields </lem-type>` — a record schema.
+    TypeDecl,
+    TypeDecl
+);
+
+impl TypeDecl {
+    /// The type's name.
+    #[must_use]
+    pub fn name(&self) -> Option<SyntaxToken> {
+        head_token(&self.syntax, SyntaxKind::Ident)
+    }
+
+    /// The base type named after `extends`, if any.
+    #[must_use]
+    pub fn base(&self) -> Option<SyntaxToken> {
+        let head = child::<Head>(&self.syntax)?;
+        let mut idents = tokens(&head.syntax, SyntaxKind::Ident);
+        idents.find(|t| t.text() == "extends")?;
+        idents.next()
+    }
+
+    /// The fields, in declaration order.
+    pub fn fields(&self) -> impl Iterator<Item = Field> {
+        child::<FieldList>(&self.syntax)
+            .into_iter()
+            .flat_map(|list| children(&list.syntax))
+    }
+}
+
+ast_node!(FieldList, FieldList);
+
+ast_node!(
+    /// One `name: Type [by index] [= default]` field of a `lem-type`.
+    Field,
+    Field
+);
+
+impl Field {
+    /// The field's name.
+    #[must_use]
+    pub fn name(&self) -> Option<SyntaxToken> {
+        token(&self.syntax, SyntaxKind::Ident)
+    }
+
+    /// The field's type.
+    #[must_use]
+    pub fn type_annotation(&self) -> Option<TypeAnnotation> {
+        child(&self.syntax)
+    }
+
+    /// The reference index after `by`, if the field is a reference field.
+    #[must_use]
+    pub fn index(&self) -> Option<Expr> {
+        self.expr_after(|t| t.kind() == SyntaxKind::Ident && t.text() == "by")
+    }
+
+    /// The default after `=`, if any: a literal, or a computed default.
+    #[must_use]
+    pub fn default(&self) -> Option<Expr> {
+        self.expr_after(|t| t.kind() == SyntaxKind::Eq)
+    }
+
+    /// The first expression after the token `marker` accepts, searching only what
+    /// follows the field's type. The name comes before it, so a field *called* `by`
+    /// cannot be mistaken for the `by` keyword (`by: string = "Eric"` is a plain
+    /// field with a default and no index).
+    fn expr_after(&self, marker: impl Fn(&SyntaxToken) -> bool) -> Option<Expr> {
+        self.syntax
+            .children_with_tokens()
+            .skip_while(|e| e.kind() != SyntaxKind::TypeAnnotation)
+            .skip_while(|e| !e.as_token().is_some_and(&marker))
+            .filter_map(|e| e.into_node())
+            .find_map(Expr::cast)
+    }
+}
+
+ast_node!(
+    /// `<lem-enum Name = a | b | c />`
+    EnumDecl,
+    EnumDecl
+);
+
+impl EnumDecl {
+    /// The enum's name.
+    #[must_use]
+    pub fn name(&self) -> Option<SyntaxToken> {
+        head_token(&self.syntax, SyntaxKind::Ident)
+    }
+
+    /// The variant names, in order: every name after the `=`.
+    pub fn variants(&self) -> impl Iterator<Item = SyntaxToken> {
+        child::<Head>(&self.syntax)
+            .into_iter()
+            .flat_map(|head| head.syntax.children_with_tokens())
+            .filter_map(|e| e.into_token())
+            .skip_while(|t| t.kind() != SyntaxKind::Eq)
+            .filter(|t| t.kind() == SyntaxKind::Ident)
+    }
+}
+
+ast_node!(
+    /// `<lem-match subject> cases </lem-match>`
+    MatchTag,
+    MatchTag
+);
+
+impl MatchTag {
+    /// The value being matched.
+    #[must_use]
+    pub fn subject(&self) -> Option<Expr> {
+        head_child(&self.syntax)
+    }
+
+    /// The raw body.
+    #[must_use]
+    pub fn block(&self) -> Option<Block> {
+        child(&self.syntax)
+    }
+
+    /// The cases, in source order.
+    pub fn cases(&self) -> impl Iterator<Item = CaseTag> {
+        self.block().into_iter().flat_map(|b| children(&b.syntax))
+    }
+
+    /// The `lem-default`, if any.
+    #[must_use]
+    pub fn default(&self) -> Option<DefaultTag> {
+        self.block().and_then(|b| child(&b.syntax))
+    }
+}
+
+ast_node!(
+    /// `<lem-case pattern> … </lem-case>`
+    CaseTag,
+    CaseTag
+);
+
+impl CaseTag {
+    /// The pattern the subject is matched against.
+    #[must_use]
+    pub fn pattern(&self) -> Option<Pattern> {
+        head_child(&self.syntax)
+    }
+
+    /// The items rendered when the pattern matches.
+    #[must_use]
+    pub fn body(&self) -> Option<Block> {
+        child(&self.syntax)
+    }
+}
+
+ast_node!(
+    /// `<lem-default> … </lem-default>`
+    DefaultTag,
+    DefaultTag
+);
+
+impl DefaultTag {
+    /// The items rendered when no case matches.
+    #[must_use]
+    pub fn body(&self) -> Option<Block> {
+        child(&self.syntax)
+    }
+}
+
+ast_node!(
+    /// A `lem-case` pattern: a literal (`null` included), a bare variant name, or
+    /// `Type as name`.
+    Pattern,
+    Pattern
+);
+
+impl Pattern {
+    /// The literal, when the pattern is one.
+    #[must_use]
+    pub fn literal(&self) -> Option<Literal> {
+        child(&self.syntax)
+    }
+
+    /// The name, when the pattern is a variant name or a type: its first identifier.
+    #[must_use]
+    pub fn name(&self) -> Option<SyntaxToken> {
+        token(&self.syntax, SyntaxKind::Ident)
+    }
+
+    /// The name bound after `as`, when the pattern is a type test.
+    #[must_use]
+    pub fn binding(&self) -> Option<SyntaxToken> {
+        let mut idents = tokens(&self.syntax, SyntaxKind::Ident);
+        idents.next()?;
+        token(&self.syntax, SyntaxKind::As)?;
+        idents.next()
+    }
+}
+
+ast_node!(
     /// A builtin outside the parsed subset, kept opaquely.
     UnsupportedTag,
     UnsupportedTag
@@ -377,27 +582,6 @@ impl Param {
 }
 
 ast_node!(
-    /// `: Type` or `: Type?`
-    TypeAnnotation,
-    TypeAnnotation
-);
-
-impl TypeAnnotation {
-    /// The type's name. `None` when the annotation is a composite type, which the
-    /// parser keeps as an `Error` node until composite types are supported.
-    #[must_use]
-    pub fn name(&self) -> Option<SyntaxToken> {
-        token(&self.syntax, SyntaxKind::Ident)
-    }
-
-    /// Whether the type carries the `?` optional marker.
-    #[must_use]
-    pub fn is_optional(&self) -> bool {
-        token(&self.syntax, SyntaxKind::Question).is_some()
-    }
-}
-
-ast_node!(
     /// The body of a block tag.
     Block,
     Block
@@ -432,6 +616,7 @@ fn head_token(tag: &SyntaxNode, kind: SyntaxKind) -> Option<SyntaxToken> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ast::LiteralKind;
     use crate::parse;
 
     fn first_item(src: &str) -> Item {
@@ -440,6 +625,16 @@ mod tests {
 
     fn text(token: Option<SyntaxToken>) -> String {
         token.expect("a token").text().to_owned()
+    }
+
+    /// The type an annotation names, as written.
+    fn annotated(annotation: Option<TypeAnnotation>) -> String {
+        let ty = annotation.expect("an annotation").ty().expect("a type");
+        ty.syntax().text().to_string()
+    }
+
+    fn expr_text(expr: Option<Expr>) -> Option<String> {
+        expr.map(|e| e.syntax().text().to_string())
     }
 
     fn item_texts(items: &[Item]) -> Vec<String> {
@@ -579,9 +774,7 @@ mod tests {
             panic!("expected a void let");
         };
         assert_eq!(text(tag.name()), "n");
-        let ty = tag.type_annotation().expect("a type");
-        assert_eq!(text(ty.name()), "int");
-        assert!(ty.is_optional());
+        assert_eq!(annotated(tag.type_annotation()), "int?");
         assert!(matches!(tag.value(), Some(Expr::Literal(_))));
     }
 
@@ -604,14 +797,9 @@ mod tests {
         let params: Vec<Param> = tag.params().expect("params").params().collect();
         assert_eq!(params.len(), 2);
         assert_eq!(text(params[1].name()), "b");
-        let ty = params[1].type_annotation().expect("a type");
-        assert_eq!(text(ty.name()), "B");
-        assert!(ty.is_optional());
-        assert!(!params[0].type_annotation().expect("a type").is_optional());
-        assert_eq!(
-            text(tag.return_type().expect("a return type").name()),
-            "html"
-        );
+        assert_eq!(annotated(params[1].type_annotation()), "B?");
+        assert_eq!(annotated(params[0].type_annotation()), "A");
+        assert_eq!(annotated(tag.return_type()), "html");
         assert_eq!(tag.body().expect("a body").items().count(), 1);
     }
 
@@ -631,27 +819,127 @@ mod tests {
         };
         assert_eq!(text(tag.name()), "f");
         assert_eq!(tag.params().expect("params").params().count(), 1);
-        assert_eq!(
-            text(tag.return_type().expect("a return type").name()),
-            "int"
-        );
+        assert_eq!(annotated(tag.return_type()), "int");
         assert!(matches!(tag.value(), Some(Expr::Name(_))));
     }
 
     #[test]
-    fn names_a_composite_type_as_none() {
-        let Item::LetVoid(tag) = first_item("<lem-let xs: [int] = [] />") else {
-            panic!("expected a void let");
+    fn exposes_the_parts_of_a_type_declaration() {
+        let src = "<lem-type LinkPost extends Article>\n  \
+                   hero: Photo? by site.photos\n  \
+                   title: string = \"Link: {linkTitle}\"\n  \
+                   tags: [string] by site.tags = []\n</lem-type>";
+        let Item::TypeDecl(tag) = first_item(src) else {
+            panic!("expected a type declaration");
         };
-        assert!(tag.type_annotation().expect("a type").name().is_none());
+        assert_eq!(text(tag.name()), "LinkPost");
+        assert_eq!(text(tag.base()), "Article");
+        let fields: Vec<Field> = tag.fields().collect();
+        assert_eq!(fields.len(), 3);
+        assert_eq!(text(fields[0].name()), "hero");
+        assert_eq!(annotated(fields[0].type_annotation()), "Photo?");
+        assert_eq!(expr_text(fields[0].index()), Some("site.photos".into()));
+        assert_eq!(expr_text(fields[0].default()), None);
+        assert_eq!(expr_text(fields[1].index()), None);
+        assert_eq!(
+            expr_text(fields[1].default()),
+            Some("\"Link: {linkTitle}\"".into())
+        );
+        assert_eq!(expr_text(fields[2].index()), Some("site.tags".into()));
+        assert_eq!(expr_text(fields[2].default()), Some("[]".into()));
+    }
+
+    #[test]
+    fn tells_a_field_named_by_from_the_by_keyword() {
+        // `by` is contextual: before the type it is the field's own name.
+        let src = "<lem-type A>\n  by: string = \"Eric\"\n</lem-type>";
+        let Item::TypeDecl(tag) = first_item(src) else {
+            panic!("expected a type declaration");
+        };
+        let field = tag.fields().next().expect("a field");
+        assert_eq!(text(field.name()), "by");
+        assert_eq!(field.index(), None);
+        assert_eq!(expr_text(field.default()), Some("\"Eric\"".into()));
+    }
+
+    #[test]
+    fn leaves_the_base_absent_when_a_type_extends_nothing() {
+        let Item::TypeDecl(tag) = first_item("<lem-type A>\n</lem-type>") else {
+            panic!("expected a type declaration");
+        };
+        assert!(tag.base().is_none());
+        assert_eq!(tag.fields().count(), 0);
+    }
+
+    #[test]
+    fn exposes_the_name_and_variants_of_an_enum() {
+        let Item::EnumDecl(tag) = first_item("<lem-enum Placement = hero | left />") else {
+            panic!("expected an enum");
+        };
+        assert_eq!(text(tag.name()), "Placement");
+        let variants: Vec<String> = tag.variants().map(|t| t.text().to_owned()).collect();
+        assert_eq!(variants, vec!["hero", "left"]);
+    }
+
+    #[test]
+    fn exposes_the_cases_and_default_of_a_match() {
+        let src = "<lem-match a>\n  <lem-case Til as t>1</lem-case>\n  \
+                   <lem-case hero>2</lem-case>\n  <lem-case null>3</lem-case>\n  \
+                   <lem-default>4</lem-default>\n</lem-match>";
+        let Item::Match(tag) = first_item(src) else {
+            panic!("expected a match");
+        };
+        assert_eq!(expr_text(tag.subject()), Some("a".into()));
+        let cases: Vec<CaseTag> = tag.cases().collect();
+        assert_eq!(cases.len(), 3);
+        let pattern = cases[0].pattern().expect("a pattern");
+        assert_eq!(text(pattern.name()), "Til");
+        assert_eq!(text(pattern.binding()), "t");
+        assert!(pattern.literal().is_none());
+        let pattern = cases[1].pattern().expect("a pattern");
+        assert_eq!(text(pattern.name()), "hero");
+        assert!(pattern.binding().is_none());
+        let pattern = cases[2].pattern().expect("a pattern");
+        assert!(pattern.name().is_none());
+        assert!(matches!(
+            pattern.literal().and_then(|l| l.kind()),
+            Some(LiteralKind::Null)
+        ));
+        assert_eq!(
+            item_texts(&cases[2].body().expect("a body").items().collect::<Vec<_>>()),
+            vec!["3"]
+        );
+        let default = tag.default().expect("a default");
+        assert_eq!(
+            item_texts(&default.body().expect("a body").items().collect::<Vec<_>>()),
+            vec!["4"]
+        );
+        // The cases are not items of the match's block: only its layout text is.
+        assert!(
+            tag.block()
+                .expect("a block")
+                .items()
+                .all(|i| matches!(i, Item::Text(_)))
+        );
+    }
+
+    #[test]
+    fn leaves_the_default_absent_when_a_match_has_none() {
+        let Item::Match(tag) =
+            first_item("<lem-match a><lem-case 1>x</lem-case></lem-match>")
+        else {
+            panic!("expected a match");
+        };
+        assert!(tag.default().is_none());
+        assert_eq!(tag.cases().count(), 1);
     }
 
     #[test]
     fn exposes_the_opener_of_unsupported_and_unknown_tags() {
-        let Item::Unsupported(tag) = first_item("<lem-match x>a</lem-match>") else {
+        let Item::Unsupported(tag) = first_item("<lem-style>a</lem-style>") else {
             panic!("expected an unsupported tag");
         };
-        assert_eq!(text(tag.open_tag()), "<lem-match");
+        assert_eq!(text(tag.open_tag()), "<lem-style");
         assert_eq!(tag.body().expect("a body").items().count(), 1);
         let Item::Unsupported(tag) = first_item("<lem-emit styles />") else {
             panic!("expected an unsupported tag");

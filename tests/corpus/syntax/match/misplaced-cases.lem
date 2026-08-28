@@ -1,0 +1,13 @@
+<lem-case 1>outside</lem-case>
+<lem-match x>
+  stray text
+  <lem.x>
+  <lem-default>d</lem-default>
+  <lem-case 2>after default</lem-case>
+  <lem-default>again</lem-default>
+  <lem-case>no pattern</lem-case>
+  <lem-case Til as>no binding</lem-case>
+</lem-match>
+<lem-match y>
+  <lem-if z><lem-case 1>a</lem-case></lem-if>
+</lem-match>

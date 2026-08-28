@@ -1,0 +1,189 @@
+Root@0..255
+  LetVoid@0..33
+    OpenTag@0..8 "<lem-let"
+    Trivia@8..9 " "
+    Head@9..30
+      Ident@9..16 "scripts"
+      TypeAnnotation@16..25
+        Colon@16..17 ":"
+        Trivia@17..18 " "
+        ListType@18..25
+          LBracket@18..19 "["
+          NamedType@19..24
+            Ident@19..24 "asset"
+          RBracket@24..25 "]"
+      Trivia@25..26 " "
+      Eq@26..27 "="
+      Trivia@27..28 " "
+      ListLit@28..30
+        LBracket@28..29 "["
+        RBracket@29..30 "]"
+    Trivia@30..31 " "
+    SelfClose@31..33 "/>"
+  Text@33..34
+    Text@33..34 "\n"
+  LetVoid@34..74
+    OpenTag@34..42 "<lem-let"
+    Trivia@42..43 " "
+    Head@43..71
+      Ident@43..48 "extra"
+      TypeAnnotation@48..64
+        Colon@48..49 ":"
+        Trivia@49..50 " "
+        OptionalType@50..64
+          MapType@50..63
+            LBrace@50..51 "{"
+            NamedType@51..57
+              Ident@51..57 "string"
+            Colon@57..58 ":"
+            Trivia@58..59 " "
+            NamedType@59..62
+              Ident@59..62 "any"
+            RBrace@62..63 "}"
+          Question@63..64 "?"
+      Trivia@64..65 " "
+      Eq@65..66 "="
+      Trivia@66..67 " "
+      Literal@67..71
+        Null@67..71 "null"
+    Trivia@71..72 " "
+    SelfClose@72..74 "/>"
+  Text@74..75
+    Text@74..75 "\n"
+  FnBlock@75..183
+    OpenTag@75..82 "<lem-fn"
+    Trivia@82..83 " "
+    Head@83..145
+      Ident@83..87 "wrap"
+      Params@87..139
+        LParen@87..88 "("
+        Param@88..98
+          Ident@88..92 "page"
+          TypeAnnotation@92..98
+            Colon@92..93 ":"
+            Trivia@93..94 " "
+            NamedType@94..98
+              Ident@94..98 "Page"
+        Comma@98..99 ","
+        Trivia@99..100 " "
+        Param@100..110
+          Ident@100..104 "body"
+          TypeAnnotation@104..110
+            Colon@104..105 ":"
+            Trivia@105..106 " "
+            NamedType@106..110
+              Ident@106..110 "html"
+        Comma@110..111 ","
+        Trivia@111..112 " "
+        Param@112..138
+          Ident@112..118 "layout"
+          TypeAnnotation@118..138
+            Colon@118..119 ":"
+            Trivia@119..120 " "
+            FnType@120..138
+              LParen@120..121 "("
+              NamedType@121..125
+                Ident@121..125 "Page"
+              Comma@125..126 ","
+              Trivia@126..127 " "
+              NamedType@127..131
+                Ident@127..131 "html"
+              RParen@131..132 ")"
+              Colon@132..133 ":"
+              Trivia@133..134 " "
+              NamedType@134..138
+                Ident@134..138 "html"
+        RParen@138..139 ")"
+      TypeAnnotation@139..145
+        Colon@139..140 ":"
+        Trivia@140..141 " "
+        NamedType@141..145
+          Ident@141..145 "html"
+    Close@145..146 ">"
+    Block@146..174
+      Text@146..149
+        Text@146..149 "\n  "
+      AccessTag@149..173
+        OpenAccess@149..154 "<lem."
+        Head@154..172
+          CallExpr@154..172
+            NameRef@154..160
+              Ident@154..160 "layout"
+            ArgList@160..172
+              LParen@160..161 "("
+              NameRef@161..165
+                Ident@161..165 "page"
+              Comma@165..166 ","
+              Trivia@166..167 " "
+              NameRef@167..171
+                Ident@167..171 "body"
+              RParen@171..172 ")"
+        Close@172..173 ">"
+      Text@173..174
+        Text@173..174 "\n"
+    CloseTag@174..183
+      CloseTag@174..182 "</lem-fn"
+      Close@182..183 ">"
+  Text@183..184
+    Text@183..184 "\n"
+  FnVoid@184..254
+    OpenTag@184..191 "<lem-fn"
+    Trivia@191..192 " "
+    Head@192..251
+      Ident@192..196 "pick"
+      Params@196..233
+        LParen@196..197 "("
+        Param@197..211
+          Ident@197..199 "xs"
+          TypeAnnotation@199..211
+            Colon@199..200 ":"
+            Trivia@200..201 " "
+            ListType@201..211
+              LBracket@201..202 "["
+              OptionalType@202..210
+                NamedType@202..209
+                  Ident@202..209 "Article"
+                Question@209..210 "?"
+              RBracket@210..211 "]"
+        Comma@211..212 ","
+        Trivia@212..213 " "
+        Param@213..232
+          Ident@213..215 "by"
+          TypeAnnotation@215..232
+            Colon@215..216 ":"
+            Trivia@216..217 " "
+            FnType@217..232
+              LParen@217..218 "("
+              NamedType@218..225
+                Ident@218..225 "Article"
+              RParen@225..226 ")"
+              Colon@226..227 ":"
+              Trivia@227..228 " "
+              OptionalType@228..232
+                NamedType@228..231
+                  Ident@228..231 "int"
+                Question@231..232 "?"
+        RParen@232..233 ")"
+      TypeAnnotation@233..243
+        Colon@233..234 ":"
+        Trivia@234..235 " "
+        OptionalType@235..243
+          NamedType@235..242
+            Ident@235..242 "Article"
+          Question@242..243 "?"
+      Trivia@243..244 " "
+      Eq@244..245 "="
+      Trivia@245..246 " "
+      IndexExpr@246..251
+        NameRef@246..248
+          Ident@246..248 "xs"
+        LBracket@248..249 "["
+        Literal@249..250
+          Int@249..250 "0"
+        RBracket@250..251 "]"
+    Trivia@251..252 " "
+    SelfClose@252..254 "/>"
+  Text@254..255
+    Text@254..255 "\n"
+
+--- diagnostics

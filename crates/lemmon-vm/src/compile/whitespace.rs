@@ -206,9 +206,16 @@ impl Piece {
     /// about.
     pub(super) const fn renders_nothing(&self) -> bool {
         match self {
+            // A declaration is a statement like a definition: it renders nothing and
+            // takes its line (D27).
             Self::Tag { item, .. } => matches!(
                 item,
-                Item::LetVoid(_) | Item::LetBlock(_) | Item::FnVoid(_) | Item::FnBlock(_)
+                Item::LetVoid(_)
+                    | Item::LetBlock(_)
+                    | Item::FnVoid(_)
+                    | Item::FnBlock(_)
+                    | Item::TypeDecl(_)
+                    | Item::EnumDecl(_)
             ),
             _ => false,
         }

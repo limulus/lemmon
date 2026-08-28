@@ -12,13 +12,20 @@ Two source kinds:
 
 ## Scanner
 
-Two modes over one buffer (logos `morph()`):
+Two modes over one buffer (logos `morph()`), plus one for a single tag's body:
 
 - **Text mode** emits raw text runs. It is interrupted only by `<lem.`, `<lem-`, or
   `</lem-`. Everything else — every HTML element, custom elements, a bare `<lem>` — is
   text. `lem` is not an HTML element, so no real markup is ever misread.
 - **Tag mode** lexes the expression language between the tag name and the closing `>`:
   identifiers, literals, operators, punctuation.
+- **Fields mode** (D29) is tag mode for the body of a `lem-type`, whose fields are
+  declarations, not text. The opener's name alone selects it (invariant 4): after a
+  `<lem-type …>` head ends, a line ending is a token that ends a field — except inside
+  open brackets, where it is whitespace, so a default can be a multi-line literal (D24)
+  — and the first `<` hands back to text mode without a diagnostic, so that
+  `</lem-type>` lexes as any close tag does and anything else standing there is the
+  parser's to report.
 
 Three delimitability rules (D21):
 
@@ -64,7 +71,8 @@ Scanner rules the parser and the tree-sitter grammar must agree on:
 - There is no compile-time comment tag. HTML comments are text and pass through to the
   output — and a trigger inside one still fires.
 - `lt lte gt gte in is as true false null` are reserved words: they cannot be used as
-  identifiers or as named-argument names.
+  identifiers or as named-argument names. `extends` and `by` are contextual — keywords
+  in a `lem-type` head and a field, ordinary names anywhere else.
 
 Parser recovery rules — what a tag's shape is when its terminator or close tag
 contradicts it, and what each such mistake costs. The tree-sitter grammar must agree
@@ -98,6 +106,17 @@ follows:
   place goes unsaid, while mistakes in the tokens that are present — a `/>` on a
   block tag, a reserved word as a name, a close tag after the head — are still
   reported.
+- A `lem-type` body holds fields, one per line: `name: Type`, then `by index` if the
+  field is a reference, then `= default` if it has one. Whatever else stands on a
+  field's line is one diagnostic; a `>` there is a mistake in the field, not its end.
+  Anything the scanner handed back to text mode before the close tag — an element, a
+  tag — is reported as out of place and still parsed as items, so its tags nest and
+  close as usual.
+- `lem-case` and `lem-default` are blocks that only mean something directly inside a
+  `lem-match`, cases before the default and at most one default; anywhere else, or
+  out of order, they are reported and parsed as blocks all the same. A `lem-match`
+  body holds only those and whitespace: text or any other tag inside it is reported,
+  and still parsed.
 
 ## Tags
 
@@ -107,9 +126,9 @@ follows:
 | `lem-if` / `lem-else-if` / `lem-else` | `bool` or optional | No truthiness: condition must be `bool`, or an optional (non-null test — narrows `T?` to `T` in the branch). Separators are void. |
 | `lem-for` | `x in list` · `x, i in list` · `k, v in map` | Iteration; `<lem-else />` inside gives the empty case. Bodies cannot mutate → parallelizable later. |
 | `lem-let` | `name = expr` / `name: T = expr` → void · bare `name` → block | Immutable binding, scoped to the enclosing block. Block form binds the rendered body as `html` (the capture form; in documents the body is a document). Unused bindings warn. |
-| `lem-match` / `lem-case` / `lem-default` | subject; patterns | Patterns: subtype (`Til as t`), literal, enum variant, null. Exhaustive over enums/closed unions, else `lem-default` required. |
+| `lem-match` / `lem-case` / `lem-default` | subject; patterns | Patterns: subtype (`Til as t`), literal, enum variant (a bare name), `null`. Cases are blocks, the optional `lem-default` last. Exhaustive over enums/closed unions, else `lem-default` required. |
 | `lem-fn` | signature | **Definition only** (calls go through `lem.`). Block body returns `html`, closes `</lem-fn>`. Expression body `(…): T = expr` is void, returns any type. |
-| `lem-type` | `Name` / `Name extends Base` | Record schema; fields in the body (block). See § Schemas. |
+| `lem-type` | `Name` / `Name extends Base` | Record schema; fields in the body (block), one per line, lexed in fields mode (D29). See § Schemas. |
 | `lem-enum` | `Name = a \| b \| c` | Enum (void). Bare variant names in expressions where the enum is expected; strings in front matter. |
 | `lem-collection` | `name: Type from "glob"` · `name: Type = expr` | Site-level typed collection (void; `site.lem`). |
 | `lem-data` | `name: Type from "file"` · `… from plugin("name")` | Site-level data binding (void; `site.lem`). |
@@ -144,6 +163,12 @@ binds, never assigns; no `while`; recursion is allowed.
 for base, narrowing via `is`/`lem-match`) · enums · function types `(A, B): T`
 (`layout` aliases `(Page, html): html`) · builtin records `Page`, `Site`, `Build`.
 
+As written, a type is a name, `[T]`, `{K: V}`, or `(A, B): R`, nested freely, each
+optionally followed by `?`. The `?` binds to the type just written — `(A): R?` is a
+function returning an optional — and there is no grouping form to make a function type
+itself optional. Whether a name resolves, and whether a map's key type is `string`, is
+the checker's question, not the parser's.
+
 - `html` is trusted markup: produced by block-bodied functions, markdown rendering, and
   `raw()`. Emitted verbatim.
 - `asset` resolves against the esbuild manifest at compile/load; printing yields the
@@ -170,6 +195,8 @@ for base, narrowing via `is`/`lem-match`) · enums · function types `(A, B): T`
 </lem-type>
 ```
 
+- **Fields** are one per line, in the order `name: Type`, then `by <index>`, then
+  `= <default>`; a default may span lines inside its brackets (D29).
 - **Reference fields** (`by <index>`): the loader resolves the front-matter value
   (id or alias) against the named index; a miss is a load error at the YAML position.
 - **Computed defaults** evaluate once at load, in dependency order.

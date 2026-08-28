@@ -17,7 +17,8 @@ Root@0..102
       TypeAnnotation@25..30
         Colon@25..26 ":"
         Trivia@26..27 " "
-        Ident@27..30 "int"
+        NamedType@27..30
+          Ident@27..30 "int"
       Trivia@30..31 " "
       Eq@31..32 "="
       Trivia@32..33 " "
@@ -50,7 +51,8 @@ Root@0..102
           TypeAnnotation@76..81
             Colon@76..77 ":"
             Trivia@77..78 " "
-            Ident@78..81 "int"
+            NamedType@78..81
+              Ident@78..81 "int"
         RParen@81..82 ")"
     Close@82..83 ">"
     Block@83..84

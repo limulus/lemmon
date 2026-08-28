@@ -60,10 +60,10 @@ fn is_reserved(kind: Option<TokenKind>) -> bool {
     )
 }
 
-/// Takes an identifier where a reserved word cannot stand in for one — a member or
-/// named-argument name. A reserved word there is consumed into an `Error` node, so
-/// that the Pratt loop does not re-read it as the `in`/`is` operator.
-fn expect_name(p: &mut Parser<'_>, what: &str) {
+/// Takes an identifier where a reserved word cannot stand in for one — a member,
+/// named-argument, field, or variant name. A reserved word there is consumed into an
+/// `Error` node, so that the Pratt loop does not re-read it as the `in`/`is` operator.
+pub(super) fn expect_name(p: &mut Parser<'_>, what: &str) {
     if is_reserved(p.current()) {
         let span = p.current_span();
         let message = format!(
@@ -81,7 +81,7 @@ fn expect_name(p: &mut Parser<'_>, what: &str) {
 
 fn expr_bp(p: &mut Parser<'_>, min_bp: u8) -> Option<CompletedMarker> {
     if !p.enter() {
-        p.skip_to_head_end("expression nested too deeply");
+        p.skip_to_end("expression nested too deeply");
         return None;
     }
     let result = expr_bp_in(p, min_bp);

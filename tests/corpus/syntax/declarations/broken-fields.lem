@@ -1,0 +1,18 @@
+<lem-type Article>
+  title string
+  date: datetime extra tokens
+  in: int
+  hero: Photo? by
+  tags: [string] = [
+  next: int
+  <p>not a field</p>
+</lem-type>
+<lem-type Cut>
+  a: int
+  b: </lem-type>
+<lem-type Vod
+  id: string
+</lem-type>
+<lem-enum Size = small | />
+<lem-enum Empty = />
+<lem-enum Bad = a b />

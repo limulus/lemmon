@@ -19,16 +19,11 @@ mechanism: `delto surface` trusts these edges to decide what is eligible to work
 Seed items for the next phase (architecture doc 3, phase 1); expect these to be split
 further at claim time.
 
-- ∆up2 Type syntax — composite annotations (`[T]`, `{K: V}`, `(A, B): T`, `T?`),
-  `lem-type` blocks (fields with `= default` and `by index`, one per line, lexed in a fields
-  mode the tag name selects) and `lem-enum`, `lem-match`/`lem-case`/`lem-default`: parser,
-  AST views, corpus `.cst`/`.tags`, no semantics. Split from ∆C8d so the checker starts on
-  a tree that already holds every declaration it reads
 - ∆C8d Type checker — types, bidirectional inference, narrowing (`is`, `lem-match`,
   optionals in `lem-if`), unused warnings, diagnostics with severity and secondary spans
   through the boundary, typed lowering (`TypeTest`, `lem-match`), project-flat + ambient
   namespaces (docs/language.md §Names); `site`/`page`/`build` keep an internal unknown
-  type until ∆iCW gives them schemas; needs: ∆up2
+  type until ∆iCW gives them schemas
 - ∆iCW Schemas at load — `lem-collection`/`lem-data` in `site.lem` typing `site` and
   `Page.data`; `loadData` validates records against declared types at YAML positions,
   runs computed defaults in dependency order, resolves `by` reference fields (aliases

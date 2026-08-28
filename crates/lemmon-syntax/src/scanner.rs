@@ -1,4 +1,4 @@
-//! The scanner: one buffer, two modes.
+//! The scanner: one buffer, two modes — and a third for one tag's body.
 //!
 //! Text mode treats everything as opaque text until it sees `<lem.`, `<lem-`, or `</lem-`.
 //! Tag mode then lexes the head — the expression language — up to the first `>` or `/>`
@@ -6,6 +6,16 @@
 //! [`morph`](Lexer::morph): both modes are lexers over the same source, and the driver
 //! below moves one cursor between them. The tag-mode patterns live on [`TokenKind`]
 //! itself; the text-mode lexer is the private [`TextMode`] here.
+//!
+//! One body is not text: a `<lem-type …>` block holds field declarations, one per line,
+//! written in the expression language. Its opener's name alone decides that (invariant
+//! 4, D29), so after a `lem-type` head closes the scanner stays in the tag-mode
+//! vocabulary — *fields mode* — with two differences: a line ending is a
+//! [`Newline`](TokenKind::Newline) token rather than trivia, because it ends a field,
+//! and a `<` ends the mode without a diagnostic and rescans as text, so that the block's
+//! `</lem-type>` is lexed as any close tag is and anything else standing there is the
+//! parser's to report. A line ending inside open brackets stays trivia, so a default
+//! can be laid out one element per line like any literal (D24).
 //!
 //! The output is lossless: every byte of the source belongs to exactly one token —
 //! whitespace inside a head is [`Trivia`](TokenKind::Trivia), bytes that cannot be lexed
@@ -132,6 +142,49 @@ impl ScanResult {
         self.diagnostics
             .push(Diagnostic::new(error.message(), span));
     }
+
+    /// Pushes a run of head whitespace as fields mode sees it: each `\n` or `\r\n` is
+    /// its own [`Newline`](TokenKind::Newline), whatever lies between them is trivia.
+    fn push_line_trivia(&mut self, text: &str, span: Span) {
+        // Head whitespace is ASCII, so byte offsets are character offsets here.
+        let bytes = text.as_bytes();
+        let sub = |from: usize, to: usize| {
+            Span::new(span.start + index_u32(from), span.start + index_u32(to))
+        };
+        let (mut run, mut at) = (0, 0);
+        while at < bytes.len() {
+            let newline = match bytes[at] {
+                b'\n' => 1,
+                b'\r' if bytes.get(at + 1) == Some(&b'\n') => 2,
+                // A lone `\r` is whitespace like a space; only `\n` ends a line.
+                _ => {
+                    at += 1;
+                    continue;
+                }
+            };
+            if run < at {
+                self.push(TokenKind::Trivia, sub(run, at));
+            }
+            self.push(TokenKind::Newline, sub(at, at + newline));
+            at += newline;
+            run = at;
+        }
+        if run < bytes.len() {
+            self.push(TokenKind::Trivia, sub(run, bytes.len()));
+        }
+    }
+}
+
+fn index_u32(index: usize) -> u32 {
+    u32::try_from(index).expect("sources are smaller than 4 GiB")
+}
+
+/// How a `lem-type` body stopped.
+enum FieldsEnd {
+    /// At a `<`, at this absolute byte offset, which belongs to text mode — the
+    /// block's own close tag, or something the parser will report.
+    Reopened(u32),
+    Eof,
 }
 
 /// How a tag head stopped.
@@ -172,17 +225,21 @@ pub fn scan(src: &str) -> ScanResult {
     let mut text = TextMode::lexer(src);
     while let Some(result) = text.next() {
         let span = span_of(base, text.span());
-        match result {
+        let fields = match result {
             Ok(TextMode::Text) => {
                 out.push_text(span);
                 continue;
             }
-            Ok(opener) => out.push(opener.kind(), span),
+            Ok(opener) => {
+                out.push(opener.kind(), span);
+                // The one body that is not text: decided by the opener's name alone.
+                opener == TextMode::OpenTag && &text.slice()["<lem-".len()..] == "type"
+            }
             Err(error) => {
                 out.push_error(error, span);
                 continue;
             }
-        }
+        };
 
         let mut tag = text.morph::<TokenKind>();
         let end = loop {
@@ -201,6 +258,44 @@ pub fn scan(src: &str) -> ScanResult {
             }
         };
         match end {
+            HeadEnd::Closed if fields => {
+                // A line ending inside open brackets is whitespace, so that a default
+                // can be a multi-line literal (D24); only a line ending at depth zero
+                // ends a field.
+                let mut depth = 0usize;
+                let end = loop {
+                    let Some(result) = tag.next() else {
+                        break FieldsEnd::Eof;
+                    };
+                    let span = span_of(base, tag.span());
+                    match result {
+                        Ok(TokenKind::Trivia) if depth == 0 => {
+                            out.push_line_trivia(tag.slice(), span);
+                        }
+                        Ok(TokenKind::OpenInHead) => break FieldsEnd::Reopened(span.start),
+                        Ok(kind) => {
+                            match kind {
+                                TokenKind::LParen
+                                | TokenKind::LBracket
+                                | TokenKind::LBrace => depth += 1,
+                                TokenKind::RParen
+                                | TokenKind::RBracket
+                                | TokenKind::RBrace => depth = depth.saturating_sub(1),
+                                _ => {}
+                            }
+                            out.push(kind, span);
+                        }
+                        Err(error) => out.push_error(error, span),
+                    }
+                };
+                match end {
+                    FieldsEnd::Reopened(at) => {
+                        base = at as usize;
+                        text = TextMode::lexer(&src[base..]);
+                    }
+                    FieldsEnd::Eof => break,
+                }
+            }
             HeadEnd::Closed => text = tag.morph(),
             HeadEnd::Reopened(at) => {
                 out.diagnostics.push(Diagnostic::new(
@@ -848,6 +943,186 @@ mod tests {
         );
     }
 
+    #[test]
+    fn lexes_a_type_body_as_fields_with_newlines_ending_them() {
+        let src =
+            "<lem-type A>\n  title: string\n  hero: Photo? by site.photos\n</lem-type>";
+        assert_eq!(
+            lex(src),
+            vec![
+                (OpenTag, "<lem-type"),
+                (Trivia, " "),
+                (Ident, "A"),
+                (Close, ">"),
+                (Newline, "\n"),
+                (Trivia, "  "),
+                (Ident, "title"),
+                (Colon, ":"),
+                (Trivia, " "),
+                (Ident, "string"),
+                (Newline, "\n"),
+                (Trivia, "  "),
+                (Ident, "hero"),
+                (Colon, ":"),
+                (Trivia, " "),
+                (Ident, "Photo"),
+                (Question, "?"),
+                (Trivia, " "),
+                (Ident, "by"),
+                (Trivia, " "),
+                (Ident, "site"),
+                (Dot, "."),
+                (Ident, "photos"),
+                (Newline, "\n"),
+                (CloseTag, "</lem-type"),
+                (Close, ">"),
+            ]
+        );
+        assert_clean(src);
+    }
+
+    #[test]
+    fn splits_blank_lines_and_crlf_endings_into_one_newline_each() {
+        assert_eq!(
+            lex("<lem-type A>\r\n\r\n  a: int \r\n</lem-type>"),
+            vec![
+                (OpenTag, "<lem-type"),
+                (Trivia, " "),
+                (Ident, "A"),
+                (Close, ">"),
+                (Newline, "\r\n"),
+                (Newline, "\r\n"),
+                (Trivia, "  "),
+                (Ident, "a"),
+                (Colon, ":"),
+                (Trivia, " "),
+                (Ident, "int"),
+                (Trivia, " "),
+                (Newline, "\r\n"),
+                (CloseTag, "</lem-type"),
+                (Close, ">"),
+            ]
+        );
+    }
+
+    #[test]
+    fn treats_a_lone_carriage_return_in_a_type_body_as_trivia() {
+        assert_eq!(
+            kinds("<lem-type A>\r a: int\n"),
+            vec![OpenTag, Ident, Close, Ident, Colon, Ident, Newline]
+        );
+        assert_eq!(lex("<lem-type A>\r a: int\n")[4], (Trivia, "\r "));
+    }
+
+    #[test]
+    fn leaves_fields_mode_at_any_open_angle_without_a_diagnostic() {
+        let src = "<lem-type A>\n  a: int\n<p>x</p>\n</lem-type>";
+        assert_eq!(
+            kinds(src),
+            vec![
+                OpenTag, Ident, Close, Newline, Ident, Colon, Ident, Newline, Text,
+                CloseTag, Close
+            ]
+        );
+        assert_clean(src);
+        assert_eq!(
+            kinds("<lem-type A>\n<lem.x>"),
+            vec![OpenTag, Ident, Close, Newline, OpenAccess, Ident, Close]
+        );
+    }
+
+    #[test]
+    fn stays_in_fields_mode_across_a_stray_close_angle() {
+        // `>` never ends a field — it is the parser's to report — so a mistaken one
+        // does not turn the rest of the body into text.
+        assert_eq!(
+            kinds("<lem-type A>\n  a: int >\n  b: int\n</lem-type>"),
+            vec![
+                OpenTag, Ident, Close, Newline, Ident, Colon, Ident, Close, Newline, Ident,
+                Colon, Ident, Newline, CloseTag, Close
+            ]
+        );
+    }
+
+    #[test]
+    fn reports_a_type_body_reaching_the_end_of_input_only_through_the_parser() {
+        assert_eq!(
+            kinds("<lem-type A>\n  a: int"),
+            vec![OpenTag, Ident, Close, Newline, Ident, Colon, Ident]
+        );
+        assert_clean("<lem-type A>\n  a: int");
+    }
+
+    #[test]
+    fn enters_fields_mode_only_for_the_exact_tag_name() {
+        // `lem-Type` is no builtin: the parser rejects it, and its body is text.
+        assert_eq!(
+            kinds("<lem-Type A>\n  a: int\n"),
+            vec![OpenTag, Ident, Close, Text]
+        );
+        assert_eq!(
+            kinds("<lem-type A\n  a: int\n"),
+            vec![OpenTag, Ident, Ident, Colon, Ident]
+        );
+    }
+
+    #[test]
+    fn keeps_a_self_closed_type_head_in_fields_mode() {
+        // The name decides the shape (D21): the parser reports the `/>`, and the body
+        // is still fields.
+        assert_eq!(
+            kinds("<lem-type A />\n  a: int\n</lem-type>"),
+            vec![
+                OpenTag, Ident, SelfClose, Newline, Ident, Colon, Ident, Newline, CloseTag,
+                Close
+            ]
+        );
+    }
+
+    #[test]
+    fn keeps_line_endings_inside_brackets_as_trivia_in_a_type_body() {
+        let src = "<lem-type A>\n  xs: [int] = [\n    1,\n  ]\n  b: int\n</lem-type>";
+        assert_eq!(
+            kinds(src),
+            vec![
+                OpenTag, Ident, Close, Newline, Ident, Colon, LBracket, Ident, RBracket,
+                Eq, LBracket, Int, Comma, RBracket, Newline, Ident, Colon, Ident, Newline,
+                CloseTag, Close
+            ]
+        );
+        assert_eq!(lex(src)[16], (Trivia, "\n    "));
+    }
+
+    #[test]
+    fn lets_an_unclosed_bracket_swallow_the_lines_after_it() {
+        // Depth never goes negative, so a stray closer cannot end a line early either.
+        assert_eq!(
+            kinds("<lem-type A>\n  a: int = [\n  b: int\n</lem-type>"),
+            vec![
+                OpenTag, Ident, Close, Newline, Ident, Colon, Ident, Eq, LBracket, Ident,
+                Colon, Ident, CloseTag, Close
+            ]
+        );
+        assert_eq!(
+            kinds("<lem-type A>\n  a: int = ]\n  b: int\n</lem-type>"),
+            vec![
+                OpenTag, Ident, Close, Newline, Ident, Colon, Ident, Eq, RBracket, Newline,
+                Ident, Colon, Ident, Newline, CloseTag, Close
+            ]
+        );
+    }
+
+    #[test]
+    fn reports_scanner_errors_inside_a_type_body() {
+        assert_eq!(
+            diagnostics("<lem-type A>\n  a: @\n</lem-type>"),
+            vec![Diagnostic::new(
+                "unexpected character in tag",
+                Span::new(18, 19)
+            )]
+        );
+    }
+
     mod properties {
         use super::*;
         use proptest::prelude::*;
@@ -858,6 +1133,7 @@ mod tests {
             let fragment = prop_oneof![
                 Just("<lem.".to_string()),
                 Just("<lem-".to_string()),
+                Just("<lem-type".to_string()),
                 Just("</lem-".to_string()),
                 Just("<lem".to_string()),
                 Just("<".to_string()),
@@ -917,6 +1193,22 @@ mod tests {
             fn never_emits_a_placeholder_kind(src in source()) {
                 let result = scan(&src);
                 prop_assert!(!result.tokens.iter().any(|t| t.kind == OpenInHead));
+            }
+
+            #[test]
+            fn emits_a_newline_only_as_one_line_ending(src in source()) {
+                let result = scan(&src);
+                for token in result.tokens.iter().filter(|t| t.kind == Newline) {
+                    prop_assert!(matches!(token.text(&src), "\n" | "\r\n"), "{:?}", token);
+                }
+            }
+
+            #[test]
+            fn emits_a_newline_only_inside_a_type_body(
+                src in source().prop_filter("no type tag", |s| !s.contains("<lem-type"))
+            ) {
+                let result = scan(&src);
+                prop_assert!(!result.tokens.iter().any(|t| t.kind == Newline));
             }
 
             #[test]

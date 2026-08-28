@@ -79,7 +79,8 @@ Root@0..147
           TypeAnnotation@119..128
             Colon@119..120 ":"
             Trivia@120..121 " "
-            Ident@121..128 "Article"
+            NamedType@121..128
+              Ident@121..128 "Article"
         RParen@128..129 ")"
     Close@129..130 ">"
     Block@130..147

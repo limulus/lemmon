@@ -1,0 +1,9 @@
+Root@0..476
+  EnumDecl@0..44
+  Text@44..45
+  TypeDecl@45..345
+    CloseTag@334..345
+  Text@345..346
+  TypeDecl@346..475
+    CloseTag@464..475
+  Text@475..476

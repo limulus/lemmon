@@ -1,0 +1,22 @@
+<lem-enum Placement = hero | left | right />
+<lem-type Article>
+  title: string
+  subhead: string?
+  date: datetime
+  author: string
+  by: string?
+  hero: Photo? by site.photos
+  vod: Vod?
+  layout: layout = article
+  scripts: [asset] = [
+    asset("article.js"),
+  ]
+  draft: bool = false
+  readingTime: duration = readingTime(body)
+</lem-type>
+<lem-type LinkPost extends Article>
+  linkTitle: string
+  title: string = "Link: {linkTitle}"
+
+  extra: {string: any}
+</lem-type>

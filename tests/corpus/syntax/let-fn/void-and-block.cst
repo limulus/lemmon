@@ -33,7 +33,8 @@ Root@0..335
       TypeAnnotation@66..71
         Colon@66..67 ":"
         Trivia@67..68 " "
-        Ident@68..71 "int"
+        NamedType@68..71
+          Ident@68..71 "int"
       Trivia@71..72 " "
       Eq@72..73 "="
       Trivia@73..74 " "
@@ -53,8 +54,10 @@ Root@0..335
       TypeAnnotation@99..108
         Colon@99..100 ":"
         Trivia@100..101 " "
-        Ident@101..107 "string"
-        Question@107..108 "?"
+        OptionalType@101..108
+          NamedType@101..107
+            Ident@101..107 "string"
+          Question@107..108 "?"
       Trivia@108..109 " "
       Eq@109..110 "="
       Trivia@110..111 " "
@@ -112,7 +115,8 @@ Root@0..335
           TypeAnnotation@224..233
             Colon@224..225 ":"
             Trivia@225..226 " "
-            Ident@226..233 "Article"
+            NamedType@226..233
+              Ident@226..233 "Article"
         Comma@233..234 ","
         Trivia@234..235 " "
         Param@235..246
@@ -120,8 +124,10 @@ Root@0..335
           TypeAnnotation@239..246
             Colon@239..240 ":"
             Trivia@240..241 " "
-            Ident@241..245 "Size"
-            Question@245..246 "?"
+            OptionalType@241..246
+              NamedType@241..245
+                Ident@241..245 "Size"
+              Question@245..246 "?"
         RParen@246..247 ")"
     Close@247..248 ">"
     Block@248..290

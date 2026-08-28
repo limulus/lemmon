@@ -1,0 +1,187 @@
+Root@0..310
+  TypeDecl@0..157
+    OpenTag@0..9 "<lem-type"
+    Trivia@9..10 " "
+    Head@10..17
+      Ident@10..17 "Article"
+    Close@17..18 ">"
+    FieldList@18..124
+      Newline@18..19 "\n"
+      Trivia@19..21 "  "
+      Field@21..33
+        Ident@21..26 "title"
+        Trivia@26..27 " "
+        Error@27..33
+          Ident@27..33 "string"
+      Newline@33..34 "\n"
+      Trivia@34..36 "  "
+      Field@36..63
+        Ident@36..40 "date"
+        TypeAnnotation@40..50
+          Colon@40..41 ":"
+          Trivia@41..42 " "
+          NamedType@42..50
+            Ident@42..50 "datetime"
+        Trivia@50..51 " "
+        Error@51..63
+          Ident@51..56 "extra"
+          Trivia@56..57 " "
+          Ident@57..63 "tokens"
+      Newline@63..64 "\n"
+      Trivia@64..66 "  "
+      Field@66..73
+        Error@66..68
+          In@66..68 "in"
+        TypeAnnotation@68..73
+          Colon@68..69 ":"
+          Trivia@69..70 " "
+          NamedType@70..73
+            Ident@70..73 "int"
+      Newline@73..74 "\n"
+      Trivia@74..76 "  "
+      Field@76..91
+        Ident@76..80 "hero"
+        TypeAnnotation@80..88
+          Colon@80..81 ":"
+          Trivia@81..82 " "
+          OptionalType@82..88
+            NamedType@82..87
+              Ident@82..87 "Photo"
+            Question@87..88 "?"
+        Trivia@88..89 " "
+        Ident@89..91 "by"
+      Newline@91..92 "\n"
+      Trivia@92..94 "  "
+      Field@94..124
+        Ident@94..98 "tags"
+        TypeAnnotation@98..108
+          Colon@98..99 ":"
+          Trivia@99..100 " "
+          ListType@100..108
+            LBracket@100..101 "["
+            NamedType@101..107
+              Ident@101..107 "string"
+            RBracket@107..108 "]"
+        Trivia@108..109 " "
+        Eq@109..110 "="
+        Trivia@110..111 " "
+        ListLit@111..119
+          LBracket@111..112 "["
+          Trivia@112..115 "\n  "
+          NameRef@115..119
+            Ident@115..119 "next"
+        Error@119..124
+          Colon@119..120 ":"
+          Trivia@120..121 " "
+          Ident@121..124 "int"
+    Trivia@124..127 "\n  "
+    Block@127..146
+      Text@127..146
+        Text@127..146 "<p>not a field</p>\n"
+    CloseTag@146..157
+      CloseTag@146..156 "</lem-type"
+      Close@156..157 ">"
+  Text@157..158
+    Text@157..158 "\n"
+  TypeDecl@158..198
+    OpenTag@158..167 "<lem-type"
+    Trivia@167..168 " "
+    Head@168..171
+      Ident@168..171 "Cut"
+    Close@171..172 ">"
+    FieldList@172..186
+      Newline@172..173 "\n"
+      Trivia@173..175 "  "
+      Field@175..181
+        Ident@175..176 "a"
+        TypeAnnotation@176..181
+          Colon@176..177 ":"
+          Trivia@177..178 " "
+          NamedType@178..181
+            Ident@178..181 "int"
+      Newline@181..182 "\n"
+      Trivia@182..184 "  "
+      Field@184..186
+        Ident@184..185 "b"
+        TypeAnnotation@185..186
+          Colon@185..186 ":"
+    Trivia@186..187 " "
+    CloseTag@187..198
+      CloseTag@187..197 "</lem-type"
+      Close@197..198 ">"
+  Text@198..199
+    Text@198..199 "\n"
+  TypeDecl@199..237
+    OpenTag@199..208 "<lem-type"
+    Trivia@208..209 " "
+    Head@209..225
+      Ident@209..212 "Vod"
+      Trivia@212..215 "\n  "
+      Error@215..225
+        Ident@215..217 "id"
+        Colon@217..218 ":"
+        Trivia@218..219 " "
+        Ident@219..225 "string"
+    Trivia@225..226 "\n"
+    FieldList@226..226
+    CloseTag@226..237
+      CloseTag@226..236 "</lem-type"
+      Close@236..237 ">"
+  Text@237..238
+    Text@237..238 "\n"
+  EnumDecl@238..265
+    OpenTag@238..247 "<lem-enum"
+    Trivia@247..248 " "
+    Head@248..262
+      Ident@248..252 "Size"
+      Trivia@252..253 " "
+      Eq@253..254 "="
+      Trivia@254..255 " "
+      Ident@255..260 "small"
+      Trivia@260..261 " "
+      Pipe@261..262 "|"
+    Trivia@262..263 " "
+    SelfClose@263..265 "/>"
+  Text@265..266
+    Text@265..266 "\n"
+  EnumDecl@266..286
+    OpenTag@266..275 "<lem-enum"
+    Trivia@275..276 " "
+    Head@276..283
+      Ident@276..281 "Empty"
+      Trivia@281..282 " "
+      Eq@282..283 "="
+    Trivia@283..284 " "
+    SelfClose@284..286 "/>"
+  Text@286..287
+    Text@286..287 "\n"
+  EnumDecl@287..309
+    OpenTag@287..296 "<lem-enum"
+    Trivia@296..297 " "
+    Head@297..306
+      Ident@297..300 "Bad"
+      Trivia@300..301 " "
+      Eq@301..302 "="
+      Trivia@302..303 " "
+      Ident@303..304 "a"
+      Trivia@304..305 " "
+      Error@305..306
+        Ident@305..306 "b"
+    Trivia@306..307 " "
+    SelfClose@307..309 "/>"
+  Text@309..310
+    Text@309..310 "\n"
+
+--- diagnostics
+27..33: expected `: Type`, found `string`
+51..63: unexpected `extra` after the field
+66..68: `in` is a reserved word and cannot be used as a field name
+91..92: expected an expression before the end of the line
+119..120: expected `]`, found `:`
+127..146: `lem-type` holds only fields, one `name: Type` per line
+187..197: expected a type before the end of the line
+199..226: unterminated tag: expected `>` before `<`
+215..225: unexpected `id` in tag head
+263..265: expected a variant name before `/>`
+284..286: expected a variant name before `/>`
+305..306: unexpected `b` in tag head

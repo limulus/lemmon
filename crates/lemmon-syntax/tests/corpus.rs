@@ -14,7 +14,9 @@
 use std::collections::BTreeSet;
 
 use lemmon_corpus::Case;
-use lemmon_syntax::ast::{AstNode, Block, Expr, IfArm, Item, Params, TypeAnnotation};
+use lemmon_syntax::ast::{
+    AstNode, Block, Expr, IfArm, Item, Params, TypeAnnotation, TypeExpr,
+};
 use lemmon_syntax::{
     Parse, Span, SyntaxKind, SyntaxNode, dump, parse, parse_document, tag_dump,
 };
@@ -204,13 +206,34 @@ fn visit_signature(
         out.push(range(params.syntax()));
         for param in params.params() {
             out.push(range(param.syntax()));
-            if let Some(ty) = param.type_annotation() {
-                out.push(range(ty.syntax()));
-            }
+            visit_annotation(param.type_annotation(), out);
         }
     }
-    if let Some(ty) = ret {
-        out.push(range(ty.syntax()));
+    visit_annotation(ret, out);
+}
+
+fn visit_annotation(annotation: Option<TypeAnnotation>, out: &mut Vec<(u32, u32)>) {
+    if let Some(annotation) = annotation {
+        out.push(range(annotation.syntax()));
+        visit_type(annotation.ty(), out);
+    }
+}
+
+fn visit_type(ty: Option<TypeExpr>, out: &mut Vec<(u32, u32)>) {
+    let Some(ty) = ty else { return };
+    out.push(range(ty.syntax()));
+    match &ty {
+        TypeExpr::Named(_) => {}
+        TypeExpr::Optional(o) => visit_type(o.inner(), out),
+        TypeExpr::List(l) => visit_type(l.element(), out),
+        TypeExpr::Map(m) => {
+            visit_type(m.key(), out);
+            visit_type(m.value(), out);
+        }
+        TypeExpr::Fn(f) => {
+            f.params().for_each(|t| visit_type(Some(t), out));
+            visit_type(f.ret(), out);
+        }
     }
 }
 
@@ -244,9 +267,7 @@ fn visit_items(items: impl Iterator<Item = Item>, out: &mut Vec<(u32, u32)>) {
                 visit_items(tag.else_items().into_iter().flatten(), out);
             }
             Item::LetVoid(tag) => {
-                if let Some(ty) = tag.type_annotation() {
-                    out.push(range(ty.syntax()));
-                }
+                visit_annotation(tag.type_annotation(), out);
                 visit_expr(tag.value(), out);
             }
             Item::LetBlock(tag) => visit_block(tag.body(), out),
@@ -257,6 +278,34 @@ fn visit_items(items: impl Iterator<Item = Item>, out: &mut Vec<(u32, u32)>) {
             Item::FnVoid(tag) => {
                 visit_signature(tag.params(), tag.return_type(), out);
                 visit_expr(tag.value(), out);
+            }
+            Item::TypeDecl(tag) => {
+                for field in tag.fields() {
+                    out.push(range(field.syntax()));
+                    visit_annotation(field.type_annotation(), out);
+                    visit_expr(field.index(), out);
+                    visit_expr(field.default(), out);
+                }
+            }
+            Item::EnumDecl(_) => {}
+            Item::Match(tag) => {
+                visit_expr(tag.subject(), out);
+                // The block's own items are the layout text between the cases.
+                visit_block(tag.block(), out);
+                for case in tag.cases() {
+                    out.push(range(case.syntax()));
+                    if let Some(pattern) = case.pattern() {
+                        out.push(range(pattern.syntax()));
+                        if let Some(literal) = pattern.literal() {
+                            out.push(range(literal.syntax()));
+                        }
+                    }
+                    visit_block(case.body(), out);
+                }
+                if let Some(default) = tag.default() {
+                    out.push(range(default.syntax()));
+                    visit_block(default.body(), out);
+                }
             }
             Item::Unsupported(tag) => visit_block(tag.body(), out),
         }
@@ -272,6 +321,7 @@ fn is_structural(kind: SyntaxKind) -> bool {
         SyntaxKind::Root
             | SyntaxKind::Head
             | SyntaxKind::Block
+            | SyntaxKind::FieldList
             | SyntaxKind::CloseTag
             | SyntaxKind::ElseIfTag
             | SyntaxKind::ElseTag

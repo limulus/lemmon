@@ -186,6 +186,11 @@ fn is_boundary(kind: SyntaxKind, in_items: bool) -> bool {
             | SyntaxKind::LetBlock
             | SyntaxKind::FnBlock
             | SyntaxKind::FnVoid
+            | SyntaxKind::TypeDecl
+            | SyntaxKind::EnumDecl
+            | SyntaxKind::MatchTag
+            | SyntaxKind::CaseTag
+            | SyntaxKind::DefaultTag
             | SyntaxKind::UnsupportedTag
             | SyntaxKind::UnknownTag
             | SyntaxKind::CloseTag
@@ -293,6 +298,9 @@ struct Parser<'src> {
     /// scanner reported it; whatever the grammar expected in its place goes unsaid,
     /// while diagnostics about the tokens that are present are still reported.
     displaced: bool,
+    /// Whether a `lem-type` field is being parsed, so that the constructs a field is
+    /// made of end at its line rather than at a head's `>` (D29).
+    in_fields: bool,
     /// Current nesting of blocks and bracketed expressions, capped at [`MAX_DEPTH`].
     depth: u32,
 }
@@ -312,6 +320,7 @@ impl<'src> Parser<'src> {
             diagnostics: Vec::new(),
             error_pos: None,
             displaced: false,
+            in_fields: false,
             depth: 0,
         };
         parser.skip_insignificant();
@@ -379,8 +388,13 @@ impl<'src> Parser<'src> {
 
     /// Whether the head was cut short by the scanner rather than closed. The scanner
     /// already reported that, so anything the parser was still expecting goes unsaid.
+    ///
+    /// Inside a field this is never true: fields mode leaves at a `<` as a matter of
+    /// course — that is how `</lem-type>` is reached — and the scanner reports nothing,
+    /// so a field cut short by the close tag is the parser's to report like any other.
     fn at_cut_head(&self) -> bool {
-        self.at_head_end()
+        !self.in_fields
+            && self.at_head_end()
             && !matches!(
                 self.current(),
                 Some(TokenKind::Close | TokenKind::SelfClose)
@@ -423,7 +437,13 @@ impl<'src> Parser<'src> {
             return;
         }
         let span = self.current_span();
+        // A field ends at its line, whether that line ends with a newline or with the
+        // `</lem-type>` the body ends at; either way the field is where the mistake is.
+        let ends_the_field = self.in_fields && self.at_field_end();
         let message = match self.current() {
+            _ if ends_the_field && self.current().is_some() => {
+                format!("expected {what} before the end of the line")
+            }
             Some(TokenKind::Close | TokenKind::SelfClose) => {
                 format!("expected {what} before `{}`", self.current_text())
             }
@@ -494,14 +514,54 @@ impl<'src> Parser<'src> {
     /// Wraps every token up to the end of the head in an `Error` node, with one
     /// diagnostic covering them. Nothing happens when already at the head's end.
     fn skip_to_head_end(&mut self, message: &str) {
-        if self.at_head_end() {
+        self.skip_while(message, |p| !p.at_head_end());
+    }
+
+    /// Whether the current token ends a field: a line ending, or what ends a head the
+    /// scanner cut — a text-mode token or the end of input. A `>` does not: fields
+    /// mode runs to the block's close tag, so a stray one is a mistake inside the
+    /// field, not its end.
+    fn at_field_end(&self) -> bool {
+        self.current().is_none_or(|kind| {
+            kind == TokenKind::Newline || SyntaxKind::from(kind).is_text_mode()
+        })
+    }
+
+    /// Wraps every token up to the end of the line in an `Error` node, with one
+    /// diagnostic covering them. Nothing happens when already at the line's end.
+    fn skip_to_field_end(&mut self, message: &str) {
+        self.skip_while(message, |p| !p.at_field_end());
+    }
+
+    /// Skips to the end of whatever the current construct sits in: a field's line, or
+    /// a tag's head. What recovery from inside an expression or a type wants, since
+    /// either can stand in both places.
+    fn skip_to_end(&mut self, message: &str) {
+        if self.in_fields {
+            self.skip_to_field_end(message);
+        } else {
+            self.skip_to_head_end(message);
+        }
+    }
+
+    /// Parses `f` as part of a `lem-type` field, restoring the previous mode after —
+    /// so that a `lem-type` nested in another's body is parsed like any other.
+    fn in_fields<T>(&mut self, f: impl FnOnce(&mut Self) -> T) -> T {
+        let previous = std::mem::replace(&mut self.in_fields, true);
+        let result = f(self);
+        self.in_fields = previous;
+        result
+    }
+
+    fn skip_while(&mut self, message: &str, more: impl Fn(&Self) -> bool) {
+        if !more(self) {
             return;
         }
         let stale = self.stale();
         let start = self.current_span().start;
         let marker = self.start();
         let mut end = start;
-        while !self.at_head_end() {
+        while more(self) {
             end = self.current_span().end;
             self.bump();
         }
@@ -706,11 +766,8 @@ mod tests {
             ]
         );
         assert_eq!(
-            messages("<lem-let x: @[int] = 1 />"),
-            vec![
-                "unexpected character in tag",
-                "composite types are not supported yet: only `T` and `T?`",
-            ]
+            messages("<lem-let x: @[int = 1 />"),
+            vec!["unexpected character in tag", "expected `]`, found `=`"]
         );
     }
 

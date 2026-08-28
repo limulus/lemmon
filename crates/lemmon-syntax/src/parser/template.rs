@@ -78,25 +78,25 @@ impl Builtin {
             .map(|(_, _, n)| n)
     }
 
-    /// Whether the tag is a block. `lem-let` and `lem-fn` decide by their heads and
-    /// are dispatched before this is consulted.
+    /// Whether the tag is a block — for the builtins the parser keeps opaquely. The
+    /// ones it parses are dispatched by name before this is consulted.
     fn is_block(self) -> bool {
         match self {
-            Self::Let | Self::Fn => {
-                unreachable!("`lem-let` and `lem-fn` are decided by their heads")
-            }
             Self::If
+            | Self::ElseIf
+            | Self::Else
             | Self::For
+            | Self::Let
+            | Self::Fn
             | Self::Match
             | Self::Case
             | Self::Default
             | Self::Type
-            | Self::Style
-            | Self::Head => true,
-            Self::ElseIf
-            | Self::Else
-            | Self::Enum
-            | Self::Collection
+            | Self::Enum => {
+                unreachable!("parsed builtins are dispatched by name")
+            }
+            Self::Style | Self::Head => true,
+            Self::Collection
             | Self::Data
             | Self::Page
             | Self::Import
@@ -138,7 +138,27 @@ enum Body {
     For {
         seen_else: bool,
     },
+    /// `lem-case`s, then at most one `lem-default`, and nothing else.
+    Match {
+        seen_default: bool,
+    },
+    /// The fields of a `lem-type`, which are parsed before [`items`] runs; anything
+    /// `items` then finds before the close tag is a mistake.
+    Fields,
     Plain,
+}
+
+impl Body {
+    /// What this body refuses, when it holds only its own parts.
+    const fn refuses(self) -> Option<&'static str> {
+        match self {
+            Self::Match { .. } => {
+                Some("`lem-match` holds only `lem-case` and `lem-default`")
+            }
+            Self::Fields => Some("`lem-type` holds only fields, one `name: Type` per line"),
+            Self::If { .. } | Self::For { .. } | Self::Plain => None,
+        }
+    }
 }
 
 /// A block tag whose close has not been seen yet.
@@ -202,12 +222,27 @@ fn item<'src>(p: &mut Parser<'src>, stack: &mut Vec<Open<'src>>) -> Option<BodyE
     match p.current() {
         None => return Some(BodyEnd::Eof),
         Some(TokenKind::Text) => {
+            // Whitespace between a match's cases is layout, not content.
+            if !p.current_text().trim().is_empty() {
+                refuse_in_body(p, stack);
+            }
             let m = p.start();
             p.bump();
             m.complete(p, SyntaxKind::TextRun);
         }
-        Some(TokenKind::OpenAccess) => access_tag(p),
-        Some(TokenKind::OpenTag) => open_tag(p, stack),
+        Some(TokenKind::OpenAccess) => {
+            refuse_in_body(p, stack);
+            access_tag(p);
+        }
+        Some(TokenKind::OpenTag) => {
+            let name = &p.current_text()["<lem-".len()..];
+            let own_part = matches!(stack.last().map(|o| o.body), Some(Body::Match { .. }))
+                && matches!(name, "case" | "default");
+            if !own_part {
+                refuse_in_body(p, stack);
+            }
+            open_tag(p, stack);
+        }
         Some(TokenKind::CloseTag) => {
             let name = &p.current_text()["</lem-".len()..];
             if stack.last().is_some_and(|top| top.name == name) {
@@ -250,6 +285,14 @@ fn item<'src>(p: &mut Parser<'src>, stack: &mut Vec<Open<'src>>) -> Option<BodyE
         }
     }
     None
+}
+
+/// Reports the current item when the innermost open body holds only its own parts.
+fn refuse_in_body(p: &mut Parser<'_>, stack: &[Open<'_>]) {
+    if let Some(message) = stack.last().and_then(|o| o.body.refuses()) {
+        let span = p.current_span();
+        p.error(message, span);
+    }
 }
 
 /// `<lem.expr>`
@@ -369,6 +412,45 @@ fn open_tag<'src>(p: &mut Parser<'src>, stack: &mut Vec<Open<'src>>) {
                 head(p, fn_signature);
                 block(p, m, SyntaxKind::FnBlock, name, span, Body::Plain, stack);
             }
+        }
+        Builtin::Type => {
+            head(p, type_head);
+            type_block(p, m, name, span, stack);
+        }
+        Builtin::Enum => {
+            head(p, enum_head);
+            void_close(p);
+            m.complete(p, SyntaxKind::EnumDecl);
+        }
+        Builtin::Match => {
+            head(p, |p| {
+                expr::expression(p);
+            });
+            block(
+                p,
+                m,
+                SyntaxKind::MatchTag,
+                name,
+                span,
+                Body::Match {
+                    seen_default: false,
+                },
+                stack,
+            );
+        }
+        Builtin::Case | Builtin::Default => {
+            place_case(p, builtin, span, stack);
+            let kind = match builtin {
+                Builtin::Case => {
+                    head(p, pattern);
+                    SyntaxKind::CaseTag
+                }
+                _ => {
+                    head(p, |p| p.skip_to_head_end("`lem-default` takes no head"));
+                    SyntaxKind::DefaultTag
+                }
+            };
+            block(p, m, kind, name, span, Body::Plain, stack);
         }
         _ => {
             p.error(format!("`lem-{name}` is not supported yet"), span);
@@ -518,6 +600,176 @@ fn separator(
     m.complete(p, kind);
 }
 
+/// `lem-case` and `lem-default`, which are only meaningful directly inside a
+/// `lem-match`, cases first. Reported like a misplaced separator; the tag is still
+/// parsed as the block its name says it is.
+fn place_case(p: &mut Parser<'_>, builtin: Builtin, span: Span, stack: &mut [Open<'_>]) {
+    let tag = match builtin {
+        Builtin::Case => "lem-case",
+        _ => "lem-default",
+    };
+    let problem = match (stack.last_mut().map(|o| &mut o.body), builtin) {
+        (Some(Body::Match { seen_default: true }), Builtin::Case) => {
+            Some(format!("`{tag}` cannot follow `lem-default`"))
+        }
+        (Some(Body::Match { seen_default: true }), _) => Some(format!(
+            "duplicate `{tag}`: a `lem-match` has at most one `lem-default`"
+        )),
+        (Some(Body::Match { seen_default }), Builtin::Default) => {
+            *seen_default = true;
+            None
+        }
+        (Some(Body::Match { .. }), _) => None,
+        _ => Some(format!("`{tag}` outside `lem-match`")),
+    };
+    if let Some(message) = problem {
+        p.error(message, span);
+    }
+}
+
+/// The head of a `lem-case`: a literal, `null`, a variant name, or `Type as name`.
+/// Nothing is opened for a missing pattern, so the node is never empty.
+fn pattern(p: &mut Parser<'_>) {
+    match p.current() {
+        Some(
+            TokenKind::Int
+            | TokenKind::Float
+            | TokenKind::StringLit
+            | TokenKind::True
+            | TokenKind::False
+            | TokenKind::Null,
+        ) => {
+            let m = p.start();
+            let literal = p.start();
+            p.bump();
+            literal.complete(p, SyntaxKind::Literal);
+            m.complete(p, SyntaxKind::Pattern);
+        }
+        Some(TokenKind::Ident) => {
+            let m = p.start();
+            p.bump();
+            if p.eat(TokenKind::As) {
+                p.expect(TokenKind::Ident, "a name to bind");
+            }
+            m.complete(p, SyntaxKind::Pattern);
+        }
+        _ => p.error_expected("a pattern"),
+    }
+}
+
+/// `Name` or `Name extends Base`. `extends` is contextual: an identifier here, a plain
+/// name anywhere else.
+fn type_head(p: &mut Parser<'_>) {
+    p.expect(TokenKind::Ident, "a type name");
+    if p.at(TokenKind::Ident) && p.current_text() == "extends" {
+        p.bump();
+        p.expect(TokenKind::Ident, "a base type name");
+    }
+}
+
+/// `Name = a | b | c`
+fn enum_head(p: &mut Parser<'_>) {
+    p.expect(TokenKind::Ident, "an enum name");
+    skip_until(p, TokenKind::Eq, "unexpected tokens before `=`");
+    p.expect(TokenKind::Eq, "`=`");
+    loop {
+        expr::expect_name(p, "a variant name");
+        if !p.eat(TokenKind::Pipe) {
+            break;
+        }
+    }
+}
+
+/// The `>`, fields, and close tag of a `lem-type`, then completes `m` as a
+/// `TypeDecl`. The fields are lexed in fields mode (D29) and parsed here one per
+/// line; what stands between the last field and the close tag — which the scanner
+/// handed back to text mode at a `<` — is parsed as items so that its tags nest and
+/// close as usual, each reported as out of place.
+fn type_block<'src>(
+    p: &mut Parser<'src>,
+    m: Marker,
+    name: &'src str,
+    span: Span,
+    stack: &mut Vec<Open<'src>>,
+) {
+    let cut = p.at_cut_head();
+    block_close(p, name);
+    if !p.enter() {
+        p.error(format!("`lem-{name}` is nested too deeply"), span);
+        m.complete(p, SyntaxKind::TypeDecl);
+        return;
+    }
+    fields(p);
+    stack.push(Open {
+        name,
+        body: Body::Fields,
+    });
+    let at_own_close =
+        p.at(TokenKind::CloseTag) && &p.current_text()["</lem-".len()..] == name;
+    let end = if at_own_close || p.current().is_none() {
+        items(p, stack)
+    } else {
+        let stray = p.start();
+        let end = items(p, stack);
+        stray.complete(p, SyntaxKind::Block);
+        end
+    };
+    stack.pop();
+    p.leave();
+    match end {
+        BodyEnd::Matched => close_tag(p),
+        BodyEnd::OuterClose => {}
+        BodyEnd::Eof if cut => {}
+        BodyEnd::Eof => p.error(
+            format!("unclosed `lem-{name}`: expected `</lem-{name}>` before end of input"),
+            span,
+        ),
+    }
+    m.complete(p, SyntaxKind::TypeDecl);
+}
+
+/// The fields of a `lem-type`, up to the first text-mode token or the end of input.
+/// Blank lines are allowed between fields.
+fn field_list(p: &mut Parser<'_>) {
+    let m = p.start();
+    loop {
+        while p.eat(TokenKind::Newline) {}
+        if p.at_field_end() {
+            break;
+        }
+        field(p);
+    }
+    m.complete(p, SyntaxKind::FieldList);
+}
+
+/// `name: Type [by index] [= default]`, ending at its line. Whatever else stands on
+/// the line is skipped with one diagnostic, which is also what keeps [`field_list`]
+/// moving over a line that starts with junk.
+fn field(p: &mut Parser<'_>) {
+    let m = p.start();
+    expr::expect_name(p, "a field name");
+    if p.at(TokenKind::Colon) {
+        type_annotation(p);
+    } else {
+        p.error_expected("`: Type`");
+    }
+    if p.at(TokenKind::Ident) && p.current_text() == "by" {
+        p.bump();
+        expr::expression(p);
+    }
+    if p.eat(TokenKind::Eq) {
+        expr::expression(p);
+    }
+    let message = format!("unexpected `{}` after the field", p.current_text());
+    p.skip_to_field_end(&message);
+    m.complete(p, SyntaxKind::Field);
+}
+
+/// The fields of a `lem-type`, parsed in fields mode.
+fn fields(p: &mut Parser<'_>) {
+    p.in_fields(field_list);
+}
+
 /// `x in xs`, `x, i in xs`, `k, v in m`
 fn for_head(p: &mut Parser<'_>) {
     let m = p.start();
@@ -584,57 +836,65 @@ fn param(p: &mut Parser<'_>) {
     m.complete(p, SyntaxKind::Param);
 }
 
-/// `: Type` or `: Type?`. A composite type — `[T]`, `{K: V}`, `(A): T` — is recognised
-/// by its opening bracket, kept whole as an `Error` node, and reported as unsupported.
+/// `: Type`
 fn type_annotation(p: &mut Parser<'_>) {
     let m = p.start();
     p.bump();
-    if matches!(
-        p.current(),
-        Some(TokenKind::LBracket | TokenKind::LBrace | TokenKind::LParen)
-    ) {
-        composite_type(p);
-    } else if p.expect(TokenKind::Ident, "a type name") {
-        p.eat(TokenKind::Question);
-    }
+    type_expr(p);
     m.complete(p, SyntaxKind::TypeAnnotation);
 }
 
-/// Consumes a bracketed type, plus a `: T` return type after a `(…)`, up to its
-/// balancing close bracket.
-fn composite_type(p: &mut Parser<'_>) {
-    let stale = p.in_error_state();
-    let start = p.current_span().start;
-    let mut end = start;
+/// A type: a name, `[T]`, `{K: V}`, or `(A, B): R`, each optionally followed by `?`.
+/// The `?` binds to the type just written, so `(A): R?` returns an optional; there is
+/// no grouping form to make the function type itself optional. A missing type is
+/// reported where it should have been.
+fn type_expr(p: &mut Parser<'_>) {
+    if !p.enter() {
+        p.skip_to_end("type nested too deeply");
+        return;
+    }
+    type_expr_in(p);
+    p.leave();
+}
+
+fn type_expr_in(p: &mut Parser<'_>) {
+    let kind = match p.current() {
+        Some(TokenKind::Ident) => SyntaxKind::NamedType,
+        Some(TokenKind::LBracket) => SyntaxKind::ListType,
+        Some(TokenKind::LBrace) => SyntaxKind::MapType,
+        Some(TokenKind::LParen) => SyntaxKind::FnType,
+        _ => {
+            p.error_expected("a type");
+            return;
+        }
+    };
     let m = p.start();
-    let mut depth = 0usize;
-    // A `=` can only be the void marker after the type, never part of it.
-    while !p.at_head_end() && !p.at(TokenKind::Eq) {
-        match p.current() {
-            Some(TokenKind::LParen | TokenKind::LBracket | TokenKind::LBrace) => depth += 1,
-            Some(TokenKind::RParen | TokenKind::RBracket | TokenKind::RBrace) => {
-                depth -= 1;
-            }
-            _ => {}
+    p.bump();
+    match kind {
+        SyntaxKind::ListType => {
+            type_expr(p);
+            p.expect(TokenKind::RBracket, "`]`");
         }
-        end = p.current_span().end;
-        p.bump();
-        if depth == 0 {
-            break;
+        SyntaxKind::MapType => {
+            type_expr(p);
+            p.expect(TokenKind::Colon, "`:`");
+            type_expr(p);
+            p.expect(TokenKind::RBrace, "`}`");
         }
+        SyntaxKind::FnType => {
+            expr::comma_list(p, TokenKind::RParen, |p| {
+                type_expr(p);
+            });
+            p.expect(TokenKind::Colon, "`:` and a return type");
+            type_expr(p);
+        }
+        _ => {}
     }
-    if p.at(TokenKind::Colon) && p.nth(1) == Some(TokenKind::Ident) {
+    let mut done = m.complete(p, kind);
+    while p.at(TokenKind::Question) {
+        let m = p.precede(done);
         p.bump();
-        end = p.current_span().end;
-        p.bump();
-    }
-    p.eat(TokenKind::Question);
-    m.complete(p, SyntaxKind::Error);
-    if !stale {
-        p.error_skipped(
-            "composite types are not supported yet: only `T` and `T?`",
-            Span::new(start, end),
-        );
+        done = m.complete(p, SyntaxKind::OptionalType);
     }
 }
 
@@ -685,9 +945,9 @@ mod tests {
     }
 
     #[test]
-    fn knows_the_fixed_shape_of_every_other_builtin() {
-        assert!(Builtin::Match.is_block());
-        assert!(!Builtin::Else.is_block());
+    fn knows_the_fixed_shape_of_every_opaque_builtin() {
+        assert!(Builtin::Style.is_block());
+        assert!(!Builtin::Script.is_block());
     }
 }
 
@@ -737,10 +997,10 @@ mod parse_tests {
     #[test]
     fn tracks_the_nesting_of_an_unsupported_block_builtin() {
         assert_eq!(
-            messages("<lem-match x><lem-case 1>a</lem-case></lem-match>"),
+            messages("<lem-style><lem-head>a</lem-head></lem-style>"),
             vec![
-                "`lem-match` is not supported yet",
-                "`lem-case` is not supported yet"
+                "`lem-style` is not supported yet",
+                "`lem-head` is not supported yet"
             ]
         );
     }
@@ -830,10 +1090,10 @@ mod parse_tests {
     }
 
     #[test]
-    fn stops_a_composite_type_at_the_void_marker() {
+    fn reports_an_unclosed_list_type_at_the_void_marker() {
         assert_eq!(
             messages("<lem-let x: [int = 1 />"),
-            vec!["composite types are not supported yet: only `T` and `T?`"]
+            vec!["expected `]`, found `=`"]
         );
     }
 
@@ -955,10 +1215,10 @@ mod parse_tests {
     #[test]
     fn still_reports_an_unclosed_block_after_an_error_at_its_opener() {
         assert_eq!(
-            messages("<lem-match x>hello"),
+            messages("<lem-style>hello"),
             vec![
-                "`lem-match` is not supported yet",
-                "unclosed `lem-match`: expected `</lem-match>` before end of input",
+                "`lem-style` is not supported yet",
+                "unclosed `lem-style`: expected `</lem-style>` before end of input",
             ]
         );
     }
@@ -976,21 +1236,45 @@ mod parse_tests {
     }
 
     #[test]
-    fn reports_composite_types_as_unsupported() {
-        let message = "composite types are not supported yet: only `T` and `T?`";
+    fn parses_composite_types_clean() {
+        for src in [
+            "<lem-fn f(xs: [Article])></lem-fn>",
+            "<lem-let m: {string: int} = {} />",
+            "<lem-fn f(a: int): (int): html></lem-fn>",
+            "<lem-fn f(g: (Page, html): html?, h: (): [int]?)></lem-fn>",
+        ] {
+            assert_eq!(messages(src), Vec::<String>::new(), "{src}");
+        }
+    }
+
+    #[test]
+    fn requires_a_return_type_on_a_function_type() {
         assert_eq!(
-            messages("<lem-fn f(xs: [Article])></lem-fn>"),
-            vec![message]
+            messages("<lem-fn f(g: (int))></lem-fn>"),
+            vec!["expected `:` and a return type, found `)`"]
         );
-        assert_eq!(messages("<lem-let m: {string: int} = {} />"), vec![message]);
+    }
+
+    #[test]
+    fn reports_a_missing_type_after_a_bracket_once() {
         assert_eq!(
-            messages("<lem-fn f(a: int): (int): html></lem-fn>"),
-            vec![message]
+            messages("<lem-let x: [] = 1 />"),
+            vec!["expected a type, found `]`"]
         );
         assert_eq!(
-            diagnostics("<lem-fn f(a: int): (int): html></lem-fn>")[0].0,
-            Span::new(19, 30)
+            messages("<lem-let x: {string} = 1 />"),
+            vec!["expected `:`, found `}`"]
         );
+    }
+
+    #[test]
+    fn stops_recursing_into_pathologically_nested_types() {
+        let src = format!(
+            "<lem-let x: {}int{} = 1 />",
+            "[".repeat(1_000),
+            "]".repeat(1_000)
+        );
+        assert_eq!(messages(&src)[0], "type nested too deeply");
     }
 
     #[test]
@@ -1003,5 +1287,244 @@ mod parse_tests {
         let found = messages(&src);
         assert_eq!(found[0], "`lem-if` is nested too deeply");
         assert!(found.iter().all(|m| !m.contains("unclosed")));
+    }
+}
+
+#[cfg(test)]
+mod declaration_tests {
+    use crate::parse;
+
+    fn messages(src: &str) -> Vec<String> {
+        parse(src)
+            .diagnostics
+            .into_iter()
+            .map(|d| d.message)
+            .collect()
+    }
+
+    fn clean(src: &str) {
+        assert_eq!(messages(src), Vec::<String>::new(), "{src}");
+    }
+
+    #[test]
+    fn parses_a_type_with_every_field_shape_clean() {
+        clean(
+            "<lem-type A extends B>\n  a: int\n  b: Photo? by site.photos\n  \
+             c: [asset] = []\n  d: int by idx = 1\n\n  e: {string: any}\n</lem-type>",
+        );
+        clean("<lem-type Empty></lem-type>");
+        clean("<lem-type A>\n</lem-type>");
+    }
+
+    #[test]
+    fn accepts_a_multi_line_default_in_a_field() {
+        clean("<lem-type A>\n  xs: [int] = [\n    1,\n    2,\n  ]\n  b: int\n</lem-type>");
+    }
+
+    #[test]
+    fn reports_one_diagnostic_for_an_unclosed_default() {
+        assert_eq!(
+            messages("<lem-type A>\n  xs: [int] = [\n  b: int\n</lem-type>"),
+            vec!["expected `]`, found `:`"]
+        );
+    }
+
+    #[test]
+    fn requires_a_type_on_every_field() {
+        assert_eq!(
+            messages("<lem-type A>\n  a\n  b: int\n</lem-type>"),
+            vec!["expected `: Type` before the end of the line"]
+        );
+        assert_eq!(
+            messages("<lem-type A>\n  a = 1\n</lem-type>"),
+            vec!["expected `: Type`, found `=`"]
+        );
+    }
+
+    #[test]
+    fn reports_a_field_the_close_tag_cuts_short() {
+        // Fields mode reaches `</lem-type>` as a matter of course, so a field left
+        // incomplete on the close tag's line is the parser's to report — the scanner
+        // said nothing about it (invariant 10).
+        for (src, expected) in [
+            (
+                "<lem-type A>x</lem-type>",
+                "expected `: Type` before the end of the line",
+            ),
+            (
+                "<lem-type A>\n  a: </lem-type>",
+                "expected a type before the end of the line",
+            ),
+            (
+                "<lem-type A>\n  a: [int</lem-type>",
+                "expected `]` before the end of the line",
+            ),
+            (
+                "<lem-type A>\n  a: int by</lem-type>",
+                "expected an expression before the end of the line",
+            ),
+            (
+                "<lem-type A>\n  a: int =</lem-type>",
+                "expected an expression before the end of the line",
+            ),
+        ] {
+            assert_eq!(messages(src), vec![expected.to_owned()], "{src}");
+        }
+    }
+
+    #[test]
+    fn still_says_nothing_about_what_a_cut_type_head_displaced() {
+        // The other half: the scanner cut this head and reported it, so the fields
+        // that follow are not blamed for what the cut took with it.
+        assert_eq!(
+            messages("<lem-type A\n  a: int\n</lem-type>"),
+            vec![
+                "unterminated tag: expected `>` before `<`",
+                "unexpected `a` in tag head",
+            ]
+        );
+    }
+
+    #[test]
+    fn reports_a_stray_close_angle_inside_a_field() {
+        assert_eq!(
+            messages("<lem-type A>\n  a: int >\n  b: int\n</lem-type>"),
+            vec!["unexpected `>` after the field"]
+        );
+    }
+
+    #[test]
+    fn reports_what_stands_in_a_type_body_besides_fields() {
+        let only_fields = "`lem-type` holds only fields, one `name: Type` per line";
+        assert_eq!(
+            messages("<lem-type A>\n  a: int\n  <lem.x>\n  b: int\n</lem-type>"),
+            vec![only_fields, only_fields]
+        );
+        // The tags after a stray one still nest and close: a wrong close inside
+        // the body names the type, not the file.
+        assert_eq!(
+            messages("<lem-type A>\n<lem-if x>y</lem-type>"),
+            vec![
+                only_fields,
+                "found `</lem-type>` while `lem-if` is still open: expected `</lem-if>`"
+            ]
+        );
+    }
+
+    #[test]
+    fn keeps_a_self_closed_type_a_block() {
+        assert_eq!(
+            messages("<lem-type A />\n  a: int\n</lem-type>"),
+            vec!["`lem-type` is a block tag and cannot be self-closed: expected `>`"]
+        );
+    }
+
+    #[test]
+    fn reports_an_unclosed_type_at_its_opener() {
+        assert_eq!(
+            messages("<lem-type A>\n  a: int\n"),
+            vec!["unclosed `lem-type`: expected `</lem-type>` before end of input"]
+        );
+    }
+
+    #[test]
+    fn treats_extends_and_by_as_names_elsewhere() {
+        clean("<lem-let by = extends />");
+        clean("<lem-fn f(by: int, extends: int): int = by + extends />");
+    }
+
+    #[test]
+    fn requires_a_base_after_extends() {
+        assert_eq!(
+            messages("<lem-type A extends></lem-type>"),
+            vec!["expected a base type name before `>`"]
+        );
+    }
+
+    #[test]
+    fn parses_an_enum_and_reports_its_missing_parts() {
+        clean("<lem-enum Size = small | medium | large />");
+        assert_eq!(
+            messages("<lem-enum Size = small | null />"),
+            vec!["`null` is a reserved word and cannot be used as a variant name"]
+        );
+        assert_eq!(
+            messages("<lem-enum = a />"),
+            vec!["expected an enum name, found `=`"]
+        );
+        // The skipped run enters the error state, so the missing `=` goes unsaid.
+        assert_eq!(
+            messages("<lem-enum Size a | b />"),
+            vec!["unexpected tokens before `=`"]
+        );
+    }
+
+    #[test]
+    fn parses_every_pattern_shape_clean() {
+        clean(
+            "<lem-match x><lem-case Til as t>a</lem-case><lem-case hero>b</lem-case>\
+             <lem-case 1>c</lem-case><lem-case \"s\">d</lem-case><lem-case null>e</lem-case>\
+             <lem-case true>f</lem-case><lem-default>g</lem-default></lem-match>",
+        );
+    }
+
+    #[test]
+    fn places_cases_and_defaults() {
+        assert_eq!(
+            messages("<lem-case 1>a</lem-case>"),
+            vec!["`lem-case` outside `lem-match`"]
+        );
+        assert_eq!(
+            messages("<lem-default>a</lem-default>"),
+            vec!["`lem-default` outside `lem-match`"]
+        );
+        assert_eq!(
+            messages(
+                "<lem-match x><lem-default>a</lem-default><lem-case 1>b</lem-case></lem-match>"
+            ),
+            vec!["`lem-case` cannot follow `lem-default`"]
+        );
+        assert_eq!(
+            messages(
+                "<lem-match x><lem-default>a</lem-default><lem-default>b</lem-default></lem-match>"
+            ),
+            vec!["duplicate `lem-default`: a `lem-match` has at most one `lem-default`"]
+        );
+    }
+
+    #[test]
+    fn rejects_a_head_on_default_and_a_missing_pattern() {
+        assert_eq!(
+            messages("<lem-match x><lem-default y>a</lem-default></lem-match>"),
+            vec!["`lem-default` takes no head"]
+        );
+        assert_eq!(
+            messages("<lem-match x><lem-case>a</lem-case></lem-match>"),
+            vec!["expected a pattern before `>`"]
+        );
+        assert_eq!(
+            messages("<lem-match x><lem-case -1>a</lem-case></lem-match>"),
+            vec!["expected a pattern, found `-`"]
+        );
+    }
+
+    #[test]
+    fn refuses_content_between_cases_but_not_layout() {
+        clean("<lem-match x>\n  <lem-case 1>a</lem-case>\n  \n</lem-match>");
+        let only_parts = "`lem-match` holds only `lem-case` and `lem-default`";
+        assert_eq!(
+            messages("<lem-match x>text<lem-case 1>a</lem-case></lem-match>"),
+            vec![only_parts]
+        );
+        assert_eq!(
+            messages("<lem-match x><lem-let y = 1 /></lem-match>"),
+            vec![only_parts]
+        );
+        assert_eq!(
+            messages(
+                "<lem-match x><lem-if y><lem-case 1>a</lem-case></lem-if></lem-match>"
+            ),
+            vec![only_parts, "`lem-case` outside `lem-match`"]
+        );
     }
 }

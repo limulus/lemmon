@@ -1,0 +1,6 @@
+<lem-let scripts: [asset] = [] />
+<lem-let extra: {string: any}? = null />
+<lem-fn wrap(page: Page, body: html, layout: (Page, html): html): html>
+  <lem.layout(page, body)>
+</lem-fn>
+<lem-fn pick(xs: [Article?], by: (Article): int?): Article? = xs[0] />

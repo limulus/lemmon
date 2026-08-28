@@ -1,0 +1,17 @@
+Root@0..310
+  TypeDecl@0..157
+    Text@127..146
+    CloseTag@146..157
+  Text@157..158
+  TypeDecl@158..198
+    CloseTag@187..198
+  Text@198..199
+  TypeDecl@199..237
+    CloseTag@226..237
+  Text@237..238
+  EnumDecl@238..265
+  Text@265..266
+  EnumDecl@266..286
+  Text@286..287
+  EnumDecl@287..309
+  Text@309..310

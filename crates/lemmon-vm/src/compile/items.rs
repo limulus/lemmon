@@ -110,6 +110,19 @@ impl Compiler<'_> {
             Item::FnBlock(_) | Item::FnVoid(_) => {
                 self.error(item.span(), "`lem-fn` must be at the top level of a file");
             }
+            // Parsed by `lemmon-syntax` (∆up2) for the checker (∆C8d) to consume; until
+            // it exists nothing can be lowered from them.
+            Item::TypeDecl(_) | Item::EnumDecl(_) | Item::Match(_) => {
+                let tag = match item {
+                    Item::TypeDecl(_) => "lem-type",
+                    Item::EnumDecl(_) => "lem-enum",
+                    _ => "lem-match",
+                };
+                self.error(
+                    item.span(),
+                    format!("`{tag}` needs the type checker, which is not here yet"),
+                );
+            }
             Item::Unsupported(_) | Item::Unknown(_) => {
                 unreachable!(
                     "the parser reports these, and a parse with diagnostics is never compiled"

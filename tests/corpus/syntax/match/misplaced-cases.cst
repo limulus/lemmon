@@ -1,0 +1,164 @@
+Root@0..334
+  CaseTag@0..30
+    OpenTag@0..9 "<lem-case"
+    Trivia@9..10 " "
+    Head@10..11
+      Pattern@10..11
+        Literal@10..11
+          Int@10..11 "1"
+    Close@11..12 ">"
+    Block@12..19
+      Text@12..19
+        Text@12..19 "outside"
+    CloseTag@19..30
+      CloseTag@19..29 "</lem-case"
+      Close@29..30 ">"
+  Text@30..31
+    Text@30..31 "\n"
+  MatchTag@31..260
+    OpenTag@31..41 "<lem-match"
+    Trivia@41..42 " "
+    Head@42..43
+      NameRef@42..43
+        Ident@42..43 "x"
+    Close@43..44 ">"
+    Block@44..248
+      Text@44..60
+        Text@44..60 "\n  stray text\n  "
+      AccessTag@60..67
+        OpenAccess@60..65 "<lem."
+        Head@65..66
+          NameRef@65..66
+            Ident@65..66 "x"
+        Close@66..67 ">"
+      Text@67..70
+        Text@67..70 "\n  "
+      DefaultTag@70..98
+        OpenTag@70..82 "<lem-default"
+        Head@82..82
+        Close@82..83 ">"
+        Block@83..84
+          Text@83..84
+            Text@83..84 "d"
+        CloseTag@84..98
+          CloseTag@84..97 "</lem-default"
+          Close@97..98 ">"
+      Text@98..101
+        Text@98..101 "\n  "
+      CaseTag@101..137
+        OpenTag@101..110 "<lem-case"
+        Trivia@110..111 " "
+        Head@111..112
+          Pattern@111..112
+            Literal@111..112
+              Int@111..112 "2"
+        Close@112..113 ">"
+        Block@113..126
+          Text@113..126
+            Text@113..126 "after default"
+        CloseTag@126..137
+          CloseTag@126..136 "</lem-case"
+          Close@136..137 ">"
+      Text@137..140
+        Text@137..140 "\n  "
+      DefaultTag@140..172
+        OpenTag@140..152 "<lem-default"
+        Head@152..152
+        Close@152..153 ">"
+        Block@153..158
+          Text@153..158
+            Text@153..158 "again"
+        CloseTag@158..172
+          CloseTag@158..171 "</lem-default"
+          Close@171..172 ">"
+      Text@172..175
+        Text@172..175 "\n  "
+      CaseTag@175..206
+        OpenTag@175..184 "<lem-case"
+        Head@184..184
+        Close@184..185 ">"
+        Block@185..195
+          Text@185..195
+            Text@185..195 "no pattern"
+        CloseTag@195..206
+          CloseTag@195..205 "</lem-case"
+          Close@205..206 ">"
+      Text@206..209
+        Text@206..209 "\n  "
+      CaseTag@209..247
+        OpenTag@209..218 "<lem-case"
+        Trivia@218..219 " "
+        Head@219..225
+          Pattern@219..225
+            Ident@219..222 "Til"
+            Trivia@222..223 " "
+            As@223..225 "as"
+        Close@225..226 ">"
+        Block@226..236
+          Text@226..236
+            Text@226..236 "no binding"
+        CloseTag@236..247
+          CloseTag@236..246 "</lem-case"
+          Close@246..247 ">"
+      Text@247..248
+        Text@247..248 "\n"
+    CloseTag@248..260
+      CloseTag@248..259 "</lem-match"
+      Close@259..260 ">"
+  Text@260..261
+    Text@260..261 "\n"
+  MatchTag@261..333
+    OpenTag@261..271 "<lem-match"
+    Trivia@271..272 " "
+    Head@272..273
+      NameRef@272..273
+        Ident@272..273 "y"
+    Close@273..274 ">"
+    Block@274..321
+      Text@274..277
+        Text@274..277 "\n  "
+      IfTag@277..320
+        OpenTag@277..284 "<lem-if"
+        Trivia@284..285 " "
+        Head@285..286
+          NameRef@285..286
+            Ident@285..286 "z"
+        Close@286..287 ">"
+        Block@287..311
+          CaseTag@287..311
+            OpenTag@287..296 "<lem-case"
+            Trivia@296..297 " "
+            Head@297..298
+              Pattern@297..298
+                Literal@297..298
+                  Int@297..298 "1"
+            Close@298..299 ">"
+            Block@299..300
+              Text@299..300
+                Text@299..300 "a"
+            CloseTag@300..311
+              CloseTag@300..310 "</lem-case"
+              Close@310..311 ">"
+        CloseTag@311..320
+          CloseTag@311..319 "</lem-if"
+          Close@319..320 ">"
+      Text@320..321
+        Text@320..321 "\n"
+    CloseTag@321..333
+      CloseTag@321..332 "</lem-match"
+      Close@332..333 ">"
+  Text@333..334
+    Text@333..334 "\n"
+
+--- diagnostics
+0..9: `lem-case` outside `lem-match`
+44..60: `lem-match` holds only `lem-case` and `lem-default`
+60..65: `lem-match` holds only `lem-case` and `lem-default`
+101..110: `lem-case` cannot follow `lem-default`
+140..152: duplicate `lem-default`: a `lem-match` has at most one `lem-default`
+175..184: `lem-case` cannot follow `lem-default`
+184..185: expected a pattern before `>`
+209..218: `lem-case` cannot follow `lem-default`
+225..226: expected a name to bind before `>`
+277..284: `lem-match` holds only `lem-case` and `lem-default`
+287..296: `lem-case` outside `lem-match`

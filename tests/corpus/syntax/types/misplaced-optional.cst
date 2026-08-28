@@ -1,0 +1,113 @@
+Root@0..120
+  LetVoid@0..26
+    OpenTag@0..8 "<lem-let"
+    Trivia@8..9 " "
+    Head@9..23
+      Ident@9..10 "a"
+      TypeAnnotation@10..11
+        Colon@10..11 ":"
+      Trivia@11..12 " "
+      Error@12..16
+        Question@12..13 "?"
+        Ident@13..16 "int"
+      Trivia@16..17 " "
+      Eq@17..18 "="
+      Trivia@18..19 " "
+      Literal@19..23
+        Null@19..23 "null"
+    Trivia@23..24 " "
+    SelfClose@24..26 "/>"
+  Text@26..27
+    Text@26..27 "\n"
+  FnVoid@27..58
+    OpenTag@27..34 "<lem-fn"
+    Trivia@34..35 " "
+    Head@35..55
+      Ident@35..36 "f"
+      Params@36..46
+        LParen@36..37 "("
+        Param@37..45
+          Ident@37..39 "xs"
+          TypeAnnotation@39..45
+            Colon@39..40 ":"
+            Trivia@40..41 " "
+            ListType@41..45
+              LBracket@41..42 "["
+              NamedType@42..45
+                Ident@42..45 "int"
+        RParen@45..46 ")"
+      TypeAnnotation@46..51
+        Colon@46..47 ":"
+        Trivia@47..48 " "
+        NamedType@48..51
+          Ident@48..51 "int"
+      Trivia@51..52 " "
+      Eq@52..53 "="
+      Trivia@53..54 " "
+      Literal@54..55
+        Int@54..55 "1"
+    Trivia@55..56 " "
+    SelfClose@56..58 "/>"
+  Text@58..59
+    Text@58..59 "\n"
+  FnVoid@59..90
+    OpenTag@59..66 "<lem-fn"
+    Trivia@66..67 " "
+    Head@67..87
+      Ident@67..68 "g"
+      Params@68..78
+        LParen@68..69 "("
+        Param@69..77
+          Ident@69..70 "h"
+          TypeAnnotation@70..77
+            Colon@70..71 ":"
+            Trivia@71..72 " "
+            FnType@72..77
+              LParen@72..73 "("
+              NamedType@73..76
+                Ident@73..76 "int"
+              RParen@76..77 ")"
+        RParen@77..78 ")"
+      TypeAnnotation@78..83
+        Colon@78..79 ":"
+        Trivia@79..80 " "
+        NamedType@80..83
+          Ident@80..83 "int"
+      Trivia@83..84 " "
+      Eq@84..85 "="
+      Trivia@85..86 " "
+      Literal@86..87
+        Int@86..87 "1"
+    Trivia@87..88 " "
+    SelfClose@88..90 "/>"
+  Text@90..91
+    Text@90..91 "\n"
+  LetVoid@91..119
+    OpenTag@91..99 "<lem-let"
+    Trivia@99..100 " "
+    Head@100..116
+      Ident@100..101 "m"
+      TypeAnnotation@101..111
+        Colon@101..102 ":"
+        Trivia@102..103 " "
+        MapType@103..111
+          LBrace@103..104 "{"
+          NamedType@104..110
+            Ident@104..110 "string"
+          RBrace@110..111 "}"
+      Trivia@111..112 " "
+      Eq@112..113 "="
+      Trivia@113..114 " "
+      MapLit@114..116
+        LBrace@114..115 "{"
+        RBrace@115..116 "}"
+    Trivia@116..117 " "
+    SelfClose@117..119 "/>"
+  Text@119..120
+    Text@119..120 "\n"
+
+--- diagnostics
+12..13: expected a type, found `?`
+45..46: expected `]`, found `)`
+77..78: expected `:` and a return type, found `)`
+110..111: expected `:`, found `}`

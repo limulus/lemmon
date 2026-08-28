@@ -1,21 +1,19 @@
-Root@0..53
-  UnsupportedTag@0..53
-    OpenTag@0..10 "<lem-match"
-    Trivia@10..11 " "
-    Head@11..15
-      Ident@11..15 "kind"
-    Close@15..16 ">"
-    Block@16..53
-      Text@16..28
-        Text@16..28 "\n  <p>a</p>\n"
-      Error@28..39
-        CloseTag@28..39
-          CloseTag@28..38 "</lem-type"
-          Close@38..39 ">"
-      Text@39..53
-        Text@39..53 "\n<p>after</p>\n"
+Root@0..48
+  UnsupportedTag@0..48
+    OpenTag@0..10 "<lem-style"
+    Head@10..10
+    Close@10..11 ">"
+    Block@11..48
+      Text@11..23
+        Text@11..23 "\n  <p>a</p>\n"
+      Error@23..34
+        CloseTag@23..34
+          CloseTag@23..33 "</lem-head"
+          Close@33..34 ">"
+      Text@34..48
+        Text@34..48 "\n<p>after</p>\n"
 
 --- diagnostics
-0..10: `lem-match` is not supported yet
-0..10: unclosed `lem-match`: expected `</lem-match>` before end of input
-28..38: found `</lem-type>` while `lem-match` is still open: expected `</lem-match>`
+0..10: `lem-style` is not supported yet
+0..10: unclosed `lem-style`: expected `</lem-style>` before end of input
+23..33: found `</lem-head>` while `lem-style` is still open: expected `</lem-style>`

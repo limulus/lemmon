@@ -1,6 +1,6 @@
-Root@0..53
-  UnsupportedTag@0..53
-    Text@16..28
-    Error@28..39
-      CloseTag@28..39
-    Text@39..53
+Root@0..48
+  UnsupportedTag@0..48
+    Text@11..23
+    Error@23..34
+      CloseTag@23..34
+    Text@34..48

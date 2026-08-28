@@ -11,12 +11,14 @@ Root@0..117
           TypeAnnotation@14..22
             Colon@14..15 ":"
             Trivia@15..16 " "
-            Ident@16..22 "string"
+            NamedType@16..22
+              Ident@16..22 "string"
         RParen@22..23 ")"
       TypeAnnotation@23..31
         Colon@23..24 ":"
         Trivia@24..25 " "
-        Ident@25..31 "string"
+        NamedType@25..31
+          Ident@25..31 "string"
       Trivia@31..32 " "
       Eq@32..33 "="
       Trivia@33..34 " "
@@ -44,7 +46,8 @@ Root@0..117
       TypeAnnotation@68..76
         Colon@68..69 ":"
         Trivia@69..70 " "
-        Ident@70..76 "string"
+        NamedType@70..76
+          Ident@70..76 "string"
       Trivia@76..77 " "
       Eq@77..78 "="
       Trivia@78..79 " "

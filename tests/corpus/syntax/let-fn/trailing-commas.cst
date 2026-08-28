@@ -12,7 +12,8 @@ Root@0..267
           TypeAnnotation@23..32
             Colon@23..24 ":"
             Trivia@24..25 " "
-            Ident@25..32 "Article"
+            NamedType@25..32
+              Ident@25..32 "Article"
         Comma@32..33 ","
         Trivia@33..36 "\n  "
         Param@36..47
@@ -20,8 +21,10 @@ Root@0..267
           TypeAnnotation@40..47
             Colon@40..41 ":"
             Trivia@41..42 " "
-            Ident@42..46 "Size"
-            Question@46..47 "?"
+            OptionalType@42..47
+              NamedType@42..46
+                Ident@42..46 "Size"
+              Question@46..47 "?"
         Comma@47..48 ","
         Trivia@48..49 "\n"
         RParen@49..50 ")"

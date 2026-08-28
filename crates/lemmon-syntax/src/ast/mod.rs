@@ -16,6 +16,7 @@
 
 mod expr;
 mod tags;
+mod types;
 
 pub use expr::{
     ArgList, BinaryExpr, BinaryOp, CallExpr, Expr, IndexExpr, Lambda, LambdaParams,
@@ -24,8 +25,12 @@ pub use expr::{
 };
 pub use rowan::ast::AstNode;
 pub use tags::{
-    AccessTag, Block, FnBlock, FnVoid, ForBinding, ForTag, IfArm, IfTag, Item, LetBlock,
-    LetVoid, Param, Params, Root, TextRun, TypeAnnotation, UnknownTag, UnsupportedTag,
+    AccessTag, Block, CaseTag, DefaultTag, EnumDecl, Field, FnBlock, FnVoid, ForBinding,
+    ForTag, IfArm, IfTag, Item, LetBlock, LetVoid, MatchTag, Param, Params, Pattern, Root,
+    TextRun, TypeDecl, UnknownTag, UnsupportedTag,
+};
+pub use types::{
+    FnType, ListType, MapType, NamedType, OptionalType, TypeAnnotation, TypeExpr,
 };
 
 use rowan::ast::support::{child, children, token};

@@ -1,0 +1,7 @@
+<lem-enum Size = small | large />
+<lem-type Card>
+  title: string
+</lem-type>
+<lem-match size>
+  <lem-case small>s</lem-case>
+</lem-match>

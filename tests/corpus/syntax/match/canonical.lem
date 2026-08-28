@@ -1,0 +1,24 @@
+<lem-match article>
+  <lem-case LinkPost as l><li><lem.linkChip(l, nolink: true)></li></lem-case>
+  <lem-case Til as t><li><lem.tilChip(t.topic, nolink: true)></li></lem-case>
+  <lem-default><li><lem.timeChip(article)></li></lem-default>
+</lem-match>
+<lem-match photo.placement>
+  <lem-case hero>
+    <lem.heroPhoto(photo)>
+  </lem-case>
+  <lem-case left>
+    <lem.floatPhoto(photo, side: "left")>
+  </lem-case>
+</lem-match>
+<lem-match article.subhead>
+  <lem-case null></lem-case>
+  <lem-case "">Empty</lem-case>
+  <lem-default><p><lem.article.subhead></p></lem-default>
+</lem-match>
+<lem-match n>
+  <lem-case 0>none</lem-case>
+  <lem-case 1.5>half</lem-case>
+  <lem-case true>yes</lem-case>
+  <lem-case false>no</lem-case>
+</lem-match>

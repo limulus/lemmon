@@ -1,0 +1,250 @@
+Root@0..476
+  EnumDecl@0..44
+    OpenTag@0..9 "<lem-enum"
+    Trivia@9..10 " "
+    Head@10..41
+      Ident@10..19 "Placement"
+      Trivia@19..20 " "
+      Eq@20..21 "="
+      Trivia@21..22 " "
+      Ident@22..26 "hero"
+      Trivia@26..27 " "
+      Pipe@27..28 "|"
+      Trivia@28..29 " "
+      Ident@29..33 "left"
+      Trivia@33..34 " "
+      Pipe@34..35 "|"
+      Trivia@35..36 " "
+      Ident@36..41 "right"
+    Trivia@41..42 " "
+    SelfClose@42..44 "/>"
+  Text@44..45
+    Text@44..45 "\n"
+  TypeDecl@45..345
+    OpenTag@45..54 "<lem-type"
+    Trivia@54..55 " "
+    Head@55..62
+      Ident@55..62 "Article"
+    Close@62..63 ">"
+    FieldList@63..334
+      Newline@63..64 "\n"
+      Trivia@64..66 "  "
+      Field@66..79
+        Ident@66..71 "title"
+        TypeAnnotation@71..79
+          Colon@71..72 ":"
+          Trivia@72..73 " "
+          NamedType@73..79
+            Ident@73..79 "string"
+      Newline@79..80 "\n"
+      Trivia@80..82 "  "
+      Field@82..98
+        Ident@82..89 "subhead"
+        TypeAnnotation@89..98
+          Colon@89..90 ":"
+          Trivia@90..91 " "
+          OptionalType@91..98
+            NamedType@91..97
+              Ident@91..97 "string"
+            Question@97..98 "?"
+      Newline@98..99 "\n"
+      Trivia@99..101 "  "
+      Field@101..115
+        Ident@101..105 "date"
+        TypeAnnotation@105..115
+          Colon@105..106 ":"
+          Trivia@106..107 " "
+          NamedType@107..115
+            Ident@107..115 "datetime"
+      Newline@115..116 "\n"
+      Trivia@116..118 "  "
+      Field@118..132
+        Ident@118..124 "author"
+        TypeAnnotation@124..132
+          Colon@124..125 ":"
+          Trivia@125..126 " "
+          NamedType@126..132
+            Ident@126..132 "string"
+      Newline@132..133 "\n"
+      Trivia@133..135 "  "
+      Field@135..146
+        Ident@135..137 "by"
+        TypeAnnotation@137..146
+          Colon@137..138 ":"
+          Trivia@138..139 " "
+          OptionalType@139..146
+            NamedType@139..145
+              Ident@139..145 "string"
+            Question@145..146 "?"
+      Newline@146..147 "\n"
+      Trivia@147..149 "  "
+      Field@149..176
+        Ident@149..153 "hero"
+        TypeAnnotation@153..161
+          Colon@153..154 ":"
+          Trivia@154..155 " "
+          OptionalType@155..161
+            NamedType@155..160
+              Ident@155..160 "Photo"
+            Question@160..161 "?"
+        Trivia@161..162 " "
+        Ident@162..164 "by"
+        Trivia@164..165 " "
+        MemberExpr@165..176
+          NameRef@165..169
+            Ident@165..169 "site"
+          Dot@169..170 "."
+          Ident@170..176 "photos"
+      Newline@176..177 "\n"
+      Trivia@177..179 "  "
+      Field@179..188
+        Ident@179..182 "vod"
+        TypeAnnotation@182..188
+          Colon@182..183 ":"
+          Trivia@183..184 " "
+          OptionalType@184..188
+            NamedType@184..187
+              Ident@184..187 "Vod"
+            Question@187..188 "?"
+      Newline@188..189 "\n"
+      Trivia@189..191 "  "
+      Field@191..215
+        Ident@191..197 "layout"
+        TypeAnnotation@197..205
+          Colon@197..198 ":"
+          Trivia@198..199 " "
+          NamedType@199..205
+            Ident@199..205 "layout"
+        Trivia@205..206 " "
+        Eq@206..207 "="
+        Trivia@207..208 " "
+        NameRef@208..215
+          Ident@208..215 "article"
+      Newline@215..216 "\n"
+      Trivia@216..218 "  "
+      Field@218..267
+        Ident@218..225 "scripts"
+        TypeAnnotation@225..234
+          Colon@225..226 ":"
+          Trivia@226..227 " "
+          ListType@227..234
+            LBracket@227..228 "["
+            NamedType@228..233
+              Ident@228..233 "asset"
+            RBracket@233..234 "]"
+        Trivia@234..235 " "
+        Eq@235..236 "="
+        Trivia@236..237 " "
+        ListLit@237..267
+          LBracket@237..238 "["
+          Trivia@238..243 "\n    "
+          CallExpr@243..262
+            NameRef@243..248
+              Ident@243..248 "asset"
+            ArgList@248..262
+              LParen@248..249 "("
+              Literal@249..261
+                StringLit@249..261 "\"article.js\""
+              RParen@261..262 ")"
+          Comma@262..263 ","
+          Trivia@263..266 "\n  "
+          RBracket@266..267 "]"
+      Newline@267..268 "\n"
+      Trivia@268..270 "  "
+      Field@270..289
+        Ident@270..275 "draft"
+        TypeAnnotation@275..281
+          Colon@275..276 ":"
+          Trivia@276..277 " "
+          NamedType@277..281
+            Ident@277..281 "bool"
+        Trivia@281..282 " "
+        Eq@282..283 "="
+        Trivia@283..284 " "
+        Literal@284..289
+          False@284..289 "false"
+      Newline@289..290 "\n"
+      Trivia@290..292 "  "
+      Field@292..333
+        Ident@292..303 "readingTime"
+        TypeAnnotation@303..313
+          Colon@303..304 ":"
+          Trivia@304..305 " "
+          NamedType@305..313
+            Ident@305..313 "duration"
+        Trivia@313..314 " "
+        Eq@314..315 "="
+        Trivia@315..316 " "
+        CallExpr@316..333
+          NameRef@316..327
+            Ident@316..327 "readingTime"
+          ArgList@327..333
+            LParen@327..328 "("
+            NameRef@328..332
+              Ident@328..332 "body"
+            RParen@332..333 ")"
+      Newline@333..334 "\n"
+    CloseTag@334..345
+      CloseTag@334..344 "</lem-type"
+      Close@344..345 ">"
+  Text@345..346
+    Text@345..346 "\n"
+  TypeDecl@346..475
+    OpenTag@346..355 "<lem-type"
+    Trivia@355..356 " "
+    Head@356..380
+      Ident@356..364 "LinkPost"
+      Trivia@364..365 " "
+      Ident@365..372 "extends"
+      Trivia@372..373 " "
+      Ident@373..380 "Article"
+    Close@380..381 ">"
+    FieldList@381..464
+      Newline@381..382 "\n"
+      Trivia@382..384 "  "
+      Field@384..401
+        Ident@384..393 "linkTitle"
+        TypeAnnotation@393..401
+          Colon@393..394 ":"
+          Trivia@394..395 " "
+          NamedType@395..401
+            Ident@395..401 "string"
+      Newline@401..402 "\n"
+      Trivia@402..404 "  "
+      Field@404..439
+        Ident@404..409 "title"
+        TypeAnnotation@409..417
+          Colon@409..410 ":"
+          Trivia@410..411 " "
+          NamedType@411..417
+            Ident@411..417 "string"
+        Trivia@417..418 " "
+        Eq@418..419 "="
+        Trivia@419..420 " "
+        Literal@420..439
+          StringLit@420..439 "\"Link: {linkTitle}\""
+      Newline@439..440 "\n"
+      Newline@440..441 "\n"
+      Trivia@441..443 "  "
+      Field@443..463
+        Ident@443..448 "extra"
+        TypeAnnotation@448..463
+          Colon@448..449 ":"
+          Trivia@449..450 " "
+          MapType@450..463
+            LBrace@450..451 "{"
+            NamedType@451..457
+              Ident@451..457 "string"
+            Colon@457..458 ":"
+            Trivia@458..459 " "
+            NamedType@459..462
+              Ident@459..462 "any"
+            RBrace@462..463 "}"
+      Newline@463..464 "\n"
+    CloseTag@464..475
+      CloseTag@464..474 "</lem-type"
+      Close@474..475 ">"
+  Text@475..476
+    Text@475..476 "\n"
+
+--- diagnostics

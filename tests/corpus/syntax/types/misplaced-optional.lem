@@ -1,0 +1,4 @@
+<lem-let a: ?int = null />
+<lem-fn f(xs: [int): int = 1 />
+<lem-fn g(h: (int)): int = 1 />
+<lem-let m: {string} = {} />

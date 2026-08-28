@@ -11,9 +11,10 @@ Root@0..482
           TypeAnnotation@28..39
             Colon@28..29 ":"
             Trivia@29..30 " "
-            Error@30..39
+            ListType@30..39
               LBracket@30..31 "["
-              Ident@31..38 "Article"
+              NamedType@31..38
+                Ident@31..38 "Article"
               RBracket@38..39 "]"
         Comma@39..40 ","
         Trivia@40..41 " "
@@ -22,7 +23,8 @@ Root@0..482
           TypeAnnotation@48..56
             Colon@48..49 ":"
             Trivia@49..50 " "
-            Ident@50..56 "string"
+            NamedType@50..56
+              Ident@50..56 "string"
     Trivia@56..59 "\n  "
     Block@59..472
       Text@59..98
@@ -130,4 +132,3 @@ Root@0..482
 
 --- diagnostics
 0..59: unterminated tag: expected `>` before `<`
-30..39: composite types are not supported yet: only `T` and `T?`
