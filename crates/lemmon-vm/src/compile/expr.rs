@@ -403,7 +403,7 @@ impl Compiler<'_> {
 
 /// The text of a string literal token: the quotes dropped and every `\c` replaced by
 /// `c`, the scanner's rule. Interpolation is left as written — its delimiter is a
-/// deferred question (docs/decisions.md).
+/// deferred question (docs/decisions/README.md).
 fn decode_string(token: &str) -> String {
     let inner = token
         .strip_prefix('"')

@@ -23,8 +23,10 @@ Repo docs are the working distillation; read them before writing code:
 - `docs/language.md` — the language: scanner, tags, expressions, types, namespaces, document
   mode. Keep open while working on the core.
 - `docs/architecture.md` — core/shell split, WASM API, pipeline, VM, crate choices.
-- `docs/decisions.md` — settled decisions and the short list of deliberately deferred
-  questions. Do not re-litigate either ad hoc.
+- `docs/decisions/` — the settled decisions: `README.md` is the index (one row per ID)
+  and the deliberately deferred questions; every decision from D25 on also has a record,
+  `Dnn-slug.md`, with its context, alternatives, and consequences. Do not re-litigate
+  either ad hoc.
 
 The full architecture record (with diagrams, migration plan, and rationale) lives in three
 Claude Artifacts owned by Eric — "Shell & Core", "The Lemmon Language", and "From Eleventy
@@ -62,7 +64,7 @@ These hold for every change. A PR that breaks one is wrong even if its tests pas
     the compile-time facts it consumed (imported signatures, reference-index ids, asset
     manifest entries), which the compiler reports. Nothing may make one file's bytecode
     depend on another file's body — that is what lets a content edit leave its layouts'
-    compiled units untouched (docs/decisions.md D25).
+    compiled units untouched (docs/decisions/README.md D25).
 
 ## Layout
 
@@ -76,7 +78,7 @@ packages/shell/         @limulus/lemmon-shell — CLI, walker, plugin host, dev 
 tests/corpus/           golden inputs → expected trees + diagnostics; see its README
 scripts/                repo tooling run by npm scripts (wasm staging + check, the spike);
                         scripts/lib/ is the logic they share, covered like a package
-docs/                   language.md, architecture.md, decisions.md, journal/
+docs/                   language.md, architecture.md, decisions/, journal/
 ```
 
 One npm workspace (`packages/*`) plus one Cargo workspace (`crates/*`), with a single shared
@@ -235,8 +237,9 @@ entry in `docs/journal/`. Mint new deltoids with
 
 ## Working agreements
 
-- The deferred language questions in `docs/decisions.md` stay deferred: when blocked on one,
-  pick the provisional reading the docs already use, note it in the PR, move on.
+- The deferred language questions in `docs/decisions/README.md` stay deferred: when
+  blocked on one, pick the provisional reading the docs already use, note it in the PR,
+  move on.
 - The eventual acceptance bar is the limulus.net parity harness (doc 3 of the architecture
   set); nothing in the core may assume that site's specifics to pass it.
 - Fix a confirmed finding now when it is small and in scope of the crate being touched,
@@ -245,9 +248,10 @@ entry in `docs/journal/`. Mint new deltoids with
 - When a new stage lands, grep the stages above it for the "not supported yet"
   diagnostics they aimed at it — those messages become false the moment the stage exists,
   and no test notices.
-- A syntax or semantics change updates `docs/language.md`, `docs/decisions.md`, and the
-  owning artifact in the same pass; when a design point moves, sweep nearby prose for
-  sentences the change just falsified — no gate ever reads the docs.
+- A syntax or semantics change updates `docs/language.md`, `docs/decisions/` (the row,
+  plus a record for any decision from D25 on), and the owning artifact in the same pass;
+  when a design point moves, sweep nearby prose for sentences the change just falsified —
+  no gate ever reads the docs.
 
 ## Committing
 

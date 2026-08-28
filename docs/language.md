@@ -2,7 +2,7 @@
 
 Implementation-grade reference, distilled from the architecture set ("The Lemmon
 Language" artifact). Normative for the core; where this file and code disagree, one of
-them has a bug. Decision IDs (D01…) refer to `docs/decisions.md`.
+them has a bug. Decision IDs (D01…) refer to `docs/decisions/README.md`.
 
 Two source kinds:
 
@@ -49,15 +49,7 @@ Three delimitability rules (D21):
 | `<lem.expr>` | Access: print a value or call a function — the only call form (D22). Always void, never slashed. |
 | `&lt;lem` | Escape for a literal `<lem…` in a template. Code fences handle it in documents. |
 
-Whitespace: text around block tags is preserved as written; a tag that renders nothing
-where it stands — `lem-let` or `lem-fn`, void form or block — takes its line with it when
-nothing else stands on that line (D27). A `lem-fn` block body and a `lem-let` capture body
-lose the newline-and-indent at each edge and are dedented by the indentation their lines
-share, so a definition's own indentation never reaches the output (D26); a body that opens
-on its tag's line has no indentation to give and stays verbatim, which is how a definition
-emits a margin of its own. `lem-if`/`lem-for` bodies take no edge trim and no dedent of
-their own — a loop body's leading newline is what separates iterations — but their text
-dedents with the definition around them. Every token carries a byte span.
+Every token carries a byte span.
 
 Scanner rules the parser and the tree-sitter grammar must agree on:
 
@@ -310,6 +302,52 @@ One value namespace, resolved lexically: **locals/params** (innermost wins) →
 
 - Purity: no clock/filesystem/env access; `build.time` etc. arrive as data.
 
+## Whitespace (D26, D27, D28)
+
+Lemmon optimizes how a `.lem` file reads, not how its HTML reads (D28). Indentation and
+the blank lines between tags are not a product surface — a formatter or minifier
+downstream owns that (D12's dprint plugin) — so the rules below remove a definition's own
+layout from the output and nothing else. Text around block tags is otherwise preserved as
+written.
+
+**Statement lines (D27).** A tag that renders nothing where it stands — `lem-let` or
+`lem-fn`, void form or block — takes its line with it when nothing else stands on that
+line, so a file laid out one statement per line leaks no blank line per statement.
+`<lem.…>` renders in place and keeps the line it is written on; `lem-if`/`lem-for` render
+their bodies and keep theirs.
+
+**Body normalization (D26).** A `lem-fn` block body and a `lem-let` capture body are
+normalized at compile time:
+
+- one newline-and-indent is trimmed at each edge — one per edge, so a deliberate blank
+  line survives as one;
+- the lines that remain are dedented by the longest whitespace prefix they share, blank
+  lines ignored, so a definition's own indentation never reaches the output and relative
+  indentation survives;
+- a body that opens on its own tag's line (`<lem-fn f()><svg>` …) has no indentation on
+  that first line, so the margin is empty and the body stays verbatim — hugging is how a
+  definition emits a margin of its own;
+- `lem-if`/`lem-for` bodies take no edge trim and no dedent of their own — a loop body's
+  leading newline is what separates iterations — but their text lies inside the
+  definition around them, so it dedents with it and its lines set the margin like any
+  others;
+- a nested capture body is a root of its own: normalized on its own, opaque to the body
+  around it.
+
+The rule is lexical, over the template's literal text only. It runs after the statement
+rule — a line that rule deletes must not set the margin — and never touches interpolated
+values, which arrive at run time. No element awareness (invariant 2): `<pre>`/`<textarea>`
+content dedents like everything else.
+
+**Rendering (D28).** The renderer never re-indents at a boundary. A multi-line value keeps
+its own columns wherever it is substituted — a slot's second line lands where its
+definition put it, not at the call's column — and a flow body keeps its newlines;
+re-indenting either would make the output depend on a value's shape at run time. What
+none of this licenses is touching whitespace HTML renders — inline formatting contexts,
+`pre`/`textarea` — which is output semantics and survives byte for byte. A fidelity gate
+therefore compares rendered HTML: never raw bytes, and never bytes with whitespace
+collapsed blindly (D15's "normalized"; `scripts/lib/rendered-html.ts`).
+
 ## Escaping
 
 - `<lem.…>` of `string`: escapes `& < > " '` — safe in text and quoted attributes.
@@ -399,7 +437,7 @@ reserved but not built.
 
 ## Deferred questions
 
-Deliberately undecided (see `docs/decisions.md`); when one blocks you, use the
+Deliberately undecided (see `docs/decisions/README.md`); when one blocks you, use the
 provisional reading in this file and flag it in the PR:
 
 - string interpolation delimiter (`{expr}` vs `${expr}`)

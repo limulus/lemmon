@@ -1,7 +1,7 @@
 # Lemmon architecture
 
 Working distillation of the "Shell & Core" artifact for implementation sessions. Decision
-IDs (D01…) refer to `docs/decisions.md`.
+IDs (D01…) refer to `docs/decisions/README.md`.
 
 ## Shape
 
@@ -209,3 +209,7 @@ they cannot inject build-time JS (D06). The shell also exposes a content API
 - cargo-fuzz on parser and VM (the LSP feeds them half-typed garbage).
 - wasm-bindgen-test through Node for the real boundary.
 - The limulus.net parity harness (architecture doc 3) is the end-to-end acceptance bar.
+  It compares *rendered* HTML, never bytes (D28): `scripts/lib/rendered-html.ts` models
+  the UA stylesheet's white-space processing so that everything D26 and D28 move is
+  invisible to the comparison by construction, while a changed space inside `pre` or
+  between two inline runs still fails (∆Ma4).

@@ -54,7 +54,7 @@ further at claim time.
 - ∆5MM tree-sitter-lemmon + LSP skeleton — embedded-template grammar with HTML/markdown
   injections, corpus agreement test wired into CI, `@limulus/lemmon-lsp` serving diagnostics
   and schema completions from `core.analyze()`; editor tooling is a day-one commitment
-  (docs/decisions.md D16); needs: ∆C8d
+  (docs/decisions/README.md D16); needs: ∆C8d
 - ∆pXO Lemmon authoring skill — a checked-in agent skill (`agents/skills/lemmon/`) for
   writing `.lem`: tag forms and head-shape rules, expression syntax, type-directed escaping,
   document mode — distilled from docs/language.md, not a copy of it. Porting limulus.net's

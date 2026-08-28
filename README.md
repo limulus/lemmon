@@ -16,7 +16,7 @@ and `docs/` for the language, architecture, and decision record.
 | `packages/core/` | `@limulus/lemmon-core` — typed JS wrapper around the WASM core (stub) |
 | `packages/shell/` | `@limulus/lemmon-shell` — `lem` CLI, walker, plugin host, dev server |
 | `crates/` | Rust core workspace — `lemmon-syntax`, `lemmon-vm`, `lemmon-wasm` (skeletons) |
-| `docs/` | `language.md`, `architecture.md`, `decisions.md`, `journal/` |
+| `docs/` | `language.md`, `architecture.md`, `decisions/`, `journal/` |
 
 ## Development
 
