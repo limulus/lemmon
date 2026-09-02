@@ -19,21 +19,21 @@ mechanism: `delto surface` trusts these edges to decide what is eligible to work
 Seed items for the next phase (architecture doc 3, phase 1); expect these to be split
 further at claim time.
 
-- ∆1vS Well-known type declarations — void `lem-type Name = T` alias form (D21's `=` void
-  marker) and a `from` field clause beside `by` (D29), with AST views and corpus
-  `.cst`/`.tags`; `lem-collection`/`lem-data` retired from the builtin table and the
-  unsupported corpus. No semantics: it is the grammar D30 needs so the checker can type
-  `Site`/`Page`/`Build` from a site's own declarations instead of building them in
+- ∆1vS Ambient bindings — a `from` clause on the `lem-let` head (`name: T from "glob"` /
+  `from plugin("p")`, void like `= expr`; top of `site.lem` only), with AST views and
+  corpus `.cst`/`.tags`; `lem-collection`/`lem-data` retired from the builtin table and
+  the unsupported corpus; a syntax for environment values. No semantics: it is the
+  grammar D30 needs so `site` is typed from `site.lem`'s own bindings, nothing built in
 - ∆C8d Type checker — types, bidirectional inference, narrowing (`is`, `lem-match`,
   optionals in `lem-if`), unused warnings, diagnostics with severity and secondary spans
   through the boundary, typed lowering (`TypeTest`, `lem-match`), project-flat + ambient
-  namespaces (docs/language.md §Names); `Site`/`Page`/`Build` typed from their `site.lem`
-  declarations, unknown where a site declares none (D30); needs: ∆1vS
-- ∆iCW Schemas at load — a site's `Site` declaration (`from` fields) and `Page.data`
-  typing the content model; `loadData` validates records at their YAML positions,
-  runs computed defaults in dependency order, resolves `by` reference fields (aliases
-  included), rejects extra keys; `Value::Record` in declaration order. Turns limulus.net's
-  build throws (missing `vod.alt`, photo not found) into load errors; needs: ∆C8d
+  namespaces (docs/language.md §Names); ambient values typed from the host's declarations
+  and `site.lem`'s bindings, unknown where nothing declares them (D30); needs: ∆1vS
+- ∆iCW Schemas at load — `site.lem`'s `from` bindings and each document's record (its
+  collection's element type, narrowed by `type:`) type the content model; `loadData`
+  validates records (the host's envelope too) at their YAML positions, runs computed
+  defaults in dependency order, resolves `by` references and strings by expected type, and
+  rejects extra keys, so limulus.net's build throws become load errors; needs: ∆C8d
 - ∆Q6L Stdlib — strings/lists/maps, `datetime("…")` (compile-time checked on a literal
   argument; there is no datetime literal) + rfc3339/rfc822 formatting, `slugify`,
   `readingTime`, `url()`, `asset()`, `raw()`, `uniqueId()`, with typed signatures the
@@ -47,10 +47,10 @@ further at claim time.
   docs/architecture.md §Crates). Deferred out of document mode: it adds ~1 MB to the .wasm
   and the spike's page has no fences, but limulus.net's archive does, so the port needs it
 - ∆RGQ Side channels + generators — `lem-style`/`lem-script`/`lem-head`/`lem-emit`
-  collection and dedup, `lem-page` (including `for` generators with prev/next), serializable
-  modules, render-reported deps, and compile-reported facts per file (signatures, reference
-  ids, manifest entries) so the shell's unit cache key is `hash(text) + hash(facts)` and a
-  content edit never recompiles its layouts (D25); needs: ∆C8d
+  collection and dedup, `lem-page` generators (prev/next), `plan()` filling each page's
+  entry from the host-named field (D30), serializable modules, render-reported deps, and
+  compile-reported facts (signatures, reference ids, manifest entries, a document's record)
+  keying the unit cache so a content edit never recompiles its layouts (D25); needs: ∆C8d
 - ∆5MM tree-sitter-lemmon + LSP skeleton — embedded-template grammar with HTML/markdown
   injections, corpus agreement test wired into CI, `@limulus/lemmon-lsp` serving diagnostics
   and schema completions from `core.analyze()`; editor tooling is a day-one commitment
@@ -71,11 +71,11 @@ API); the port itself lives in limulus-dot-net on a branch while 11ty stays gree
 
 ### Shell: `lem build`
 
-- ∆4tG Build pipeline + CLI — `lem build` walks the input, classifies files
-  (document/template/data/passthrough), parses front matter with YAML positions, loads
-  `lemmon.config.ts`, and drives the core (compile → loadData → plan → render) across a
-  worker pool, one WASM instance per worker; `lem check` prints spanned diagnostics without
-  writing. The backbone every other shell item plugs into
+- ∆4tG Build pipeline + CLI — `lem build` walks the input, classifies files, parses front
+  matter with YAML positions, loads `lemmon.config.ts`, and drives the core across a worker
+  pool: compile `ambient.lem` + templates, match documents to the reported `from` globs and
+  compile them with their record (D30), loadData, plan, render. `lem check` prints spanned
+  diagnostics without writing. The backbone every other shell item plugs into
 - ∆7Xs Output writer — HTML to disk, per-page hashed CSS bundles collected from `lem-emit
   styles` (`name.<8hex>.ext` under `/assets/immutable/…`, D13/D20), passthrough copy by
   glob (limulus.net copies `assets/**` plus png/svg/jpg/xsd/xsl/txt/pdf), and a link/asset
@@ -95,6 +95,10 @@ API); the port itself lives in limulus-dot-net on a branch while 11ty stays gree
   from render-reported deps and `upsertRecord` (docs/architecture.md §Build pipeline),
   `--drafts` (D19). Replaces `eleventy --serve --incremental`, the daily authoring loop;
   needs: ∆4tG, ∆RGQ
+- ∆V7i `lem init` — scaffold a working blog as plain site code: `site.lem` with a `Post
+  extends Page` schema, a `posts` glob binding, a `layout` default, and base/post layouts,
+  plus an `index.lem` page. The core has no content conventions (D30), so this is where
+  a new site gets them — readable and editable, never built in; needs: ∆4tG
 
 ### limulus.net plugins (D12)
 
@@ -116,15 +120,16 @@ API); the port itself lives in limulus-dot-net on a branch while 11ty stays gree
   rewritten as `.lem` functions with `lem-style` scoping (D20). First real exercise of the
   language at scale; expect it to feed fixes back into Phase 1 items; needs: ∆iCW, ∆Q6L,
   ∆RGQ
-- ∆o24 Content + markdown parity — typed front matter for every `.md`, computed defaults
-  replacing `eleventyComputed.js` (title from linkTitle, tilTopic/tags from path, link/via
-  domains, readingTime), link-post reference appender as `transformDocument`, and comrak
-  configured to match markdown-it output (footnote section markup, task lists, attrs,
-  heading anchors, highlight classes); needs: ∆Hbw, ∆rT5, ∆BfR
+- ∆o24 Content + markdown parity — typed front matter for every `.md` (globs replace `tags`,
+  schema defaults replace `links.json`), computed defaults replacing `eleventyComputed.js`
+  (title from linkTitle, tilTopic from path, link/via domains, readingTime), the link-post
+  reference appender as `transformDocument`, and comrak matched to markdown-it (footnote
+  markup, task lists, attrs, heading anchors, highlight classes); needs: ∆Hbw, ∆rT5, ∆BfR
 - ∆ePP Generated and non-HTML pages — TIL topic pages, links and photo pages via
   `lem-page` generators, the three feeds (rss + two atom, `/feed.xsl`), `sitemap.xml`
   with video entries, 404 — the last things still depending on 11ty plugins
-  (`eleventy-plugin-rss`, pagination, `sitemap.njk`); needs: ∆rT5, ∆RGQ
+  (`eleventy-plugin-rss`, pagination, `sitemap.njk`). A feed reads other pages' rendered
+  bodies, which D30 left without a form (`body` is not a `Page` field); needs: ∆rT5, ∆RGQ
 
 ### Parity and cutover (D15)
 

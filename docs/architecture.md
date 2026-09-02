@@ -22,7 +22,9 @@ later, unchanged — a Lambda (`ContentSource` seam, D14).
 
 ```ts
 class Core {
-  compile(files: {path, text}[]): Diagnostic[]        // changed files only; per-file units, cached (D25)
+  compile(files: {path, text, record?}[], host?: HostDecl): Diagnostic[]
+      // changed files only; per-file units, cached (D25). `record` names a document's
+      // schema; `host` names the ambient values and their types (D30)
   loadData(input: DataInput): Diagnostic[]            // records, data files, asset manifest, build info
   upsertRecord(collection, record) / removeRecord(id) // dev server + future on-demand
   plan(): PageRef[]                                   // static pages + expanded generators
@@ -31,6 +33,7 @@ class Core {
   analyze(path, offset): { diagnostics, completions, hover, definition }  // LSP
   format(path): string
 }
+// HostDecl = {ambient: {[name]: TypeName | {bindingsOf: path}}, entry: FieldName}
 // reserved optional host import (D08): renderMarkdown?(text: string): string
 ```
 
@@ -38,6 +41,17 @@ Boundary rules: few large calls; program and data stay resident in the instance;
 crosses as one UTF-8 JSON buffer (rmp-serde if profiling demands); one instance per worker
 thread, nothing shared. Whole-site data ≪ 10 MB. comrak + syntect adds ~1 MB to the .wasm —
 lazy-load in the playground, irrelevant in Node.
+
+Ambient declarations (D30): the core knows no type or value by name. The host passes its
+environment with `compile` — the declarations as Lemmon source (the shell ships
+`ambient.lem`, declaring `Page` and `Build`) and `host`, which binds each ambient value
+name to a declared type or to the top-level bindings of a file (`site` → `site.lem`) and
+names the field a page is rendered through (`layout`). Each document carries its
+`record`: the element type of the `from` binding whose glob matched it, or the type a
+`type:` key names, which the checker requires to extend that element type. The unit
+depends on that type
+as a compile-time fact (D25). A document without one compiles with `page` unknown-typed,
+which is how the spike renders today.
 
 ∆TNT built the `compile`/`loadData`/`render` subset of that class (plus `version`), and
 settled the spike shapes the sketch left open — each chosen so the full form is additive,
@@ -76,11 +90,14 @@ not a break:
 3. **Compile** (core) — every changed `.lem`/`.md` → its own bytecode unit, then a link step
    joins the units into the module (D25, §Separate compilation); document prose rendered by
    comrak here and stored in the document's unit (markdown never runs at render time).
+   Templates compile first: the shell matches documents against the `from` globs that
+   `site.lem` reports, then compiles each document with its `record` (D30).
 4. **Load** (core) — validate records against schemas, evaluate computed fields, resolve
    reference fields and assets. Failures point at YAML positions.
-5. **Plan** (core) — expand generators → full output list (url, entry, deps).
-6. **Render × N** (core) — body → layout chain → html + channels (styles/scripts/head)
-   - dependency set. Parallel via shell workers.
+5. **Plan** (core) — expand generators → full output list (url, entry, deps); `entry` is
+   the page's `layout`, the field the host named (D30).
+6. **Render × N** (core) — body → the entry function → html + channels (styles/
+   scripts/head) + dependency set. Parallel via shell workers.
 7. **Write** (shell) — HTML, hashed per-page CSS bundles (`name.<8hex>.ext`,
    `/assets/immutable/…` conventions preserved), passthrough.
 8. **Post-process** (shell) — optional transforms (dprint), link/asset integrity check.
@@ -103,6 +120,7 @@ a one-file edit cheaper than recompiling one file.
 A unit depends on its text and on the **compile-time facts** it consumed, nothing else:
 
 - signatures and types of the project-flat and plugin names it references (not bodies);
+- for a document, the record type the shell compiled it with (D30);
 - the ids of any reference index it resolves a string literal through (language.md §Document
   mode item 6);
 - the asset-manifest entries `asset()` was checked against (D10).
@@ -177,9 +195,10 @@ interface Plugin {
 }
 ```
 
-Plugins ship `.lem` files (functions + types) bound via `lem-import` in `site.lem` (D23);
-they cannot inject build-time JS (D06). The shell also exposes a content API
-(`loadSite(config).collection('articles')`) for tools like the revisions updater.
+Plugins ship `.lem` files (functions + types) bound via `lem-import` in `site.lem` (D23),
+as the shell ships its own `ambient.lem` (D30); they cannot inject build-time JS (D06).
+The shell also exposes a content API (`loadSite(config).collection('articles')`) for
+tools like the revisions updater.
 
 ## Editor tooling (day one, D16)
 

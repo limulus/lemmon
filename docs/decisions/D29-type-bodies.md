@@ -1,7 +1,7 @@
 # D29 — Type bodies
 
 - **Status:** Accepted 2026-08-26 (∆up2); field order extended with `from` by D30 on
-  2026-08-28
+  2026-08-28, and restored the same day when D30's revision moved `from` to `lem-let`
 - **Backlog item:** ∆up2
 - **Normative text:** `docs/language.md` § Scanner (fields mode); § Types › Schemas
 
@@ -16,8 +16,8 @@ newlines matter — the scanner's two modes were one short.
 A `lem-type` block's body is not text. Its opener's name alone (invariant 4) puts the
 scanner into *fields mode* — the tag-mode vocabulary with a line ending as a token — until
 the first `<`, which rescans as text so the close tag lexes as every close does. One field
-per line, `name: Type [by …] [from …] [= default]`; a line ending inside open brackets is
-whitespace, so a default can be a multi-line literal (D24). `extends`, `by` and `from` are
+per line, `name: Type [by …] [= default]`; a line ending inside open brackets is
+whitespace, so a default can be a multi-line literal (D24). `extends` and `by` are
 contextual keywords, plain names elsewhere. One rule, at the scanner, that both grammars
 mirror.
 

@@ -34,9 +34,9 @@ Three delimitability rules (D21):
    no expression parsing needed to find the boundary.
 2. **`lem.` accesses; `lem-*` keywords define.** Inside a keyword head, `= expr` marks
    the void form: `<lem-let x = e />` binds a value (void); `<lem-let x>…</lem-let>`
-   binds its rendered body (block). Same for `lem-fn` (block body vs
-   `<lem-fn f(…): T = expr />`) and `lem-type` (fields in a block body vs the alias
-   `<lem-type Name = T />`, D30). Every tag's shape is decided by its head alone.
+   binds its rendered body (block); `<lem-let x: T from … />` binds a source the host
+   fulfils (void, D30). Same for `lem-fn`: block body vs `<lem-fn f(…): T = expr />`.
+   Every tag's shape is decided by its head alone.
 3. **The `lem-` element namespace is reserved** in Lemmon files. Every builtin is a
    valid custom-element name; an unrecognized `lem-*` tag is a compile error with a
    did-you-mean. (Client-side custom elements used in templates must not be named
@@ -65,7 +65,8 @@ Scanner rules the parser and the tree-sitter grammar must agree on:
   output — and a trigger inside one still fires.
 - `lt lte gt gte in is as true false null` are reserved words: they cannot be used as
   identifiers or as named-argument names. `extends`, `by` and `from` are contextual —
-  keywords in a `lem-type` head and a field, ordinary names anywhere else.
+  `extends` in a `lem-type` head, `by` in a field, `from` in a `lem-let` or `lem-import`
+  head — and ordinary names anywhere else.
 
 Parser recovery rules — what a tag's shape is when its terminator or close tag
 contradicts it, and what each such mistake costs. The tree-sitter grammar must agree
@@ -100,8 +101,7 @@ follows:
   block tag, a reserved word as a name, a close tag after the head — are still
   reported.
 - A `lem-type` body holds fields, one per line: `name: Type`, then `by index` if the
-  field is a reference, then `from source` if it is a collection or data binding, then
-  `= default` if it has one. Whatever else stands on a
+  field is a reference, then `= default` if it has one. Whatever else stands on a
   field's line is one diagnostic; a `>` there is a mistake in the field, not its end.
   Anything the scanner handed back to text mode before the close tag — an element, a
   tag — is reported as out of place and still parsed as items, so its tags nest and
@@ -119,12 +119,12 @@ follows:
 | `lem.` | expression | Print/call. Strings HTML-escaped; `html` verbatim; other types formatted by type (datetime → ISO, asset → hashed URL…). Formatter parenthesizes non-path heads: `<lem.(a ?? b)>`. |
 | `lem-if` / `lem-else-if` / `lem-else` | `bool` or optional | No truthiness: condition must be `bool`, or an optional (non-null test — narrows `T?` to `T` in the branch). Separators are void. |
 | `lem-for` | `x in list` · `x, i in list` · `k, v in map` | Iteration; `<lem-else />` inside gives the empty case. Bodies cannot mutate → parallelizable later. |
-| `lem-let` | `name = expr` / `name: T = expr` → void · bare `name` → block | Immutable binding, scoped to the enclosing block. Block form binds the rendered body as `html` (the capture form; in documents the body is a document). Unused bindings warn. |
+| `lem-let` | `name = expr` / `name: T = expr` / `name: T from source` → void · bare `name` → block | Immutable binding, scoped to the enclosing block. Block form binds the rendered body as `html` (the capture form; in documents the body is a document). The `from` form binds what the host loads from a glob, a data file, or `plugin("…")`; it is allowed only at the top level of `site.lem` (D30). Unused bindings warn. |
 | `lem-match` / `lem-case` / `lem-default` | subject; patterns | Patterns: subtype (`Til as t`), literal, enum variant (a bare name), `null`. Cases are blocks, the optional `lem-default` last. Exhaustive over enums/closed unions, else `lem-default` required. |
 | `lem-fn` | signature | **Definition only** (calls go through `lem.`). Block body returns `html`, closes `</lem-fn>`. Expression body `(…): T = expr` is void, returns any type. |
-| `lem-type` | `Name` / `Name extends Base` → block · `Name = T` → void | Record schema; fields in the body (block), one per line, lexed in fields mode (D29). The void form is a type alias (D30). See § Schemas. |
+| `lem-type` | `Name` / `Name extends Base` | Record schema (block); fields in the body, one per line, lexed in fields mode (D29). See § Schemas. |
 | `lem-enum` | `Name = a \| b \| c` | Enum (void). Bare variant names in expressions where the enum is expected; strings in front matter. |
-| `lem-page` | bindings; optional `for x in xs` | Marks a `.lem` file as a page template; carries front-matter-equivalents as `name = expr` bindings (`layout`, `title`, `permalink`…). With `for`: one page per item; `page.prev`/`page.next` are the generated neighbours. Void. |
+| `lem-page` | bindings; optional `for x in xs` | Marks a `.lem` file as a page template; its `name = expr` bindings are the page's own fields, as front matter is a document's (`layout`, `title`, `url`…), on a record that extends the host's `Page` (D30). With `for`: one page per item; `page.prev`/`page.next` are the generated neighbours. Void. |
 | `lem-import` | `name from plugin("p")` · `{ names } from plugin("p")` | Bind a plugin's shipped functions/types — qualified or promoted (D23). Site files never import each other. Void; lives in `site.lem`. |
 | `lem-style` / `lem-head` | — | Block side channels: collected per page from every function actually called, deduplicated. |
 | `lem-script` | `src=asset(…)` | Void side channel: a deduplicated module script tag. |
@@ -153,7 +153,8 @@ binds, never assigns; no `while`; recursion is allowed.
 `string` · `int` · `float` · `bool` · `datetime` · `duration` · `url` · `html` ·
 `asset` · `[T]` · `{K: V}` · `T?` · records (nominal, single `extends`, subtype usable
 for base, narrowing via `is`/`lem-match`) · enums · function types `(A, B): T` ·
-the well-known records `Page`, `Site`, `Build`, which a site declares (D30, below).
+the host's ambient records — the standard shell declares `Page` and `Build` — and the
+type of `site`, derived from `site.lem` (D30, below).
 
 As written, a type is a name, `[T]`, `{K: V}`, or `(A, B): R`, nested freely, each
 optionally followed by `?`. The `?` binds to the type just written — `(A): R?` is a
@@ -173,16 +174,15 @@ the checker's question, not the parser's.
 ### Schemas
 
 ```
-<lem-type Article>
+<lem-type Article extends Page>
   title: string
   subhead: string?
   date: datetime
   author: string
   hero: Photo? by site.photos
   vod: Vod?
-  layout: Layout = article
+  layout: (Article, html): html = article
   scripts: [asset] = []
-  draft: bool = false
   readingTime: duration = readingTime(body)
 </lem-type>
 ```
@@ -200,52 +200,76 @@ the checker's question, not the parser's.
   never authored (rationale: the same types statically check template expressions —
   subtyping, function types, `html`/`asset` semantics, reference fields).
 
-### Well-known types (D30)
+### Ambient types (D30)
 
-The core provides no complex types. `Site`, `Page` and `Build` are *well-known*: the
-names are reserved, a site declares each as an ordinary `lem-type`, and the checker holds
-each declaration to a contract — `Page` needs `url: url`, `inputPath: string`,
-`body: html`, `prev: Page?`, `next: Page?`; `Build` needs `time: datetime`; `Site` needs
-nothing. Everything past the contract is the site's, and a name a site never declares
-keeps the checker's unknown type: declaring is how a site buys the checking, not how it
-earns permission to render.
+The core knows no type or value by name. A **host** — the shell, the LSP, a playground —
+declares its ambient environment when it compiles a program: the names of the ambient
+values and their types, written in Lemmon and passed like any other file, so every field
+has a span and the checker that validates the site's records validates what the host
+sends. A host that names a value without typing it gives that value the checker's
+unknown type — which is how the Phase 0 spike, whose host names `page`, `site` and
+`build` and types none, renders unannotated.
+
+The standard shell (`@limulus/lemmon-shell`) ships this declaration and binds `page`,
+`build`, and `site`:
 
 ```
-<lem-type Layout = (Page, html): html />
-
 <lem-type Page>
   url: url
   inputPath: string
-  body: html
   prev: Page?
   next: Page?
-  data: PageData        <!-- the site's own root record: what a layout may read -->
-</lem-type>
-
-<lem-type Site>
-  posts: [Article] from "feed/*/index.md"
-  photos: PhotoIndex from plugin("photos")
-  authors: {string: Author} from "_data/authors.json"
-  articles: [Article] = concat(posts, links, tils, journal)
+  draft: bool = false
 </lem-type>
 
 <lem-type Build>
   time: datetime
   generator: string
-  env: BuildEnv         <!-- a missing value is a load error, not `undefined` at render -->
 </lem-type>
 ```
 
-- A **`from` field** binds a collection (a glob), a data file, or a plugin's records. It
-  stands between `by` and `= default`, so field order is
-  `name: Type [by …] [from …] [= default]`; it replaces `lem-collection`/`lem-data`.
-- There is no `layout` type. A string in data resolves **by its expected type** — record
-  → its `by` index, enum → a variant, `asset` → the manifest, `datetime` → parse, and a
-  function type → a project-namespace function of that type — so `layout: Layout = article`
-  in a schema and `layout: article` in front matter need no special case.
+`prev`/`next` are a page's neighbours in the collection whose glob matched it; `draft` is
+D19's flag — a draft is skipped and left out of collections unless `--drafts`.
 
-_Not yet (∆1vS): the parser knows `lem-collection`/`lem-data` as unsupported builtins, and
-has neither the `from` clause nor the alias form._
+- **`site`** is the record of `site.lem`'s top-level bindings. A `from` binding names a
+  source the shell fulfils, and the binding's type decides what is loaded: a list of a
+  type that extends `Page` loads the documents its glob matches; anything else parses
+  the file as data. `= expr` bindings are computed at load, in dependency order.
+
+```
+<lem-let posts:    [Article]        from "feed/*/index.md" />
+<lem-let photos:   PhotoIndex       from plugin("photos") />
+<lem-let authors:  {string: Author} from "_data/authors.json" />
+<lem-let articles: [Article] = concat(posts, links, tils) />
+```
+
+- **A content type is page-backed by `extends Page`**, and its front matter is its own
+  fields, flat: `page.title` beside `page.url`. A `from` glob's element type must extend
+  `Page`. A document's type is the element type of the collection whose glob matched it;
+  a front-matter `type:` key may name a subtype instead, and the checker reports at that
+  key if the named type does not extend the element type. A document no glob matches has
+  no schema: `page` is unknown-typed, and it renders.
+- **`layout`** is a field every page schema declares, `(T, html): html` for its own `T`,
+  usually with a default. At load its string value resolves to a project function of that
+  type, as any string does where a function type is expected; the shell renders a page by
+  calling that function with the page and its rendered body. That is why `body` is the
+  layout's parameter and not a `Page` field: nothing has produced it before render. There
+  is no `Layout` type and no `layout` builtin.
+- **`url`** is the one `Page` field a source may provide — `<lem-page url = "/feed.xml" />`,
+  or `url:` in front matter; the shell derives it otherwise. There is no `permalink`.
+- A string in data resolves **by its expected type** — record → its `by` index, enum → a
+  variant, `asset` → the manifest, `datetime` → parse, function type → a project function
+  of that type — so `layout: article` in front matter needs no special case.
+
+The shell reads exactly two names of its own: `type`, a raw key it must read before a
+document has a type, and `layout`, a field it requires on every page schema. Everything
+else it knows about a page is a field declared with a span, in `ambient.lem` or
+`site.lem`.
+
+_Not yet (∆1vS, ∆C8d): the parser knows `lem-collection`/`lem-data` as unsupported
+builtins and has no `from` clause on `lem-let`; the boundary takes neither a host
+declaration nor a document's record; environment values, a `from` source on `site`, have
+no syntax yet._
 
 ### Checking
 
@@ -262,7 +286,8 @@ One value namespace, resolved lexically: **locals/params** (innermost wins) →
 
 - **Project-flat:** every `.lem` file in the site shares one namespace; no imports
   between site files. Duplicate definitions are compile errors citing both spans.
-  File-top-level `lem-page`/`lem-let` bindings stay local to their file.
+  File-top-level `lem-page`/`lem-let` bindings stay local to their file — except
+  `site.lem`'s, which are the fields of `site` (D30).
 - **Plugins qualified:** `site.lem` binds once —
   `<lem-import photos from plugin("photos") />` → `lem.photos.picture(…)`; named
   promotion `<lem-import { picture, Photo, PhotoIndex } from plugin("photos") />`
@@ -270,8 +295,8 @@ One value namespace, resolved lexically: **locals/params** (innermost wins) →
   same duplicate error.
 - **Ambient:** stdlib (`slugify`, `raw`, `asset`, `url`, `rfc3339`, `rfc822`,
   `readingTime`, `uniqueId`, …) needs no import; site definitions may shadow it (warn).
-  `site`, `page`, `build` cannot be redefined as values, though their *types* are the
-  site's to declare (D30).
+  The ambient *values* are the host's to name and type (D30) — the standard shell binds
+  `site`, `page`, `build` — and cannot be redefined.
 
 ## Functions & components (D04, D22)
 
@@ -292,7 +317,7 @@ One value namespace, resolved lexically: **locals/params** (innermost wins) →
 - **Layouts wrap by capturing** — no implicit magic variable:
 
 ```
-<lem-fn article(page: Page, body: html)>
+<lem-fn article(page: Article, body: html)>
   <lem-let inner>
     <article>…<lem.body>…</article>
   </lem-let>
@@ -380,12 +405,13 @@ renders prose; the VM renders Lemmon blocks; outputs are spliced.
    unsupported in v1).
 5. Prose is static → markdown runs at **compile** time; results are cached in the
    module's constants. Only lem-blocks execute at render.
-6. Front matter is a typed record (the collection's schema); the body has `page` and
-   `site` in scope. String literals where a record is expected resolve through reference
-   indexes at compile time: `<lem.photo("middle-falls-letchworth-state-park",
-   placement: right)>` — a typo'd id is a build error. _Not yet (∆Hbw, ∆C8d): the core
-   skips a leading `---` block without reading it — the shell's YAML parser owns it —
-   and a string literal is a string._
+6. Front matter is a typed record — the schema of the collection whose glob matched the
+   file, or the subtype a `type:` key names (D30) — and the body has `page` and `site`
+   in scope. String literals where a record is expected resolve through reference
+   indexes at compile time:
+   `<lem.photo("middle-falls-letchworth-state-park", placement: right)>` — a typo'd id
+   is a build error. _Not yet (∆Hbw, ∆C8d): the core skips a leading `---` block without
+   reading it — the shell's YAML parser owns it — and a string literal is a string._
 7. A void keyword tag (`<lem-let x = … />`) takes its line with it, as in a template
    (§Tags); an access tag or a block keeps the line ending after it, so that two
    blocks' output stand on two lines.
