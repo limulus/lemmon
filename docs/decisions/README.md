@@ -39,7 +39,7 @@ docs, the journal, and the code.
 | D18 | Name & prefix | **Lemmon**; tag prefix `lem`; files `.lem`; CLI `lem`. Registry notes: crates.io `lemmon` free; npm unscoped `lemmon` squatted (dormant); npm packages publish under the existing `@limulus` scope as `@limulus/lemmon-*` (2026-08-16, superseding the unverified `@lemmon` scope idea); github.com/lemmon is an unrelated user → org needs a variant. |
 | D19 | Drafts & scheduling | `draft: bool` + `--drafts` dev flag; `draft` is a field of the shell's `Page` declaration, not a reserved key (D30, 2026-08-28). No scheduled publishing in static mode (falls out of on-demand later). |
 | D20 | CSS scoping | Convention, no rewriting: component root carries a class named after the function; styles nest under it with native CSS nesting. `lem-style` blocks → per-page hashed bundle via `lem-emit styles`. |
-| D21 | Tag shapes | Kebab `lem-*` builtins (valid custom-element names; namespace reserved — unknown `lem-*` is a compile error). `lem.` accesses (always void); keyword heads with `= expr` are void, without are blocks; voids canonically ` />`. All blocks close bare (`</lem-fn>`; the named close `</lem-fn.foo>` was dropped 2026-08-20). Heads never contain `>`: `lt lte gt gte`, `\|a\| expr`, `: T`. |
+| D21 | Tag shapes | Kebab `lem-*` builtins (valid custom-element names; namespace reserved — unknown `lem-*` is a compile error). `lem.` accesses (always void); keyword heads with `= expr` are void, as is a `lem-let` head with `from` past its name (D30); heads with neither are blocks; voids canonically ` />`. All blocks close bare (`</lem-fn>`; the named close `</lem-fn.foo>` was dropped 2026-08-20). Heads never contain `>`: `lt lte gt gte`, `\|a\| expr`, `: T`. |
 | D22 | Calls & slots | `<lem.f(args)>` is the only call form. Bodies pass capture-then-call (`<lem-let x>…</lem-let>` → `slot: x`). No call-with-body syntax; grammar stays head-decidable. One-shot sugar would be additive later. |
 | D23 | Namespaces | One lexical value namespace: locals/params → project-flat (all site `.lem` files; duplicates = compile error; no site-file imports) → ambient (the values the host names — `site`/`page`/`build` in the shell, D30 — plus stdlib; shadowing stdlib warns). Plugins bind qualified via `lem-import` in `site.lem`, named promotion optional. Types split from values by capitalization. |
 | D24 | Trailing commas | One optional trailing comma is allowed in every comma-separated list — `[a, b,]`, `{k: v,}`, `f(a, b,)`, `lem-fn f(a: int,)`, `\|a, b,\| …` — so multi-line literals and signatures stay one-line-per-item and diff-friendly, as in JS and Rust. Empty slots (`[a,,b]`, `f(,)`) remain errors (2026-08-22). |
@@ -48,7 +48,7 @@ docs, the journal, and the code.
 | [D27](D27-statement-lines.md) | Statement lines | A `lem-let`/`lem-fn` tag, void or block, alone on its line takes the line with it. `<lem.…>`, `lem-if` and `lem-for` keep theirs. |
 | [D28](D28-whitespace-is-a-source-concern.md) | Whitespace is a source concern | Lemmon optimizes how a `.lem` file reads, not how its HTML reads. The renderer never re-indents at a boundary, and whitespace HTML renders survives byte for byte; formatting the output is a downstream tool's job. Fidelity gates compare rendered HTML, not bytes. |
 | [D29](D29-type-bodies.md) | Type bodies | A `lem-type` block body is scanned in *fields mode* — one `name: Type [by …] [= default]` per line, line ending as a token, until the first `<`. `extends` and `by` are contextual keywords. |
-| [D30](D30-ambient-types.md) | Ambient types | The core knows no type or value by name: a host declares its ambient values and their types in Lemmon source compiled with the program. The shell ships `Page` and `Build`, binds `site` to `site.lem`'s top-level `lem-let … from …` bindings, and reads two names of its own — the `type:` key and the `layout` field. Content types `extends Page`; a document's type is that of the collection whose glob matched it, or a subtype a `type:` key names; a document no glob matches is unknown-typed and renders. `lem-collection`/`lem-data` are retired; there is no `Layout`, `permalink`, or `Page.data`. |
+| [D30](D30-ambient-types.md) | Ambient types | The core knows no type or value by name: a host declares its ambient values and their types in Lemmon source compiled with the program. The shell ships `Page` and `Build`, binds `site` to `site.lem`'s top-level `lem-let … from …` bindings, and reads two names of its own — the `type:` key and the `layout` field. Content types `extends Page`; a document's type is that of the collection whose glob matched it, or a subtype a `type:` key names; a document no glob matches is unknown-typed and renders. `lem-collection`/`lem-data` are retired; there is no `Layout`, `permalink`, or `Page.data`. Environment values are a `from env("…")` source, the same shape as `plugin("…")` (∆1vS). |
 
 ## Deliberately deferred
 
@@ -72,8 +72,8 @@ literal in favour of a `datetime("…")` stdlib constructor. D24 added 2026-08-2
 2026-08-23; D26 2026-08-23, implemented 2026-08-24 (∆2vO); D27 2026-08-24 (∆2vO); D28
 2026-08-24, applied 2026-08-25 (∆Ma4); D29 2026-08-26 (∆up2); D30 2026-08-28,
 revised the same day from well-known types to host-declared ambient types (revising D19,
-D23 and D29 with it). From D25 on, a record's Status line carries the history its row
-used to.
+D23 and D29 with it), its `from` clause parsed 2026-09-04 (∆1vS). From D25 on, a
+record's Status line carries the history its row used to.
 
 ## Record template
 

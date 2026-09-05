@@ -1,0 +1,216 @@
+Root@0..502
+  TypeDecl@0..118
+    OpenTag@0..9 "<lem-type"
+    Trivia@9..10 " "
+    Head@10..30
+      Ident@10..17 "Article"
+      Trivia@17..18 " "
+      Ident@18..25 "extends"
+      Trivia@25..26 " "
+      Ident@26..30 "Page"
+    Close@30..31 ">"
+    FieldList@31..107
+      Newline@31..32 "\n"
+      Trivia@32..34 "  "
+      Field@34..47
+        Ident@34..39 "title"
+        TypeAnnotation@39..47
+          Colon@39..40 ":"
+          Trivia@40..41 " "
+          NamedType@41..47
+            Ident@41..47 "string"
+      Newline@47..48 "\n"
+      Trivia@48..50 "  "
+      Field@50..64
+        Ident@50..54 "date"
+        TypeAnnotation@54..64
+          Colon@54..55 ":"
+          Trivia@55..56 " "
+          NamedType@56..64
+            Ident@56..64 "datetime"
+      Newline@64..65 "\n"
+      Trivia@65..67 "  "
+      Field@67..106
+        Ident@67..73 "layout"
+        TypeAnnotation@73..96
+          Colon@73..74 ":"
+          Trivia@74..75 " "
+          FnType@75..96
+            LParen@75..76 "("
+            NamedType@76..83
+              Ident@76..83 "Article"
+            Comma@83..84 ","
+            Trivia@84..85 " "
+            NamedType@85..89
+              Ident@85..89 "html"
+            RParen@89..90 ")"
+            Colon@90..91 ":"
+            Trivia@91..92 " "
+            NamedType@92..96
+              Ident@92..96 "html"
+        Trivia@96..97 " "
+        Eq@97..98 "="
+        Trivia@98..99 " "
+        NameRef@99..106
+          Ident@99..106 "article"
+      Newline@106..107 "\n"
+    CloseTag@107..118
+      CloseTag@107..117 "</lem-type"
+      Close@117..118 ">"
+  Text@118..119
+    Text@118..119 "\n"
+  LetFrom@119..180
+    OpenTag@119..127 "<lem-let"
+    Trivia@127..128 " "
+    Head@128..177
+      Ident@128..133 "posts"
+      TypeAnnotation@133..147
+        Colon@133..134 ":"
+        Trivia@134..138 "    "
+        ListType@138..147
+          LBracket@138..139 "["
+          NamedType@139..146
+            Ident@139..146 "Article"
+          RBracket@146..147 "]"
+      Trivia@147..155 "        "
+      Ident@155..159 "from"
+      Trivia@159..160 " "
+      Literal@160..177
+        StringLit@160..177 "\"feed/*/index.md\""
+    Trivia@177..178 " "
+    SelfClose@178..180 "/>"
+  Text@180..181
+    Text@180..181 "\n"
+  LetFrom@181..241
+    OpenTag@181..189 "<lem-let"
+    Trivia@189..190 " "
+    Head@190..238
+      Ident@190..196 "photos"
+      TypeAnnotation@196..210
+        Colon@196..197 ":"
+        Trivia@197..200 "   "
+        NamedType@200..210
+          Ident@200..210 "PhotoIndex"
+      Trivia@210..217 "       "
+      Ident@217..221 "from"
+      Trivia@221..222 " "
+      CallExpr@222..238
+        NameRef@222..228
+          Ident@222..228 "plugin"
+        ArgList@228..238
+          LParen@228..229 "("
+          Literal@229..237
+            StringLit@229..237 "\"photos\""
+          RParen@237..238 ")"
+    Trivia@238..239 " "
+    SelfClose@239..241 "/>"
+  Text@241..242
+    Text@241..242 "\n"
+  LetFrom@242..306
+    OpenTag@242..250 "<lem-let"
+    Trivia@250..251 " "
+    Head@251..303
+      Ident@251..258 "authors"
+      TypeAnnotation@258..277
+        Colon@258..259 ":"
+        Trivia@259..261 "  "
+        MapType@261..277
+          LBrace@261..262 "{"
+          NamedType@262..268
+            Ident@262..268 "string"
+          Colon@268..269 ":"
+          Trivia@269..270 " "
+          NamedType@270..276
+            Ident@270..276 "Author"
+          RBrace@276..277 "}"
+      Trivia@277..278 " "
+      Ident@278..282 "from"
+      Trivia@282..283 " "
+      Literal@283..303
+        StringLit@283..303 "\"_data/authors.json\""
+    Trivia@303..304 " "
+    SelfClose@304..306 "/>"
+  Text@306..307
+    Text@306..307 "\n"
+  LetFrom@307..366
+    OpenTag@307..315 "<lem-let"
+    Trivia@315..316 " "
+    Head@316..363
+      Ident@316..323 "siteUrl"
+      TypeAnnotation@323..332
+        Colon@323..324 ":"
+        Trivia@324..326 "  "
+        NamedType@326..332
+          Ident@326..332 "string"
+      Trivia@332..343 "           "
+      Ident@343..347 "from"
+      Trivia@347..348 " "
+      CallExpr@348..363
+        NameRef@348..351
+          Ident@348..351 "env"
+        ArgList@351..363
+          LParen@351..352 "("
+          Literal@352..362
+            StringLit@352..362 "\"SITE_URL\""
+          RParen@362..363 ")"
+    Trivia@363..364 " "
+    SelfClose@364..366 "/>"
+  Text@366..367
+    Text@366..367 "\n"
+  LetVoid@367..426
+    OpenTag@367..375 "<lem-let"
+    Trivia@375..376 " "
+    Head@376..423
+      Ident@376..384 "articles"
+      TypeAnnotation@384..395
+        Colon@384..385 ":"
+        Trivia@385..386 " "
+        ListType@386..395
+          LBracket@386..387 "["
+          NamedType@387..394
+            Ident@387..394 "Article"
+          RBracket@394..395 "]"
+      Trivia@395..396 " "
+      Eq@396..397 "="
+      Trivia@397..398 " "
+      CallExpr@398..423
+        NameRef@398..404
+          Ident@398..404 "sortBy"
+        ArgList@404..423
+          LParen@404..405 "("
+          NameRef@405..410
+            Ident@405..410 "posts"
+          Comma@410..411 ","
+          Trivia@411..412 " "
+          Lambda@412..422
+            LambdaParams@412..415
+              Pipe@412..413 "|"
+              Ident@413..414 "a"
+              Pipe@414..415 "|"
+            Trivia@415..416 " "
+            MemberExpr@416..422
+              NameRef@416..417
+                Ident@416..417 "a"
+              Dot@417..418 "."
+              Ident@418..422 "date"
+          RParen@422..423 ")"
+    Trivia@423..424 " "
+    SelfClose@424..426 "/>"
+  Text@426..427
+    Text@426..427 "\n"
+  LetBlock@427..501
+    OpenTag@427..435 "<lem-let"
+    Trivia@435..436 " "
+    Head@436..440
+      Ident@436..440 "from"
+    Close@440..441 ">"
+    Block@441..491
+      Text@441..491
+        Text@441..491 "\n  <p>a capture named from is still a ca"…
+    CloseTag@491..501
+      CloseTag@491..500 "</lem-let"
+      Close@500..501 ">"
+  Text@501..502
+    Text@501..502 "\n"
+
+--- diagnostics

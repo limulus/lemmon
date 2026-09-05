@@ -3,7 +3,9 @@
 - **Status:** Accepted 2026-08-28 as *well-known types* — `Site`, `Page`, `Build` reserved
   names a site declares and the checker holds to a core contract, `Page.data` for the
   site's own record, `from` as a field clause — and revised the same day, before any of it
-  was implemented, to host-declared ambient types
+  was implemented, to host-declared ambient types; the `from` clause parsed and
+  `lem-collection`/`lem-data` retired 2026-09-04 (∆1vS), which chose `env("…")` for
+  environment values
 - **Backlog item:** ∆1vS (the `from` binding clause, retiring `lem-collection`/`lem-data`)
 - **Normative text:** `docs/language.md` § Types › Ambient types
 
@@ -76,8 +78,13 @@ declaring `Page` (`url`, `inputPath`, `prev`, `next`, `draft`) and `Build` (`tim
 - Documents are typed per file, so the shell compiles templates first, reads the `from`
   bindings `site.lem` reports, matches documents to those globs, and compiles each with
   its record (∆4tG); `plan()` fills each page's entry from the host-named field (∆RGQ).
-- Environment values — the first form's `Build.env` — become a `from` source on `site`;
-  ∆1vS chooses the syntax.
+- Environment values — the first form's `Build.env` — become a `from` source on `site`:
+  `<lem-let siteUrl: url from env("SITE_URL") />` (∆1vS). The same shape as
+  `plugin("…")`, a call naming a host source with a literal argument, so the core
+  still names nothing: `env.SITE_URL` would have made `env` a value the core knows,
+  and a `lem-env` tag a builtin for a value the host produces. The environment reaches
+  the core as data like every ambient value, and the shell resolves what it holds by
+  the binding's type.
 - `lem init`'s scaffold supplies a blog's conventions, since the core has none (∆V7i).
 - A subtype that redeclares `layout` with its own parameter type — `Article`'s
   `(Article, html): html` over a site base record's `(SitePage, html): html` — narrows a

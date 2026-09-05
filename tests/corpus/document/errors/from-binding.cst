@@ -1,0 +1,27 @@
+Root@0..132
+  Text@0..10
+    Text@0..10 "# A post\n\n"
+  LetFrom@10..61
+    OpenTag@10..18 "<lem-let"
+    Trivia@18..19 " "
+    Head@19..58
+      Ident@19..24 "posts"
+      TypeAnnotation@24..35
+        Colon@24..25 ":"
+        Trivia@25..26 " "
+        ListType@26..35
+          LBracket@26..27 "["
+          NamedType@27..34
+            Ident@27..34 "Article"
+          RBracket@34..35 "]"
+      Trivia@35..36 " "
+      Ident@36..40 "from"
+      Trivia@40..41 " "
+      Literal@41..58
+        StringLit@41..58 "\"feed/*/index.md\""
+    Trivia@58..59 " "
+    SelfClose@59..61 "/>"
+  Text@61..132
+    Text@61..132 "\n\nA document is never the site file, so "…
+
+--- diagnostics

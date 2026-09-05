@@ -1,0 +1,5 @@
+<lem-let posts: [Article] from "feed/*/index.md" />
+<lem-fn f()>
+  <lem-let photos: PhotoIndex from plugin("photos") />
+</lem-fn>
+<lem.f()>

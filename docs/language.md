@@ -65,8 +65,8 @@ Scanner rules the parser and the tree-sitter grammar must agree on:
   output — and a trigger inside one still fires.
 - `lt lte gt gte in is as true false null` are reserved words: they cannot be used as
   identifiers or as named-argument names. `extends`, `by` and `from` are contextual —
-  `extends` in a `lem-type` head, `by` in a field, `from` in a `lem-let` or `lem-import`
-  head — and ordinary names anywhere else.
+  `extends` in a `lem-type` head, `by` after a field's type, `from` after the name in a
+  `lem-let` head or in a `lem-import` head — and ordinary names anywhere else.
 
 Parser recovery rules — what a tag's shape is when its terminator or close tag
 contradicts it, and what each such mistake costs. The tree-sitter grammar must agree
@@ -106,6 +106,13 @@ follows:
   Anything the scanner handed back to text mode before the close tag — an element, a
   tag — is reported as out of place and still parsed as items, so its tags nest and
   close as usual.
+- A `lem-let` head with an `=` is the `=` form, whatever else it holds; one with `from`
+  past its first token is the source form. The first token is the name, so a capture
+  named `from` is still a block. A source form without `: Type` is reported at the
+  `from`: the type is what tells the host what to load, and nothing could infer it from
+  a glob. The source is one expression; which forms mean anything — a string naming a
+  glob or data file, `plugin("…")`, `env("…")` — is the checker's question, as whether a
+  type name resolves is.
 - `lem-case` and `lem-default` are blocks that only mean something directly inside a
   `lem-match`, cases before the default and at most one default; anywhere else, or
   out of order, they are reported and parsed as blocks all the same. A `lem-match`
@@ -119,7 +126,7 @@ follows:
 | `lem.` | expression | Print/call. Strings HTML-escaped; `html` verbatim; other types formatted by type (datetime → ISO, asset → hashed URL…). Formatter parenthesizes non-path heads: `<lem.(a ?? b)>`. |
 | `lem-if` / `lem-else-if` / `lem-else` | `bool` or optional | No truthiness: condition must be `bool`, or an optional (non-null test — narrows `T?` to `T` in the branch). Separators are void. |
 | `lem-for` | `x in list` · `x, i in list` · `k, v in map` | Iteration; `<lem-else />` inside gives the empty case. Bodies cannot mutate → parallelizable later. |
-| `lem-let` | `name = expr` / `name: T = expr` / `name: T from source` → void · bare `name` → block | Immutable binding, scoped to the enclosing block. Block form binds the rendered body as `html` (the capture form; in documents the body is a document). The `from` form binds what the host loads from a glob, a data file, or `plugin("…")`; it is allowed only at the top level of `site.lem` (D30). Unused bindings warn. |
+| `lem-let` | `name = expr` / `name: T = expr` / `name: T from source` → void · bare `name` → block | Immutable binding, scoped to the enclosing block. Block form binds the rendered body as `html` (the capture form; in documents the body is a document). The `from` form binds what the host loads from a glob, a data file, `plugin("…")`, or `env("…")`; it is allowed only at the top level of `site.lem` (D30). Unused bindings warn. |
 | `lem-match` / `lem-case` / `lem-default` | subject; patterns | Patterns: subtype (`Til as t`), literal, enum variant (a bare name), `null`. Cases are blocks, the optional `lem-default` last. Exhaustive over enums/closed unions, else `lem-default` required. |
 | `lem-fn` | signature | **Definition only** (calls go through `lem.`). Block body returns `html`, closes `</lem-fn>`. Expression body `(…): T = expr` is void, returns any type. |
 | `lem-type` | `Name` / `Name extends Base` | Record schema (block); fields in the body, one per line, lexed in fields mode (D29). See § Schemas. |
@@ -234,12 +241,17 @@ D19's flag — a draft is skipped and left out of collections unless `--drafts`.
 - **`site`** is the record of `site.lem`'s top-level bindings. A `from` binding names a
   source the shell fulfils, and the binding's type decides what is loaded: a list of a
   type that extends `Page` loads the documents its glob matches; anything else parses
-  the file as data. `= expr` bindings are computed at load, in dependency order.
+  the file as data. A call names a host source instead of a file — `plugin("…")` is a
+  plugin's data hook, `env("…")` an environment value the shell passes as data, the
+  only way one reaches a program (invariant 1) — and the shell resolves the string the
+  environment holds by the binding's type, as it resolves any string in data. `= expr`
+  bindings are computed at load, in dependency order.
 
 ```
 <lem-let posts:    [Article]        from "feed/*/index.md" />
 <lem-let photos:   PhotoIndex       from plugin("photos") />
 <lem-let authors:  {string: Author} from "_data/authors.json" />
+<lem-let siteUrl:  url              from env("SITE_URL") />
 <lem-let articles: [Article] = concat(posts, links, tils) />
 ```
 
@@ -266,10 +278,8 @@ document has a type, and `layout`, a field it requires on every page schema. Eve
 else it knows about a page is a field declared with a span, in `ambient.lem` or
 `site.lem`.
 
-_Not yet (∆1vS, ∆C8d): the parser knows `lem-collection`/`lem-data` as unsupported
-builtins and has no `from` clause on `lem-let`; the boundary takes neither a host
-declaration nor a document's record; environment values, a `from` source on `site`, have
-no syntax yet._
+_Not yet (∆C8d, ∆iCW): the boundary takes neither a host declaration nor a document's
+record, and a `from` binding compiles to a diagnostic until the loader exists._
 
 ### Checking
 

@@ -1,0 +1,149 @@
+Root@0..308
+  LetFrom@0..40
+    OpenTag@0..8 "<lem-let"
+    Trivia@8..9 " "
+    Head@9..37
+      Ident@9..14 "posts"
+      Trivia@14..15 " "
+      Ident@15..19 "from"
+      Trivia@19..20 " "
+      Literal@20..37
+        StringLit@20..37 "\"feed/*/index.md\""
+    Trivia@37..38 " "
+    SelfClose@38..40 "/>"
+  Text@40..41
+    Text@40..41 "\n"
+  LetFrom@41..76
+    OpenTag@41..49 "<lem-let"
+    Trivia@49..50 " "
+    Head@50..73
+      Ident@50..56 "photos"
+      TypeAnnotation@56..68
+        Colon@56..57 ":"
+        Trivia@57..58 " "
+        NamedType@58..68
+          Ident@58..68 "PhotoIndex"
+      Trivia@68..69 " "
+      Ident@69..73 "from"
+    Trivia@73..74 " "
+    SelfClose@74..76 "/>"
+  Text@76..77
+    Text@76..77 "\n"
+  LetFrom@77..113
+    OpenTag@77..85 "<lem-let"
+    Trivia@85..86 " "
+    Head@86..110
+      Ident@86..91 "links"
+      TypeAnnotation@91..92
+        Colon@91..92 ":"
+      Trivia@92..93 " "
+      Ident@93..97 "from"
+      Trivia@97..98 " "
+      Literal@98..110
+        StringLit@98..110 "\"links/*.md\""
+    Trivia@110..111 " "
+    SelfClose@111..113 "/>"
+  Text@113..114
+    Text@113..114 "\n"
+  LetVoid@114..158
+    OpenTag@114..122 "<lem-let"
+    Trivia@122..123 " "
+    Head@123..155
+      Ident@123..127 "tils"
+      TypeAnnotation@127..134
+        Colon@127..128 ":"
+        Trivia@128..129 " "
+        ListType@129..134
+          LBracket@129..130 "["
+          NamedType@130..133
+            Ident@130..133 "Til"
+          RBracket@133..134 "]"
+      Trivia@134..135 " "
+      Error@135..150
+        Ident@135..139 "from"
+        Trivia@139..140 " "
+        StringLit@140..150 "\"til/*.md\""
+      Trivia@150..151 " "
+      Eq@151..152 "="
+      Trivia@152..153 " "
+      ListLit@153..155
+        LBracket@153..154 "["
+        RBracket@154..155 "]"
+    Trivia@155..156 " "
+    SelfClose@156..158 "/>"
+  Text@158..159
+    Text@158..159 "\n"
+  LetFrom@159..206
+    OpenTag@159..167 "<lem-let"
+    Trivia@167..168 " "
+    Head@168..203
+      Ident@168..173 "links"
+      Trivia@173..174 " "
+      Ident@174..178 "from"
+      Trivia@178..179 " "
+      Literal@179..191
+        StringLit@179..191 "\"links/*.md\""
+      Error@191..203
+        Colon@191..192 ":"
+        Trivia@192..193 " "
+        LBracket@193..194 "["
+        Ident@194..202 "LinkPost"
+        RBracket@202..203 "]"
+    Trivia@203..204 " "
+    SelfClose@204..206 "/>"
+  Text@206..207
+    Text@206..207 "\n"
+  LetFrom@207..243
+    OpenTag@207..215 "<lem-let"
+    Trivia@215..216 " "
+    Head@216..243
+      Ident@216..220 "vods"
+      TypeAnnotation@220..227
+        Colon@220..221 ":"
+        Trivia@221..222 " "
+        ListType@222..227
+          LBracket@222..223 "["
+          NamedType@223..226
+            Ident@223..226 "Vod"
+          RBracket@226..227 "]"
+      Trivia@227..228 " "
+      Ident@228..232 "from"
+      Trivia@232..233 " "
+      Literal@233..243
+        StringLit@233..243 "\"vod/*.md\""
+  Trivia@243..244 "\n"
+  LetFrom@244..307
+    OpenTag@244..252 "<lem-let"
+    Trivia@252..253 " "
+    Head@253..304
+      Ident@253..260 "authors"
+      TypeAnnotation@260..278
+        Colon@260..261 ":"
+        Trivia@261..262 " "
+        MapType@262..278
+          LBrace@262..263 "{"
+          NamedType@263..269
+            Ident@263..269 "string"
+          Colon@269..270 ":"
+          Trivia@270..271 " "
+          NamedType@271..277
+            Ident@271..277 "Author"
+          RBrace@277..278 "}"
+      Trivia@278..279 " "
+      Ident@279..283 "from"
+      Trivia@283..284 " "
+      Literal@284..304
+        StringLit@284..304 "\"_data/authors.json\""
+    Trivia@304..305 " "
+    SelfClose@305..307 "/>"
+  Text@307..308
+    Text@307..308 "\n"
+
+--- diagnostics
+15..19: a `from` binding needs `: Type`: the type decides what the host loads
+74..76: expected an expression before `/>`
+93..97: expected a type, found `from`
+135..150: unexpected tokens before `=`
+174..178: a `from` binding needs `: Type`: the type decides what the host loads
+191..203: unexpected `:` in tag head
+207..244: unterminated tag: expected `>` before `<`

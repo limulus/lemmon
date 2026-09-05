@@ -212,6 +212,7 @@ impl Piece {
                 item,
                 Item::LetVoid(_)
                     | Item::LetBlock(_)
+                    | Item::LetFrom(_)
                     | Item::FnVoid(_)
                     | Item::FnBlock(_)
                     | Item::TypeDecl(_)
@@ -737,6 +738,17 @@ mod tests {
     #[test]
     fn takes_the_lines_of_the_definitions_a_file_is_made_of() {
         let parse = parse("<lem-fn f()>x</lem-fn>\n<lem-fn g()>y</lem-fn>\n<lem.f()>\n");
+        assert_eq!(parse.diagnostics, &[]);
+        let body = Body::new(parse.root().items().collect(), Kind::File);
+        let mut out = String::new();
+        write(&mut out, &body);
+        assert_eq!(out, "{}\n");
+    }
+
+    #[test]
+    fn takes_the_line_of_a_from_binding_as_of_any_declaration() {
+        let parse =
+            parse("<lem-let posts: [Article] from \"feed/*/index.md\" />\n<lem.posts>\n");
         assert_eq!(parse.diagnostics, &[]);
         let body = Body::new(parse.root().items().collect(), Kind::File);
         let mut out = String::new();

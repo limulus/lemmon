@@ -1,0 +1,13 @@
+<lem-type Article extends Page>
+  title: string
+  date: datetime
+  layout: (Article, html): html = article
+</lem-type>
+<lem-let posts:    [Article]        from "feed/*/index.md" />
+<lem-let photos:   PhotoIndex       from plugin("photos") />
+<lem-let authors:  {string: Author} from "_data/authors.json" />
+<lem-let siteUrl:  string           from env("SITE_URL") />
+<lem-let articles: [Article] = sortBy(posts, |a| a.date) />
+<lem-let from>
+  <p>a capture named from is still a capture</p>
+</lem-let>

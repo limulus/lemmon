@@ -184,6 +184,7 @@ fn is_boundary(kind: SyntaxKind, in_items: bool) -> bool {
             | SyntaxKind::ForTag
             | SyntaxKind::LetVoid
             | SyntaxKind::LetBlock
+            | SyntaxKind::LetFrom
             | SyntaxKind::FnBlock
             | SyntaxKind::FnVoid
             | SyntaxKind::TypeDecl
@@ -433,10 +434,6 @@ impl<'src> Parser<'src> {
     /// cut by the scanner or a scanner error token was just skipped: the scanner has
     /// already said so, and this would only name what its mistake displaced.
     fn error_expected(&mut self, what: &str) {
-        if self.at_cut_head() || self.displaced {
-            return;
-        }
-        let span = self.current_span();
         // A field ends at its line, whether that line ends with a newline or with the
         // `</lem-type>` the body ends at; either way the field is where the mistake is.
         let ends_the_field = self.in_fields && self.at_field_end();
@@ -450,6 +447,17 @@ impl<'src> Parser<'src> {
             Some(_) => format!("expected {what}, found `{}`", self.current_text()),
             None => format!("expected {what} before end of input"),
         };
+        self.error_at_current(message);
+    }
+
+    /// Reports `message` about the current token. Silent when the head was cut by the
+    /// scanner or a scanner error token was just skipped: the scanner has already
+    /// said so, and this would only name what its mistake displaced.
+    fn error_at_current(&mut self, message: impl Into<String>) {
+        if self.at_cut_head() || self.displaced {
+            return;
+        }
+        let span = self.current_span();
         self.error(message, span);
     }
 

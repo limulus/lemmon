@@ -19,11 +19,6 @@ mechanism: `delto surface` trusts these edges to decide what is eligible to work
 Seed items for the next phase (architecture doc 3, phase 1); expect these to be split
 further at claim time.
 
-- ∆1vS Ambient bindings — a `from` clause on the `lem-let` head (`name: T from "glob"` /
-  `from plugin("p")`, void like `= expr`; top of `site.lem` only), with AST views and
-  corpus `.cst`/`.tags`; `lem-collection`/`lem-data` retired from the builtin table and
-  the unsupported corpus; a syntax for environment values. No semantics: it is the
-  grammar D30 needs so `site` is typed from `site.lem`'s own bindings, nothing built in
 - ∆C8d Type checker — types, bidirectional inference, narrowing (`is`, `lem-match`,
   optionals in `lem-if`), unused warnings, diagnostics with severity and secondary spans
   through the boundary, typed lowering (`TypeTest`, `lem-match`), project-flat + ambient

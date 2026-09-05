@@ -2,7 +2,8 @@
 //!
 //! A tag's shape — void or block — is decided from its name and its head alone
 //! (invariant 4): `lem-let` and `lem-fn` look for a top-level `=` among the head's
-//! tokens, every other builtin has a fixed shape. Block bodies are parsed with a stack
+//! tokens — `lem-let` also for the contextual keyword `from` past its name — and every
+//! other builtin has a fixed shape. Block bodies are parsed with a stack
 //! of open blocks, so that a close tag can be matched to what is actually open, and a
 //! mismatch can say what was expected instead.
 
@@ -24,8 +25,6 @@ enum Builtin {
     Default,
     Type,
     Enum,
-    Collection,
-    Data,
     Page,
     Import,
     Style,
@@ -46,8 +45,6 @@ const BUILTINS: &[(&str, Builtin)] = &[
     ("default", Builtin::Default),
     ("type", Builtin::Type),
     ("enum", Builtin::Enum),
-    ("collection", Builtin::Collection),
-    ("data", Builtin::Data),
     ("page", Builtin::Page),
     ("import", Builtin::Import),
     ("style", Builtin::Style),
@@ -96,12 +93,7 @@ impl Builtin {
                 unreachable!("parsed builtins are dispatched by name")
             }
             Self::Style | Self::Head => true,
-            Self::Collection
-            | Self::Data
-            | Self::Page
-            | Self::Import
-            | Self::Script
-            | Self::Emit => false,
+            Self::Page | Self::Import | Self::Script | Self::Emit => false,
         }
     }
 }
@@ -350,6 +342,24 @@ fn head_has_eq(p: &Parser<'_>) -> bool {
         .any(|t| t.kind == TokenKind::Eq)
 }
 
+/// Whether the current head holds the contextual keyword `from` past its name — the
+/// marker of the source form of `lem-let` (D30). The head's first token is the name,
+/// so a capture named `from` keeps its block shape, as a field named `by` keeps its
+/// type — unless a scanner error token stood in the name's place, which `bump` has
+/// already skipped: then the head begins after the name. Checked after
+/// [`head_has_eq`]: a head with both is the `=` form with junk before its `=`.
+fn head_has_from(p: &Parser<'_>) -> bool {
+    p.tokens[p.pos.min(p.tokens.len())..]
+        .iter()
+        .take_while(|t| !p.is_head_end_kind(t.kind))
+        .skip(usize::from(!p.displaced))
+        .any(|t| t.kind == TokenKind::Ident && t.text(p.src) == "from")
+}
+
+fn at_from(p: &Parser<'_>) -> bool {
+    p.at(TokenKind::Ident) && p.current_text() == "from"
+}
+
 fn open_tag<'src>(p: &mut Parser<'src>, stack: &mut Vec<Open<'src>>) {
     let name = &p.current_text()["<lem-".len()..];
     let span = p.current_span();
@@ -392,6 +402,10 @@ fn open_tag<'src>(p: &mut Parser<'src>, stack: &mut Vec<Open<'src>>) {
                 head(p, let_void_head);
                 void_close(p);
                 m.complete(p, SyntaxKind::LetVoid);
+            } else if head_has_from(p) {
+                head(p, let_from_head);
+                void_close(p);
+                m.complete(p, SyntaxKind::LetFrom);
             } else {
                 head(p, |p| {
                     p.expect(TokenKind::Ident, "a name");
@@ -798,6 +812,45 @@ fn let_void_head(p: &mut Parser<'_>) {
     expr::expression(p);
 }
 
+/// `name: Type from source`
+///
+/// The type is required: it is what tells the host what to load (D30), and nothing
+/// could infer it from a glob. The source is any expression — a glob or data file as
+/// a string, or a call naming a host source such as `plugin("photos")` or
+/// `env("SITE_URL")`; which forms mean anything is the checker's question, as whether
+/// a type name resolves is.
+fn let_from_head(p: &mut Parser<'_>) {
+    // A scanner error token that stood in the name's place was skipped and reported
+    // already; the `from` now current is the keyword, not a name.
+    if !(p.displaced && at_from(p)) {
+        p.expect(TokenKind::Ident, "a name");
+    }
+    if p.at(TokenKind::Colon) {
+        let m = p.start();
+        p.bump();
+        // The `from` past the name is what chose this shape: it is the keyword, never
+        // a type name, so a missing type is reported here rather than the source
+        // after it being blamed for standing before `from`.
+        if at_from(p) {
+            p.error_expected("a type");
+        } else {
+            type_expr(p);
+        }
+        m.complete(p, SyntaxKind::TypeAnnotation);
+    } else {
+        p.error_at_current(
+            "a `from` binding needs `: Type`: the type decides what the host loads",
+        );
+    }
+    skip_until_by(p, at_from, "unexpected tokens before `from`");
+    if at_from(p) {
+        p.bump();
+    } else {
+        p.error_expected("`from`");
+    }
+    expr::expression(p);
+}
+
 /// `name(params) [: Type]`
 fn fn_signature(p: &mut Parser<'_>) {
     p.expect(TokenKind::Ident, "a function name");
@@ -900,21 +953,13 @@ fn type_expr_in(p: &mut Parser<'_>) {
 
 /// Wraps everything before `kind` (or the head's end) in an `Error` node.
 fn skip_until(p: &mut Parser<'_>, kind: TokenKind, message: &str) {
-    if p.at(kind) || p.at_head_end() {
-        return;
-    }
-    let stale = p.stale();
-    let start = p.current_span().start;
-    let m = p.start();
-    let mut end = start;
-    while !p.at(kind) && !p.at_head_end() {
-        end = p.current_span().end;
-        p.bump();
-    }
-    m.complete(p, SyntaxKind::Error);
-    if !stale {
-        p.error_skipped(message, Span::new(start, end));
-    }
+    skip_until_by(p, |p| p.at(kind), message);
+}
+
+/// Wraps everything before the token `at` accepts (or the head's end) in an `Error`
+/// node.
+fn skip_until_by(p: &mut Parser<'_>, at: impl Fn(&Parser<'_>) -> bool, message: &str) {
+    p.skip_while(message, |p| !at(p) && !p.at_head_end());
 }
 
 #[cfg(test)]
@@ -972,6 +1017,100 @@ mod parse_tests {
         assert_eq!(
             messages("<lem-let (x = 1 />"),
             vec!["expected a name, found `(`"]
+        );
+    }
+
+    #[test]
+    fn parses_every_from_binding_shape_clean() {
+        for src in [
+            "<lem-let posts: [Article] from \"feed/*/index.md\" />",
+            "<lem-let photos: PhotoIndex from plugin(\"photos\") />",
+            "<lem-let authors: {string: Author} from \"_data/authors.json\" />",
+            "<lem-let siteUrl: string from env(\"SITE_URL\") />",
+            "<lem-let from: string from env(\"SITE_URL\") />",
+        ] {
+            assert_eq!(messages(src), Vec::<String>::new(), "{src}");
+        }
+    }
+
+    #[test]
+    fn keeps_a_capture_named_from_a_block() {
+        assert_eq!(messages("<lem-let from>a</lem-let>"), Vec::<String>::new());
+    }
+
+    #[test]
+    fn requires_a_type_on_a_from_binding() {
+        assert_eq!(
+            diagnostics("<lem-let posts from \"feed/*/index.md\" />"),
+            vec![(
+                Span::new(15, 19),
+                "a `from` binding needs `: Type`: the type decides what the host loads"
+                    .into()
+            )]
+        );
+    }
+
+    #[test]
+    fn requires_a_source_after_from() {
+        assert_eq!(
+            messages("<lem-let photos: PhotoIndex from />"),
+            vec!["expected an expression before `/>`"]
+        );
+    }
+
+    #[test]
+    fn takes_the_equals_sign_over_from() {
+        assert_eq!(
+            messages("<lem-let tils: [Til] from \"til/*.md\" = [] />"),
+            vec!["unexpected tokens before `=`"]
+        );
+    }
+
+    #[test]
+    fn reports_what_stands_between_the_type_and_from() {
+        assert_eq!(
+            messages("<lem-let posts: [Article] loaded from \"feed/*/index.md\" />"),
+            vec!["unexpected tokens before `from`"]
+        );
+    }
+
+    #[test]
+    fn reports_a_from_that_is_only_inside_the_type() {
+        assert_eq!(
+            messages("<lem-let x: [from] />"),
+            vec!["expected `from` before `/>`"]
+        );
+    }
+
+    #[test]
+    fn keeps_the_shape_of_a_from_binding_whose_name_the_scanner_displaced() {
+        assert_eq!(
+            messages("<lem-let @ from \"feed/*.md\" />\n<lem-if a>b</lem-if>\n"),
+            vec!["unexpected character in tag"]
+        );
+    }
+
+    #[test]
+    fn stays_silent_about_what_a_scanner_error_displaced_in_a_from_binding() {
+        assert_eq!(
+            messages("<lem-let posts @ from \"feed/*.md\" />"),
+            vec!["unexpected character in tag"]
+        );
+    }
+
+    #[test]
+    fn refuses_from_as_the_type_of_a_from_binding() {
+        assert_eq!(
+            diagnostics("<lem-let posts: from \"feed/*.md\" />"),
+            vec![(Span::new(16, 20), "expected a type, found `from`".into())]
+        );
+    }
+
+    #[test]
+    fn stays_silent_about_what_a_cut_from_binding_was_missing() {
+        assert_eq!(
+            messages("<lem-let posts: [Article] from\n<p>"),
+            vec!["unterminated tag: expected `>` before `<`"]
         );
     }
 
@@ -1430,7 +1569,8 @@ mod declaration_tests {
     #[test]
     fn treats_extends_and_by_as_names_elsewhere() {
         clean("<lem-let by = extends />");
-        clean("<lem-fn f(by: int, extends: int): int = by + extends />");
+        clean("<lem-let from = 1 />");
+        clean("<lem-fn f(by: int, extends: int, from: int): int = by + extends + from />");
     }
 
     #[test]

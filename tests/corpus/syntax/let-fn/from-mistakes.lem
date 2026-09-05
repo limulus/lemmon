@@ -1,0 +1,7 @@
+<lem-let posts from "feed/*/index.md" />
+<lem-let photos: PhotoIndex from />
+<lem-let links: from "links/*.md" />
+<lem-let tils: [Til] from "til/*.md" = [] />
+<lem-let links from "links/*.md": [LinkPost] />
+<lem-let vods: [Vod] from "vod/*.md"
+<lem-let authors: {string: Author} from "_data/authors.json" />

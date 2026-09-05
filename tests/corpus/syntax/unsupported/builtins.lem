@@ -4,8 +4,6 @@
 <lem-head>
   <meta name="description" content="x">
 </lem-head>
-<lem-collection articles />
-<lem-data posts />
 <lem-page "/index.html" />
 <lem-import photos />
 <lem-script />

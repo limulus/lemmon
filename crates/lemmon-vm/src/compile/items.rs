@@ -20,6 +20,18 @@ fn chunk(chunk: &str, after_silent: bool) -> &str {
     }
 }
 
+/// Where a piece stands, which decides what may stand there.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Level {
+    /// A template's top level, where definitions and `from` bindings stand.
+    File,
+    /// A document's top level: definitions stand there, `from` bindings never do — a
+    /// document is not the site file.
+    Document,
+    /// Inside a block body.
+    Nested,
+}
+
 impl Compiler<'_> {
     /// Lowers a body in its own scope.
     pub(super) fn lower_block(&mut self, items: Vec<Item>, kind: Kind) {
@@ -29,9 +41,13 @@ impl Compiler<'_> {
     }
 
     fn lower_body(&mut self, body: Body) {
-        let file_level = body.kind == Kind::File;
+        let level = if body.kind == Kind::File {
+            Level::File
+        } else {
+            Level::Nested
+        };
         for piece in body.pieces {
-            self.lower_piece(piece, file_level);
+            self.lower_piece(piece, level);
         }
     }
 
@@ -58,7 +74,7 @@ impl Compiler<'_> {
             let piece = Piece::build(item);
             let silent = piece.renders_nothing();
             self.emit_chunk(prose[block], chunk(&chunks[block], after_silent));
-            self.lower_piece(piece, true);
+            self.lower_piece(piece, Level::Document);
             after_silent = silent;
             block += 1;
         }
@@ -74,7 +90,7 @@ impl Compiler<'_> {
     }
 
     /// Lowers one piece of a body.
-    fn lower_piece(&mut self, piece: Piece, file_level: bool) {
+    fn lower_piece(&mut self, piece: Piece, level: Level) {
         match piece {
             Piece::Text { text, span } => {
                 if !text.is_empty() {
@@ -82,7 +98,7 @@ impl Compiler<'_> {
                     self.emit(Op::EmitText { index }, span);
                 }
             }
-            Piece::Tag { item, .. } => self.lower_item(&item, file_level),
+            Piece::Tag { item, .. } => self.lower_item(&item, level),
             Piece::If { arms } => self.lower_if(arms),
             Piece::For {
                 tag,
@@ -93,7 +109,7 @@ impl Compiler<'_> {
     }
 
     /// Lowers one item that is not a text run or a flow construct.
-    fn lower_item(&mut self, item: &Item, file_level: bool) {
+    fn lower_item(&mut self, item: &Item, level: Level) {
         match item {
             Item::Text(_) | Item::If(_) | Item::For(_) => {
                 unreachable!("these are pieces of their own")
@@ -104,9 +120,25 @@ impl Compiler<'_> {
             }
             Item::LetVoid(tag) => self.lower_let_void(tag),
             Item::LetBlock(tag) => self.lower_let_block(tag),
+            // Parsed by `lemmon-syntax` (∆1vS); the loader (∆iCW) fulfils it, and the
+            // checker (∆C8d) will require the file to be the host's site file, which
+            // the compiler cannot tell. It can tell a nested binding and a document
+            // from a template's top level, so those two placements are reported here.
+            Item::LetFrom(_) if level == Level::File => {
+                self.error(
+                    item.span(),
+                    "`from` bindings need the loader, which is not here yet",
+                );
+            }
+            Item::LetFrom(_) => {
+                self.error(
+                    item.span(),
+                    "a `from` binding must be at the top level of a template",
+                );
+            }
             // Top-level definitions were compiled into their own functions already;
             // they stand in the piece list only so the line rule sees them.
-            Item::FnBlock(_) | Item::FnVoid(_) if file_level => {}
+            Item::FnBlock(_) | Item::FnVoid(_) if level != Level::Nested => {}
             Item::FnBlock(_) | Item::FnVoid(_) => {
                 self.error(item.span(), "`lem-fn` must be at the top level of a file");
             }

@@ -1,4 +1,4 @@
-Root@0..114
+Root@0..161
   UnknownTag@0..11
     OpenTag@0..8 "<lem-iff"
     Trivia@8..9 " "
@@ -26,31 +26,51 @@ Root@0..114
     SelfClose@53..55 "/>"
   Text@55..56
     Text@55..56 "\n"
-  UnknownTag@56..74
-    OpenTag@56..71 "<lem-frobnicate"
+  UnknownTag@56..83
+    OpenTag@56..71 "<lem-collection"
     Trivia@71..72 " "
-    Head@72..72
-    SelfClose@72..74 "/>"
-  Text@74..75
-    Text@74..75 "\n"
-  IfTag@75..113
-    OpenTag@75..82 "<lem-if"
-    Trivia@82..83 " "
-    Head@83..84
-      NameRef@83..84
-        Ident@83..84 "y"
-    Close@84..85 ">"
-    Block@85..104
-      Text@85..104
-        Text@85..104 "<i>still parsed</i>"
-    CloseTag@104..113
-      CloseTag@104..112 "</lem-if"
-      Close@112..113 ">"
-  Text@113..114
-    Text@113..114 "\n"
+    Head@72..80
+      Ident@72..80 "articles"
+    Trivia@80..81 " "
+    SelfClose@81..83 "/>"
+  Text@83..84
+    Text@83..84 "\n"
+  UnknownTag@84..102
+    OpenTag@84..93 "<lem-data"
+    Trivia@93..94 " "
+    Head@94..99
+      Ident@94..99 "posts"
+    Trivia@99..100 " "
+    SelfClose@100..102 "/>"
+  Text@102..103
+    Text@102..103 "\n"
+  UnknownTag@103..121
+    OpenTag@103..118 "<lem-frobnicate"
+    Trivia@118..119 " "
+    Head@119..119
+    SelfClose@119..121 "/>"
+  Text@121..122
+    Text@121..122 "\n"
+  IfTag@122..160
+    OpenTag@122..129 "<lem-if"
+    Trivia@129..130 " "
+    Head@130..131
+      NameRef@130..131
+        Ident@130..131 "y"
+    Close@131..132 ">"
+    Block@132..151
+      Text@132..151
+        Text@132..151 "<i>still parsed</i>"
+    CloseTag@151..160
+      CloseTag@151..159 "</lem-if"
+      Close@159..160 ">"
+  Text@160..161
+    Text@160..161 "\n"
 
 --- diagnostics
 0..8: unknown tag `lem-iff`; did you mean `lem-if`?
 26..35: unknown tag `lem-iff`; did you mean `lem-if`?
 37..46: unknown tag `lem-lett`; did you mean `lem-let`?
-56..71: unknown tag `lem-frobnicate`
+56..71: unknown tag `lem-collection`
+84..93: unknown tag `lem-data`
+103..118: unknown tag `lem-frobnicate`

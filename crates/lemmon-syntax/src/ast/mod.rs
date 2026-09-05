@@ -26,8 +26,8 @@ pub use expr::{
 pub use rowan::ast::AstNode;
 pub use tags::{
     AccessTag, Block, CaseTag, DefaultTag, EnumDecl, Field, FnBlock, FnVoid, ForBinding,
-    ForTag, IfArm, IfTag, Item, LetBlock, LetVoid, MatchTag, Param, Params, Pattern, Root,
-    TextRun, TypeDecl, UnknownTag, UnsupportedTag,
+    ForTag, IfArm, IfTag, Item, LetBlock, LetFrom, LetVoid, MatchTag, Param, Params,
+    Pattern, Root, TextRun, TypeDecl, UnknownTag, UnsupportedTag,
 };
 pub use types::{
     FnType, ListType, MapType, NamedType, OptionalType, TypeAnnotation, TypeExpr,

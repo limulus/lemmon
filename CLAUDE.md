@@ -45,8 +45,9 @@ These hold for every change. A PR that breaks one is wrong even if its tests pas
    is why comparisons are `lt lte gt gte`, lambdas are `|a| expr`, and annotations are
    `: T`. Nothing may reintroduce `>` into a head.
 4. **Tag shape is head-decidable.** Whether a tag is void or a block is determined by the
-   tag name and its head alone (`= expr` marks the void form of `lem-let`/`lem-fn`) — never
-   by lookahead or name resolution. `<lem.…>` is always void.
+   tag name and its head alone (`= expr` marks the void form of `lem-let`/`lem-fn`, and
+   `from` past the name marks `lem-let`'s void source form) — never by lookahead or name
+   resolution. `<lem.…>` is always void.
 5. **The `lem-` element namespace is reserved.** An unrecognized `lem-*` tag is a compile
    error with a did-you-mean, never pass-through.
 6. **One call form.** `<lem.f(args)>` calls; bodies are passed capture-then-call via

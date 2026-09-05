@@ -94,6 +94,8 @@ syntax_kinds! {
     LetVoid,
     /// `<lem-let name> … </lem-let>`
     LetBlock,
+    /// `<lem-let name: Type from source />`
+    LetFrom,
     /// `<lem-fn name(params)> … </lem-fn>`
     FnBlock,
     /// `<lem-fn name(params): T = expr />`

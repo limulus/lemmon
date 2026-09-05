@@ -271,6 +271,10 @@ fn visit_items(items: impl Iterator<Item = Item>, out: &mut Vec<(u32, u32)>) {
                 visit_expr(tag.value(), out);
             }
             Item::LetBlock(tag) => visit_block(tag.body(), out),
+            Item::LetFrom(tag) => {
+                visit_annotation(tag.type_annotation(), out);
+                visit_expr(tag.source(), out);
+            }
             Item::FnBlock(tag) => {
                 visit_signature(tag.params(), tag.return_type(), out);
                 visit_block(tag.body(), out);

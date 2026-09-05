@@ -1,4 +1,4 @@
-Root@0..272
+Root@0..225
   UnsupportedTag@0..65
     OpenTag@0..10 "<lem-style"
     Head@10..10
@@ -23,73 +23,53 @@ Root@0..272
       Close@127..128 ">"
   Text@128..129
     Text@128..129 "\n"
-  UnsupportedTag@129..156
-    OpenTag@129..144 "<lem-collection"
-    Trivia@144..145 " "
-    Head@145..153
-      Ident@145..153 "articles"
-    Trivia@153..154 " "
-    SelfClose@154..156 "/>"
-  Text@156..157
-    Text@156..157 "\n"
-  UnsupportedTag@157..175
-    OpenTag@157..166 "<lem-data"
-    Trivia@166..167 " "
-    Head@167..172
-      Ident@167..172 "posts"
-    Trivia@172..173 " "
-    SelfClose@173..175 "/>"
-  Text@175..176
-    Text@175..176 "\n"
-  UnsupportedTag@176..202
-    OpenTag@176..185 "<lem-page"
-    Trivia@185..186 " "
-    Head@186..199
-      StringLit@186..199 "\"/index.html\""
-    Trivia@199..200 " "
-    SelfClose@200..202 "/>"
-  Text@202..203
-    Text@202..203 "\n"
-  UnsupportedTag@203..224
-    OpenTag@203..214 "<lem-import"
-    Trivia@214..215 " "
-    Head@215..221
-      Ident@215..221 "photos"
-    Trivia@221..222 " "
-    SelfClose@222..224 "/>"
+  UnsupportedTag@129..155
+    OpenTag@129..138 "<lem-page"
+    Trivia@138..139 " "
+    Head@139..152
+      StringLit@139..152 "\"/index.html\""
+    Trivia@152..153 " "
+    SelfClose@153..155 "/>"
+  Text@155..156
+    Text@155..156 "\n"
+  UnsupportedTag@156..177
+    OpenTag@156..167 "<lem-import"
+    Trivia@167..168 " "
+    Head@168..174
+      Ident@168..174 "photos"
+    Trivia@174..175 " "
+    SelfClose@175..177 "/>"
+  Text@177..178
+    Text@177..178 "\n"
+  UnsupportedTag@178..192
+    OpenTag@178..189 "<lem-script"
+    Trivia@189..190 " "
+    Head@190..190
+    SelfClose@190..192 "/>"
+  Text@192..193
+    Text@192..193 "\n"
+  UnsupportedTag@193..212
+    OpenTag@193..202 "<lem-emit"
+    Trivia@202..203 " "
+    Head@203..209
+      Ident@203..209 "styles"
+    Trivia@209..210 " "
+    SelfClose@210..212 "/>"
+  Text@212..213
+    Text@212..213 "\n"
+  AccessTag@213..224
+    OpenAccess@213..218 "<lem."
+    Head@218..223
+      NameRef@218..223
+        Ident@218..223 "after"
+    Close@223..224 ">"
   Text@224..225
     Text@224..225 "\n"
-  UnsupportedTag@225..239
-    OpenTag@225..236 "<lem-script"
-    Trivia@236..237 " "
-    Head@237..237
-    SelfClose@237..239 "/>"
-  Text@239..240
-    Text@239..240 "\n"
-  UnsupportedTag@240..259
-    OpenTag@240..249 "<lem-emit"
-    Trivia@249..250 " "
-    Head@250..256
-      Ident@250..256 "styles"
-    Trivia@256..257 " "
-    SelfClose@257..259 "/>"
-  Text@259..260
-    Text@259..260 "\n"
-  AccessTag@260..271
-    OpenAccess@260..265 "<lem."
-    Head@265..270
-      NameRef@265..270
-        Ident@265..270 "after"
-    Close@270..271 ">"
-  Text@271..272
-    Text@271..272 "\n"
 
 --- diagnostics
 0..10: `lem-style` is not supported yet
 66..75: `lem-head` is not supported yet
-129..144: `lem-collection` is not supported yet
-157..166: `lem-data` is not supported yet
-176..185: `lem-page` is not supported yet
-203..214: `lem-import` is not supported yet
-225..236: `lem-script` is not supported yet
-240..249: `lem-emit` is not supported yet
+129..138: `lem-page` is not supported yet
+156..167: `lem-import` is not supported yet
+178..189: `lem-script` is not supported yet
+193..202: `lem-emit` is not supported yet

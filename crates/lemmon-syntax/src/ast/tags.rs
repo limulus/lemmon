@@ -39,6 +39,8 @@ ast_enum!(
         LetVoid(LetVoid),
         /// `<lem-let name> … </lem-let>`
         LetBlock(LetBlock),
+        /// `<lem-let name: Type from source />`
+        LetFrom(LetFrom),
         /// `<lem-fn name(params)> … </lem-fn>`
         FnBlock(FnBlock),
         /// `<lem-fn name(params) = expr />`
@@ -255,6 +257,36 @@ impl LetBlock {
 }
 
 ast_node!(
+    /// `<lem-let name: Type from source />` — binds a source the host fulfils at load
+    /// (D30): a glob, a data file, a plugin's data, an environment value.
+    LetFrom,
+    LetFrom
+);
+
+impl LetFrom {
+    /// The name being bound.
+    #[must_use]
+    pub fn name(&self) -> Option<SyntaxToken> {
+        opening_name(&child::<Head>(&self.syntax)?.syntax)
+    }
+
+    /// The declared type, which decides what the host loads.
+    #[must_use]
+    pub fn type_annotation(&self) -> Option<TypeAnnotation> {
+        head_child(&self.syntax)
+    }
+
+    /// The source after `from`: a string naming a glob or data file, or a call naming
+    /// a host source (`plugin("photos")`, `env("SITE_URL")`). The parser reads one
+    /// expression in this head, after the keyword, so the head's first expression is
+    /// the source whatever the name and type are.
+    #[must_use]
+    pub fn source(&self) -> Option<Expr> {
+        head_child(&self.syntax)
+    }
+}
+
+ast_node!(
     /// `<lem-fn name(params)> … </lem-fn>`
     FnBlock,
     FnBlock
@@ -360,7 +392,7 @@ impl Field {
     /// The field's name.
     #[must_use]
     pub fn name(&self) -> Option<SyntaxToken> {
-        token(&self.syntax, SyntaxKind::Ident)
+        opening_name(&self.syntax)
     }
 
     /// The field's type.
@@ -613,6 +645,18 @@ fn head_token(tag: &SyntaxNode, kind: SyntaxKind) -> Option<SyntaxToken> {
     child::<Head>(tag).and_then(|head| token(&head.syntax, kind))
 }
 
+/// The name `parent` opens with: its first significant element, when that is an
+/// identifier. Where a bare contextual keyword can follow the name — `from` in a
+/// source binding's head, `by` in a field — a head that lost its name must not yield
+/// the keyword as if it were one.
+fn opening_name(parent: &SyntaxNode) -> Option<SyntaxToken> {
+    parent
+        .children_with_tokens()
+        .find(|e| !matches!(e.kind(), SyntaxKind::Trivia | SyntaxKind::Error))?
+        .into_token()
+        .filter(|t| t.kind() == SyntaxKind::Ident)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -779,6 +823,53 @@ mod tests {
     }
 
     #[test]
+    fn exposes_the_parts_of_a_from_binding() {
+        let src = "<lem-let posts: [Article] from \"feed/*/index.md\" />";
+        let Item::LetFrom(tag) = first_item(src) else {
+            panic!("expected a from binding");
+        };
+        assert_eq!(text(tag.name()), "posts");
+        assert_eq!(annotated(tag.type_annotation()), "[Article]");
+        assert!(matches!(tag.source(), Some(Expr::Literal(_))));
+        let Item::LetFrom(tag) = first_item("<lem-let p: P from plugin(\"photos\") />")
+        else {
+            panic!("expected a from binding");
+        };
+        assert_eq!(
+            expr_text(tag.source()).as_deref(),
+            Some("plugin(\"photos\")")
+        );
+    }
+
+    #[test]
+    fn tells_a_binding_named_from_from_the_from_keyword() {
+        let Item::LetFrom(tag) = first_item("<lem-let from: string from env(\"X\") />")
+        else {
+            panic!("expected a from binding");
+        };
+        assert_eq!(text(tag.name()), "from");
+        assert!(matches!(tag.source(), Some(Expr::Call(_))));
+    }
+
+    #[test]
+    fn leaves_the_name_absent_when_a_from_binding_lost_it() {
+        let Item::LetFrom(tag) = first_item("<lem-let : string from env(\"X\") />") else {
+            panic!("expected a from binding");
+        };
+        assert!(tag.name().is_none());
+        assert_eq!(annotated(tag.type_annotation()), "string");
+        assert!(matches!(tag.source(), Some(Expr::Call(_))));
+    }
+
+    #[test]
+    fn leaves_the_source_absent_when_nothing_follows_from() {
+        let Item::LetFrom(tag) = first_item("<lem-let posts: [Article] from />") else {
+            panic!("expected a from binding");
+        };
+        assert!(tag.source().is_none());
+    }
+
+    #[test]
     fn exposes_the_parts_of_a_block_let() {
         let Item::LetBlock(tag) = first_item("<lem-let n>body</lem-let>") else {
             panic!("expected a block let");
@@ -860,6 +951,18 @@ mod tests {
         assert_eq!(text(field.name()), "by");
         assert_eq!(field.index(), None);
         assert_eq!(expr_text(field.default()), Some("\"Eric\"".into()));
+    }
+
+    #[test]
+    fn leaves_a_field_name_absent_when_the_line_lost_it() {
+        let src = "<lem-type A>\n  : string by site.tags\n</lem-type>";
+        let Item::TypeDecl(tag) = first_item(src) else {
+            panic!("expected a type");
+        };
+        let field = tag.fields().next().expect("a field");
+        assert!(field.name().is_none());
+        assert_eq!(annotated(field.type_annotation()), "string");
+        assert!(field.index().is_some());
     }
 
     #[test]
