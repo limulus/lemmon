@@ -55,6 +55,11 @@ further at claim time.
   document mode — distilled from docs/language.md, not a copy of it. Porting limulus.net's
   layouts means writing a lot of Lemmon by agent, and rereading the whole language doc every
   time is neither reliable nor cheap.
+- ∆MlD Reconcile the architecture artifacts — apply every entry in
+  `docs/artifact-changes.md` to the three Claude Artifacts Eric owns ("Shell & Core", "The
+  Lemmon Language", "From Eleventy to Lemmon") and clear the ledger. The artifacts are the
+  rationale record; changes are logged per pass and applied once, at the end of Phase 1,
+  so this is deliberately last; needs: ∆Hbw, ∆Q6L, ∆BfR, ∆RGQ, ∆5MM, ∆pXO
 
 ## Phase 2 — The static site generator: limulus.net from a Lemmon port
 

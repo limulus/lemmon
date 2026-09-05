@@ -249,10 +249,11 @@ entry in `docs/journal/`. Mint new deltoids with
 - When a new stage lands, grep the stages above it for the "not supported yet"
   diagnostics they aimed at it — those messages become false the moment the stage exists,
   and no test notices.
-- A syntax or semantics change updates `docs/language.md`, `docs/decisions/` (the row,
-  plus a record for any decision from D25 on), and the owning artifact in the same pass;
-  when a design point moves, sweep nearby prose for sentences the change just falsified —
-  no gate ever reads the docs.
+- A syntax or semantics change updates `docs/language.md` and `docs/decisions/` (the row,
+  plus a record for any decision from D25 on) in the same pass, and records what the
+  owning artifact must say in `docs/artifact-changes.md` — the artifacts themselves are
+  reconciled once, at the end of Phase 1 (∆MlD). When a design point moves, sweep nearby
+  prose for sentences the change just falsified — no gate ever reads the docs.
 
 ## Committing
 
