@@ -278,7 +278,7 @@ document has a type, and `layout`, a field it requires on every page schema. Eve
 else it knows about a page is a field declared with a span, in `ambient.lem` or
 `site.lem`.
 
-_Not yet (∆C8d, ∆iCW): the boundary takes neither a host declaration nor a document's
+_Not yet (∆Iau, ∆iCW): the boundary takes neither a host declaration nor a document's
 record, and a `from` binding compiles to a diagnostic until the loader exists._
 
 ### Checking
@@ -428,9 +428,9 @@ renders prose; the VM renders Lemmon blocks; outputs are spliced.
 
 comrak configuration: CommonMark + footnotes, attribute-style heading ids (`<h2 id="…">`,
 slugged from the text and made unique, no anchor link injected), `header_attributes`
-(`{#id}`), syntect highlighting (class-based, generated theme CSS — _not yet_, its own
-item), `render.unsafe` (raw HTML passes through). A shell-side `markdown` override hook is
-reserved but not built.
+(`{#id}`), syntect highlighting (class-based, generated theme CSS — _not yet_ (∆BfR)),
+`render.unsafe` (raw HTML passes through). A shell-side `markdown` override hook is reserved
+but not built.
 
 ## Canonical example
 

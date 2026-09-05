@@ -69,7 +69,10 @@ impl Compiler<'_> {
             Expr::Call(call) => self.call(call),
             Expr::Lambda(lambda) => self.lambda(lambda),
             Expr::TypeTest(_) => {
-                self.error(span, "`is` needs the type checker, which is not here yet");
+                self.error(
+                    span,
+                    "`is` needs the type checker, which is not here yet (∆PCK)",
+                );
             }
         }
     }

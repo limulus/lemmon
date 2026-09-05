@@ -319,7 +319,7 @@ impl FnBlock {
 }
 
 ast_node!(
-    /// `<lem-fn name(params) = expr />` — recognised by the parser, not yet supported.
+    /// `<lem-fn name(params): T = expr />` — the expression-bodied form.
     FnVoid,
     FnVoid
 );

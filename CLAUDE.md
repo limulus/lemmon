@@ -246,9 +246,11 @@ entry in `docs/journal/`. Mint new deltoids with
 - Fix a confirmed finding now when it is small and in scope of the crate being touched,
   even if it predates the diff; defer only what needs its own design. "Not in the diff"
   alone has been the wrong reason twice.
-- When a new stage lands, grep the stages above it for the "not supported yet"
-  diagnostics they aimed at it — those messages become false the moment the stage exists,
-  and no test notices.
+- A placeholder — a "not supported yet" or "not here yet" diagnostic in `crates/`, a
+  "not yet" note in `docs/` — names the deltoid it waits on, and
+  `crates/lemmon-corpus/tests/placeholders.rs` fails the build once that item has a
+  journal entry. Landing a stage therefore includes sweeping the placeholders that name
+  it; the gate is what notices when one is missed.
 - A syntax or semantics change updates `docs/language.md` and `docs/decisions/` (the row,
   plus a record for any decision from D25 on) in the same pass, and records what the
   owning artifact must say in `docs/artifact-changes.md` — the artifacts themselves are

@@ -127,7 +127,7 @@ impl Compiler<'_> {
             Item::LetFrom(_) if level == Level::File => {
                 self.error(
                     item.span(),
-                    "`from` bindings need the loader, which is not here yet",
+                    "`from` bindings need the loader, which is not here yet (∆iCW)",
                 );
             }
             Item::LetFrom(_) => {
@@ -142,19 +142,21 @@ impl Compiler<'_> {
             Item::FnBlock(_) | Item::FnVoid(_) => {
                 self.error(item.span(), "`lem-fn` must be at the top level of a file");
             }
-            // Parsed by `lemmon-syntax` (∆up2) for the checker (∆C8d) to consume; until
-            // it exists nothing can be lowered from them.
-            Item::TypeDecl(_) | Item::EnumDecl(_) | Item::Match(_) => {
-                let tag = match item {
-                    Item::TypeDecl(_) => "lem-type",
-                    Item::EnumDecl(_) => "lem-enum",
-                    _ => "lem-match",
-                };
-                self.error(
-                    item.span(),
-                    format!("`{tag}` needs the type checker, which is not here yet"),
-                );
-            }
+            // Parsed by `lemmon-syntax` (∆up2) for the checker to consume; until it
+            // exists nothing can be lowered from them. Each names the item it waits on,
+            // so the placeholder gate (∆DA2) notices when that item has landed.
+            Item::TypeDecl(_) => self.error(
+                item.span(),
+                "`lem-type` needs the type checker, which is not here yet (∆C8d)",
+            ),
+            Item::EnumDecl(_) => self.error(
+                item.span(),
+                "`lem-enum` needs the type checker, which is not here yet (∆C8d)",
+            ),
+            Item::Match(_) => self.error(
+                item.span(),
+                "`lem-match` needs the type checker, which is not here yet (∆PCK)",
+            ),
             Item::Unsupported(_) | Item::Unknown(_) => {
                 unreachable!(
                     "the parser reports these, and a parse with diagnostics is never compiled"

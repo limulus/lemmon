@@ -96,6 +96,32 @@ impl Builtin {
             Self::Page | Self::Import | Self::Script | Self::Emit => false,
         }
     }
+
+    /// Why an opaque builtin is refused: the tail of its diagnostic, naming the backlog
+    /// item that gives it meaning. The phrase and the item share a row so that the
+    /// placeholder gate (∆DA2) can see them together and fail the build once that item
+    /// has landed and the refusal has outlived it.
+    fn unsupported(self) -> &'static str {
+        match self {
+            Self::If
+            | Self::ElseIf
+            | Self::Else
+            | Self::For
+            | Self::Let
+            | Self::Fn
+            | Self::Match
+            | Self::Case
+            | Self::Default
+            | Self::Type
+            | Self::Enum => {
+                unreachable!("parsed builtins are dispatched by name")
+            }
+            Self::Style | Self::Head | Self::Script | Self::Emit | Self::Page => {
+                "is not supported yet (∆RGQ)"
+            }
+            Self::Import => "is not supported yet (∆PgF)",
+        }
+    }
 }
 
 /// Optimal string alignment distance: Levenshtein plus adjacent transposition, so that
@@ -467,7 +493,7 @@ fn open_tag<'src>(p: &mut Parser<'src>, stack: &mut Vec<Open<'src>>) {
             block(p, m, kind, name, span, Body::Plain, stack);
         }
         _ => {
-            p.error(format!("`lem-{name}` is not supported yet"), span);
+            p.error(format!("`lem-{name}` {}", builtin.unsupported()), span);
             let is_block = builtin.is_block();
             opaque_head(p);
             if is_block {
@@ -994,6 +1020,12 @@ mod tests {
         assert!(Builtin::Style.is_block());
         assert!(!Builtin::Script.is_block());
     }
+
+    #[test]
+    fn names_the_item_each_opaque_builtin_waits_on() {
+        assert!(Builtin::Style.unsupported().ends_with("(∆RGQ)"));
+        assert!(Builtin::Import.unsupported().ends_with("(∆PgF)"));
+    }
 }
 
 #[cfg(test)]
@@ -1138,8 +1170,8 @@ mod parse_tests {
         assert_eq!(
             messages("<lem-style><lem-head>a</lem-head></lem-style>"),
             vec![
-                "`lem-style` is not supported yet",
-                "`lem-head` is not supported yet"
+                "`lem-style` is not supported yet (∆RGQ)",
+                "`lem-head` is not supported yet (∆RGQ)"
             ]
         );
     }
@@ -1356,7 +1388,7 @@ mod parse_tests {
         assert_eq!(
             messages("<lem-style>hello"),
             vec![
-                "`lem-style` is not supported yet",
+                "`lem-style` is not supported yet (∆RGQ)",
                 "unclosed `lem-style`: expected `</lem-style>` before end of input",
             ]
         );
