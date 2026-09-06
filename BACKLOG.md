@@ -4,7 +4,7 @@ This backlog is managed with the **delto** skill — before adding or changing i
 it (and the authoring reference it points to) so the conventions below stay enforced.
 
 Organized as Initiative (`##`) → Epic (`###`) → Item (`-`); initiatives are roughly
-priority-ordered, items 5 lines max.
+priority-ordered, items 5 lines max. One standing epic, Refactors, precedes the initiatives.
 
 Each item starts with a “deltoid” — `∆` followed by 3 alphanumerics, e.g. `∆7hy`. Deltoids
 are immutable and travel with the item into its completed-work journal entry in
@@ -13,6 +13,18 @@ are immutable and travel with the item into its completed-work journal entry in
 
 Hard prerequisites use a trailing `; needs: ∆aaa[, ∆bbb]` suffix — the only dependency
 mechanism: `delto surface` trusts these edges to decide what is eligible to work on.
+
+### Refactors
+
+Standing epic for reshaping working code that belongs to no milestone. An item sits here
+only while doing it first makes the work below it smaller; if that work is claimed first, it
+absorbs the item and the item is removed.
+
+- ∆e5i One resident export index — `SignatureTable::build` and `unit::link` each derive
+  the project's function index, and the wasm boundary orders resident units before
+  incoming files so duplicate blame lands on the file just compiled, a rule held in a
+  comment (∆TNT found the two views disagreeing). Keep one index in the `Core`, derived
+  from the units as each compiles, that `link` takes and `core.analyze()` (∆5MM) reads
 
 ## Phase 1 — Language complete, tooling from day one
 

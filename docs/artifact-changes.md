@@ -21,6 +21,10 @@ moved it. Newest last. An entry is removed when its change has been applied.
   block (D21 as revised by D30, ∆1vS).
 - **`lem-collection` / `lem-data`** — remove as tags; they are retired, and an author who
   types one gets "unknown tag" with no did-you-mean (D30, ∆1vS).
+- **Names, stdlib shadowing** — where the text says a `lem-fn` or `lem-let` taking a
+  stdlib name warns, say the warning fires when the name it displaces is the stdlib's: a
+  parameter or loop binding never warns, and neither does a definition displacing a
+  project function, a parameter, or an outer binding (D23, ∆e4d).
 
 ## Shell & Core
 

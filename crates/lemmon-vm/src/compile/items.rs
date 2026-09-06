@@ -6,6 +6,7 @@
 use lemmon_syntax::Span;
 use lemmon_syntax::ast::{ForTag, Item, LetBlock, LetVoid, Spanned};
 
+use super::names::BindingKind;
 use super::whitespace::{Arm, Body, Kind, Piece};
 use super::{Compiler, TokenSpan, required};
 use crate::bytecode::Op;
@@ -207,9 +208,9 @@ impl Compiler<'_> {
             binding.span(),
         );
         self.push_scope();
-        let first_slot = self.declare(&first);
+        let first_slot = self.bind(&first, BindingKind::Loop);
         if let Some(second) = &second {
-            let second_slot = self.declare(second);
+            let second_slot = self.bind(second, BindingKind::Loop);
             self.emit(Op::StoreLocal { slot: second_slot }, second.span());
         }
         self.emit(Op::StoreLocal { slot: first_slot }, first.span());
@@ -230,7 +231,7 @@ impl Compiler<'_> {
         // The value is compiled before the name is bound, so `x = x + 1` reads the
         // outer `x` rather than its own uninitialised slot.
         self.expr(&required(tag.value()));
-        let slot = self.declare_definition(&name);
+        let slot = self.bind(&name, BindingKind::Definition);
         self.emit(Op::StoreLocal { slot }, name.span());
     }
 
@@ -240,7 +241,7 @@ impl Compiler<'_> {
         self.emit(Op::Capture, tag.span());
         self.lower_block(body.items().collect(), Kind::Value);
         self.emit(Op::EndCapture, tag.span());
-        let slot = self.declare_definition(&name);
+        let slot = self.bind(&name, BindingKind::Definition);
         self.emit(Op::StoreLocal { slot }, name.span());
     }
 }

@@ -1,0 +1,10 @@
+<lem-fn card(raw: string)>
+  <lem-let raw = raw + "!" />
+  <h1><lem.raw></h1>
+</lem-fn>
+<lem-let raw = "top" />
+<lem-if true>
+  <lem-let raw = "inner" />
+  <lem.raw>
+</lem-if>
+<lem.card(raw)>

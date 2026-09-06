@@ -8,7 +8,8 @@ use lemmon_syntax::ast::{
 };
 use lemmon_syntax::{Span, SyntaxKind, SyntaxToken};
 
-use super::{Compiler, FnCtx, Resolved, TokenSpan, required};
+use super::names::{BindingKind, Resolved};
+use super::{Compiler, TokenSpan, required};
 use crate::Value;
 use crate::builtins::BUILTINS;
 use crate::bytecode::Op;
@@ -200,22 +201,24 @@ impl Compiler<'_> {
             .params()
             .map(|p| p.names().collect())
             .unwrap_or_default();
-        self.ctxs.push(FnCtx::new());
+        self.push_frame();
         for param in &params {
-            self.declare(param);
+            self.bind(param, BindingKind::Parameter);
         }
         self.expr(&required(lambda.body()));
         self.emit(Op::Return, span);
-        let ctx = self.ctxs.pop().expect("the lambda's context");
+        let (ctx, frame) = self.pop_frame();
         let func = self.reserve("<lambda>");
-        let captures = ctx.captures.clone();
         self.finish(
             func,
             ctx,
+            &frame,
             params.iter().map(|p| Rc::from(p.text())).collect(),
         );
-        for &(parent_slot, _) in &captures {
-            self.emit(Op::Local { slot: parent_slot }, span);
+        let captures = frame.captures();
+        for capture in captures {
+            let slot = capture.parent_slot;
+            self.emit(Op::Local { slot }, span);
         }
         self.emit(
             Op::MakeClosure {
@@ -240,7 +243,8 @@ impl Compiler<'_> {
         let ufcs = match &callee {
             Expr::Member(member) if !member.is_optional() => {
                 let name = required(member.name());
-                self.peek_callable(name.text())
+                self.names
+                    .peek_callable(name.text())
                     .map(|resolved| (resolved, name))
             }
             _ => None,

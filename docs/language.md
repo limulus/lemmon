@@ -305,8 +305,9 @@ One value namespace, resolved lexically: **locals/params** (innermost wins) →
   same duplicate error.
 - **Ambient:** stdlib (`slugify`, `raw`, `asset`, `url`, `rfc3339`, `rfc822`,
   `readingTime`, `uniqueId`, …) needs no import; a `lem-fn` or `lem-let` may shadow one of its names, with a warning at
-  the definition — a parameter or loop binding of that name is not a shadow and does not
-  warn.
+  the definition when the name it displaces is the stdlib's — a parameter or loop
+  binding of that name is not a shadow, and neither is a definition displacing a project
+  function, a parameter, or an outer binding; none of those warn.
   The ambient *values* are the host's to name and type (D30) — the standard shell binds
   `site`, `page`, `build` — and cannot be redefined.
 

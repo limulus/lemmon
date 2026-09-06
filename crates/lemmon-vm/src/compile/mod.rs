@@ -2,17 +2,15 @@
 //!
 //! The compiler reads only the `lemmon_syntax::ast` views — never `SyntaxKind` — and
 //! runs only on files that parsed clean, so every `Option` an accessor returns is `Some`
-//! here; [`required`] says so in one place. The driver lives in this module with the
-//! lexical resolver; [`items`] lowers what stands in a body and [`expr`] lowers heads.
-//!
-//! Names resolve lexically, innermost first (D23): locals and parameters (through any
-//! enclosing lambdas, which capture what they reach), then the project-flat functions
-//! every file's `lem-fn`s define, then the ambient builtins and the render-supplied
-//! `site`/`page`/`build`. The type checker (`∆C8d`) is not here yet, so the checks that
-//! need it — argument types, field existence, `is` — are the VM's at runtime.
+//! here; [`required`] says so in one place. The driver lives in this module; [`items`]
+//! lowers what stands in a body, [`expr`] lowers heads, and [`names`] owns every rule
+//! about names — what may be bound where, and what a name means, in one stated order.
+//! The type checker (`∆C8d`) is not here yet, so the checks that need it — argument
+//! types, field existence, `is` — are the VM's at runtime.
 
 mod expr;
 mod items;
+mod names;
 mod whitespace;
 
 use std::collections::HashMap;
@@ -22,17 +20,13 @@ use std::rc::Rc;
 use lemmon_syntax::ast::{Item, Spanned};
 use lemmon_syntax::{DocumentParse, Parse, Severity, Span, SyntaxToken, parse_document};
 
-use crate::builtins;
 use crate::bytecode::{Function, Module, Op};
 use crate::document;
 use crate::unit::{ExportedSignature, ImportRef, ImportedSignature, Unit, link};
 use crate::{SourceFile, Value};
 
-/// The ambient record names every template may read. Bound at render time and never
-/// redefinable — a binding or definition that takes one of these names is an error, not
-/// a shadow (D23, `docs/language.md` §Names). Stdlib names *may* be shadowed, with a
-/// warning ([`shadows_stdlib`]).
-const AMBIENT: &[&str] = &["site", "page", "build"];
+pub(crate) use names::duplicate_named;
+use names::{BindingKind, Frame, Names, Resolved};
 
 /// Something a compile has to say about a file, pointed at precisely: an error the file
 /// cannot compile past, or a warning it compiles with.
@@ -316,30 +310,20 @@ pub fn prepare(file: &SourceFile) -> Result<PreparedFile, Vec<Diagnostic>> {
 }
 
 /// Collects the signatures of a parsed file's top-level `lem-fn`s, assigning each its
-/// unit-local function index — the entry is 0, so they count from 1. An ambient or
-/// repeated name is an error and exports nothing.
+/// unit-local function index — the entry is 0, so they count from 1. A name the rules
+/// refuse ([`Names::bind_function`]: ambient, or repeated in this file) exports nothing.
 fn collect_exports(path: &str, parse: &Parse) -> (Vec<ExportedSignature>, Vec<Diagnostic>) {
+    let mut names = Names::new(path, None);
     let mut exports: Vec<ExportedSignature> = Vec::new();
-    let mut diagnostics = Vec::new();
     for item in parse.root().items() {
         let (name, params) = match &item {
             Item::FnBlock(f) => (required(f.name()), f.params()),
             Item::FnVoid(f) => (required(f.name()), f.params()),
             _ => continue,
         };
-        if AMBIENT.contains(&name.text()) {
-            diagnostics.push(Diagnostic::error(
-                path,
-                name.span(),
-                ambient_message(name.text()),
-            ));
+        if !names.bind_function(name.text(), name.span()) {
             continue;
         }
-        if let Some(existing) = exports.iter().find(|e| &*e.name == name.text()) {
-            diagnostics.push(duplicate(path, &name, path, existing.name_span));
-            continue;
-        }
-        diagnostics.extend(shadows_stdlib(path, &name, false));
         let params: Vec<Rc<str>> = params
             .map(|params| {
                 params
@@ -355,7 +339,7 @@ fn collect_exports(path: &str, parse: &Parse) -> (Vec<ExportedSignature>, Vec<Di
             name_span: name.span(),
         });
     }
-    (exports, diagnostics)
+    (exports, names.into_diagnostics())
 }
 
 /// Every project-flat function signature, whichever file defines it — what a file's
@@ -403,6 +387,12 @@ impl SignatureTable {
     fn position(&self, name: &str) -> Option<usize> {
         self.entries.iter().position(|e| &*e.export.name == name)
     }
+
+    /// Whether the function the project knows as `name` is the one `path` defines.
+    fn defined_in(&self, name: &str, path: &str) -> bool {
+        self.position(name)
+            .is_some_and(|sig| self.entries[sig].path == path)
+    }
 }
 
 /// Compiles one prepared file into its [`Unit`], resolving names against `table`. A
@@ -424,6 +414,7 @@ pub fn compile_unit(prepared: &PreparedFile, table: &SignatureTable) -> Compiled
         },
         strings: HashMap::new(),
         table,
+        names: Names::new(&prepared.path, Some(table)),
         diagnostics: prepared.diagnostics.clone(),
         ctxs: Vec::new(),
     };
@@ -435,6 +426,9 @@ pub fn compile_unit(prepared: &PreparedFile, table: &SignatureTable) -> Compiled
             func, export.func,
             "exports are reserved in collection order"
         );
+        // Bound again now that the table says which file's definition of each name
+        // the project kept — the stdlib-shadowing warning is this file's only then.
+        compiler.names.bind_function(&export.name, export.name_span);
     }
     compiler.compile_functions(prepared.source.parse());
     compiler.compile_entry(&prepared.source, prepared.chunks.as_deref());
@@ -442,60 +436,12 @@ pub fn compile_unit(prepared: &PreparedFile, table: &SignatureTable) -> Compiled
     let Compiler {
         unit,
         mut diagnostics,
+        names,
         ..
     } = compiler;
+    diagnostics.extend(names.into_diagnostics());
     diagnostics.sort_by_key(|d| (d.span.start, d.span.end));
     Compiled::new(Some(unit), diagnostics)
-}
-
-/// The diagnostic a duplicate definition gets wherever it is found — the same words when
-/// two files compiled together collide as when two units disagree at link time — with
-/// the first definition's name as its label. Labels point at what the primary span
-/// points at: the name, never the whole definition.
-pub(crate) fn duplicate_named(
-    path: &str,
-    name_span: Span,
-    name: &str,
-    first_path: &str,
-    first_span: Span,
-) -> Diagnostic {
-    Diagnostic::error(path, name_span, format!("`{name}` is already defined")).with_label(
-        first_path,
-        first_span,
-        "first defined here",
-    )
-}
-
-fn duplicate(
-    path: &str,
-    name: &SyntaxToken,
-    first_path: &str,
-    first_span: Span,
-) -> Diagnostic {
-    duplicate_named(path, name.span(), name.text(), first_path, first_span)
-}
-
-/// The warning a `lem-fn` or `lem-let` gets for taking a stdlib name (D23,
-/// `docs/language.md` §Names): allowed, since site definitions may shadow the stdlib,
-/// but worth knowing about. Parameters and loop bindings are not definitions and never
-/// warn. `shadowed` says whether the stdlib name is what the binding displaces: a
-/// project-flat function of that name already did, and warned where it was defined.
-fn shadows_stdlib(path: &str, name: &SyntaxToken, shadowed: bool) -> Option<Diagnostic> {
-    if shadowed || builtins::lookup(name.text()).is_none() {
-        return None;
-    }
-    Some(Diagnostic::warning(
-        path,
-        name.span(),
-        format!(
-            "`{}` shadows the stdlib function of the same name",
-            name.text()
-        ),
-    ))
-}
-
-fn ambient_message(name: &str) -> String {
-    format!("`{name}` is provided by the shell and cannot be redefined")
 }
 
 /// A file as parsed: a template, or a document in document mode. Decided by the path,
@@ -530,24 +476,11 @@ fn required<T>(value: Option<T>) -> T {
     value.expect("a parse without diagnostics has every required node")
 }
 
-/// How a name in an expression resolved.
-enum Resolved {
-    Local(u16),
-    /// Index into the [`SignatureTable`]'s entries.
-    Function(usize),
-    Builtin(u32),
-    Ambient,
-}
-
-/// The function being compiled: its code so far and its lexical scopes.
+/// The code of the function being compiled, so far. Its names are the matching
+/// [`Frame`] in [`Compiler::names`]; the two stacks move together.
 struct FnCtx {
     code: Vec<Op>,
     spans: Vec<Span>,
-    n_locals: u16,
-    /// Innermost last; each maps a name to its slot.
-    scopes: Vec<Vec<(Rc<str>, u16)>>,
-    /// `(slot in the enclosing function, slot here)` for every name closed over.
-    captures: Vec<(u16, u16)>,
 }
 
 impl FnCtx {
@@ -555,32 +488,7 @@ impl FnCtx {
         Self {
             code: Vec::new(),
             spans: Vec::new(),
-            n_locals: 0,
-            scopes: vec![Vec::new()],
-            captures: Vec::new(),
         }
-    }
-
-    fn lookup(&self, name: &str) -> Option<u16> {
-        self.scopes
-            .iter()
-            .rev()
-            .find_map(|scope| scope.iter().rev().find(|(n, _)| &**n == name))
-            .map(|(_, slot)| *slot)
-    }
-
-    fn alloc(&mut self) -> u16 {
-        let slot = self.n_locals;
-        self.n_locals = slot.checked_add(1).expect("fewer than 65536 locals");
-        slot
-    }
-
-    /// Binds `name` in the function-level scope to a slot that a capture fills.
-    fn declare_capture(&mut self, name: Rc<str>, parent_slot: u16) -> u16 {
-        let slot = self.alloc();
-        self.scopes[0].push((name, slot));
-        self.captures.push((parent_slot, slot));
-        slot
     }
 }
 
@@ -597,6 +505,9 @@ struct Compiler<'a> {
     /// Interned string constants, so a name or text run is stored once.
     strings: HashMap<String, u32>,
     table: &'a SignatureTable,
+    /// Every name the file binds and everything a name may mean; its frames mirror
+    /// `ctxs`.
+    names: Names<'a>,
     diagnostics: Vec<Diagnostic>,
     /// The function being compiled, then every lambda open inside it, innermost last.
     ctxs: Vec<FnCtx>,
@@ -640,9 +551,7 @@ impl Compiler<'_> {
                 continue;
             };
             let (func, params) = (export.func, export.params.clone());
-            self.ctxs.push(FnCtx::new());
-            // Through `declare`, so that a repeated or ambient parameter name is
-            // the same error in a signature as it is in a lambda.
+            self.push_frame();
             let tokens: Vec<SyntaxToken> = match &item {
                 Item::FnBlock(f) => f.params(),
                 Item::FnVoid(f) => f.params(),
@@ -651,7 +560,7 @@ impl Compiler<'_> {
             .map(|params| params.params().map(|p| required(p.name())).collect())
             .unwrap_or_default();
             for token in &tokens {
-                self.declare(token);
+                self.bind(token, BindingKind::Parameter);
             }
             match &item {
                 Item::FnBlock(f) => {
@@ -664,13 +573,13 @@ impl Compiler<'_> {
                 _ => unreachable!("only functions reach here"),
             }
             self.emit(Op::Return, item.span());
-            let ctx = self.ctxs.pop().expect("the function's context");
-            self.finish(func, ctx, params);
+            let (ctx, frame) = self.pop_frame();
+            self.finish(func, ctx, &frame, params);
         }
     }
 
     fn compile_entry(&mut self, source: &Source, chunks: Option<&[String]>) {
-        self.ctxs.push(FnCtx::new());
+        self.push_frame();
         let parse = source.parse();
         let items = parse.root().items().collect();
         match (source, chunks) {
@@ -686,17 +595,30 @@ impl Compiler<'_> {
         let null = self.constant(Value::Null);
         self.emit(Op::Const { index: null }, span);
         self.emit(Op::Return, span);
-        let ctx = self.ctxs.pop().expect("the entry's context");
-        self.finish(0, ctx, Vec::new());
+        let (ctx, frame) = self.pop_frame();
+        self.finish(0, ctx, &frame, Vec::new());
     }
 
-    /// Writes a finished context into the reserved function slot.
-    fn finish(&mut self, func: u32, ctx: FnCtx, params: Vec<Rc<str>>) {
+    /// Opens a function: its code and its names, together.
+    fn push_frame(&mut self) {
+        self.ctxs.push(FnCtx::new());
+        self.names.push_frame();
+    }
+
+    /// Closes the innermost function, handing back its code and its names.
+    fn pop_frame(&mut self) -> (FnCtx, Frame) {
+        let ctx = self.ctxs.pop().expect("a function being compiled");
+        let frame = self.names.pop_frame();
+        (ctx, frame)
+    }
+
+    /// Writes a finished function into its reserved slot.
+    fn finish(&mut self, func: u32, ctx: FnCtx, frame: &Frame, params: Vec<Rc<str>>) {
         debug_assert_eq!(ctx.code.len(), ctx.spans.len());
         let function = &mut self.unit.functions[func as usize];
         function.params = params;
-        function.captures = ctx.captures.iter().map(|&(_, slot)| slot).collect();
-        function.n_locals = ctx.n_locals;
+        function.captures = frame.captures().iter().map(|c| c.slot).collect();
+        function.n_locals = frame.n_locals();
         function.code = ctx.code;
         function.spans = ctx.spans;
     }
@@ -807,96 +729,25 @@ impl Compiler<'_> {
             .push(Diagnostic::error(self.path, span, message));
     }
 
-    // --- Scopes ---------------------------------------------------------------------
+    // --- Names ----------------------------------------------------------------------
 
     fn push_scope(&mut self) {
-        self.ctx().scopes.push(Vec::new());
+        self.names.push_scope();
     }
 
     fn pop_scope(&mut self) {
-        self.ctx().scopes.pop();
+        self.names.pop_scope();
     }
 
-    /// Reports `name` if it is one of the ambient records, which no binding may take.
-    fn reject_ambient(&mut self, name: &SyntaxToken) -> bool {
-        if AMBIENT.contains(&name.text()) {
-            self.error(name.span(), ambient_message(name.text()));
-            return true;
-        }
-        false
+    /// Binds `name` as `kind` ([`Names::bind_local`]) and returns the slot its binder
+    /// stores into — a refused binding's included, so the store still compiles.
+    fn bind(&mut self, name: &SyntaxToken, kind: BindingKind) -> u16 {
+        self.names.bind_local(name.text(), name.span(), kind)
     }
 
-    /// Binds a `lem-let`'s name: [`declare`](Self::declare), plus the stdlib-shadowing
-    /// warning a definition gets and a parameter or loop binding does not.
-    fn declare_definition(&mut self, name: &SyntaxToken) -> u16 {
-        let shadowed = self.table.position(name.text()).is_some();
-        let warning = shadows_stdlib(self.path, name, shadowed);
-        self.diagnostics.extend(warning);
-        self.declare(name)
-    }
-
-    /// Binds `name` in the innermost scope. A name already bound in that same scope is
-    /// an error — bindings are immutable, so a second `lem-let` cannot be an update.
-    fn declare(&mut self, name: &SyntaxToken) -> u16 {
-        self.reject_ambient(name);
-        let scope = self.ctx().scopes.last().expect("a scope");
-        if scope.iter().any(|(n, _)| &**n == name.text()) {
-            self.error(
-                name.span(),
-                format!("`{}` is already bound here", name.text()),
-            );
-        }
-        let slot = self.ctx().alloc();
-        self.ctx()
-            .scopes
-            .last_mut()
-            .expect("a scope")
-            .push((Rc::from(name.text()), slot));
-        slot
-    }
-
-    /// The function or builtin `name` names, or `None` if it names anything else — a
-    /// local, an ambient record, or nothing at all.
-    ///
-    /// Unlike [`resolve`](Self::resolve) this touches no compiler state. The UFCS probe
-    /// asks about a name it may not end up compiling as a call, and a lookup that
-    /// allocated a capture slot on the way past an enclosing function would leave the
-    /// slot behind whatever the answer was.
-    fn peek_callable(&self, name: &str) -> Option<Resolved> {
-        if self.ctxs.iter().any(|ctx| ctx.lookup(name).is_some()) {
-            return None;
-        }
-        if let Some(sig) = self.table.position(name) {
-            return Some(Resolved::Function(sig));
-        }
-        builtins::lookup(name).map(Resolved::Builtin)
-    }
-
+    /// What `name` means where it stands ([`Names::resolve`]).
     fn resolve(&mut self, name: &str) -> Option<Resolved> {
-        let level = self.ctxs.len() - 1;
-        if let Some(slot) = self.resolve_local(level, name) {
-            return Some(Resolved::Local(slot));
-        }
-        if let Some(sig) = self.table.position(name) {
-            return Some(Resolved::Function(sig));
-        }
-        if let Some(id) = builtins::lookup(name) {
-            return Some(Resolved::Builtin(id));
-        }
-        AMBIENT.contains(&name).then_some(Resolved::Ambient)
-    }
-
-    /// Finds `name` among the locals of the context at `level`, reaching into the
-    /// enclosing contexts and recording a capture at each level crossed.
-    fn resolve_local(&mut self, level: usize, name: &str) -> Option<u16> {
-        if let Some(slot) = self.ctxs[level].lookup(name) {
-            return Some(slot);
-        }
-        if level == 0 {
-            return None;
-        }
-        let parent_slot = self.resolve_local(level - 1, name)?;
-        Some(self.ctxs[level].declare_capture(Rc::from(name), parent_slot))
+        self.names.resolve(name)
     }
 }
 
@@ -1118,11 +969,11 @@ mod tests {
     fn refuses_a_parameter_name_given_twice() {
         assert_eq!(
             run("<lem-fn f(a: int, a: int): int = a />").unwrap_err(),
-            "t.lem:18..19: `a` is already bound here"
+            "t.lem:18..19: `a` is already bound here\n  t.lem:10..11: first bound here"
         );
         assert_eq!(
             run("<lem-let f = |a, a| a />").unwrap_err(),
-            "t.lem:17..18: `a` is already bound here"
+            "t.lem:17..18: `a` is already bound here\n  t.lem:14..15: first bound here"
         );
     }
 
@@ -1225,6 +1076,23 @@ mod tests {
             ["lib.lem:8..11: warning: `raw` shadows the stdlib function of the same name"]
         );
         assert!(compiled.output.is_some());
+    }
+
+    #[test]
+    fn warns_only_for_the_copy_of_a_function_the_project_kept() {
+        // The repeat is an error and nothing more: the name it collides with is the
+        // project's, not the stdlib's.
+        let errors = compile_errors(&[
+            SourceFile::new("lib.lem", "<lem-fn raw(s: string): string = s />"),
+            SourceFile::new("t.lem", "<lem-fn raw(s: string): string = s />"),
+        ]);
+        assert_eq!(
+            shown(&errors),
+            [
+                "lib.lem:8..11: warning: `raw` shadows the stdlib function of the same name",
+                "t.lem:8..11: `raw` is already defined\n  lib.lem:8..11: first defined here",
+            ]
+        );
     }
 
     #[test]
