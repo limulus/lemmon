@@ -18,8 +18,9 @@ use std::rc::Rc;
 
 use lemmon_syntax::Span;
 
-use super::{Diagnostic, SignatureTable};
+use super::Diagnostic;
 use crate::builtins;
+use crate::exports::ExportIndex;
 
 /// The ambient record names every template may read. Bound at render time and never
 /// redefinable — a binding or definition that takes one of these names is an error, not
@@ -41,8 +42,9 @@ pub(crate) enum BindingKind {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Resolved {
     Local(u16),
-    /// Index into the [`SignatureTable`]'s entries.
-    Function(usize),
+    /// A project-flat function, whichever file defines it — the [`ExportIndex`]
+    /// answers which, by the same name that resolved here.
+    Function,
     Builtin(u32),
     Ambient,
 }
@@ -154,10 +156,10 @@ pub(crate) struct Names<'a> {
     /// The path of the file — what every diagnostic names.
     path: &'a str,
     /// Every file's signatures; `None` while this file's exports are being collected,
-    /// before the table exists.
-    table: Option<&'a SignatureTable>,
+    /// before the index exists.
+    index: Option<&'a ExportIndex>,
     /// This file's top-level `lem-fn`s, in order — the list a repeated one is checked
-    /// against. Never consulted by lookup: the table covers them once it exists.
+    /// against. Never consulted by lookup: the index covers them once it exists.
     file: Vec<Export>,
     /// The function being compiled, then every lambda open inside it, innermost last.
     frames: Vec<Frame>,
@@ -165,10 +167,10 @@ pub(crate) struct Names<'a> {
 }
 
 impl<'a> Names<'a> {
-    pub(crate) fn new(path: &'a str, table: Option<&'a SignatureTable>) -> Self {
+    pub(crate) fn new(path: &'a str, index: Option<&'a ExportIndex>) -> Self {
         Self {
             path,
-            table,
+            index,
             file: Vec::new(),
             frames: Vec::new(),
             diagnostics: Vec::new(),
@@ -207,7 +209,7 @@ impl<'a> Names<'a> {
     ///
     /// Whether the function displaces a stdlib function is known only once every file's
     /// functions are: the project keeps one function per name, and the warning belongs
-    /// to the file whose definition it kept. So the same call made again with the table
+    /// to the file whose definition it kept. So the same call made again with the index
     /// in hand raises it — a file's exports are bound once to be collected and once to
     /// be compiled.
     pub(crate) fn bind_function(&mut self, name: &str, span: Span) -> bool {
@@ -306,13 +308,13 @@ impl<'a> Names<'a> {
     }
 
     /// Whether this file's `lem-fn` `name` displaces a stdlib function: one exists, and
-    /// the table kept this file's definition of the name. Before the table exists
+    /// the index kept this file's definition of the name. Before the index exists
     /// nothing is known to be displaced.
     fn function_shadows_builtin(&self, name: &str) -> bool {
         builtins::lookup(name).is_some()
             && self
-                .table
-                .is_some_and(|table| table.defined_in(name, self.path))
+                .index
+                .is_some_and(|index| index.defined_in(name, self.path))
     }
 
     /// What `name` means here, touching nothing: a local in any open frame (whose slot
@@ -334,7 +336,7 @@ impl<'a> Names<'a> {
     /// local shadows either, and an ambient value is not callable.
     pub(crate) fn peek_callable(&self, name: &str) -> Option<Resolved> {
         self.peek(name)
-            .filter(|found| matches!(found, Resolved::Function(_) | Resolved::Builtin(_)))
+            .filter(|found| matches!(found, Resolved::Function | Resolved::Builtin(_)))
     }
 
     /// What `name` means in the innermost frame: a local's slot usable there, capturing
@@ -359,8 +361,8 @@ impl<'a> Names<'a> {
     /// The names beyond the frames, in the order they are consulted: the project-flat
     /// functions, the stdlib, the ambient values.
     fn outer(&self, name: &str) -> Option<Resolved> {
-        if let Some(sig) = self.table.and_then(|table| table.position(name)) {
-            return Some(Resolved::Function(sig));
+        if self.index.is_some_and(|index| index.lookup(name).is_some()) {
+            return Some(Resolved::Function);
         }
         if let Some(id) = builtins::lookup(name) {
             return Some(Resolved::Builtin(id));
@@ -395,8 +397,8 @@ mod tests {
     use crate::compile::index_u32;
     use crate::unit::ExportedSignature;
 
-    /// A signature table exporting `names` from `lib.lem`.
-    fn table(names: &[&str]) -> SignatureTable {
+    /// An index in which `lib.lem` defines `names`.
+    fn index(names: &[&str]) -> ExportIndex {
         let exports: Vec<ExportedSignature> = names
             .iter()
             .enumerate()
@@ -407,16 +409,18 @@ mod tests {
                 name_span: at(0),
             })
             .collect();
-        SignatureTable::build([("lib.lem", exports.as_slice())]).0
+        let mut index = ExportIndex::new();
+        index.offer("lib.lem", &exports);
+        index
     }
 
     fn at(start: u32) -> Span {
         Span::new(start, start + 1)
     }
 
-    /// Names for `t.lem` with one frame open, resolving against `table`.
-    fn in_frame(table: Option<&SignatureTable>) -> Names<'_> {
-        let mut names = Names::new("t.lem", table);
+    /// Names for `t.lem` with one frame open, resolving against `index`.
+    fn in_frame(index: Option<&ExportIndex>) -> Names<'_> {
+        let mut names = Names::new("t.lem", index);
         names.push_frame();
         names
     }
@@ -617,8 +621,8 @@ mod tests {
 
     #[test]
     fn warns_for_a_function_the_project_kept_that_displaces_the_stdlib() {
-        let table = table(&["raw"]);
-        let mut names = Names::new("lib.lem", Some(&table));
+        let index = index(&["raw"]);
+        let mut names = Names::new("lib.lem", Some(&index));
         assert!(names.bind_function("raw", at(0)));
         assert_eq!(
             shown(&names.diagnostics),
@@ -628,10 +632,10 @@ mod tests {
 
     #[test]
     fn does_not_warn_for_a_function_the_project_kept_from_another_file() {
-        // The repeat is an error where the table was built; this file's copy displaces
+        // The repeat is an error where the index was built; this file's copy displaces
         // nothing.
-        let table = table(&["raw"]);
-        let mut names = Names::new("t.lem", Some(&table));
+        let index = index(&["raw"]);
+        let mut names = Names::new("t.lem", Some(&index));
         assert!(names.bind_function("raw", at(0)));
         assert!(
             names.diagnostics.is_empty(),
@@ -641,7 +645,7 @@ mod tests {
     }
 
     #[test]
-    fn does_not_warn_for_a_function_before_the_table_exists() {
+    fn does_not_warn_for_a_function_before_the_index_exists() {
         let mut names = Names::new("t.lem", None);
         assert!(names.bind_function("raw", at(0)));
         assert!(
@@ -653,8 +657,8 @@ mod tests {
 
     #[test]
     fn does_not_warn_when_a_definition_displaces_a_project_function() {
-        let table = table(&["raw"]);
-        let mut names = in_frame(Some(&table));
+        let index = index(&["raw"]);
+        let mut names = in_frame(Some(&index));
         assert_eq!(names.bind_local("raw", at(0), BindingKind::Definition), 0);
         assert!(
             names.diagnostics.is_empty(),
@@ -698,14 +702,14 @@ mod tests {
 
     #[test]
     fn resolves_a_local_before_a_project_function_before_the_stdlib_before_ambient() {
-        let table = table(&["raw", "f"]);
-        let mut names = in_frame(Some(&table));
+        let index = index(&["raw", "f"]);
+        let mut names = in_frame(Some(&index));
         names.push_scope();
         let slot = names.bind_local("raw", at(0), BindingKind::Definition);
         assert_eq!(names.resolve("raw"), Some(Resolved::Local(slot)));
         names.pop_scope();
-        assert_eq!(names.resolve("raw"), Some(Resolved::Function(0)));
-        assert_eq!(names.resolve("f"), Some(Resolved::Function(1)));
+        assert_eq!(names.resolve("raw"), Some(Resolved::Function));
+        assert_eq!(names.resolve("f"), Some(Resolved::Function));
 
         let mut names = in_frame(None);
         assert_eq!(names.resolve("raw"), Some(Resolved::Builtin(0)));
@@ -774,9 +778,9 @@ mod tests {
 
     #[test]
     fn offers_a_call_only_a_function_or_builtin_never_a_local_or_an_ambient_value() {
-        let table = table(&["f"]);
-        let mut names = in_frame(Some(&table));
-        assert_eq!(names.peek_callable("f"), Some(Resolved::Function(0)));
+        let index = index(&["f"]);
+        let mut names = in_frame(Some(&index));
+        assert_eq!(names.peek_callable("f"), Some(Resolved::Function));
         assert_eq!(names.peek_callable("raw"), Some(Resolved::Builtin(0)));
         assert_eq!(names.peek_callable("page"), None);
         names.bind_local("raw", at(0), BindingKind::Definition);

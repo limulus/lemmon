@@ -13,7 +13,7 @@ mod items;
 mod names;
 mod whitespace;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::rc::Rc;
 
@@ -22,6 +22,7 @@ use lemmon_syntax::{DocumentParse, Parse, Severity, Span, SyntaxToken, parse_doc
 
 use crate::bytecode::{Function, Module, Op};
 use crate::document;
+use crate::exports::{Export, ExportIndex};
 use crate::unit::{ExportedSignature, ImportRef, ImportedSignature, Unit, link};
 use crate::{SourceFile, Value};
 
@@ -192,13 +193,21 @@ impl<T> Compiled<T> {
 }
 
 /// Compiles every file of a site into one module: each file [`prepare`]d and compiled
-/// into its own [`Unit`] against the table of every file's signatures, then [`link`]ed.
+/// into its own [`Unit`] against the index of every file's signatures, then [`link`]ed.
 ///
 /// A file that does not parse clean yields no unit — nothing is lowered from a tree the
 /// parser had to recover — but the other files still compile, and every problem found
 /// in every file is reported, not just the first. A module is still produced when the
 /// only diagnostics are warnings.
+///
+/// # Panics
+///
+/// If two of `files` share a path — a caller bug with no source span to point at
+/// ([`repeated_path`]).
 pub fn compile(files: &[SourceFile]) -> Compiled<Module> {
+    if let Some(path) = repeated_path(files.iter().map(|file| file.path.as_str())) {
+        panic!("`compile` was given `{path}` twice");
+    }
     let mut diagnostics = Vec::new();
     let mut prepared = Vec::new();
     for file in files {
@@ -207,24 +216,24 @@ pub fn compile(files: &[SourceFile]) -> Compiled<Module> {
             Err(errs) => diagnostics.extend(errs),
         }
     }
-    let (table, table_diagnostics) = SignatureTable::build(
-        prepared
-            .iter()
-            .map(|p| (p.path.as_str(), p.exports.as_slice())),
-    );
-    diagnostics.extend(table_diagnostics);
+    // Offered in file order, so the first definition of a name is the one the project
+    // keeps and every later one is reported where its own file compiles.
+    let mut index = ExportIndex::new();
+    for p in &prepared {
+        index.offer(&p.path, &p.exports);
+    }
     let mut units = Vec::new();
     for p in &prepared {
-        let compiled = compile_unit(p, &table);
+        let compiled = compile_unit(p, &index);
         diagnostics.extend(compiled.diagnostics);
         units.extend(compiled.output);
     }
     let output = if diagnostics.iter().any(Diagnostic::is_error) {
         None
     } else {
-        // Every unit was compiled against this same table, so nothing can be
-        // unresolved or doubled at link time.
-        let linked = link(&units);
+        // Every unit was compiled against this same index, so nothing can be
+        // unresolved at link time.
+        let linked = link(&units, &index);
         diagnostics.extend(linked.diagnostics);
         linked.output
     };
@@ -236,6 +245,18 @@ pub fn compile(files: &[SourceFile]) -> Compiled<Module> {
     };
     diagnostics.sort_by_key(order);
     Compiled::new(output, diagnostics)
+}
+
+/// The first path `paths` names twice, if any.
+///
+/// One call may not name a file twice: what that file exports is then two answers, and
+/// the [`ExportIndex`] holds one — offering the second withdraws the first, leaving the
+/// first entry's own names gone from under it. Both entry points reject such a call
+/// rather than compile something confused out of it, and neither has a span to report
+/// it against (invariant 8), so each treats it as the caller bug it is.
+pub fn repeated_path<'a>(paths: impl IntoIterator<Item = &'a str>) -> Option<&'a str> {
+    let mut seen: HashSet<&str> = HashSet::new();
+    paths.into_iter().find(|path| !seen.insert(path))
 }
 
 /// A file parsed, its prose rendered, and its exports collected — everything
@@ -258,7 +279,7 @@ impl PreparedFile {
         &self.path
     }
 
-    /// The top-level `lem-fn`s the file defines — a [`SignatureTable`]'s input.
+    /// The top-level `lem-fn`s the file defines — an [`ExportIndex`]'s input.
     #[must_use]
     pub fn exports(&self) -> &[ExportedSignature] {
         &self.exports
@@ -342,66 +363,17 @@ fn collect_exports(path: &str, parse: &Parse) -> (Vec<ExportedSignature>, Vec<Di
     (exports, names.into_diagnostics())
 }
 
-/// Every project-flat function signature, whichever file defines it — what a file's
-/// calls compile against (D25: signatures and where they live, never bodies).
-pub struct SignatureTable {
-    entries: Vec<TableEntry>,
-}
-
-struct TableEntry {
-    path: String,
-    export: ExportedSignature,
-}
-
-impl SignatureTable {
-    /// Builds the table from every file's exports, in file order. A name two files
-    /// export is an error at the later definition, citing the first — which the table
-    /// keeps.
-    pub fn build<'a>(
-        files: impl IntoIterator<Item = (&'a str, &'a [ExportedSignature])>,
-    ) -> (Self, Vec<Diagnostic>) {
-        let mut table = Self {
-            entries: Vec::new(),
-        };
-        let mut diagnostics = Vec::new();
-        for (path, exports) in files {
-            for export in exports {
-                match table.entries.iter().find(|e| e.export.name == export.name) {
-                    Some(existing) => diagnostics.push(duplicate_named(
-                        path,
-                        export.name_span,
-                        &export.name,
-                        &existing.path,
-                        existing.export.name_span,
-                    )),
-                    None => table.entries.push(TableEntry {
-                        path: path.to_owned(),
-                        export: export.clone(),
-                    }),
-                }
-            }
-        }
-        (table, diagnostics)
-    }
-
-    fn position(&self, name: &str) -> Option<usize> {
-        self.entries.iter().position(|e| &*e.export.name == name)
-    }
-
-    /// Whether the function the project knows as `name` is the one `path` defines.
-    fn defined_in(&self, name: &str, path: &str) -> bool {
-        self.position(name)
-            .is_some_and(|sig| self.entries[sig].path == path)
-    }
-}
-
-/// Compiles one prepared file into its [`Unit`], resolving names against `table`. A
+/// Compiles one prepared file into its [`Unit`], resolving names against `index`. A
 /// call to a function another file defines stays a symbolic import, and the signature
 /// it was compiled against is recorded as one of the unit's facts.
 ///
+/// A definition the index refused — another file already owns the name — is reported
+/// here, so a collision is reported once, by the compile that introduced it, and the
+/// refused file yields no unit.
+///
 /// Every problem in the file comes back in source order; the unit only when none of them
 /// is an error.
-pub fn compile_unit(prepared: &PreparedFile, table: &SignatureTable) -> Compiled<Unit> {
+pub fn compile_unit(prepared: &PreparedFile, index: &ExportIndex) -> Compiled<Unit> {
     let mut compiler = Compiler {
         path: &prepared.path,
         unit: Unit {
@@ -413,8 +385,8 @@ pub fn compile_unit(prepared: &PreparedFile, table: &SignatureTable) -> Compiled
             facts: Vec::new(),
         },
         strings: HashMap::new(),
-        table,
-        names: Names::new(&prepared.path, Some(table)),
+        index,
+        names: Names::new(&prepared.path, Some(index)),
         diagnostics: prepared.diagnostics.clone(),
         ctxs: Vec::new(),
     };
@@ -426,9 +398,22 @@ pub fn compile_unit(prepared: &PreparedFile, table: &SignatureTable) -> Compiled
             func, export.func,
             "exports are reserved in collection order"
         );
-        // Bound again now that the table says which file's definition of each name
-        // the project kept — the stdlib-shadowing warning is this file's only then.
+        // Bound again now that the index says which file's definition of each name
+        // the project kept — the stdlib-shadowing warning is this file's only then,
+        // and a name the project gave to another file is this file's duplicate.
         compiler.names.bind_function(&export.name, export.name_span);
+        let owner = index
+            .lookup(&export.name)
+            .expect("an export is in the index");
+        if owner.path != prepared.path {
+            compiler.diagnostics.push(duplicate_named(
+                &prepared.path,
+                export.name_span,
+                &export.name,
+                &owner.path,
+                owner.signature.name_span,
+            ));
+        }
     }
     compiler.compile_functions(prepared.source.parse());
     compiler.compile_entry(&prepared.source, prepared.chunks.as_deref());
@@ -504,7 +489,9 @@ struct Compiler<'a> {
     unit: Unit,
     /// Interned string constants, so a name or text run is stored once.
     strings: HashMap<String, u32>,
-    table: &'a SignatureTable,
+    /// Every file's signatures — what a call to another file's function resolves
+    /// against, and where its consumed signature comes from.
+    index: &'a ExportIndex,
     /// Every name the file binds and everything a name may mean; its frames mirror
     /// `ctxs`.
     names: Names<'a>,
@@ -513,7 +500,7 @@ struct Compiler<'a> {
     ctxs: Vec<FnCtx>,
 }
 
-impl Compiler<'_> {
+impl<'a> Compiler<'a> {
     // --- Driver ---------------------------------------------------------------------
 
     /// Adds an empty function named `name` and returns its unit-local index.
@@ -623,16 +610,23 @@ impl Compiler<'_> {
         function.spans = ctx.spans;
     }
 
-    /// The `func` operand for the table entry at `sig`: the local index when this file
-    /// defines the function, an import-tagged one otherwise — recorded symbolically,
-    /// with the signature consumed as a fact, the first time the name is used.
-    fn func_operand(&mut self, sig: usize, span: Span) -> u32 {
-        let table = self.table;
-        let entry = &table.entries[sig];
-        if entry.path == self.path {
-            return entry.export.func;
+    /// The project's definition of `name` — only ever asked about a name that
+    /// resolved to a function, which is what put it in the index.
+    fn export(&self, name: &str) -> &'a Export {
+        self.index
+            .lookup(name)
+            .expect("a name resolved as a function is in the index")
+    }
+
+    /// The `func` operand for the project function `name`: the local index when this
+    /// file defines it, an import-tagged one otherwise — recorded symbolically, with
+    /// the signature consumed as a fact, the first time the name is used.
+    fn func_operand(&mut self, name: &str, span: Span) -> u32 {
+        let export = self.export(name);
+        if export.path == self.path {
+            return export.signature.func;
         }
-        let name = &entry.export.name;
+        let name = &export.signature.name;
         let index = match self.unit.imports.iter().position(|i| &i.name == name) {
             Some(index) => index,
             None => {
@@ -642,7 +636,7 @@ impl Compiler<'_> {
                 });
                 self.unit.facts.push(ImportedSignature {
                     name: name.clone(),
-                    params: entry.export.params.clone(),
+                    params: export.signature.params.clone(),
                 });
                 self.unit.imports.len() - 1
             }
@@ -849,12 +843,10 @@ mod tests {
             let lib = prepare(&SourceFile::new("lib.lem", lib_body)).unwrap();
             let page =
                 prepare(&SourceFile::new("page.lem", "<lem.greet(\"you\")>")).unwrap();
-            let (table, diagnostics) = SignatureTable::build([
-                ("lib.lem", lib.exports()),
-                ("page.lem", page.exports()),
-            ]);
-            assert_eq!(diagnostics, Vec::new());
-            compile_unit(&page, &table).expect_output()
+            let mut index = ExportIndex::new();
+            index.offer("lib.lem", lib.exports());
+            index.offer("page.lem", page.exports());
+            compile_unit(&page, &index).expect_output()
         };
         let unit = unit_against("<lem-fn greet(who: string): string = \"hi \" + who />");
         let edited = unit_against("<lem-fn greet(who: string): string = \"HI \" + who />");
@@ -880,6 +872,24 @@ mod tests {
         assert_eq!(shown.len(), 2, "{shown:?}");
         assert!(shown[0].starts_with("a.lem:"), "{shown:?}");
         assert_eq!(shown[1], "b.lem:5..12: undefined name `missing`");
+    }
+
+    #[test]
+    #[should_panic(expected = "`compile` was given `a.lem` twice")]
+    fn refuses_a_call_that_names_one_file_twice() {
+        // Two texts for one path have no single answer for what `a.lem` exports: the
+        // second offer withdraws the first's names, and the first file then compiles
+        // against an index that has lost them.
+        compile(&[
+            SourceFile::new("a.lem", "<lem-fn f(): int = 1 />"),
+            SourceFile::new("a.lem", "<lem-fn g(): int = 2 />"),
+        ]);
+    }
+
+    #[test]
+    fn reads_a_path_repeated_anywhere_in_a_call() {
+        assert_eq!(repeated_path(["a.lem", "b.lem"]), None);
+        assert_eq!(repeated_path(["a.lem", "b.lem", "a.lem"]), Some("a.lem"));
     }
 
     #[test]

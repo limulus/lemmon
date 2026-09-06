@@ -9,6 +9,7 @@ mod builtins;
 mod bytecode;
 mod compile;
 mod document;
+mod exports;
 mod unit;
 mod value;
 mod vm;
@@ -21,9 +22,10 @@ pub use lemmon_syntax::{Severity, Span};
 
 pub use bytecode::{Function, Module, Op};
 pub use compile::{
-    Compiled, Diagnostic, Label, PreparedFile, SignatureTable, compile, compile_unit,
-    prepare,
+    Compiled, Diagnostic, Label, PreparedFile, compile, compile_unit, prepare,
+    repeated_path,
 };
+pub use exports::{Export, ExportIndex};
 pub use unit::{ExportedSignature, ImportRef, ImportedSignature, Unit, link};
 pub use value::{Closure, Map, Value};
 pub use vm::render;

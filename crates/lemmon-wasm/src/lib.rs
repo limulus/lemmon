@@ -16,8 +16,8 @@ use std::collections::BTreeMap;
 use std::rc::Rc;
 
 use lemmon_vm::{
-    ExportedSignature, Map, Module, PreparedFile, RuntimeError, Severity, SignatureTable,
-    SourceFile, Unit, Value, compile_unit, link, prepare, render,
+    ExportIndex, Map, Module, RuntimeError, Severity, SourceFile, Unit, Value,
+    compile_unit, link, prepare, render, repeated_path,
 };
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::JsError;
@@ -162,6 +162,9 @@ pub struct Core {
     /// Compiled units by path — ordered, so every relink is deterministic whatever
     /// order the compiles came in.
     units: BTreeMap<String, Unit>,
+    /// What every project-flat name means across the resident units: offered to as
+    /// each file compiles, and always a description of `units` (`∆e5i`).
+    index: ExportIndex,
     /// The linked program: absent until a compile succeeds, and left as it was by one
     /// that fails — stale until fixed, with the failure reported, never guessed around.
     module: Option<Module>,
@@ -177,6 +180,7 @@ impl Core {
     pub fn new() -> Self {
         Self {
             units: BTreeMap::new(),
+            index: ExportIndex::new(),
             module: None,
             ambient: Vec::new(),
         }
@@ -191,7 +195,8 @@ impl Core {
     ///
     /// # Errors
     ///
-    /// A malformed `files` payload — a caller bug; template problems are diagnostics.
+    /// A malformed `files` payload, or one naming the same file twice — caller bugs;
+    /// template problems are diagnostics.
     pub fn compile(&mut self, files: &str) -> Result<String, JsError> {
         self.compile_json(files).map_err(|m| JsError::new(&m))
     }
@@ -233,6 +238,11 @@ impl Core {
     fn compile_json(&mut self, files_json: &str) -> Result<String, String> {
         let files: Vec<FileInput> = serde_json::from_str(files_json)
             .map_err(|e| format!("malformed `compile` input: {e}"))?;
+        // Rejected before anything is offered: the second offer of a path withdraws the
+        // first's names, leaving the resident index describing neither file.
+        if let Some(path) = repeated_path(files.iter().map(|file| file.path.as_str())) {
+            return Err(format!("malformed `compile` input: `{path}` given twice"));
+        }
         let mut diagnostics: Vec<lemmon_vm::Diagnostic> = Vec::new();
         let mut prepared = Vec::new();
         for file in &files {
@@ -241,23 +251,15 @@ impl Core {
                 Err(errors) => diagnostics.extend(errors),
             }
         }
-        // The signature table spans the whole resident program: every unit the incoming
-        // files do not replace, then the incoming files themselves. That order is what
-        // puts a name collision's blame on the file just handed in — the table keeps the
-        // first definition it sees, so the resident one wins and the edit is the error,
-        // rather than whichever path happened to sort first.
-        let replaced: Vec<&str> = prepared.iter().map(PreparedFile::path).collect();
-        let mut exports: Vec<(&str, &[ExportedSignature])> = self
-            .units
-            .iter()
-            .filter(|(path, _)| !replaced.contains(&path.as_str()))
-            .map(|(path, unit)| (path.as_str(), unit.exports.as_slice()))
-            .collect();
-        exports.extend(prepared.iter().map(|p| (p.path(), p.exports())));
-        let (table, table_errors) = SignatureTable::build(exports);
-        diagnostics.extend(table_errors);
+        // The index already holds every resident file's names; offering the incoming
+        // files now is what puts a collision's blame on the file just handed in, since
+        // a name a resident file owns stays that file's. The refusal is reported by the
+        // compile below, so a collision is reported once, by the call that made it.
         for p in &prepared {
-            let compiled = compile_unit(p, &table);
+            self.index.offer(p.path(), p.exports());
+        }
+        for p in &prepared {
+            let compiled = compile_unit(p, &self.index);
             diagnostics.extend(compiled.diagnostics);
             if let Some(unit) = compiled.output {
                 self.units.insert(unit.path.clone(), unit);
@@ -266,14 +268,24 @@ impl Core {
         // A file that failed keeps its previous unit, so the program stays renderable
         // — stale until fixed — and the module is only replaced by a clean relink.
         // Warnings are not failures: a program that only warns is the new program.
-        if !diagnostics.iter().any(lemmon_vm::Diagnostic::is_error) {
+        if diagnostics.iter().any(lemmon_vm::Diagnostic::is_error) {
+            // A file that yielded no unit was offered to the index anyway, so the index
+            // now describes functions no resident unit has — indices a later clean
+            // relink would resolve calls against. Back to what the units say.
+            self.index = ExportIndex::of(self.units.values());
+        } else {
             let units: Vec<Unit> = self.units.values().cloned().collect();
-            let linked = link(&units);
+            let linked = link(&units, &self.index);
             diagnostics.extend(linked.diagnostics);
             if let Some(module) = linked.output {
                 self.module = Some(module);
             }
         }
+        debug_assert_eq!(
+            self.index,
+            ExportIndex::of(self.units.values()),
+            "the index describes the resident units"
+        );
         let diagnostics: Vec<Diagnostic> =
             diagnostics.into_iter().map(Into::into).collect();
         serde_json::to_string(&diagnostics)
@@ -551,6 +563,77 @@ mod tests {
         assert_eq!(reported[0]["labels"][0]["path"], "a.lem");
         assert_eq!(reported[0]["labels"][0]["span"]["start"], 8);
         assert_eq!(reported[0]["labels"][0]["message"], "first defined here");
+    }
+
+    #[test]
+    fn reports_a_collision_once_and_never_takes_the_refused_definition() {
+        let mut core = Core::new();
+        compile_clean(
+            &mut core,
+            r#"[{"path": "a.lem", "text": "<lem-fn f(): string = \"a\" />"}]"#,
+        );
+        let result = core
+            .compile_json(
+                r#"[{"path": "b.lem", "text": "<lem-fn f(): string = \"b\" />"}]"#,
+            )
+            .unwrap();
+        let reported = diagnostics(&result);
+        assert_eq!(
+            reported.as_array().expect("an array").len(),
+            1,
+            "{reported:?}"
+        );
+        // The refused file compiled to nothing, so the program has no b.lem to render.
+        assert!(core.render_json(r#"{"path": "b.lem"}"#).is_err());
+        // And a later call is not told again about a collision it did not make: the
+        // call that introduced it is the one that reported it.
+        compile_clean(&mut core, r#"[{"path": "page.lem", "text": "<lem.f()>"}]"#);
+        assert_eq!(html_of(&core, "page.lem"), "a");
+    }
+
+    #[test]
+    fn keeps_the_index_describing_the_units_a_failed_compile_left_resident() {
+        let mut core = Core::new();
+        compile_clean(
+            &mut core,
+            r#"[
+                {"path": "lib.lem", "text": "<lem-fn f(): string = \"one\" />"},
+                {"path": "page.lem", "text": "<lem.f()>"}
+            ]"#,
+        );
+        // The edit defines a function ahead of `f`, moving `f` to another index in the
+        // unit, and fails — so the resident unit, where `f` is still the first, stands.
+        let result = core
+            .compile_json(
+                r#"[{"path": "lib.lem", "text": "<lem-fn g(): string = \"g\" /><lem-fn f(): string = \"two\" /><lem.nope()>"}]"#,
+            )
+            .unwrap();
+        let reported = diagnostics(&result);
+        assert_eq!(reported[0]["path"], "lib.lem", "{reported:?}");
+        // Relinking the caller has to resolve `f` against the unit that is there, not
+        // against the indices of the one that never landed.
+        compile_clean(&mut core, r#"[{"path": "page.lem", "text": "<lem.f()>"}]"#);
+        assert_eq!(html_of(&core, "page.lem"), "one");
+    }
+
+    #[test]
+    fn refuses_a_call_that_names_one_file_twice_and_keeps_the_program() {
+        let mut core = Core::new();
+        compile_clean(
+            &mut core,
+            r#"[{"path": "page.lem", "text": "<lem-fn f(): string = \"one\" /><lem.f()>"}]"#,
+        );
+        // A caller bug, not a template problem: it has no span to point at, so it comes
+        // back as a thrown error — and nothing was offered, so the core is untouched.
+        let refused = core.compile_json(
+            r#"[{"path": "a.lem", "text": "<lem-fn g(): int = 1 />"},
+                {"path": "a.lem", "text": "<lem-fn h(): int = 2 />"}]"#,
+        );
+        assert_eq!(
+            refused.unwrap_err(),
+            "malformed `compile` input: `a.lem` given twice"
+        );
+        assert_eq!(html_of(&core, "page.lem"), "one");
     }
 
     #[test]

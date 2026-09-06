@@ -34,6 +34,12 @@ moved it. Newest last. An entry is removed when its change has been applied.
   text says `severity` and `code` arrive with the checker as optional fields, `severity`
   and `labels` have arrived and `code` alone is deferred. `compile`'s diagnostics describe
   the files passed to that call, not the whole program (∆VNk).
+- **WASM API, resident compile** — where the text describes the resident `Core`, say it
+  keeps one export index of every project-flat name alongside the units, offered to as
+  each file compiles: a name a resident file owns stays that file's, so a colliding
+  definition is refused, blamed on the file just handed in whatever its path sorts as,
+  and yields no unit — reported once, by the call that introduced it, with the last good
+  program still renderable (∆e5i).
 
 ## From Eleventy to Lemmon
 

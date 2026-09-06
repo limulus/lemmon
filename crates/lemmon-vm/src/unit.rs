@@ -8,13 +8,15 @@
 //! function of its file's text plus the signatures it consumed ([`Unit::facts`]) and
 //! nothing else: no file's bytecode depends on another file's body.
 
+use std::collections::BTreeMap;
 use std::rc::Rc;
 
 use lemmon_syntax::Span;
 
 use crate::Value;
 use crate::bytecode::{Function, Module, Op};
-use crate::compile::{Compiled, Diagnostic, duplicate_named, index_u32};
+use crate::compile::{Compiled, Diagnostic, index_u32};
+use crate::exports::ExportIndex;
 
 /// One file's compiled output: self-contained except for the functions it names in
 /// other files, which stay symbolic until [`link`] resolves them.
@@ -72,12 +74,18 @@ pub struct ImportedSignature {
 }
 
 /// Joins units into the [`Module`] the VM runs: constant pools concatenated, function
-/// indices offset, imports resolved to the functions the other units export.
+/// indices offset, imports resolved to the functions `index` says define them.
 ///
-/// An import no unit exports, or a name two units export, is an error pointing at the
-/// source that names it, in the order the units were given; with any error there is no
-/// module.
-pub fn link(units: &[Unit]) -> Compiled<Module> {
+/// The index is the project's one answer to what a name means (`∆e5i`), so linking
+/// derives nothing about names itself: it decides only where each unit's functions land.
+/// An import the index has no definition for is an error pointing at the source that
+/// names it, in the order the units were given; with any error there is no module.
+///
+/// # Panics
+///
+/// If the index names a file that is not among `units` — the caller is expected to link
+/// every unit the index was offered.
+pub fn link(units: &[Unit], index: &ExportIndex) -> Compiled<Module> {
     let mut diagnostics = Vec::new();
     let mut constant_offsets = Vec::with_capacity(units.len());
     let mut function_offsets = Vec::with_capacity(units.len());
@@ -89,23 +97,11 @@ pub fn link(units: &[Unit]) -> Compiled<Module> {
         functions = add_u32(functions, index_u32(unit.functions.len()));
     }
 
-    // The export map, first definition kept — a later unit exporting the same name is
-    // an error, as it is when the same files are compiled together.
-    let mut exports: Vec<(&Rc<str>, usize, &ExportedSignature)> = Vec::new();
-    for (index, unit) in units.iter().enumerate() {
-        for export in &unit.exports {
-            match exports.iter().find(|(name, _, _)| *name == &export.name) {
-                Some(&(_, first, existing)) => diagnostics.push(duplicate_named(
-                    &unit.path,
-                    export.name_span,
-                    &export.name,
-                    &units[first].path,
-                    existing.name_span,
-                )),
-                None => exports.push((&export.name, index, export)),
-            }
-        }
-    }
+    let positions: BTreeMap<&str, usize> = units
+        .iter()
+        .enumerate()
+        .map(|(position, unit)| (unit.path.as_str(), position))
+        .collect();
 
     let resolved: Vec<Vec<Option<u32>>> = units
         .iter()
@@ -113,9 +109,10 @@ pub fn link(units: &[Unit]) -> Compiled<Module> {
             unit.imports
                 .iter()
                 .map(|import| {
-                    let found = exports.iter().find(|(name, _, _)| *name == &import.name);
-                    match found {
-                        Some(&(_, index, export)) => {
+                    match index.lookup(&import.name) {
+                        Some(export) => {
+                            let owner = positions[export.path.as_str()];
+                            let export = &export.signature;
                             // The signature this unit was compiled against is one of its
                             // facts (D25). If the definition no longer matches it, the
                             // caller's bytecode is stale — named arguments were already
@@ -139,13 +136,13 @@ pub fn link(units: &[Unit]) -> Compiled<Module> {
                                         ),
                                     )
                                     .with_label(
-                                        &units[index].path,
+                                        &units[owner].path,
                                         export.name_span,
                                         "now defined here",
                                     ),
                                 );
                             }
-                            Some(add_u32(function_offsets[index], export.func))
+                            Some(add_u32(function_offsets[owner], export.func))
                         }
                         None => {
                             diagnostics.push(Diagnostic::error(
@@ -167,15 +164,15 @@ pub fn link(units: &[Unit]) -> Compiled<Module> {
     }
 
     let mut module = Module::default();
-    for (index, unit) in units.iter().enumerate() {
+    for (position, unit) in units.iter().enumerate() {
         let (constant_offset, function_offset) =
-            (constant_offsets[index], function_offsets[index]);
+            (constant_offsets[position], function_offsets[position]);
         let locals = index_u32(unit.functions.len());
         let func = |func: u32| {
             if func < locals {
                 add_u32(function_offset, func)
             } else {
-                resolved[index][(func - locals) as usize].expect("resolved above")
+                resolved[position][(func - locals) as usize].expect("resolved above")
             }
         };
         module.files.push(unit.path.clone());
@@ -183,7 +180,7 @@ pub fn link(units: &[Unit]) -> Compiled<Module> {
         module.constants.extend(unit.constants.iter().cloned());
         for function in &unit.functions {
             let mut function = function.clone();
-            function.file = index_u32(index);
+            function.file = index_u32(position);
             for op in &mut function.code {
                 match op {
                     Op::Const { index } | Op::EmitText { index } => {
@@ -231,29 +228,31 @@ fn stale_signature_message(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::compile::{SignatureTable, compile_unit, prepare};
+    use crate::compile::{compile_unit, prepare};
     use crate::{SourceFile, Value, render};
 
-    /// Compiles the file at `path` into a unit against a table of every given file's
+    /// Compiles the file at `path` into a unit against an index of every given file's
     /// exports.
-    fn unit_of(path: &str, table_of: &[(&str, &str)]) -> Unit {
-        let prepared: Vec<_> = table_of
+    fn unit_of(path: &str, index_of: &[(&str, &str)]) -> Unit {
+        let prepared: Vec<_> = index_of
             .iter()
             .map(|(path, text)| prepare(&SourceFile::new(*path, *text)).unwrap())
             .collect();
-        let (table, diagnostics) =
-            SignatureTable::build(prepared.iter().map(|p| (p.path(), p.exports())));
-        assert_eq!(diagnostics, Vec::new());
+        let mut index = ExportIndex::new();
+        for p in &prepared {
+            index.offer(p.path(), p.exports());
+        }
         let this = prepared
             .iter()
             .find(|p| p.path() == path)
-            .expect("the file compiles against a table that includes it");
-        compile_unit(this, &table).expect_output()
+            .expect("the file compiles against an index that includes it");
+        compile_unit(this, &index).expect_output()
     }
 
-    /// Links `units`, asserting there is no module and returning what was reported.
+    /// Links `units` against the index they make, asserting there is no module and
+    /// returning what was reported.
     fn link_errors(units: &[Unit]) -> Vec<Diagnostic> {
-        let linked = link(units);
+        let linked = link(units, &ExportIndex::of(units));
         assert!(
             linked.output.is_none(),
             "linked despite {:?}",
@@ -359,23 +358,11 @@ mod tests {
                 "<lem-fn greet(who: string): string = \"HELLO \" + who />",
             )],
         );
-        let module = link(&[lib, page]).expect_output();
+        let units = [lib, page];
+        let module = link(&units, &ExportIndex::of(&units)).expect_output();
         assert_eq!(
             render(&module, "page.lem", &[("page", Value::Null)]).unwrap(),
             "HELLO you"
-        );
-    }
-
-    #[test]
-    fn refuses_to_link_two_units_exporting_the_same_name() {
-        // Each compiles clean on its own; the collision exists only between them, so
-        // only link can see it — and says what compiling them together would have.
-        let a = unit_of("a.lem", &[("a.lem", "<lem-fn f(): int = 1 />")]);
-        let b = unit_of("b.lem", &[("b.lem", "<lem-fn f(): int = 2 />")]);
-        let errors = link_errors(&[a, b]);
-        assert_eq!(
-            errors[0].to_string(),
-            "b.lem:8..9: `f` is already defined\n  a.lem:8..9: first defined here"
         );
     }
 
@@ -389,8 +376,10 @@ mod tests {
         ];
         let lib = unit_of("lib.lem", &files);
         let page = unit_of("page.lem", &files);
-        let module = link(&[lib.clone(), page.clone()]).expect_output();
-        assert_eq!(module, link(&[lib, page]).expect_output());
+        let units = [lib, page];
+        let index = ExportIndex::of(&units);
+        let module = link(&units, &index).expect_output();
+        assert_eq!(module, link(&units, &index).expect_output());
         assert_eq!(
             render(&module, "page.lem", &[("page", Value::Null)]).unwrap(),
             "a42b"

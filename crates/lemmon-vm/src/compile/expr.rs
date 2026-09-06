@@ -112,8 +112,8 @@ impl Compiler<'_> {
         let span = token.span();
         match self.resolve(token.text()) {
             Some(Resolved::Local(slot)) => self.emit(Op::Local { slot }, span),
-            Some(Resolved::Function(sig)) => {
-                let func = self.func_operand(sig, span);
+            Some(Resolved::Function) => {
+                let func = self.func_operand(token.text(), span);
                 self.emit(Op::Global { func }, span);
             }
             Some(Resolved::Builtin(_)) => self.error(
@@ -270,8 +270,9 @@ impl Compiler<'_> {
         };
 
         match resolved {
-            Some(Resolved::Function(sig)) => {
-                self.call_function(sig, receiver, &positional, &named, span);
+            Some(Resolved::Function) => {
+                let name = name.expect("a project function has a name");
+                self.call_function(name.text(), receiver, &positional, &named, span);
             }
             Some(Resolved::Builtin(id)) => {
                 let name = name.expect("a builtin has a name");
@@ -347,16 +348,13 @@ impl Compiler<'_> {
     /// order at compile time so the VM only ever sees positional calls.
     fn call_function(
         &mut self,
-        sig: usize,
+        fn_name: &str,
         receiver: Option<Expr>,
         positional: &[Expr],
         named: &[NamedArg],
         span: Span,
     ) {
-        let (fn_name, params) = {
-            let entry = &self.table.entries[sig];
-            (entry.export.name.clone(), entry.export.params.clone())
-        };
+        let params = self.export(fn_name).signature.params.clone();
         let mut slots: Vec<Option<Expr>> = vec![None; params.len()];
         let given = receiver.into_iter().chain(positional.iter().cloned());
         for (i, arg) in given.enumerate() {
@@ -403,7 +401,7 @@ impl Compiler<'_> {
             self.expr(&slot);
         }
         let argc = u16::try_from(params.len()).expect("fewer than 65536 parameters");
-        let func = self.func_operand(sig, span);
+        let func = self.func_operand(fn_name, span);
         self.emit(Op::Call { func, argc }, span);
     }
 }

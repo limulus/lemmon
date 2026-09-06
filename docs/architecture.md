@@ -73,13 +73,18 @@ not a break:
   by the call that compiled it, so a shell that shows warnings keeps them per path.
 - Errors split by kind: anything wrong with a template or document is a returned
   diagnostic; a thrown `JsError` is reserved for caller bugs — a malformed JSON envelope,
-  rendering before a compile has succeeded, rendering a path the program does not have —
-  which have no source span to point at.
+  a `compile` naming the same file twice, rendering before a compile has succeeded,
+  rendering a path the program does not have — which have no source span to point at.
 - `compile` really does take changed files only: units stay resident in the `Core`, each
-  call compiles what it is given against the resident signatures and relinks. A file that
-  fails keeps its previous unit and the previous module — stale until fixed, failure
-  reported. Deleting a file has no boundary call yet (nothing needs it before the shell
-  exists); the link step's unresolved-import diagnostic is what makes adding one safe.
+  call compiles what it is given against the resident export index and relinks. A file
+  that fails keeps its previous unit and the previous module — stale until fixed, failure
+  reported, and the index goes back to describing the units that are actually resident.
+  Deleting a file has no boundary call yet (nothing needs it before the shell exists);
+  the link step's unresolved-import diagnostic is what makes adding one safe.
+- A definition of a name a resident file already exports is refused: the offering file is
+  the one blamed, whatever its path sorts as, and it yields no unit — so the collision is
+  reported once, by the call that introduced it, and the last good program still renders.
+  A shell that shows errors keeps them per path, as it does warnings.
 - A caller left stale by a signature it never saw change is a link diagnostic pointing at
   the caller, not a silent relink: named arguments are reordered against the parameter
   list at compile time, so recompiling only the callee would otherwise swap a caller's
@@ -138,12 +143,16 @@ id invalidates only documents whose facts named the photo index, never the layou
 checker remains whole-program (cheap: the program is small) but runs over units, so
 re-checking never requires recompiling.
 
-∆TNT made the split real: `lemmon-vm` compiles per file (`prepare` → `SignatureTable` →
+∆TNT made the split real: `lemmon-vm` compiles per file (`prepare` → `ExportIndex` →
 `compile_unit`) into a `Unit` — file-local constant pool, unit-local function indices,
 imports symbolic by name — and `link` concatenates pools with offsets into the same
-`Module` shape the VM always ran, so the VM itself never changed. Cross-file duplicate
-names are caught building the signature table (and again at link, for units compiled
-apart); an import no unit exports is a spanned link diagnostic. The facts live on
+`Module` shape the VM always ran, so the VM itself never changed. The `ExportIndex` is
+the project's one answer to which file defines each project-flat name (∆e5i): each file's
+exports are offered to it in turn, a name another file already owns stays that file's,
+and both `compile_unit` and `link` read that one answer rather than deriving their own.
+A refused definition is reported where its file compiles, next to the stdlib-shadowing
+warning that asks the index the same question; an import the index has no definition for
+is a spanned link diagnostic. The facts live on
 `Unit::facts` — today only the imported-signatures kind exists, and invariant 11 is a
 test: editing a callee's body leaves the caller's unit byte-identical. `∆RGQ` makes the
 reported facts cross the boundary and the serialized form (`exportModule`) first-class.
