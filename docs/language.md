@@ -128,7 +128,7 @@ follows:
 | `lem-for` | `x in list` · `x, i in list` · `k, v in map` | Iteration; `<lem-else />` inside gives the empty case. Bodies cannot mutate → parallelizable later. |
 | `lem-let` | `name = expr` / `name: T = expr` / `name: T from source` → void · bare `name` → block | Immutable binding, scoped to the enclosing block. Block form binds the rendered body as `html` (the capture form; in documents the body is a document). The `from` form binds what the host loads from a glob, a data file, `plugin("…")`, or `env("…")`; it is allowed only at the top level of `site.lem` (D30). Unused bindings warn. |
 | `lem-match` / `lem-case` / `lem-default` | subject; patterns | Patterns: subtype (`Til as t`), literal, enum variant (a bare name), `null`. Cases are blocks, the optional `lem-default` last. Exhaustive over enums/closed unions, else `lem-default` required. |
-| `lem-fn` | signature | **Definition only** (calls go through `lem.`). Block body returns `html`, closes `</lem-fn>`. Expression body `(…): T = expr` is void, returns any type. |
+| `lem-fn` | signature | **Definition only** (calls go through `lem.`). Block body returns `html`, closes `</lem-fn>`; a `: html` on it is allowed and nothing else is. Expression body `(…): T = expr` is void and returns the declared `T` — the annotation is required, since a signature is read from the head alone (invariant 11). |
 | `lem-type` | `Name` / `Name extends Base` | Record schema (block); fields in the body, one per line, lexed in fields mode (D29). See § Schemas. |
 | `lem-enum` | `Name = a \| b \| c` | Enum (void). Bare variant names in expressions where the enum is expected; strings in front matter. |
 | `lem-page` | bindings; optional `for x in xs` | Marks a `.lem` file as a page template; its `name = expr` bindings are the page's own fields, as front matter is a document's (`layout`, `title`, `url`…), on a record that extends the host's `Page` (D30). With `for`: one page per item; `page.prev`/`page.next` are the generated neighbours. Void. |
@@ -142,9 +142,9 @@ follows:
 | Category | Syntax | Notes |
 |---|---|---|
 | Literals | `"text"`, `"Link: {linkTitle}"`, `42`, `1.5`, `true`, `null`, `[a, b]`, `{k: v}` | String interpolation `{…}` (`{{` for a literal brace — delimiter is a deferred question); until it is settled, an interpolated expression may not itself contain a string literal. No datetime literal: a fixed date is `datetime("2024-11-24")` (stdlib, validated at compile time when the argument is a literal). |
-| Access | `a.b`, `a?.b`, `xs[i]`, `m["key"]` | `?.` propagates null; out-of-range list index is a render error, not null. |
-| Calls | `f(x)`, `f(x, nolink: true)` | Positional then named. UFCS: `x.f(y)` resolves to `f(x, y)` when `x`'s type has no method `f` — so `photo.rendition(md, jpeg)` reads naturally. |
-| Lambdas | `\|a\| a.date`, `\|a, b\| a.date lt b.date` | Parameter types inferred from the expected function type. |
+| Access | `a.b`, `a?.b`, `xs[i]`, `m["key"]` | `.` reads a record's field; a map is indexed. `?.` propagates null and needs an optional on its left; `a?.b.c` needs a second `?.`, since `a?.b` is optional. An out-of-range list index or a missing map key is a render error, not null. |
+| Calls | `f(x)`, `f(x, nolink: true)` | Positional then named. UFCS: `x.f(y)` resolves to `f(x, y)` when `x`'s type has no field `f` and `f` names a function — so `photo.rendition(md, jpeg)` reads naturally. Until records exist (∆cea), "has no field" is "is not a record". |
+| Lambdas | `\|a\| a.date`, `\|a, b\| a.date lt b.date` | Parameter types inferred from the expected function type; with none expected they are `any` (provisional). |
 | Arithmetic | `+ - * / %`, unary `-` | `+` also concatenates strings; `string + int` is a type error. |
 | Comparison/logic | `== !=`, `lt lte gt gte`, `&& \|\| !`, `a ?? b`, `c ? a : b` | Equality structural. Ordering on numbers, strings, datetimes. |
 | Membership | `x in xs` | Lists; map keys. |
@@ -157,11 +157,17 @@ binds, never assigns; no `while`; recursion is allowed.
 
 ## Types
 
-`string` · `int` · `float` · `bool` · `datetime` · `duration` · `url` · `html` ·
+`any` · `string` · `int` · `float` · `bool` · `datetime` · `duration` · `url` · `html` ·
 `asset` · `[T]` · `{K: V}` · `T?` · records (nominal, single `extends`, subtype usable
 for base, narrowing via `is`/`lem-match`) · enums · function types `(A, B): T` ·
 the host's ambient records — the standard shell declares `Page` and `Build` — and the
 type of `site`, derived from `site.lem` (D30, below).
+
+`any` is the spelled unknown: assignable to and from everything, and every operation on
+it is `any` again, checked at render time by the VM with a span. It is what an ambient
+value has until its host types it (∆Iau), and what an author writes to opt a value out
+of checking. Nothing else is implicit: an `int` is not a `float` (provisional; the number
+model is deferred), and a `T` is not a `T?` until the checker sees that it is.
 
 As written, a type is a name, `[T]`, `{K: V}`, or `(A, B): R`, nested freely, each
 optionally followed by `?`. The `?` binds to the type just written — `(A): R?` is a
@@ -177,6 +183,9 @@ the checker's question, not the parser's.
 - `url` validates at load; attribute-escaped on emit; `url(...)` builtin percent-encodes
   composed URLs.
 - Optionals are the only nullable type; the checker forces `?.`, `??`, or narrowing.
+- `{K: V}` is always keyed by `string`; any other `K` is an error at the annotation.
+  `map`, `list`, and `function` are not type names, and an author who writes one is told
+  the Lemmon spelling.
 
 ### Schemas
 
@@ -283,10 +292,54 @@ record, and a `from` binding compiles to a diagnostic until the loader exists._
 
 ### Checking
 
-Bidirectional with local inference: declared types on parameters and fields; inferred
-for bindings and lambda parameters. Generics on builtins only (`filter`, `map`,
-`sortBy`, `groupBy`…). Unions limited to subtype hierarchies and `T?`. Diagnostics carry
-a primary span plus secondary spans where useful. Unused bindings/parameters warn.
+Checking is not a pass of its own: the compiler's one walk types each expression as it
+lowers it (D31), so every rule below is applied where the code for the construct is
+emitted, and a type error is a compile error that leaves the file without a unit.
+
+Bidirectional with local inference: declared types on parameters, fields, and annotated
+`lem-let`s; inferred for unannotated bindings and lambda parameters. An expectation flows
+into literals, lambdas, and `?:`; everything else is inferred and then compared, with one
+diagnostic at the expression that does not fit (`expected `int`, got `string``). Generics
+on builtins only (`filter`, `map`, `sortBy`, `groupBy`…). Unions limited to subtype
+hierarchies and `T?`. Diagnostics carry a primary span plus secondary spans where useful.
+
+- **Assignability.** `any` both ways; `null` and `T` to `T?`; `T?` to `U?` when `T` to
+  `U`; lists and maps covariant (values are immutable); functions contravariant in their
+  parameters and covariant in their return; a subtype to its base (∆cea); otherwise the
+  same type.
+- **Literals.** `[…]`/`{…}` under an expected list or map check each element against
+  it; under an expected `any` the literal is opted out and its elements are `any` too.
+  Without either, the first element sets the type, a `null` makes it optional, and an
+  element that fits neither is an error — a list's elements share one type, never `any`.
+  An empty `[]`/`{}` with nothing expected is `[any]`/`{string: any}`.
+- **Conditions.** `lem-if`, `lem-else-if`, and `?:` test a `bool` or an optional — no
+  truthiness. An optional condition that is a plain local name (parenthesised or not)
+  narrows that binding to its inner type in the arm it guards (not in `lem-else`); an
+  inner binding of the same name ends the narrowing. Inside such an arm the binding is
+  still accepted as a condition and on the left of `??`, since it was declared optional.
+  `&&`, `||`, and `!` take `bool` only.
+- **Printing.** `<lem.…>` prints `string`, `html`, `int`, `float`, `datetime`, `url`,
+  `asset`, and `any`. A `bool`, `null`, a list, a map, a function, or an optional is a
+  compile error: narrow the optional, or give it a default with `??`.
+- **Operators.** `+ - * / %` on numbers (`int∘int` is `int`, any `float` makes `float`),
+  `+` also on two strings; `lt lte gt gte` on numbers, strings, datetimes; `==`/`!=` on
+  two numbers or two assignable types, never functions; `??` and `?.` need an optional
+  on their left — `null` counts as one with nothing inside, so `null ?? x` is `x` — and
+  `T? ?? x` has the type the two sides share; `in` checks its left against the list's element type, or wants a
+  `string` for a map.
+- **Calls.** Arguments are checked against parameters, named ones after reordering; a
+  function value's type checks positionally; a builtin has a typing rule of its own
+  (`raw` takes `string` or `html`); calling `any` checks nothing. A lambda under an
+  expected function type takes its parameter types from it and its body is checked
+  against its return; one with nothing expected has `any` parameters (provisional).
+- **Iteration.** `lem-for` over `[T]` binds `T` (and an `int` index), over
+  `{string: V}` a `string` key and `V`, over `any` two `any`s.
+- **Unused.** A `lem-let` (either form) or a `lem-fn`/lambda parameter that nothing reads
+  warns at its name; loop bindings are exempt, since an unread index or key is the
+  common case. A binding the name rules refused never warns.
+
+Where the checker says `any`, the VM still checks at render time — the runtime errors
+are the `any` path, not a second checker.
 
 ## Names & namespaces (D23)
 
@@ -423,7 +476,7 @@ renders prose; the VM renders Lemmon blocks; outputs are spliced.
    in scope. String literals where a record is expected resolve through reference
    indexes at compile time:
    `<lem.photo("middle-falls-letchworth-state-park", placement: right)>` — a typo'd id
-   is a build error. _Not yet (∆Hbw, ∆C8d): the core skips a leading `---` block without
+   is a build error. _Not yet (∆Hbw): the core skips a leading `---` block without
    reading it — the shell's YAML parser owns it — and a string literal is a string._
 7. A void keyword tag (`<lem-let x = … />`) takes its line with it, as in a template
    (§Tags); an access tag or a block keeps the line ending after it, so that two

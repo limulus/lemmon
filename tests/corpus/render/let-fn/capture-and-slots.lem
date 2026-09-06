@@ -3,7 +3,7 @@
     <lem.slot>
   </ul>
 </lem-fn>
-<lem-fn authorChip(article: map, nolink: bool)>
+<lem-fn authorChip(article: any, nolink: bool)>
   <lem-if nolink>
     <span><lem.article.author></span>
   <lem-else />

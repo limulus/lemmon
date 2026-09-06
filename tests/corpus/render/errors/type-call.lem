@@ -1,0 +1,17 @@
+<lem-fn double(x: int): int = x * 2 />
+<lem-fn greet(who: string, loudly: bool): string = loudly ? who : who />
+<lem-fn apply(f: (int): int, x: int): int = f(x) />
+<lem-fn bad(): int = "s" />
+<lem.double("x")>
+<lem.greet("you", loudly: 1)>
+<lem.apply(|a, b| a, 1)>
+<lem.apply(|v| v == 0 ? "s" : "t", 1)>
+<lem-let f = |a, b| a == b ? a : b />
+<lem.f(1)>
+<lem-let s = "x" />
+<lem-let used = 1 />
+<lem.s(used)>
+<lem.raw(1)>
+<lem-let inc: (int): int = |v| v + "s" />
+<lem-let g: (int): string = double />
+<lem.f(1, 2)><lem.inc(1)><lem.g(1)>

@@ -1,0 +1,14 @@
+<lem-let title: string? = "T" />
+<lem-let plain: string = "P" />
+<p><lem.title></p>
+<lem.title.length>
+<lem.plain ?? "never null">
+<lem.plain?.length>
+<lem.null.field>
+<lem-let om: {string: int}? = {a: 1} />
+<lem.om["a"]>
+<lem-if plain>a string is not a condition</lem-if>
+<lem.plain ? "a" : "b">
+<lem-let n: int = null />
+<lem-let m: int? = "s" />
+<lem.n><lem.m ?? 0>

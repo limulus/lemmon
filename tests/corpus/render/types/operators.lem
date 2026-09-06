@@ -1,0 +1,12 @@
+<lem-let n = 7 />
+<lem-let x = 1.5 />
+<lem-let s = "seven" />
+<lem-let ok = true />
+numbers: <lem.n + 1> <lem.n + x> <lem.x * 2> <lem.n / 2> <lem.n % 3> <lem.-n> <lem.-x>
+strings: <lem.s + "!"> <lem.s lt "z" ? "ordered" : "-">
+ordering: <lem.n lt x ? "-" : "gte"> <lem.n gte 7 ? "gte" : "-">
+equality: <lem.n == 7 ? "eq" : "-"> <lem.s != "x" ? "ne" : "-"> <lem.n == x ? "-" : "int vs float"> <lem.[1] == [1] ? "structural" : "-">
+logic: <lem.ok && !ok ? "-" : "and"> <lem.ok || false ? "or" : "-">
+membership: <lem.n in [7, 8] ? "in list" : "-"> <lem.s in {seven: 7} ? "in map" : "-">
+index: <lem.[n, 8][1]> <lem.{a: n}["a"]>
+ternary: <lem.ok ? n : 0> <lem.(ok ? null : n) ?? 0> <lem.(ok ? "a" : null) ?? "b">

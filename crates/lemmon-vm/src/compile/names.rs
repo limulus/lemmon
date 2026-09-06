@@ -11,8 +11,9 @@
 //! every file's `lem-fn`s define; then the stdlib; then the ambient values the host binds
 //! at render.
 //!
-//! Nothing here depends on bytecode or on the syntax tree: codegen is one caller, and the
-//! type checker (∆C8d) binds and resolves through the same entry points.
+//! Every local carries its type, which is what the checker reads back when the name is
+//! used, and whether it has been read: a definition or parameter that never is warns when
+//! its scope closes (§Checking). Nothing here depends on bytecode or on the syntax tree.
 
 use std::rc::Rc;
 
@@ -21,27 +22,37 @@ use lemmon_syntax::Span;
 use super::Diagnostic;
 use crate::builtins;
 use crate::exports::ExportIndex;
+use crate::types::Type;
 
 /// The ambient record names every template may read. Bound at render time and never
 /// redefinable — a binding or definition that takes one of these names is an error, not
 /// a shadow (D23). They are the standard shell's until the host declares them (∆Iau).
 const AMBIENT: &[&str] = &["site", "page", "build"];
 
-/// What a local binding is, which decides whether the stdlib-shadowing rule applies.
+/// What a local binding is, which decides whether the stdlib-shadowing rule and the
+/// unused rule apply.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum BindingKind {
     /// A `lem-let`.
     Definition,
     /// A `lem-fn`'s or lambda's parameter.
     Parameter,
-    /// A `lem-for`'s value, key, or index.
+    /// A `lem-for`'s value, key, or index — an unused index or key is the common case,
+    /// so these never warn.
     Loop,
 }
 
 /// How a name resolved.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Resolved {
-    Local(u16),
+    Local {
+        slot: u16,
+        ty: Type,
+        /// The name token of the binding this reaches — one binding, one span, so it
+        /// identifies the binding wherever the name is later read (a narrowing is keyed
+        /// on it, and an inner shadow has a span of its own).
+        binder: Span,
+    },
     /// A project-flat function, whichever file defines it — the [`ExportIndex`]
     /// answers which, by the same name that resolved here.
     Function,
@@ -50,11 +61,15 @@ pub(crate) enum Resolved {
 }
 
 /// A local bound to a slot of its frame, with its name's own bytes — where a repeat's
-/// label points.
+/// label points, and what identifies the binding.
 struct Binding {
     name: Rc<str>,
     span: Span,
     slot: u16,
+    kind: BindingKind,
+    ty: Type,
+    /// Whether any reference has reached it.
+    used: bool,
 }
 
 /// One lexical scope's bindings, in binding order.
@@ -64,6 +79,10 @@ struct Scope(Vec<Binding>);
 impl Scope {
     fn find(&self, name: &str) -> Option<&Binding> {
         self.0.iter().rev().find(|b| &*b.name == name)
+    }
+
+    fn find_mut(&mut self, name: &str) -> Option<&mut Binding> {
+        self.0.iter_mut().rev().find(|b| &*b.name == name)
     }
 }
 
@@ -75,6 +94,9 @@ pub(crate) struct Capture {
     pub(crate) parent_slot: u16,
     /// The slot here.
     pub(crate) slot: u16,
+    ty: Type,
+    /// The binding captured, by its name token — see [`Resolved::Local`].
+    binder: Span,
 }
 
 /// One of this file's top-level `lem-fn`s, with its name's own bytes — where a
@@ -104,17 +126,46 @@ impl Frame {
         }
     }
 
-    fn lookup(&self, name: &str) -> Option<u16> {
+    /// What this frame knows `name` as, touching nothing.
+    fn lookup(&self, name: &str) -> Option<Resolved> {
         self.scopes
             .iter()
             .rev()
             .find_map(|scope| scope.find(name))
-            .map(|binding| binding.slot)
-            .or_else(|| {
-                self.captures
-                    .iter()
-                    .find(|c| &*c.name == name)
-                    .map(|c| c.slot)
+            .map(|binding| Resolved::Local {
+                slot: binding.slot,
+                ty: binding.ty.clone(),
+                binder: binding.span,
+            })
+            .or_else(|| self.captured(name))
+    }
+
+    /// [`lookup`](Self::lookup), marking a binding of this frame's own as read. A
+    /// capture needs no mark: it exists because a reference already reached the
+    /// binding it copies.
+    fn lookup_mut(&mut self, name: &str) -> Option<Resolved> {
+        for scope in self.scopes.iter_mut().rev() {
+            if let Some(binding) = scope.find_mut(name) {
+                binding.used = true;
+                return Some(Resolved::Local {
+                    slot: binding.slot,
+                    ty: binding.ty.clone(),
+                    binder: binding.span,
+                });
+            }
+        }
+        self.captured(name)
+    }
+
+    /// What this frame closed over as `name`, if anything.
+    fn captured(&self, name: &str) -> Option<Resolved> {
+        self.captures
+            .iter()
+            .find(|c| &*c.name == name)
+            .map(|c| Resolved::Local {
+                slot: c.slot,
+                ty: c.ty.clone(),
+                binder: c.binder,
             })
     }
 
@@ -130,12 +181,14 @@ impl Frame {
 
     /// Binds `name` to a slot that a capture fills from `parent_slot` in the enclosing
     /// frame.
-    fn capture(&mut self, name: &str, parent_slot: u16) -> u16 {
+    fn capture(&mut self, name: &str, parent_slot: u16, ty: Type, binder: Span) -> u16 {
         let slot = self.alloc();
         self.captures.push(Capture {
             name: Rc::from(name),
             parent_slot,
             slot,
+            ty,
+            binder,
         });
         slot
     }
@@ -181,8 +234,13 @@ impl<'a> Names<'a> {
         self.frames.push(Frame::new());
     }
 
+    /// Closes the innermost function, warning for what its parameters' scope never read.
     pub(crate) fn pop_frame(&mut self) -> Frame {
-        self.frames.pop().expect("a frame")
+        let mut frame = self.frames.pop().expect("a frame");
+        for scope in frame.scopes.drain(..).rev() {
+            self.warn_unused(&scope);
+        }
+        frame
     }
 
     fn frame(&mut self) -> &mut Frame {
@@ -193,8 +251,26 @@ impl<'a> Names<'a> {
         self.frame().scopes.push(Scope::default());
     }
 
+    /// Closes the innermost scope, warning for each definition it never read.
     pub(crate) fn pop_scope(&mut self) {
-        self.frame().scopes.pop();
+        let scope = self.frame().scopes.pop().expect("a scope");
+        self.warn_unused(&scope);
+    }
+
+    /// The unused rule: a definition or a parameter nothing referenced warns at its
+    /// name, when the scope that could have referenced it closes. Loop bindings are
+    /// exempt, and a refused binding was never recorded.
+    fn warn_unused(&mut self, scope: &Scope) {
+        for binding in &scope.0 {
+            if binding.used || binding.kind == BindingKind::Loop {
+                continue;
+            }
+            self.diagnostics.push(Diagnostic::warning(
+                self.path,
+                binding.span,
+                format!("`{}` is never used", binding.name),
+            ));
+        }
     }
 
     /// Everything the rules reported, in the order they were applied.
@@ -235,18 +311,24 @@ impl<'a> Names<'a> {
         true
     }
 
-    /// Binds `name`, whose own bytes are `span`, as `kind` in the innermost scope of the
-    /// innermost frame, and returns its slot. The rules in order, the first one broken
-    /// reported: an ambient name cannot be redefined; a name already bound in the same
-    /// scope cannot be bound again; a definition that displaces a stdlib function may,
-    /// with a warning. A parameter or loop binding named after the stdlib is not a
-    /// shadow, and neither is a definition displacing a project function, a parameter,
-    /// or an outer local.
+    /// Binds `name`, whose own bytes are `span`, as `kind` with type `ty` in the
+    /// innermost scope of the innermost frame, and returns its slot. The rules in order,
+    /// the first one broken reported: an ambient name cannot be redefined; a name
+    /// already bound in the same scope cannot be bound again; a definition that
+    /// displaces a stdlib function may, with a warning. A parameter or loop binding
+    /// named after the stdlib is not a shadow, and neither is a definition displacing a
+    /// project function, a parameter, or an outer local.
     ///
     /// A refused binding still takes its slot, so its binder can compile a store into it
     /// and the parameters after it stay where a call lays its arguments — but it is not
-    /// recorded, so no reference reaches it.
-    pub(crate) fn bind_local(&mut self, name: &str, span: Span, kind: BindingKind) -> u16 {
+    /// recorded, so no reference reaches it and nothing warns when none does.
+    pub(crate) fn bind_local(
+        &mut self,
+        name: &str,
+        span: Span,
+        kind: BindingKind,
+        ty: Type,
+    ) -> u16 {
         let first = self.frame().innermost().find(name).map(|b| b.span);
         let slot = self.frame().alloc();
         let repeat = first.map(|first| {
@@ -269,6 +351,9 @@ impl<'a> Names<'a> {
                 name: Rc::from(name),
                 span,
                 slot,
+                kind,
+                ty,
+                used: false,
             });
         slot
     }
@@ -323,13 +408,13 @@ impl<'a> Names<'a> {
     ///
     /// The UFCS probe asks about a name it may not end up compiling as a call, and a
     /// lookup that recorded a capture on the way past an enclosing frame would leave the
-    /// slot behind whatever the answer was.
+    /// slot behind whatever the answer was — nor does a probe count as a read.
     pub(crate) fn peek(&self, name: &str) -> Option<Resolved> {
         self.frames
             .iter()
             .rev()
             .find_map(|frame| frame.lookup(name))
-            .map_or_else(|| self.outer(name), |slot| Some(Resolved::Local(slot)))
+            .or_else(|| self.outer(name))
     }
 
     /// [`peek`](Self::peek) narrowed to what a call may name: a function or a builtin. A
@@ -340,22 +425,30 @@ impl<'a> Names<'a> {
     }
 
     /// What `name` means in the innermost frame: a local's slot usable there, capturing
-    /// through every frame crossed to reach a binding in an enclosing one; else what
-    /// [`outer`](Self::outer) finds.
+    /// through every frame crossed to reach a binding in an enclosing one, and marking
+    /// that binding read; else what [`outer`](Self::outer) finds.
     pub(crate) fn resolve(&mut self, name: &str) -> Option<Resolved> {
         let local = self
             .frames
-            .iter()
+            .iter_mut()
             .enumerate()
             .rev()
-            .find_map(|(level, frame)| frame.lookup(name).map(|slot| (level, slot)));
-        let Some((hit, mut slot)) = local else {
+            .find_map(|(level, frame)| frame.lookup_mut(name).map(|found| (level, found)));
+        let Some((
+            hit,
+            Resolved::Local {
+                mut slot,
+                ty,
+                binder,
+            },
+        )) = local
+        else {
             return self.outer(name);
         };
         for level in hit + 1..self.frames.len() {
-            slot = self.frames[level].capture(name, slot);
+            slot = self.frames[level].capture(name, slot, ty.clone(), binder);
         }
-        Some(Resolved::Local(slot))
+        Some(Resolved::Local { slot, ty, binder })
     }
 
     /// The names beyond the frames, in the order they are consulted: the project-flat
@@ -405,6 +498,7 @@ mod tests {
             .map(|(i, name)| ExportedSignature {
                 name: Rc::from(*name),
                 params: Vec::new(),
+                ret: Type::Html,
                 func: index_u32(i + 1),
                 name_span: at(0),
             })
@@ -438,15 +532,31 @@ mod tests {
             .collect()
     }
 
+    /// The slot a resolution landed on.
+    fn slot_of(resolved: Option<Resolved>) -> Option<u16> {
+        match resolved {
+            Some(Resolved::Local { slot, .. }) => Some(slot),
+            _ => None,
+        }
+    }
+
+    /// Binds `name` as `kind`, typed `any`, and marks it read so the test is about the
+    /// rule it names and not the unused rule.
+    fn bind(names: &mut Names<'_>, name: &str, span: Span, kind: BindingKind) -> u16 {
+        let slot = names.bind_local(name, span, kind, Type::Any);
+        names.resolve(name);
+        slot
+    }
+
     const SHADOWS: &str =
         "t.lem:0..1: warning: `raw` shadows the stdlib function of the same name";
 
     #[test]
     fn binds_parameters_to_consecutive_slots_in_declaration_order() {
         let mut names = in_frame(None);
-        assert_eq!(names.bind_local("a", at(0), BindingKind::Parameter), 0);
-        assert_eq!(names.bind_local("b", at(2), BindingKind::Parameter), 1);
-        assert_eq!(names.bind_local("c", at(4), BindingKind::Parameter), 2);
+        assert_eq!(bind(&mut names, "a", at(0), BindingKind::Parameter), 0);
+        assert_eq!(bind(&mut names, "b", at(2), BindingKind::Parameter), 1);
+        assert_eq!(bind(&mut names, "c", at(4), BindingKind::Parameter), 2);
         assert_eq!(names.pop_frame().n_locals(), 3);
     }
 
@@ -455,27 +565,41 @@ mod tests {
         // The VM lays a call's arguments out at consecutive slots, so the parameter after
         // a refused one must still be the second slot.
         let mut names = in_frame(None);
-        assert_eq!(names.bind_local("page", at(0), BindingKind::Parameter), 0);
-        assert_eq!(names.bind_local("x", at(6), BindingKind::Parameter), 1);
+        assert_eq!(bind(&mut names, "page", at(0), BindingKind::Parameter), 0);
+        assert_eq!(bind(&mut names, "x", at(6), BindingKind::Parameter), 1);
     }
 
     #[test]
     fn binds_a_loop_pair_to_two_distinct_slots() {
         let mut names = in_frame(None);
         names.push_scope();
-        let key = names.bind_local("k", at(0), BindingKind::Loop);
-        let value = names.bind_local("v", at(3), BindingKind::Loop);
+        let key = names.bind_local("k", at(0), BindingKind::Loop, Type::String);
+        let value = names.bind_local("v", at(3), BindingKind::Loop, Type::Int);
         assert_ne!(key, value);
-        assert_eq!(names.resolve("k"), Some(Resolved::Local(key)));
-        assert_eq!(names.resolve("v"), Some(Resolved::Local(value)));
+        assert_eq!(
+            names.resolve("k"),
+            Some(Resolved::Local {
+                slot: key,
+                ty: Type::String,
+                binder: at(0)
+            })
+        );
+        assert_eq!(
+            names.resolve("v"),
+            Some(Resolved::Local {
+                slot: value,
+                ty: Type::Int,
+                binder: at(3)
+            })
+        );
     }
 
     #[test]
     fn binds_a_definition_in_the_innermost_scope_only_until_it_closes() {
         let mut names = in_frame(None);
         names.push_scope();
-        let slot = names.bind_local("x", at(0), BindingKind::Definition);
-        assert_eq!(names.resolve("x"), Some(Resolved::Local(slot)));
+        let slot = bind(&mut names, "x", at(0), BindingKind::Definition);
+        assert_eq!(slot_of(names.resolve("x")), Some(slot));
         names.pop_scope();
         assert_eq!(names.resolve("x"), None);
     }
@@ -493,11 +617,11 @@ mod tests {
     #[test]
     fn does_not_let_a_reference_reach_a_refused_binding() {
         let mut names = in_frame(None);
-        names.bind_local("page", at(0), BindingKind::Definition);
+        names.bind_local("page", at(0), BindingKind::Definition, Type::Int);
         assert_eq!(names.resolve("page"), Some(Resolved::Ambient));
-        let first = names.bind_local("a", at(6), BindingKind::Definition);
-        names.bind_local("a", at(8), BindingKind::Definition);
-        assert_eq!(names.resolve("a"), Some(Resolved::Local(first)));
+        let first = bind(&mut names, "a", at(6), BindingKind::Definition);
+        names.bind_local("a", at(8), BindingKind::Definition, Type::Int);
+        assert_eq!(slot_of(names.resolve("a")), Some(first));
     }
 
     #[test]
@@ -514,7 +638,7 @@ mod tests {
         ] {
             let mut names = in_frame(None);
             for (i, name) in ["site", "page", "build"].iter().enumerate() {
-                names.bind_local(name, at(index_u32(i)), kind);
+                names.bind_local(name, at(index_u32(i)), kind, Type::Any);
             }
             assert_eq!(shown(&names.diagnostics), expected, "{kind:?}");
             assert!(
@@ -537,8 +661,8 @@ mod tests {
     #[test]
     fn refuses_a_name_bound_twice_in_one_scope() {
         let mut names = in_frame(None);
-        assert_eq!(names.bind_local("a", at(0), BindingKind::Parameter), 0);
-        assert_eq!(names.bind_local("a", at(3), BindingKind::Parameter), 1);
+        assert_eq!(bind(&mut names, "a", at(0), BindingKind::Parameter), 0);
+        assert_eq!(bind(&mut names, "a", at(3), BindingKind::Parameter), 1);
         assert_eq!(
             shown(&names.diagnostics),
             ["t.lem:3..4: `a` is already bound here\n  t.lem:0..1: first bound here"]
@@ -548,13 +672,13 @@ mod tests {
     #[test]
     fn allows_a_name_rebound_in_an_inner_scope() {
         let mut names = in_frame(None);
-        let outer = names.bind_local("x", at(0), BindingKind::Definition);
+        let outer = bind(&mut names, "x", at(0), BindingKind::Definition);
         names.push_scope();
-        let inner = names.bind_local("x", at(4), BindingKind::Definition);
+        let inner = bind(&mut names, "x", at(4), BindingKind::Definition);
         assert_ne!(outer, inner);
-        assert_eq!(names.resolve("x"), Some(Resolved::Local(inner)));
+        assert_eq!(slot_of(names.resolve("x")), Some(inner));
         names.pop_scope();
-        assert_eq!(names.resolve("x"), Some(Resolved::Local(outer)));
+        assert_eq!(slot_of(names.resolve("x")), Some(outer));
         assert!(
             names.diagnostics.is_empty(),
             "{:?}",
@@ -565,9 +689,9 @@ mod tests {
     #[test]
     fn allows_a_parameter_rebound_by_a_definition_in_the_body_scope() {
         let mut names = in_frame(None);
-        names.bind_local("a", at(0), BindingKind::Parameter);
+        bind(&mut names, "a", at(0), BindingKind::Parameter);
         names.push_scope();
-        assert_eq!(names.bind_local("a", at(4), BindingKind::Definition), 1);
+        assert_eq!(bind(&mut names, "a", at(4), BindingKind::Definition), 1);
         assert!(
             names.diagnostics.is_empty(),
             "{:?}",
@@ -591,10 +715,10 @@ mod tests {
         // An ambient name bound twice is two ambient errors, never also a repeat; a
         // stdlib name bound twice warns once and then errors, never warns again.
         let mut names = in_frame(None);
-        names.bind_local("page", at(0), BindingKind::Parameter);
-        names.bind_local("page", at(2), BindingKind::Parameter);
-        names.bind_local("raw", at(4), BindingKind::Definition);
-        names.bind_local("raw", at(6), BindingKind::Definition);
+        bind(&mut names, "page", at(0), BindingKind::Parameter);
+        bind(&mut names, "page", at(2), BindingKind::Parameter);
+        bind(&mut names, "raw", at(4), BindingKind::Definition);
+        bind(&mut names, "raw", at(6), BindingKind::Definition);
         assert_eq!(
             shown(&names.diagnostics),
             [
@@ -609,7 +733,7 @@ mod tests {
     #[test]
     fn warns_when_a_definition_displaces_the_stdlib() {
         let mut names = in_frame(None);
-        assert_eq!(names.bind_local("raw", at(0), BindingKind::Definition), 0);
+        assert_eq!(bind(&mut names, "raw", at(0), BindingKind::Definition), 0);
         assert_eq!(shown(&names.diagnostics), [SHADOWS]);
         assert!(
             names
@@ -659,7 +783,7 @@ mod tests {
     fn does_not_warn_when_a_definition_displaces_a_project_function() {
         let index = index(&["raw"]);
         let mut names = in_frame(Some(&index));
-        assert_eq!(names.bind_local("raw", at(0), BindingKind::Definition), 0);
+        assert_eq!(bind(&mut names, "raw", at(0), BindingKind::Definition), 0);
         assert!(
             names.diagnostics.is_empty(),
             "{:?}",
@@ -670,9 +794,9 @@ mod tests {
     #[test]
     fn does_not_warn_when_a_definition_displaces_an_outer_local() {
         let mut names = in_frame(None);
-        names.bind_local("raw", at(0), BindingKind::Parameter);
+        bind(&mut names, "raw", at(0), BindingKind::Parameter);
         names.push_scope();
-        names.bind_local("raw", at(4), BindingKind::Definition);
+        bind(&mut names, "raw", at(4), BindingKind::Definition);
         assert!(
             names.diagnostics.is_empty(),
             "{:?}",
@@ -681,18 +805,18 @@ mod tests {
 
         // Only the outer definition warns, whatever it displaced itself.
         let mut names = in_frame(None);
-        names.bind_local("raw", at(0), BindingKind::Definition);
+        bind(&mut names, "raw", at(0), BindingKind::Definition);
         names.push_scope();
-        names.bind_local("raw", at(4), BindingKind::Definition);
+        bind(&mut names, "raw", at(4), BindingKind::Definition);
         assert_eq!(shown(&names.diagnostics), [SHADOWS]);
     }
 
     #[test]
     fn does_not_warn_for_a_parameter_or_loop_name_from_the_stdlib() {
         let mut names = in_frame(None);
-        names.bind_local("raw", at(0), BindingKind::Parameter);
+        bind(&mut names, "raw", at(0), BindingKind::Parameter);
         names.push_scope();
-        names.bind_local("raw", at(4), BindingKind::Loop);
+        bind(&mut names, "raw", at(4), BindingKind::Loop);
         assert!(
             names.diagnostics.is_empty(),
             "{:?}",
@@ -705,8 +829,8 @@ mod tests {
         let index = index(&["raw", "f"]);
         let mut names = in_frame(Some(&index));
         names.push_scope();
-        let slot = names.bind_local("raw", at(0), BindingKind::Definition);
-        assert_eq!(names.resolve("raw"), Some(Resolved::Local(slot)));
+        let slot = bind(&mut names, "raw", at(0), BindingKind::Definition);
+        assert_eq!(slot_of(names.resolve("raw")), Some(slot));
         names.pop_scope();
         assert_eq!(names.resolve("raw"), Some(Resolved::Function));
         assert_eq!(names.resolve("f"), Some(Resolved::Function));
@@ -720,20 +844,28 @@ mod tests {
     #[test]
     fn resolves_the_innermost_scope_first() {
         let mut names = in_frame(None);
-        names.bind_local("x", at(0), BindingKind::Definition);
+        bind(&mut names, "x", at(0), BindingKind::Definition);
         names.push_scope();
         names.push_scope();
-        let innermost = names.bind_local("x", at(4), BindingKind::Definition);
-        assert_eq!(names.resolve("x"), Some(Resolved::Local(innermost)));
+        let innermost = bind(&mut names, "x", at(4), BindingKind::Definition);
+        assert_eq!(slot_of(names.resolve("x")), Some(innermost));
     }
 
     #[test]
     fn records_a_capture_when_a_name_comes_from_an_enclosing_frame() {
         let mut names = in_frame(None);
-        names.bind_local("m", at(0), BindingKind::Definition);
-        let parent = names.bind_local("n", at(2), BindingKind::Definition);
+        bind(&mut names, "m", at(0), BindingKind::Definition);
+        let parent = names.bind_local("n", at(2), BindingKind::Definition, Type::Int);
         names.push_frame();
-        assert_eq!(names.resolve("n"), Some(Resolved::Local(0)));
+        // The capture carries the binding's type and identity into the inner frame.
+        assert_eq!(
+            names.resolve("n"),
+            Some(Resolved::Local {
+                slot: 0,
+                ty: Type::Int,
+                binder: at(2)
+            })
+        );
         let inner = names.pop_frame();
         assert_eq!(pairs(&inner), [(parent, 0)]);
         assert_eq!(inner.n_locals(), 1);
@@ -743,12 +875,12 @@ mod tests {
     #[test]
     fn records_a_capture_in_every_frame_crossed() {
         let mut names = in_frame(None);
-        names.bind_local("outer", at(0), BindingKind::Definition);
+        bind(&mut names, "outer", at(0), BindingKind::Definition);
         names.push_frame();
-        names.bind_local("a", at(2), BindingKind::Parameter);
+        bind(&mut names, "a", at(2), BindingKind::Parameter);
         names.push_frame();
-        names.bind_local("b", at(4), BindingKind::Parameter);
-        assert_eq!(names.resolve("outer"), Some(Resolved::Local(1)));
+        bind(&mut names, "b", at(4), BindingKind::Parameter);
+        assert_eq!(slot_of(names.resolve("outer")), Some(1));
         let innermost = names.pop_frame();
         let middle = names.pop_frame();
         assert_eq!(pairs(&middle), [(0, 1)]);
@@ -758,19 +890,19 @@ mod tests {
     #[test]
     fn reuses_a_capture_already_recorded() {
         let mut names = in_frame(None);
-        names.bind_local("n", at(0), BindingKind::Definition);
+        bind(&mut names, "n", at(0), BindingKind::Definition);
         names.push_frame();
-        assert_eq!(names.resolve("n"), Some(Resolved::Local(0)));
-        assert_eq!(names.resolve("n"), Some(Resolved::Local(0)));
+        assert_eq!(slot_of(names.resolve("n")), Some(0));
+        assert_eq!(slot_of(names.resolve("n")), Some(0));
         assert_eq!(pairs(&names.pop_frame()), [(0, 0)]);
     }
 
     #[test]
     fn peeks_without_recording_a_capture() {
         let mut names = in_frame(None);
-        names.bind_local("n", at(0), BindingKind::Definition);
+        bind(&mut names, "n", at(0), BindingKind::Definition);
         names.push_frame();
-        assert_eq!(names.peek("n"), Some(Resolved::Local(0)));
+        assert_eq!(slot_of(names.peek("n")), Some(0));
         let inner = names.pop_frame();
         assert!(inner.captures().is_empty());
         assert_eq!(inner.n_locals(), 0);
@@ -783,7 +915,7 @@ mod tests {
         assert_eq!(names.peek_callable("f"), Some(Resolved::Function));
         assert_eq!(names.peek_callable("raw"), Some(Resolved::Builtin(0)));
         assert_eq!(names.peek_callable("page"), None);
-        names.bind_local("raw", at(0), BindingKind::Definition);
+        bind(&mut names, "raw", at(0), BindingKind::Definition);
         names.push_frame();
         assert_eq!(names.peek_callable("raw"), None);
     }
@@ -792,7 +924,7 @@ mod tests {
     fn forgets_a_frames_names_when_it_pops() {
         let mut names = in_frame(None);
         names.push_frame();
-        names.bind_local("inner", at(0), BindingKind::Parameter);
+        bind(&mut names, "inner", at(0), BindingKind::Parameter);
         names.pop_frame();
         assert_eq!(names.resolve("inner"), None);
     }
@@ -800,8 +932,8 @@ mod tests {
     #[test]
     fn hands_its_diagnostics_back_in_the_order_the_rules_raised_them() {
         let mut names = in_frame(None);
-        names.bind_local("raw", at(0), BindingKind::Definition);
-        names.bind_local("page", at(2), BindingKind::Definition);
+        bind(&mut names, "raw", at(0), BindingKind::Definition);
+        bind(&mut names, "page", at(2), BindingKind::Definition);
         assert_eq!(
             shown(&names.into_diagnostics()),
             [
@@ -809,5 +941,74 @@ mod tests {
                 "t.lem:2..3: `page` is provided by the shell and cannot be redefined",
             ]
         );
+    }
+
+    #[test]
+    fn warns_for_a_definition_or_parameter_nothing_read_when_its_scope_closes() {
+        let mut names = in_frame(None);
+        names.bind_local("p", at(0), BindingKind::Parameter, Type::Int);
+        names.push_scope();
+        names.bind_local("d", at(2), BindingKind::Definition, Type::Int);
+        names.bind_local("read", at(4), BindingKind::Definition, Type::Int);
+        names.resolve("read");
+        assert!(
+            names.diagnostics.is_empty(),
+            "nothing warns before the scope closes"
+        );
+        names.pop_scope();
+        assert_eq!(
+            shown(&names.diagnostics),
+            ["t.lem:2..3: warning: `d` is never used"]
+        );
+        names.pop_frame();
+        assert_eq!(
+            shown(&names.diagnostics),
+            [
+                "t.lem:2..3: warning: `d` is never used",
+                "t.lem:0..1: warning: `p` is never used",
+            ]
+        );
+    }
+
+    #[test]
+    fn does_not_warn_for_a_loop_binding_a_probe_does_not_count_as_a_read() {
+        let mut names = in_frame(None);
+        names.push_scope();
+        names.bind_local("i", at(0), BindingKind::Loop, Type::Int);
+        names.bind_local("probed", at(2), BindingKind::Definition, Type::Int);
+        names.peek("probed");
+        names.pop_scope();
+        assert_eq!(
+            shown(&names.diagnostics),
+            ["t.lem:2..3: warning: `probed` is never used"]
+        );
+    }
+
+    #[test]
+    fn counts_a_read_through_a_capture_as_a_read_of_the_binding() {
+        let mut names = in_frame(None);
+        names.bind_local("n", at(0), BindingKind::Definition, Type::Int);
+        names.push_frame();
+        names.resolve("n");
+        names.pop_frame();
+        names.pop_frame();
+        assert!(
+            names.diagnostics.is_empty(),
+            "{:?}",
+            shown(&names.diagnostics)
+        );
+    }
+
+    #[test]
+    fn never_warns_for_a_refused_binding() {
+        let mut names = in_frame(None);
+        names.bind_local("page", at(0), BindingKind::Definition, Type::Int);
+        names.bind_local("a", at(2), BindingKind::Definition, Type::Int);
+        names.bind_local("a", at(4), BindingKind::Definition, Type::Int);
+        names.resolve("a");
+        names.pop_frame();
+        let severities: Vec<Severity> =
+            names.diagnostics.iter().map(|d| d.severity).collect();
+        assert_eq!(severities, [Severity::Error, Severity::Error]);
     }
 }

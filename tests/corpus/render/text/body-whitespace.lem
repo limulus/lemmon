@@ -7,7 +7,7 @@
     </lem-if>
   </li>
 </lem-fn>
-<lem-fn note(article: map, body: html)>
+<lem-fn note(article: any, body: html)>
   <lem-let preview = article.image ?? article.hero />
   <article>
     <h2><lem.article.title></h2>

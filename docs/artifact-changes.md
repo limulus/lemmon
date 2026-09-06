@@ -25,6 +25,17 @@ moved it. Newest last. An entry is removed when its change has been applied.
   stdlib name warns, say the warning fires when the name it displaces is the stdlib's: a
   parameter or loop binding never warns, and neither does a definition displacing a
   project function, a parameter, or an outer binding (D23, ∆e4d).
+- **Types and Checking** — add `any`, the spelled unknown, to the type list, with its
+  rule (assignable both ways; every operation on it is `any`, checked by the VM at
+  render time). Replace the Checking paragraph with `docs/language.md` §Checking as it
+  now reads: assignability (no `int → float`, provisional), the literal join rule (first
+  element sets the type, `null` makes it optional, a mismatch is an error), the
+  condition rule with narrowing of a plain optional local in `lem-if`/`lem-else-if`/`?:`,
+  the print rule, the operator rules, the call rules (a lambda with no expected type has
+  `any` parameters, provisional), and the unused rule (`lem-let` and parameters warn,
+  loop bindings do not). `{K: V}` keys are always `string`. An expression-bodied `lem-fn`
+  must declare its return type (invariant 11). `.` reads records, `[]` indexes maps, and
+  a map miss is a render error like a list's (∆C8d).
 
 ## Shell & Core
 
@@ -40,6 +51,12 @@ moved it. Newest last. An entry is removed when its change has been applied.
   definition is refused, blamed on the file just handed in whatever its path sorts as,
   and yields no unit — reported once, by the call that introduced it, with the last good
   program still renderable (∆e5i).
+
+- **Core pipeline, "checker"** — wherever the pipeline lists scanner → parser → checker →
+  compiler → VM as passes, say the checker is not a pass of its own: the compiler's one
+  walk types each expression as it lowers it (D31). `Unit::facts` carry typed signatures
+  (parameter names and types, return type), and a callee whose type changed under a
+  caller is a link diagnostic naming the caller (∆C8d).
 
 ## From Eleventy to Lemmon
 

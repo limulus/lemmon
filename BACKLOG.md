@@ -20,25 +20,31 @@ Standing epic for reshaping working code that belongs to no milestone. An item s
 only while doing it first makes the work below it smaller; if that work is claimed first, it
 absorbs the item and the item is removed.
 
+- ∆2c6 Pure typing rules beside the walk — move the checker's rules that need no
+  emitting (`operator`, `field_type`, the index, condition, print, and arity rules) out of
+  `crates/lemmon-vm/src/compile/expr.rs` into a `rules.rs` of pure functions returning a
+  type or a message, leaving the walk to emit, ask, and report. The rules then test
+  without compiling a template, and ∆cea's field and variant rules have one place to go
+
 ## Phase 1 — Language complete, tooling from day one
 
 Seed items for the next phase (architecture doc 3, phase 1); expect these to be split
 further at claim time.
 
-- ∆C8d Type checker — types (`any` the spelled unknown), `lem-type`/`lem-enum` resolved
-  project-flat, bidirectional inference, assignability, the type-directed print and
-  condition rules, optional narrowing in `lem-if`, unused warnings, typed signatures as
-  compile-time facts (D25), no field redeclaration in subtypes (D30's `layout` question).
-  Ambient values stay `any` until ∆Iau; `is`/`lem-match` until ∆PCK; needs: ∆1vS, ∆VNk
+- ∆cea Records and enums — `lem-type`/`lem-enum` resolved project-flat through a type
+  namespace in the export index, `extends` with no field redeclaration in subtypes (D30's
+  `layout` question), field access typed by declaration, bare variants where an enum is
+  expected, and a consumed type's shape as a compile-time fact (D25). Split from ∆C8d
+  because nothing produces a record value before ∆iCW and ∆PCK
 - ∆PCK Narrowing and typed lowering — `is` and `lem-match` narrowing, a `TypeTest` op over
   record values that carry their type (`Value::Record`), record literals as map literals
   under an expected record type, enum exhaustiveness on the provisional reading. Split
-  from ∆C8d because it needs runtime type tags, which nothing produces before it; needs: ∆C8d
+  from ∆C8d because it needs runtime type tags, which nothing produces before it; needs: ∆cea
 - ∆Iau Host-declared ambient types — `compile(files, host)` taking the host's `ambient.lem`
   and a per-document `record` (D30, docs/architecture.md §WASM API): `page`/`build` typed
   from the declaration, `site` from `site.lem`'s top-level bindings, the record as a
   compile-time fact, the entry field checked on page schemas. Until then every ambient
-  value is `any`; needs: ∆C8d
+  value is `any`; needs: ∆cea
 - ∆iCW Schemas at load — `site.lem`'s `from` bindings and each document's record (its
   collection's element type, narrowed by `type:`) type the content model; `loadData`
   validates records (the host's envelope too) at their YAML positions, runs computed
@@ -47,7 +53,7 @@ further at claim time.
 - ∆Q6L Stdlib — strings/lists/maps, `datetime("…")` (compile-time checked on a literal
   argument; there is no datetime literal) + rfc3339/rfc822 formatting, `slugify`,
   `readingTime`, `url()`, `asset()`, `raw()`, `uniqueId()`, with typed signatures the
-  checker understands, since feeds/sitemap/layout ports all block on these; needs: ∆C8d
+  checker understands, since feeds/sitemap/layout ports all block on these
 - ∆Hbw Document mode, full rules — nested `lem-let` capture bodies as sub-documents, and
   string-literal reference resolution in prose calls (docs/language.md §Document mode
   items 2 and 6) with the resolved ids reported as compile-time facts (D25); front matter
@@ -60,11 +66,11 @@ further at claim time.
   collection and dedup, `lem-page` generators (prev/next), `plan()` filling each page's
   entry from the host-named field (D30), serializable modules, render-reported deps, and
   compile-reported facts (signatures, reference ids, manifest entries, a document's record)
-  keying the unit cache so a content edit never recompiles its layouts (D25); needs: ∆C8d, ∆Iau
+  keying the unit cache so a content edit never recompiles its layouts (D25); needs: ∆Iau
 - ∆5MM tree-sitter-lemmon + LSP skeleton — embedded-template grammar with HTML/markdown
   injections, corpus agreement test wired into CI, `@limulus/lemmon-lsp` serving diagnostics
   and schema completions from `core.analyze()`; editor tooling is a day-one commitment
-  (docs/decisions/README.md D16); needs: ∆C8d
+  (docs/decisions/README.md D16)
 - ∆pXO Lemmon authoring skill — a checked-in agent skill (`agents/skills/lemmon/`) for
   writing `.lem`: tag forms and head-shape rules, expression syntax, type-directed escaping,
   document mode — distilled from docs/language.md, not a copy of it. Porting limulus.net's

@@ -54,10 +54,10 @@ describe('Core', () => {
       core.compile([{ path: 'page.lem', text: 'old' }])
       core.loadData({ ambient: {} })
       const diagnostics = core.compile([
-        { path: 'page.lem', text: '<lem-let raw = 1 />new' },
+        { path: 'page.lem', text: '<lem-let raw = 1 />new<lem.raw>' },
       ])
       expect(diagnostics.map((d) => d.severity)).toEqual(['warning'])
-      expect(core.render({ path: 'page.lem' }).html).toBe('new')
+      expect(core.render({ path: 'page.lem' }).html).toBe('new1')
     })
 
     it('should recompile one changed file against the resident rest', async () => {

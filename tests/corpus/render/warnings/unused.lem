@@ -1,0 +1,14 @@
+<lem-let unusedLet = 1 />
+<lem-let usedLet = 2 />
+<lem-let unusedCapture>x</lem-let>
+<lem-fn f(usedParam: int, unusedParam: int): int = usedParam />
+<lem-let g = |a, b| a />
+<lem-for x, i in [1]><lem.x></lem-for>
+<lem-for k, v in {a: 1}><lem.v></lem-for>
+<lem-let n = 5 />
+<lem-let h = |x| x + n />
+<lem-fn neverCalled(): int = 1 />
+<lem-if true>
+  <lem-let inner = 1 />
+</lem-if>
+<lem.usedLet><lem.f(1, 2)><lem.g(1, 2)><lem.h(1)>

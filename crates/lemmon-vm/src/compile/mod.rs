@@ -1,13 +1,17 @@
-//! Lowering from the typed AST to bytecode.
+//! Lowering from the typed AST to bytecode, checking types on the way (D31).
 //!
 //! The compiler reads only the `lemmon_syntax::ast` views — never `SyntaxKind` — and
 //! runs only on files that parsed clean, so every `Option` an accessor returns is `Some`
 //! here; [`required`] says so in one place. The driver lives in this module; [`items`]
-//! lowers what stands in a body, [`expr`] lowers heads, and [`names`] owns every rule
-//! about names — what may be bound where, and what a name means, in one stated order.
-//! The type checker (`∆C8d`) is not here yet, so the checks that need it — argument
-//! types, field existence, `is` — are the VM's at runtime.
+//! lowers what stands in a body, [`expr`] lowers heads and types them as it goes,
+//! [`annotations`] reads types as written, and [`names`] owns every rule about names —
+//! what may be bound where, what a name means and what type it has, in one stated
+//! order. There is no separate checking pass: the one walk that emits an expression's
+//! code is the walk that knows its type, so the checker's rules live beside the
+//! lowering they guard (`docs/language.md` §Checking). What is typed `any` is checked
+//! by the VM at run time instead.
 
+mod annotations;
 mod expr;
 mod items;
 mod names;
@@ -23,7 +27,8 @@ use lemmon_syntax::{DocumentParse, Parse, Severity, Span, SyntaxToken, parse_doc
 use crate::bytecode::{Function, Module, Op};
 use crate::document;
 use crate::exports::{Export, ExportIndex};
-use crate::unit::{ExportedSignature, ImportRef, ImportedSignature, Unit, link};
+use crate::types::Type;
+use crate::unit::{ExportedSignature, ImportRef, ImportedSignature, Param, Unit, link};
 use crate::{SourceFile, Value};
 
 pub(crate) use names::duplicate_named;
@@ -333,34 +338,80 @@ pub fn prepare(file: &SourceFile) -> Result<PreparedFile, Vec<Diagnostic>> {
 /// Collects the signatures of a parsed file's top-level `lem-fn`s, assigning each its
 /// unit-local function index — the entry is 0, so they count from 1. A name the rules
 /// refuse ([`Names::bind_function`]: ambient, or repeated in this file) exports nothing.
+///
+/// A signature is read from the head alone, never the body (invariant 11): a block body
+/// returns `html`, and an expression body must declare what it returns.
 fn collect_exports(path: &str, parse: &Parse) -> (Vec<ExportedSignature>, Vec<Diagnostic>) {
     let mut names = Names::new(path, None);
+    let mut diagnostics = Vec::new();
     let mut exports: Vec<ExportedSignature> = Vec::new();
     for item in parse.root().items() {
-        let (name, params) = match &item {
-            Item::FnBlock(f) => (required(f.name()), f.params()),
-            Item::FnVoid(f) => (required(f.name()), f.params()),
+        let (name, params, return_type, block) = match &item {
+            Item::FnBlock(f) => (required(f.name()), f.params(), f.return_type(), true),
+            Item::FnVoid(f) => (required(f.name()), f.params(), f.return_type(), false),
             _ => continue,
         };
         if !names.bind_function(name.text(), name.span()) {
             continue;
         }
-        let params: Vec<Rc<str>> = params
+        let params: Vec<Param> = params
             .map(|params| {
                 params
                     .params()
-                    .map(|p| Rc::from(required(p.name()).text()))
+                    .map(|p| Param {
+                        name: Rc::from(required(p.name()).text()),
+                        ty: annotations::resolve(
+                            path,
+                            &required(required(p.type_annotation()).ty()),
+                            &mut diagnostics,
+                        ),
+                    })
                     .collect()
             })
             .unwrap_or_default();
+        let ret = match (return_type, block) {
+            (None, true) => Type::Html,
+            (Some(annotation), true) => {
+                let declared = annotations::resolve(
+                    path,
+                    &required(annotation.ty()),
+                    &mut diagnostics,
+                );
+                if declared != Type::Html {
+                    diagnostics.push(Diagnostic::error(
+                        path,
+                        annotation.span(),
+                        "a block-bodied function returns `html`: declare `: html` or nothing",
+                    ));
+                }
+                Type::Html
+            }
+            (Some(annotation), false) => {
+                annotations::resolve(path, &required(annotation.ty()), &mut diagnostics)
+            }
+            (None, false) => {
+                diagnostics.push(Diagnostic::error(
+                    path,
+                    name.span(),
+                    format!(
+                        "an expression-bodied function declares its return type: \
+                         `<lem-fn {}(…): T = … />`",
+                        name.text()
+                    ),
+                ));
+                Type::Any
+            }
+        };
         exports.push(ExportedSignature {
             name: Rc::from(name.text()),
             params,
+            ret,
             func: index_u32(exports.len() + 1),
             name_span: name.span(),
         });
     }
-    (exports, names.into_diagnostics())
+    diagnostics.extend(names.into_diagnostics());
+    (exports, diagnostics)
 }
 
 /// Compiles one prepared file into its [`Unit`], resolving names against `index`. A
@@ -389,6 +440,7 @@ pub fn compile_unit(prepared: &PreparedFile, index: &ExportIndex) -> Compiled<Un
         names: Names::new(&prepared.path, Some(index)),
         diagnostics: prepared.diagnostics.clone(),
         ctxs: Vec::new(),
+        narrowings: Vec::new(),
     };
     let entry = compiler.reserve(&prepared.path);
     debug_assert_eq!(entry, 0, "the entry is a unit's first function");
@@ -498,6 +550,9 @@ struct Compiler<'a> {
     diagnostics: Vec<Diagnostic>,
     /// The function being compiled, then every lambda open inside it, innermost last.
     ctxs: Vec<FnCtx>,
+    /// The bindings a `lem-if` or `?:` has narrowed, innermost last, each by its
+    /// binder's span and the type it holds while the condition is known to hold.
+    narrowings: Vec<(Span, Type)>,
 }
 
 impl<'a> Compiler<'a> {
@@ -537,7 +592,8 @@ impl<'a> Compiler<'a> {
                 // collected, and nothing to compile into.
                 continue;
             };
-            let (func, params) = (export.func, export.params.clone());
+            let (func, params, ret) =
+                (export.func, export.params.clone(), export.ret.clone());
             self.push_frame();
             let tokens: Vec<SyntaxToken> = match &item {
                 Item::FnBlock(f) => f.params(),
@@ -546,8 +602,8 @@ impl<'a> Compiler<'a> {
             }
             .map(|params| params.params().map(|p| required(p.name())).collect())
             .unwrap_or_default();
-            for token in &tokens {
-                self.bind(token, BindingKind::Parameter);
+            for (token, param) in tokens.iter().zip(&params) {
+                self.bind(token, BindingKind::Parameter, param.ty.clone());
             }
             match &item {
                 Item::FnBlock(f) => {
@@ -556,12 +612,19 @@ impl<'a> Compiler<'a> {
                     self.lower_block(body.items().collect(), whitespace::Kind::Value);
                     self.emit(Op::EndCapture, f.span());
                 }
-                Item::FnVoid(f) => self.expr(&required(f.value())),
+                Item::FnVoid(f) => {
+                    self.check(&required(f.value()), &ret);
+                }
                 _ => unreachable!("only functions reach here"),
             }
             self.emit(Op::Return, item.span());
             let (ctx, frame) = self.pop_frame();
-            self.finish(func, ctx, &frame, params);
+            self.finish(
+                func,
+                ctx,
+                &frame,
+                params.iter().map(|p| p.name.clone()).collect(),
+            );
         }
     }
 
@@ -618,11 +681,10 @@ impl<'a> Compiler<'a> {
             .expect("a name resolved as a function is in the index")
     }
 
-    /// The `func` operand for the project function `name`: the local index when this
+    /// The `func` operand for the project function `export`: the local index when this
     /// file defines it, an import-tagged one otherwise — recorded symbolically, with
     /// the signature consumed as a fact, the first time the name is used.
-    fn func_operand(&mut self, name: &str, span: Span) -> u32 {
-        let export = self.export(name);
+    fn func_operand(&mut self, export: &'a Export, span: Span) -> u32 {
         if export.path == self.path {
             return export.signature.func;
         }
@@ -637,6 +699,7 @@ impl<'a> Compiler<'a> {
                 self.unit.facts.push(ImportedSignature {
                     name: name.clone(),
                     params: export.signature.params.clone(),
+                    ret: export.signature.ret.clone(),
                 });
                 self.unit.imports.len() - 1
             }
@@ -733,10 +796,11 @@ impl<'a> Compiler<'a> {
         self.names.pop_scope();
     }
 
-    /// Binds `name` as `kind` ([`Names::bind_local`]) and returns the slot its binder
-    /// stores into — a refused binding's included, so the store still compiles.
-    fn bind(&mut self, name: &SyntaxToken, kind: BindingKind) -> u16 {
-        self.names.bind_local(name.text(), name.span(), kind)
+    /// Binds `name` as `kind` with type `ty` ([`Names::bind_local`]) and returns the
+    /// slot its binder stores into — a refused binding's included, so the store still
+    /// compiles.
+    fn bind(&mut self, name: &SyntaxToken, kind: BindingKind, ty: Type) -> u16 {
+        self.names.bind_local(name.text(), name.span(), kind, ty)
     }
 
     /// What `name` means where it stands ([`Names::resolve`]).
@@ -816,7 +880,7 @@ mod tests {
         assert_eq!(run_files(&files, "page.lem").unwrap(), "hi you P");
         assert_eq!(run_files(&files, "lib.lem").unwrap(), "");
         let files = [
-            SourceFile::new("lib.lem", "<lem-let secret = 1 />"),
+            SourceFile::new("lib.lem", "<lem-let secret = 1 /><lem.secret>"),
             SourceFile::new("page.lem", "<lem.secret>"),
         ];
         assert_eq!(
@@ -855,7 +919,11 @@ mod tests {
             unit.facts,
             vec![ImportedSignature {
                 name: Rc::from("greet"),
-                params: vec![Rc::from("who")],
+                params: vec![Param {
+                    name: Rc::from("who"),
+                    ty: Type::String,
+                }],
+                ret: Type::String,
             }]
         );
         assert_eq!(unit.imports.len(), 1);
@@ -982,7 +1050,7 @@ mod tests {
             "t.lem:18..19: `a` is already bound here\n  t.lem:10..11: first bound here"
         );
         assert_eq!(
-            run("<lem-let f = |a, a| a />").unwrap_err(),
+            run("<lem-let f = |a, a| a /><lem.f(1, 2)>").unwrap_err(),
             "t.lem:17..18: `a` is already bound here\n  t.lem:14..15: first bound here"
         );
     }
@@ -1006,7 +1074,7 @@ mod tests {
     #[test]
     fn refuses_a_map_key_given_twice() {
         assert_eq!(
-            run("<lem-let m = {a: 1, \"a\": 2} />").unwrap_err(),
+            run("<lem-let m = {a: 1, \"a\": 2} /><lem.m[\"a\"]>").unwrap_err(),
             "t.lem:20..23: `a` is already given"
         );
     }
@@ -1030,12 +1098,13 @@ mod tests {
     fn warns_when_a_definition_shadows_the_stdlib_and_still_compiles() {
         // D23: site definitions may shadow the stdlib, with a warning — and the
         // shadowing definition is what the name then means.
-        for (src, at) in [
+        for (src, at, out) in [
             (
-                "<lem-fn raw(s: string): int = 2 />\n<lem.raw(\"x\")>",
+                "<lem-fn raw(s: string): string = s + \"2\" />\n<lem.raw(\"x\")>",
                 "8..11",
+                "x2",
             ),
-            ("<lem-let raw = 2 />\n<lem.raw>", "9..12"),
+            ("<lem-let raw = 2 />\n<lem.raw>", "9..12", "2"),
         ] {
             let compiled = compile(&[SourceFile::new("t.lem", src)]);
             assert_eq!(
@@ -1046,11 +1115,15 @@ mod tests {
                 "{src}"
             );
             let module = compiled.output.expect("a module still comes with warnings");
-            assert_eq!(render(&module, "t.lem", &[]).unwrap(), "2", "{src}");
+            assert_eq!(render(&module, "t.lem", &[]).unwrap(), out, "{src}");
         }
         // A name that is not the stdlib's does not warn.
         assert_eq!(
-            compile(&[SourceFile::new("t.lem", "<lem-let cooked = 2 />")]).diagnostics,
+            compile(&[SourceFile::new(
+                "t.lem",
+                "<lem-let cooked = 2 /><lem.cooked>"
+            )])
+            .diagnostics,
             Vec::new()
         );
     }
@@ -1061,7 +1134,7 @@ mod tests {
         // variable is not a name an author chose against the stdlib.
         for src in [
             "<lem-fn f(raw: string): string = raw />",
-            "<lem-let f = |raw| raw />",
+            "<lem-let f = |raw| raw /><lem.f(1)>",
             "<lem-for raw in [1]><lem.raw></lem-for>",
             "<lem-for k, raw in {a: 1}><lem.raw></lem-for>",
         ] {
@@ -1124,7 +1197,7 @@ mod tests {
     fn reports_warnings_in_source_order_with_the_errors() {
         let errors = compile_errors(&[SourceFile::new(
             "t.lem",
-            "<lem.missing>\n<lem-let raw = 1 />\n<lem.also>",
+            "<lem.missing>\n<lem-let raw = 1 />\n<lem.also><lem.raw>",
         )]);
         let severities: Vec<Severity> = errors.iter().map(|d| d.severity).collect();
         assert_eq!(

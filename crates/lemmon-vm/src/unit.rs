@@ -17,6 +17,7 @@ use crate::Value;
 use crate::bytecode::{Function, Module, Op};
 use crate::compile::{Compiled, Diagnostic, index_u32};
 use crate::exports::ExportIndex;
+use crate::types::Type;
 
 /// One file's compiled output: self-contained except for the functions it names in
 /// other files, which stay symbolic until [`link`] resolves them.
@@ -49,13 +50,23 @@ pub struct ImportRef {
     pub span: Span,
 }
 
+/// One parameter of a signature: its name, which named arguments reorder against, and
+/// its declared type, which arguments are checked against.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Param {
+    pub name: Rc<str>,
+    pub ty: Type,
+}
+
 /// A top-level `lem-fn` a unit defines.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ExportedSignature {
     /// The function's project-flat name.
     pub name: Rc<str>,
-    /// Parameter names, in declaration order — what named arguments reorder against.
-    pub params: Vec<Rc<str>>,
+    /// The parameters, in declaration order.
+    pub params: Vec<Param>,
+    /// The declared return type: `html` for a block body.
+    pub ret: Type,
     /// The function's index in its unit.
     pub func: u32,
     /// The name token in the definition — where a duplicate of it is reported, and what
@@ -63,14 +74,27 @@ pub struct ExportedSignature {
     pub name_span: Span,
 }
 
+impl ExportedSignature {
+    /// The function's type, as a value of it has.
+    #[must_use]
+    pub fn ty(&self) -> Type {
+        Type::function(
+            self.params.iter().map(|p| p.ty.clone()).collect(),
+            self.ret.clone(),
+        )
+    }
+}
+
 /// A foreign signature a unit's calls were compiled against: the callable shape only,
 /// never the body.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ImportedSignature {
     /// The function's project-flat name.
     pub name: Rc<str>,
-    /// Parameter names, in declaration order.
-    pub params: Vec<Rc<str>>,
+    /// The parameters, in declaration order.
+    pub params: Vec<Param>,
+    /// The declared return type.
+    pub ret: Type,
 }
 
 /// Joins units into the [`Module`] the VM runs: constant pools concatenated, function
@@ -116,23 +140,24 @@ pub fn link(units: &[Unit], index: &ExportIndex) -> Compiled<Module> {
                             // The signature this unit was compiled against is one of its
                             // facts (D25). If the definition no longer matches it, the
                             // caller's bytecode is stale — named arguments were already
-                            // reordered against the old parameter list — so this unit
-                            // has to be recompiled, not relinked. Reporting it here is
-                            // what tells the shell which file that is.
+                            // reordered against the old parameter list, and every
+                            // argument and result was checked against the old types —
+                            // so this unit has to be recompiled, not relinked. Reporting
+                            // it here is what tells the shell which file that is.
                             let fact = unit
                                 .facts
                                 .iter()
                                 .find(|fact| fact.name == import.name)
                                 .expect("an import records the signature it consumed");
-                            if fact.params != export.params {
+                            if fact.params != export.params || fact.ret != export.ret {
                                 diagnostics.push(
                                     Diagnostic::error(
                                         &unit.path,
                                         import.span,
                                         stale_signature_message(
                                             &import.name,
-                                            &fact.params,
-                                            &export.params,
+                                            (&fact.params, &fact.ret),
+                                            (&export.params, &export.ret),
                                         ),
                                     )
                                     .with_label(
@@ -211,18 +236,23 @@ fn add_u32(a: u32, b: u32) -> u32 {
 /// under it: both signatures, so the difference is visible without opening the callee.
 fn stale_signature_message(
     name: &str,
-    compiled: &[Rc<str>],
-    defined: &[Rc<str>],
+    compiled: (&[Param], &Type),
+    defined: (&[Param], &Type),
 ) -> String {
-    let shape = |params: &[Rc<str>]| {
-        let params: Vec<&str> = params.iter().map(|p| &**p).collect();
-        format!("{name}({})", params.join(", "))
-    };
     format!(
         "`{name}` is now `{}`, but this file was compiled against `{}` — recompile it",
-        shape(defined),
-        shape(compiled)
+        signature(name, defined.0, defined.1),
+        signature(name, compiled.0, compiled.1)
     )
+}
+
+/// A signature the way it is declared: `name(a: string, b: int): html`.
+fn signature(name: &str, params: &[Param], ret: &Type) -> String {
+    let params: Vec<String> = params
+        .iter()
+        .map(|p| format!("{}: {}", p.name, p.ty))
+        .collect();
+    format!("{name}({}): {ret}", params.join(", "))
 }
 
 #[cfg(test)]
@@ -308,8 +338,35 @@ mod tests {
         assert_eq!(errors[0].path, "page.lem");
         assert_eq!(
             errors[0].to_string(),
-            "page.lem:5..25: `pair` is now `pair(b, a)`, but this file was compiled against \
-             `pair(a, b)` — recompile it\n  lib.lem:8..12: now defined here"
+            "page.lem:5..25: `pair` is now `pair(b: string, a: string): string`, but this \
+             file was compiled against `pair(a: string, b: string): string` — recompile \
+             it\n  lib.lem:8..12: now defined here"
+        );
+    }
+
+    #[test]
+    fn refuses_to_link_a_unit_whose_callee_changed_a_type_under_it() {
+        // The caller checked its argument against `int` and printed the result as a
+        // `string`; both were facts, and either changing makes the unit stale.
+        let against = |lib: &str| {
+            unit_of("page.lem", &[("lib.lem", lib), ("page.lem", "<lem.f(1)>")])
+        };
+        let page = against("<lem-fn f(a: int): string = \"s\" />");
+        let lib = unit_of("lib.lem", &[("lib.lem", "<lem-fn f(a: int): int = a />")]);
+        let errors = link_errors(&[lib, page.clone()]);
+        assert_eq!(errors.len(), 1);
+        assert!(
+            errors[0].message.contains("`f` is now `f(a: int): int`"),
+            "{errors:?}"
+        );
+        let lib = unit_of(
+            "lib.lem",
+            &[("lib.lem", "<lem-fn f(a: any): string = \"s\" />")],
+        );
+        let errors = link_errors(&[lib, page]);
+        assert!(
+            errors[0].message.contains("`f` is now `f(a: any): string`"),
+            "{errors:?}"
         );
     }
 
@@ -332,7 +389,9 @@ mod tests {
         let errors = link_errors(&[lib, page]);
         assert_eq!(errors[0].path, "page.lem");
         assert!(
-            errors[0].message.contains("`greet(who, loudly)`"),
+            errors[0]
+                .message
+                .contains("`greet(who: string, loudly: bool): string`"),
             "{errors:?}"
         );
     }

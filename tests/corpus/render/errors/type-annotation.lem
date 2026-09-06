@@ -1,0 +1,10 @@
+<lem-fn a(x: Article): string = x />
+<lem-fn b(x: map, y: list, z: function): string = x && y && z ? "" : "" />
+<lem-fn c(x: {int: string}): string = x["k"] />
+<lem-fn d(x: int): string>
+  block bodies return html: <lem.x>
+</lem-fn>
+<lem-fn e(x: int) = x />
+<lem-let f: Photo = null />
+<lem-let g: [Photo]? = null />
+<lem.f><lem-if g>has</lem-if>

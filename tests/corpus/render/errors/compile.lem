@@ -17,10 +17,12 @@
 <lem-let n = 1 />
 <lem-let n = 2 />
 <lem-let big = 99999999999999999999 />
+<lem.n><lem.big>
 <lem-let page = "shadowing an ambient record" />
 <lem-fn build(): int = 1 />
 <lem-fn dup(a: int, a: int): int = a />
 <lem-let m = {k: 1, k: 2} />
+<lem.m["k"]>
 <lem-if true>
   <lem-fn nested(): int = 1 />
 </lem-if>

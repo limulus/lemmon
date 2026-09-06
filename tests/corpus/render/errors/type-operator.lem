@@ -1,0 +1,23 @@
+<lem-let n = 1 />
+<lem-let s = "s" />
+<lem-let f: (int): int = |a| a />
+<lem.s + n>
+<lem.-s>
+<lem.!n ? "a" : "b">
+<lem.n lt s ? "a" : "b">
+<lem.true gt false ? "a" : "b">
+<lem.n == s ? "a" : "b">
+<lem.f == f ? "a" : "b">
+<lem.s in [n] ? "a" : "b">
+<lem.n in {a: 1} ? "a" : "b">
+<lem.n in n ? "a" : "b">
+<lem.n && true ? "a" : "b">
+<lem.true || s ? "a" : "b">
+<lem.n ? "a" : "b">
+<lem.true ? n : s>
+<lem.[n]["a"]>
+<lem.{a: n}[0]>
+<lem.n[0]>
+<lem.s.length>
+<lem.{a: n}.a>
+<lem.n - "1">

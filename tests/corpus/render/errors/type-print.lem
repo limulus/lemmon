@@ -1,0 +1,8 @@
+<lem-let flag = true />
+<lem-let nothing = null />
+<lem-let xs = [1] />
+<lem-let m = {a: 1} />
+<lem-let f: (int): int = |a| a />
+<lem-let maybe: string? = "s" />
+<lem-fn g(): int = 1 />
+<lem.flag><lem.nothing><lem.xs><lem.m><lem.f><lem.maybe><lem.g>

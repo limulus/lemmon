@@ -7,8 +7,9 @@ IDs (D01…) refer to `docs/decisions/README.md`.
 
 Two halves, one contract:
 
-- **Core** — Rust workspace compiled to WebAssembly: scanner, parser, type checker, bytecode
-  compiler, VM, document-mode segmenter/splicer, and comrak for markdown. Pure:
+- **Core** — Rust workspace compiled to WebAssembly: scanner, parser, bytecode compiler
+  (which is also the type checker, D31), VM, document-mode segmenter/splicer, and comrak
+  for markdown. Pure:
   `(program, data, page) → (html, side channels, diagnostics)`. No I/O, clock, or env.
 - **Shell** — Node/TypeScript: content walker, YAML front matter (with positions), plugin
   host, esbuild driver, worker pool, dev server (COOP/COEP headers, live reload), output
@@ -59,7 +60,7 @@ not a break:
 
 - `DataInput` is `{ambient: {site?, page?, build?}}`: an envelope object, so `records`,
   data files, and the manifest arrive as new fields. `loadData` validates nothing yet
-  (schemas are ∆C8d) and always returns `[]`.
+  (schemas at load are ∆iCW) and always returns `[]`.
 - `PageRef` is `{path}` until `plan()` exists to mint richer references.
 - `render` returns `{html, diagnostics}` — `html: null` plus one diagnostic when the page
   fails at runtime. `channels` and `deps` are omitted entirely until ∆RGQ, not stubbed.
@@ -101,6 +102,9 @@ not a break:
 3. **Compile** (core) — every changed `.lem`/`.md` → its own bytecode unit, then a link step
    joins the units into the module (D25, §Separate compilation); document prose rendered by
    comrak here and stored in the document's unit (markdown never runs at render time).
+   Type checking is not a pass of its own: the walk that lowers an expression is the walk
+   that types it (D31), so a type error is a compile diagnostic like any other and a file
+   with one yields no unit.
    Templates compile first: the shell matches documents against the `from` globs that
    `site.lem` reports, then compiles each document with its `record` (D30).
 4. **Load** (core) — validate records against schemas, evaluate computed fields, resolve
@@ -139,9 +143,8 @@ A unit depends on its text and on the **compile-time facts** it consumed, nothin
 The compiler reports those facts per file, and the shell's cache key is
 `hash(text) + hash(facts)`. That is the guarantee: a content edit re-runs comrak and codegen
 for that one document; the layouts and components it depends on are cache hits. A new photo
-id invalidates only documents whose facts named the photo index, never the layouts. The
-checker remains whole-program (cheap: the program is small) but runs over units, so
-re-checking never requires recompiling.
+id invalidates only documents whose facts named the photo index, never the layouts. Checking is part of compiling a unit (D31): a file is re-checked exactly when it is
+recompiled, which its text or its facts changing is what triggers.
 
 ∆TNT made the split real: `lemmon-vm` compiles per file (`prepare` → `ExportIndex` →
 `compile_unit`) into a `Unit` — file-local constant pool, unit-local function indices,
@@ -153,8 +156,10 @@ and both `compile_unit` and `link` read that one answer rather than deriving the
 A refused definition is reported where its file compiles, next to the stdlib-shadowing
 warning that asks the index the same question; an import the index has no definition for
 is a spanned link diagnostic. The facts live on
-`Unit::facts` — today only the imported-signatures kind exists, and invariant 11 is a
-test: editing a callee's body leaves the caller's unit byte-identical. `∆RGQ` makes the
+`Unit::facts` — today only the imported-signatures kind exists, typed since ∆C8d: the
+parameter names and types and the return type a call was checked against, so a callee
+whose type changed under a caller is a link diagnostic naming the caller. Invariant 11 is
+a test: editing a callee's body leaves the caller's unit byte-identical. `∆RGQ` makes the
 reported facts cross the boundary and the serialized form (`exportModule`) first-class.
 
 ## VM
@@ -173,7 +178,9 @@ via the pc→span table.
 
 What ∆c8h built is the untyped subset of that: `Value` without the stdlib types, maps in
 place of records with `GetField` by name, and no `TypeTest`/`Channel`/`Track` — those arrive
-with the checker (∆C8d), the stdlib (∆Q6L), and side channels (∆RGQ).
+with records and narrowing (∆cea, ∆PCK), the stdlib (∆Q6L), and side channels (∆RGQ). The
+VM is the runtime for `any` (∆C8d): its type checks fire only on values the checker let
+through as `any`, and stay for that reason.
 
 Calibration, not promise: whole site tens of ms inside WASM; single page well under 1 ms of
 VM time (that number is the Phase 0 exit criterion).

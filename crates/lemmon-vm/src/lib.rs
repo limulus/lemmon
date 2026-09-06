@@ -1,15 +1,16 @@
 //! Codegen and the VM for Lemmon: the stages below the typed AST.
 //!
-//! [`compile`] lowers every file of a site to one [`Module`] of bytecode; [`render`]
-//! runs a file's entry function and returns its HTML. The type checker (`∆C8d`) slots
-//! into [`compile`] when it lands; until then this is an untyped VM, and what
-//! `docs/language.md` calls type errors surface as spanned runtime errors.
+//! [`compile`] lowers every file of a site to one [`Module`] of bytecode, checking types
+//! as it lowers (D31); [`render`] runs a file's entry function and returns its HTML. The
+//! VM is the runtime for `any`: what the checker could not decide statically — every
+//! operation on a value typed `any` — it checks at run time, with a span.
 
 mod builtins;
 mod bytecode;
 mod compile;
 mod document;
 mod exports;
+mod types;
 mod unit;
 mod value;
 mod vm;
@@ -26,7 +27,8 @@ pub use compile::{
     repeated_path,
 };
 pub use exports::{Export, ExportIndex};
-pub use unit::{ExportedSignature, ImportRef, ImportedSignature, Unit, link};
+pub use types::Type;
+pub use unit::{ExportedSignature, ImportRef, ImportedSignature, Param, Unit, link};
 pub use value::{Closure, Map, Value};
 pub use vm::render;
 

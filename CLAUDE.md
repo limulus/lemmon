@@ -2,16 +2,21 @@
 
 Lemmon is a static site generator and a typed, tag-based template language. A
 Node/TypeScript **shell** owns files, processes, plugins, and the dev server; a Rust
-**core** (scanner → parser → checker → bytecode compiler → VM, plus comrak for markdown) is
+**core** (scanner → parser → bytecode compiler that checks as it lowers → VM, plus comrak
+for markdown) is
 compiled to WebAssembly and does everything deterministic. Distributed via npm; open source.
 Its first production site is limulus.net, which it will take over from Eleventy + WebC once
 a parity harness shows zero unexpected output diffs.
 
-**Status:** early implementation, sequenced in `BACKLOG.md`; the current milestone is the
-Phase 0 spike — one real page rendering end-to-end from the WASM core. Scanner → parser →
-typed AST → compiler → VM run the spike subset untyped, `.md` goes through document mode,
-and the checker (∆C8d) does not exist yet. Compilation is per-file: each file becomes a
-`Unit`, and a link step joins units into the `Module` the VM runs (D25, invariant 11).
+**Status:** early implementation, sequenced in `BACKLOG.md`; Phase 0 (the spike — one real
+page rendering end-to-end from the WASM core) is done and Phase 1 is under way. Scanner →
+parser → typed AST → compiler → VM run the language over scalar, list, map, optional, and
+function types with `any` as the spelled unknown; `.md` goes through document mode; the
+checker is not a separate pass but the compiler's own walk, which types each expression
+as it lowers it (D31). Records and enums (∆cea), narrowing over `is`/`lem-match` (∆PCK),
+and host-declared ambient types (∆Iau) are next. Compilation is per-file: each file
+becomes a `Unit`, and a link step joins units into the `Module` the VM runs (D25,
+invariant 11).
 `crates/lemmon-wasm` exposes the resident `Core` (`compile`/`loadData`/`render`), and
 `@limulus/lemmon-core` wraps the staged artifact — so `npm run rust:wasm` must have run
 before `npm run verify`.
@@ -72,7 +77,7 @@ These hold for every change. A PR that breaks one is wrong even if its tests pas
 ```
 crates/lemmon-syntax/   scanner, parser, CST/AST, diagnostics, document segmenter
 crates/lemmon-corpus/   corpus discovery + blessing, used by every stage's tests
-crates/lemmon-vm/       codegen + VM, document mode's markdown stage; checker to come
+crates/lemmon-vm/       types + checker-while-lowering + codegen + VM, document mode's markdown stage
 crates/lemmon-wasm/     wasm-bindgen boundary: the resident Core (lemmon-core's .wasm)
 packages/core/          @limulus/lemmon-core — typed JS wrapper around the .wasm
 packages/shell/         @limulus/lemmon-shell — CLI, walker, plugin host, dev server (stub)

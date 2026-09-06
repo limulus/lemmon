@@ -1,6 +1,6 @@
 <lem-fn double(x: int): int = x * 2 />
-<lem-fn describe(article: map, suffix: string): string = article.title + suffix />
-<lem-fn isDraft(article: map): bool = article.draft ?? false />
+<lem-fn describe(article: any, suffix: string): string = article.title + suffix />
+<lem-fn isDraft(article: any): bool = article.draft ?? false />
 <lem-let article = {title: "The Rebound", draft: null} />
 <lem.double(21)>
 <lem.describe(article, suffix: "!")>

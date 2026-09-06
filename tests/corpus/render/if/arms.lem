@@ -1,4 +1,4 @@
-<lem-let article = {title: "T", hero: null, vod: {poster: "p.jpg"}, draft: false} />
+<lem-let article: any = {title: "T", hero: null, vod: {poster: "p.jpg"}, draft: false} />
 <lem-if article.hero>
   <p>hero</p>
 <lem-else-if article.vod />

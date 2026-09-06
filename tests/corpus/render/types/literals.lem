@@ -1,0 +1,15 @@
+<lem-let ints = [1, 2, 3] />
+<lem-let withNull = [1, null, 3] />
+<lem-let nullFirst = [null, "a"] />
+<lem-let values = {a: 1, b: null} />
+<lem-let nested = [[1], [], [2, null]] />
+<lem-let typed: [int?] = [1, null] />
+<lem-let strings: {string: string} = {} />
+<lem-let loose: any = [1, "a", null] />
+<lem-let items: [any] = [1, "a", null] />
+<lem-let optionalList: [int]? = [1] />
+<lem.ints[0] + ints[2]> <lem.withNull[1] ?? 0> <lem.nullFirst[1] ?? "-">
+<lem.values["a"] ?? 0> <lem.values["b"] ?? -1>
+<lem.nested[2][1] ?? 9> <lem.typed[0] ?? 0>
+<lem-for k, v in strings>never</lem-for>
+<lem.loose[1]> <lem.items[0]> <lem.(optionalList ?? [])[0]>

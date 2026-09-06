@@ -1,0 +1,7 @@
+<lem-let mixed = [1, "a"] />
+<lem-let mixedValues = {a: 1, b: "x"} />
+<lem-let ys: [int] = [1, "a", null] />
+<lem-let zs: [int] = 3 />
+<lem-let m: {string: bool} = {a: true, b: 1} />
+<lem-let optInt: int? = [1] />
+<lem.mixed[0]><lem.mixedValues["a"]><lem.ys[0]><lem.zs[0]><lem.m["a"] ? "t" : "f"><lem.optInt ?? 0>

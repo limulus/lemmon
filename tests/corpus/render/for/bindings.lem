@@ -1,4 +1,4 @@
-<lem-let articles = [{title: "A", tags: ["x"]}, {title: "B", tags: []}] />
+<lem-let articles: any = [{title: "A", tags: ["x"]}, {title: "B", tags: []}] />
 <ul>
   <lem-for article in articles>
   <li><lem.article.title></li>

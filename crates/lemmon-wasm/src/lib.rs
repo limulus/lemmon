@@ -203,7 +203,7 @@ impl Core {
 
     /// Stores the data every render binds. `input` is JSON
     /// `{ambient: {site?, page?, build?}}`; the result is the JSON array of
-    /// diagnostics — always empty until schemas exist to validate against (`∆C8d`).
+    /// diagnostics — always empty until schemas exist to validate against (`∆iCW`).
     ///
     /// # Errors
     ///
@@ -306,7 +306,7 @@ impl Core {
             }
         }
         self.ambient = ambient;
-        // Nothing to validate against until schemas exist (`∆C8d`).
+        // Nothing to validate against until schemas exist (`∆iCW`).
         Ok("[]".to_owned())
     }
 
@@ -453,13 +453,15 @@ mod tests {
         compile_clean(&mut core, r#"[{"path": "page.lem", "text": "old"}]"#);
         core.load_data_json(r#"{"ambient": {}}"#).unwrap();
         let result = core
-            .compile_json(r#"[{"path": "page.lem", "text": "<lem-let raw = 1 />new"}]"#)
+            .compile_json(
+                r#"[{"path": "page.lem", "text": "<lem-let raw = 1 />new<lem.raw>"}]"#,
+            )
             .unwrap();
         let reported = diagnostics(&result);
         assert_eq!(reported.as_array().map(Vec::len), Some(1), "{reported:?}");
         assert_eq!(reported[0]["severity"], "warning");
         assert_eq!(reported[0]["span"]["start"], 9);
-        assert_eq!(html_of(&core, "page.lem"), "new");
+        assert_eq!(html_of(&core, "page.lem"), "new1");
     }
 
     #[test]
@@ -516,7 +518,7 @@ mod tests {
             reported[0]["message"]
                 .as_str()
                 .unwrap()
-                .contains("compiled against `pair(a, b)`"),
+                .contains("compiled against `pair(a: string, b: string): string`"),
             "{reported:?}"
         );
         // The last good program is what still renders, unchanged.

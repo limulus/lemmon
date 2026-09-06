@@ -1,0 +1,18 @@
+<lem-fn describe(s: string, i: int, f: float, b: bool, d: datetime, du: duration, u: url, h: html, a: asset, x: any)>
+  <lem.s> <lem.i> <lem.f> <lem-if b>yes</lem-if> <lem-if d == d && du == du && u == u && a == a><lem.h></lem-if> <lem.x>
+</lem-fn>
+<lem-fn choose(xs: [int], m: {string: [asset]?}, pick: (int): asset?, ys: [[string]]): int = pick(xs[0]) == null && m["k"] == null && ys[0][0] == "a" ? xs[0] : 0 />
+<lem-fn wrap(body: html): html>
+  <div><lem.body></div>
+</lem-fn>
+<lem-let n: int = 1 />
+<lem-let s: string? = null />
+<lem-let xs: [int] = [] />
+<lem-let m: {string: any} = {} />
+<lem-let f: (int): int = |v| v + n />
+<lem-let untyped: any = "anything" />
+<lem.describe("s", n, 1.5, true, untyped, untyped, untyped, wrap(raw("<b>b</b>")), untyped, untyped)>
+<lem.choose([1, 2], {k: null}, |i| i lt 0 ? null : null, [["a"]])>
+<lem.s ?? "none"> <lem.f(1)> <lem.untyped>
+<lem-if "k" in m>never<lem-else />empty map</lem-if>
+<lem-for x in xs>never<lem-else />empty list</lem-for>

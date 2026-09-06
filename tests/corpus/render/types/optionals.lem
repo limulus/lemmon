@@ -1,0 +1,36 @@
+<lem-let title: string? = "The Rebound" />
+<lem-let subhead: string? = null />
+<lem-let n: int? = 3 />
+coalesce: <lem.title ?? "untitled"> <lem.subhead ?? "no subhead"> <lem.(n ?? 0) + 1>
+null on the left: <lem.null ?? "right side">
+<lem-if title>
+  narrowed in the arm: <lem.title>
+</lem-if>
+<lem-if subhead>
+  never
+<lem-else-if n />
+  narrowed by the else-if: <lem.n * 2>
+</lem-if>
+<lem-if subhead>
+  never
+<lem-else />
+  still optional in the else: <lem.subhead ?? "nothing"><lem.title ?? "untitled">
+</lem-if>
+ternary: <lem.title ? title : "untitled"> <lem.subhead ? subhead : "no subhead">
+<lem-if n>
+  <lem-let n: int? = null />
+  shadowed, so optional again: <lem.n ?? 0>
+</lem-if>
+<lem-let f: (int?): int = |v| v ?? -1 />
+<lem.f(null)> <lem.f(n)>
+<lem-let maybe: any = null />
+<lem-let anyDefault: any = "unknown default" />
+unknown default keeps the value unknown: <lem.subhead ?? anyDefault>
+propagated: <lem.maybe?.field ?? "null propagated">
+<lem-let deep: {string: int}? = {a: 1} />
+<lem-if deep><lem.deep["a"]></lem-if>
+<lem-if (title)>parenthesised: <lem.title></lem-if>
+<lem-if title>
+  <lem-if title>guarded twice: <lem.title></lem-if>
+  a dead default is not a mistake: <lem.title ?? "unused">
+</lem-if>

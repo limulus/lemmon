@@ -1,5 +1,5 @@
-<lem-fn apply(f: function, x: int): int = f(x) />
-<lem-fn twice(f: function, x: int): int = f(f(x)) />
+<lem-fn apply(f: (int): int, x: int): int = f(x) />
+<lem-fn twice(f: (int): int, x: int): int = f(f(x)) />
 <lem-fn increment(x: int): int = x + 1 />
 <lem-let n = 10 />
 <lem-let addN = |x| x + n />
@@ -14,5 +14,5 @@
 <lem-let f = increment />
 <lem.f(1)>
 <lem-let fns = {inc: increment} />
-<lem.fns.inc(2)>
+<lem.fns["inc"](2)>
 <lem.page.title> at <lem.page.url> on <lem.site.name>

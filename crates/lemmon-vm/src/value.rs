@@ -4,10 +4,12 @@
 //! a closure's captures, out of a `lem-let` — is a pointer copy. The VM never mutates a
 //! value after it is built; `MakeList`/`MakeMap` build it in one go.
 //!
-//! There is no type checker yet (`∆C8d`), so what `docs/language.md` describes as type
-//! errors are runtime errors here, raised by the VM with a span. The escaping rule is
-//! still type-directed, by variant: [`Value::Str`] is untrusted text and is escaped on
-//! emit; [`Value::Html`] is trusted markup and is emitted verbatim (invariant 7).
+//! The VM is the runtime for `any`: what the checker could not decide statically — an
+//! operation on a value typed `any`, which the compiler lets through unchecked — it
+//! checks here, and the errors below are raised with a span. On a fully typed program
+//! none of them can fire. The escaping rule is type-directed by variant either way:
+//! [`Value::Str`] is untrusted text and is escaped on emit; [`Value::Html`] is trusted
+//! markup and is emitted verbatim (invariant 7).
 
 use std::fmt::Write as _;
 use std::rc::Rc;
@@ -144,8 +146,8 @@ impl Value {
     }
 
     /// How a `lem-if` reads this value: a `bool` is itself; an optional is its
-    /// non-null test. The checker will reject anything that is neither `bool` nor an
-    /// optional; until then every non-null non-bool counts as present.
+    /// non-null test. The checker rejects a condition that is neither, so anything else
+    /// reaching here came through `any`, and counts as present when it is not null.
     #[must_use]
     pub const fn as_condition(&self) -> bool {
         match self {
@@ -160,7 +162,8 @@ impl Value {
     /// # Errors
     ///
     /// For a value that has no printed form — `null`, a `bool`, a list, a map, or a
-    /// function. The checker will make these compile errors.
+    /// function. The checker reports these at compile time; here they come through
+    /// `any`.
     pub fn emit(&self, out: &mut String) -> Result<(), String> {
         match self {
             Self::Str(s) => escape_html(s, out),

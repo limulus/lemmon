@@ -1,10 +1,10 @@
-<lem-fn picture(photo: map, sizes: list, class: string)>
+<lem-fn picture(photo: any, sizes: any, class: string)>
   <img src="<lem.photo.url>" alt="<lem.photo.alt>" class="<lem.class>" sizes="<lem.sizes[0]>">
 </lem-fn>
-<lem-fn authorChip(article: map, nolink: bool)>
+<lem-fn authorChip(article: any, nolink: bool)>
   <lem-if nolink><span><lem.article.author></span><lem-else /><a href="/<lem.article.author>/"><lem.article.author></a></lem-if>
 </lem-fn>
-<lem-fn publishedChip(article: map)>
+<lem-fn publishedChip(article: any)>
   <time><lem.article.date></time>
 </lem-fn>
 <lem-fn chipList(size: string, slot: html)>
@@ -12,7 +12,7 @@
     <lem.slot>
   </ul>
 </lem-fn>
-<lem-fn articleCard(article: map)>
+<lem-fn articleCard(article: any)>
   <article class="article-card">
     <a href="<lem.article.url>">
       <lem-let preview = article.image ?? article.hero />
@@ -36,9 +36,10 @@
   </article>
 </lem-fn>
 <lem-let hero = {url: "/photos/upper-falls.jpg", alt: "Upper Falls, Letchworth State Park"} />
-<lem-for article in [
+<lem-let articles: any = [
   {title: "The Rebound", url: "/feed/the-rebound/", author: "eric", date: "2024-11-24", image: null, hero: hero, vod: null, subhead: "I’m rebuilding limulus.net.", teaser: null},
   {title: "A Video", url: "/feed/a-video/", author: "eric", date: "2025-01-01", image: null, hero: null, vod: {poster: "/vod/poster.jpg", alt: "Still"}, subhead: null, teaser: "Watch & learn"},
-]>
+] />
+<lem-for article in articles>
 <lem.articleCard(article)>
 </lem-for>

@@ -8,8 +8,9 @@ use lemmon_syntax::ast::{ForTag, Item, LetBlock, LetVoid, Spanned};
 
 use super::names::BindingKind;
 use super::whitespace::{Arm, Body, Kind, Piece};
-use super::{Compiler, TokenSpan, required};
+use super::{Compiler, TokenSpan, annotations, required};
 use crate::bytecode::Op;
+use crate::types::Type;
 
 /// A document chunk as emitted: without the line ending a silent tag's sentinel left at
 /// its head, when one stands before it.
@@ -116,13 +117,14 @@ impl Compiler<'_> {
                 unreachable!("these are pieces of their own")
             }
             Item::Access(tag) => {
-                self.expr(&required(tag.expr()));
+                let ty = self.expr(&required(tag.expr()));
+                self.printable(&ty, tag.span());
                 self.emit(Op::Emit, tag.span());
             }
             Item::LetVoid(tag) => self.lower_let_void(tag),
             Item::LetBlock(tag) => self.lower_let_block(tag),
-            // Parsed by `lemmon-syntax` (∆1vS); the loader (∆iCW) fulfils it, and the
-            // checker (∆C8d) will require the file to be the host's site file, which
+            // Parsed by `lemmon-syntax` (∆1vS); the loader (∆iCW) fulfils it, and
+            // requiring the file to be the host's site file is the host's to check —
             // the compiler cannot tell. It can tell a nested binding and a document
             // from a template's top level, so those two placements are reported here.
             Item::LetFrom(_) if level == Level::File => {
@@ -143,21 +145,27 @@ impl Compiler<'_> {
             Item::FnBlock(_) | Item::FnVoid(_) => {
                 self.error(item.span(), "`lem-fn` must be at the top level of a file");
             }
-            // Parsed by `lemmon-syntax` (∆up2) for the checker to consume; until it
-            // exists nothing can be lowered from them. Each names the item it waits on,
-            // so the placeholder gate (∆DA2) notices when that item has landed.
+            // Parsed by `lemmon-syntax` (∆up2) for the checker to consume; until the
+            // type namespace exists nothing can be lowered from them. Each names the
+            // item it waits on, so the placeholder gate (∆DA2) notices when that item
+            // has landed.
             Item::TypeDecl(_) => self.error(
                 item.span(),
-                "`lem-type` needs the type checker, which is not here yet (∆C8d)",
+                "`lem-type` needs the type namespace, which is not here yet (∆cea)",
             ),
             Item::EnumDecl(_) => self.error(
                 item.span(),
-                "`lem-enum` needs the type checker, which is not here yet (∆C8d)",
+                "`lem-enum` needs the type namespace, which is not here yet (∆cea)",
             ),
-            Item::Match(_) => self.error(
-                item.span(),
-                "`lem-match` needs the type checker, which is not here yet (∆PCK)",
-            ),
+            Item::Match(tag) => {
+                // The subject is lowered for its diagnostics: the names it reads count
+                // as read, and what is wrong inside it is still reported.
+                self.expr(&required(tag.subject()));
+                self.error(
+                    item.span(),
+                    "`lem-match` needs narrowing, which is not here yet (∆PCK)",
+                );
+            }
             Item::Unsupported(_) | Item::Unknown(_) => {
                 unreachable!(
                     "the parser reports these, and a parse with diagnostics is never compiled"
@@ -166,16 +174,49 @@ impl Compiler<'_> {
         }
     }
 
+    /// The print rule (`docs/language.md` §Escaping): what `<lem.…>` may print. A `bool`,
+    /// `null`, a list, a map, or a function has no printed form; an optional has one
+    /// once it is known not to be null; `any` is the VM's to print.
+    fn printable(&mut self, ty: &Type, span: Span) {
+        match ty {
+            Type::String
+            | Type::Html
+            | Type::Int
+            | Type::Float
+            | Type::Datetime
+            | Type::Url
+            | Type::Asset
+            | Type::Any => {}
+            Type::Optional(_) => self.error(
+                span,
+                format!(
+                    "cannot print a `{ty}`: narrow it with `lem-if`, or give it a default \
+                     with `??`"
+                ),
+            ),
+            Type::Fn(..) => self.error(
+                span,
+                format!("cannot print a `{ty}`: call it with `(…)` to print its result"),
+            ),
+            other => self.error(span, format!("cannot print a `{other}`")),
+        }
+    }
+
     fn lower_if(&mut self, arms: Vec<Arm>) {
         let mut ends = Vec::new();
         for arm in arms {
+            // A condition on an optional local narrows it for the arm it guards.
+            let depth = self.narrowings.len();
             let next = arm.condition.as_ref().map(|condition| {
-                self.expr(condition);
+                let ty = self.expr(condition);
+                let narrowing = self.condition(condition, &ty);
+                self.narrowings.extend(narrowing);
                 self.emit_jump(Op::JumpIfFalse { to: 0 }, condition.span())
             });
             self.push_scope();
             self.lower_body(arm.body);
             self.pop_scope();
+            self.narrowings.truncate(depth);
             match next {
                 Some(next) => {
                     ends.push(self.emit_jump(Op::Jump { to: 0 }, arm.span));
@@ -197,7 +238,17 @@ impl Compiler<'_> {
         let iterable = required(tag.iterable());
         let span = tag.span();
 
-        self.expr(&iterable);
+        let ty = self.expr(&iterable);
+        // What the loop binds: a list's element and its index, or a map's key and value.
+        let (first_ty, second_ty) = match &ty {
+            Type::Any => (Type::Any, Type::Any),
+            Type::List(element) => ((**element).clone(), Type::Int),
+            Type::Map(value) => (Type::String, (**value).clone()),
+            other => {
+                self.error(iterable.span(), format!("cannot iterate over a `{other}`"));
+                (Type::Any, Type::Any)
+            }
+        };
         let init = self.emit_jump(Op::IterInit { exit: 0 }, iterable.span());
         let top = self.here();
         let next = self.emit_jump(
@@ -208,9 +259,9 @@ impl Compiler<'_> {
             binding.span(),
         );
         self.push_scope();
-        let first_slot = self.bind(&first, BindingKind::Loop);
+        let first_slot = self.bind(&first, BindingKind::Loop, first_ty);
         if let Some(second) = &second {
-            let second_slot = self.bind(second, BindingKind::Loop);
+            let second_slot = self.bind(second, BindingKind::Loop, second_ty);
             self.emit(Op::StoreLocal { slot: second_slot }, second.span());
         }
         self.emit(Op::StoreLocal { slot: first_slot }, first.span());
@@ -228,10 +279,24 @@ impl Compiler<'_> {
 
     fn lower_let_void(&mut self, tag: &LetVoid) {
         let name = required(tag.name());
+        let value = required(tag.value());
         // The value is compiled before the name is bound, so `x = x + 1` reads the
-        // outer `x` rather than its own uninitialised slot.
-        self.expr(&required(tag.value()));
-        let slot = self.bind(&name, BindingKind::Definition);
+        // outer `x` rather than its own uninitialised slot. An annotation is what the
+        // value is checked against and what the name then has; without one the name
+        // has what the value has.
+        let ty = match tag.type_annotation() {
+            Some(annotation) => {
+                let declared = annotations::resolve(
+                    self.path,
+                    &required(annotation.ty()),
+                    &mut self.diagnostics,
+                );
+                self.check(&value, &declared);
+                declared
+            }
+            None => self.expr(&value),
+        };
+        let slot = self.bind(&name, BindingKind::Definition, ty);
         self.emit(Op::StoreLocal { slot }, name.span());
     }
 
@@ -241,7 +306,7 @@ impl Compiler<'_> {
         self.emit(Op::Capture, tag.span());
         self.lower_block(body.items().collect(), Kind::Value);
         self.emit(Op::EndCapture, tag.span());
-        let slot = self.bind(&name, BindingKind::Definition);
+        let slot = self.bind(&name, BindingKind::Definition, Type::Html);
         self.emit(Op::StoreLocal { slot }, name.span());
     }
 }

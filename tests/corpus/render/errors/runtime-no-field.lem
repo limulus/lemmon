@@ -1,2 +1,1 @@
-<lem-let article = {title: "T"} />
-<lem.article.title><lem.article.subhead>
+<lem.page.title><lem.page.subhead>

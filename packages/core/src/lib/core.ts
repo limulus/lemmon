@@ -37,7 +37,7 @@ export class Core {
 
   /**
    * Stores the data every render binds. Diagnostics are empty until schemas exist to
-   * validate against (∆C8d).
+   * validate against (∆iCW).
    */
   loadData(input: DataInput): Diagnostic[] {
     return JSON.parse(this.#core.loadData(JSON.stringify(input))) as Diagnostic[]

@@ -49,6 +49,7 @@ docs, the journal, and the code.
 | [D28](D28-whitespace-is-a-source-concern.md) | Whitespace is a source concern | Lemmon optimizes how a `.lem` file reads, not how its HTML reads. The renderer never re-indents at a boundary, and whitespace HTML renders survives byte for byte; formatting the output is a downstream tool's job. Fidelity gates compare rendered HTML, not bytes. |
 | [D29](D29-type-bodies.md) | Type bodies | A `lem-type` block body is scanned in *fields mode* — one `name: Type [by …] [= default]` per line, line ending as a token, until the first `<`. `extends` and `by` are contextual keywords. |
 | [D30](D30-ambient-types.md) | Ambient types | The core knows no type or value by name: a host declares its ambient values and their types in Lemmon source compiled with the program. The shell ships `Page` and `Build`, binds `site` to `site.lem`'s top-level `lem-let … from …` bindings, and reads two names of its own — the `type:` key and the `layout` field. Content types `extends Page`; a document's type is that of the collection whose glob matched it, or a subtype a `type:` key names; a document no glob matches is unknown-typed and renders. `lem-collection`/`lem-data` are retired; there is no `Layout`, `permalink`, or `Page.data`. Environment values are a `from env("…")` source, the same shape as `plugin("…")` (∆1vS). |
+| [D31](D31-check-while-lowering.md) | Check while lowering | The type checker is not a pass: the compiler's one walk types each expression as it lowers it (`expr(&Expr, expected) -> Type`), bindings carry their types in the one resolver, and narrowing is a scoped entry. No side table until something reads one (the LSP's hover, ∆5MM). |
 
 ## Deliberately deferred
 
@@ -72,8 +73,8 @@ literal in favour of a `datetime("…")` stdlib constructor. D24 added 2026-08-2
 2026-08-23; D26 2026-08-23, implemented 2026-08-24 (∆2vO); D27 2026-08-24 (∆2vO); D28
 2026-08-24, applied 2026-08-25 (∆Ma4); D29 2026-08-26 (∆up2); D30 2026-08-28,
 revised the same day from well-known types to host-declared ambient types (revising D19,
-D23 and D29 with it), its `from` clause parsed 2026-09-04 (∆1vS). From D25 on, a
-record's Status line carries the history its row used to.
+D23 and D29 with it), its `from` clause parsed 2026-09-04 (∆1vS); D31 2026-09-06 (∆C8d).
+From D25 on, a record's Status line carries the history its row used to.
 
 ## Record template
 

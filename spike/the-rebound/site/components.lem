@@ -5,7 +5,7 @@
   </svg>
 </lem-fn>
 
-<lem-fn phoPhoto(photo: map, placement: string)>
+<lem-fn phoPhoto(photo: any, placement: string)>
   <pho-picture placement="<lem.placement>" class="wdam8yees">
     <blur-hash blurhash="<lem.photo.blurhash>" width="<lem.photo.width>" height="<lem.photo.height>">
       <picture>
@@ -65,7 +65,7 @@
   </data-chip>
 </lem-fn>
 
-<lem-fn cardPreview(photo: map)>
+<lem-fn cardPreview(photo: any)>
   <pho-picture class="preview">
     <blur-hash blurhash="<lem.photo.blurhash>" width="<lem.photo.width>" height="<lem.photo.height>">
       <picture>
@@ -77,7 +77,7 @@
   </pho-picture>
 </lem-fn>
 
-<lem-fn articleCard(card: map)>
+<lem-fn articleCard(card: any)>
   <article-card class="wjjnq-bzf">
     <article>
       <a href="<lem.card.url>">

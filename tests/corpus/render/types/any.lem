@@ -1,0 +1,9 @@
+<lem-let p: any = page />
+<lem.page.title> at <lem.page.url + "?ref"> by <lem.site.name>
+<lem.p.title == "The Rebound" ? "yes" : "no"> <lem.p?.title> <lem.p["url"]>
+<lem.site.name in ["limulus.net"] ? "in" : "out"> <lem.p.title + "!" == p.title ? "-" : "any">
+<lem-if p.url>truthy url</lem-if>
+<lem-let stats: any = {views: 3, tags: ["a", "b"]} />
+<lem-for tag, i in stats.tags><lem.i>:<lem.tag> </lem-for><lem.stats.views * 2> <lem.-stats.views> <lem.stats.views lt 4 ? "lt" : "-">
+<lem-fn show(v: any): any = v />
+<lem.show(1)><lem.show("s")><lem.show(p).title>

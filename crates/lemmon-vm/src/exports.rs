@@ -84,12 +84,14 @@ mod tests {
     use lemmon_syntax::Span;
 
     use super::*;
+    use crate::types::Type;
 
     /// A signature for `name` at a span that tells the definitions apart.
     fn signature(name: &str, start: u32) -> ExportedSignature {
         ExportedSignature {
             name: Rc::from(name),
             params: Vec::new(),
+            ret: Type::Html,
             func: 1,
             name_span: Span::new(start, start + 1),
         }
