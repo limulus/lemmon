@@ -27,7 +27,7 @@ use rowan::{GreenNode, GreenNodeBuilder};
 
 use crate::ast::{AstNode, Root};
 use crate::syntax_kind::{SyntaxKind, SyntaxNode};
-use crate::{Diagnostic, Span, Token, TokenKind, scan};
+use crate::{Diagnostic, Severity, Span, Token, TokenKind, scan};
 
 /// The result of parsing one source file: a lossless tree plus every diagnostic.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -104,7 +104,9 @@ pub(crate) fn parse_item_prefix(src: &str) -> Parse {
 /// Renders a tree and its diagnostics in the bake-off's dump format.
 ///
 /// A test and debugging aid, not an API: one node or token per line, indented two
-/// spaces per depth, then a blank line, `--- diagnostics`, and one diagnostic per line.
+/// spaces per depth, then a blank line, `--- diagnostics`, and one diagnostic per line —
+/// `start..end: message`, with `warning: ` before a warning's message and each label on
+/// its own line below, indented, as `start..end: note`.
 /// Takes a [`Parse`] rather than source so that a document's tree — assembled by
 /// [`parse_document`](crate::parse_document), not parsed — dumps the same way.
 #[must_use]
@@ -136,7 +138,18 @@ pub fn dump(parse: &Parse) -> String {
     out.push_str("\n--- diagnostics\n");
     for diagnostic in &parse.diagnostics {
         let Span { start, end } = diagnostic.span;
-        out.push_str(&format!("{start}..{end}: {}\n", diagnostic.message));
+        let severity = match diagnostic.severity {
+            Severity::Error => "",
+            Severity::Warning => "warning: ",
+        };
+        out.push_str(&format!(
+            "{start}..{end}: {severity}{}\n",
+            diagnostic.message
+        ));
+        for label in &diagnostic.labels {
+            let Span { start, end } = label.span;
+            out.push_str(&format!("  {start}..{end}: {}\n", label.message));
+        }
     }
     out
 }
@@ -793,5 +806,19 @@ mod tests {
     #[test]
     fn dumps_an_empty_source_as_a_bare_root() {
         assert_eq!(dump(&parse("")), "Root@0..0\n\n--- diagnostics\n");
+    }
+
+    #[test]
+    fn dumps_a_warning_and_its_labels_on_their_own_lines() {
+        // The parser emits neither yet; the checker will, through the same trailer.
+        let mut parsed = parse("");
+        parsed.diagnostics.push(
+            Diagnostic::warning("unused", Span::new(1, 2))
+                .with_label(Span::new(0, 1), "bound here"),
+        );
+        assert_eq!(
+            dump(&parsed),
+            "Root@0..0\n\n--- diagnostics\n1..2: warning: unused\n  0..1: bound here\n"
+        );
     }
 }

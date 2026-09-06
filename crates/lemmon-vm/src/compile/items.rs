@@ -230,7 +230,7 @@ impl Compiler<'_> {
         // The value is compiled before the name is bound, so `x = x + 1` reads the
         // outer `x` rather than its own uninitialised slot.
         self.expr(&required(tag.value()));
-        let slot = self.declare(&name);
+        let slot = self.declare_definition(&name);
         self.emit(Op::StoreLocal { slot }, name.span());
     }
 
@@ -240,7 +240,7 @@ impl Compiler<'_> {
         self.emit(Op::Capture, tag.span());
         self.lower_block(body.items().collect(), Kind::Value);
         self.emit(Op::EndCapture, tag.span());
-        let slot = self.declare(&name);
+        let slot = self.declare_definition(&name);
         self.emit(Op::StoreLocal { slot }, name.span());
     }
 }

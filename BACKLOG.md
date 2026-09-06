@@ -19,11 +19,6 @@ mechanism: `delto surface` trusts these edges to decide what is eligible to work
 Seed items for the next phase (architecture doc 3, phase 1); expect these to be split
 further at claim time.
 
-- ∆VNk Diagnostics with severity and secondary spans — `severity` and `labels` on the
-  diagnostic types of lemmon-syntax and lemmon-vm, through the boundary and
-  `@limulus/lemmon-core`, in the corpus trailer, with `compile` returning warnings beside
-  a module. First consumers: "already defined … at" spans become labels, and shadowing a
-  stdlib name warns (D23). The checker's unused warnings need the channel to exist first
 - ∆C8d Type checker — types (`any` the spelled unknown), `lem-type`/`lem-enum` resolved
   project-flat, bidirectional inference, assignability, the type-directed print and
   condition rules, optional narrowing in `lem-if`, unused warnings, typed signatures as

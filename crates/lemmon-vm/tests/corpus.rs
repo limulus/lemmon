@@ -45,19 +45,24 @@ fn path(case: &Case) -> String {
     format!("{}.{ext}", case.name)
 }
 
-/// Renders a case: its output, then `--- diagnostics` and one line per compile error
-/// or for the runtime error, in the shape `.cst` uses for the parser's.
+/// Renders a case: its output, then `--- diagnostics` and one entry per compile
+/// diagnostic — warnings too — or for the runtime error, in the shape `.cst` uses for
+/// the parser's.
 fn html(case: &Case) -> String {
     let path = path(case);
     let files = [SourceFile::new(&path, &case.source)];
     let mut out = String::new();
-    let mut diagnostics = Vec::new();
-    match compile(&files) {
-        Ok(module) => match render(&module, &path, &globals()) {
+    let compiled = compile(&files);
+    let mut diagnostics: Vec<String> = compiled
+        .diagnostics
+        .iter()
+        .map(ToString::to_string)
+        .collect();
+    if let Some(module) = compiled.output {
+        match render(&module, &path, &globals()) {
             Ok(rendered) => out = rendered,
             Err(error) => diagnostics.push(error.to_string()),
-        },
-        Err(errors) => diagnostics.extend(errors.iter().map(ToString::to_string)),
+        }
     }
     let _ = writeln!(out, "\n--- diagnostics");
     for line in diagnostics {
@@ -82,7 +87,7 @@ fn renders_every_document_as_expected() {
 fn emitted_ops() -> BTreeSet<&'static str> {
     lemmon_corpus::cases(GROUP)
         .iter()
-        .filter_map(|case| compile(&[SourceFile::new(path(case), &case.source)]).ok())
+        .filter_map(|case| compile(&[SourceFile::new(path(case), &case.source)]).output)
         .flat_map(|module: Module| {
             module
                 .functions

@@ -304,7 +304,9 @@ One value namespace, resolved lexically: **locals/params** (innermost wins) →
   brings favourites (and types) into the flat namespace. Promotion collisions are the
   same duplicate error.
 - **Ambient:** stdlib (`slugify`, `raw`, `asset`, `url`, `rfc3339`, `rfc822`,
-  `readingTime`, `uniqueId`, …) needs no import; site definitions may shadow it (warn).
+  `readingTime`, `uniqueId`, …) needs no import; a `lem-fn` or `lem-let` may shadow one of its names, with a warning at
+  the definition — a parameter or loop binding of that name is not a shadow and does not
+  warn.
   The ambient *values* are the host's to name and type (D30) — the standard shell binds
   `site`, `page`, `build` — and cannot be redefined.
 

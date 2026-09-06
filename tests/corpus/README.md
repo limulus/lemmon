@@ -38,7 +38,13 @@ basename:
 | ------------- | ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `<name>.cst`  | `lemmon_syntax::dump`          | The lossless tree, one node or token per line, then `--- diagnostics` and one `start..end: message` per line; for a `.md`, the tree `parse_document` assembled   |
 | `<name>.tags` | `lemmon_syntax::tag_dump`      | The tag-boundary projection: text runs, tag nodes, close tags, and the errors standing where an item would, with heads, expressions, and `Block` wrappers elided |
-| `<name>.html` | `lemmon_vm::{compile, render}` | The rendered output, then `--- diagnostics` and one `path:start..end: message` per compile error, or for the runtime error that stopped the render               |
+| `<name>.html` | `lemmon_vm::{compile, render}` | The rendered output, then `--- diagnostics` and one `path:start..end: message` per compile diagnostic — warnings too — or for the runtime error that stopped the render |
+
+In both trailers a warning's message is prefixed `warning: `, and each secondary span a
+diagnostic carries follows it on its own line, indented two spaces, as `start..end: note`
+(path-qualified in `.html`). A warning is data like any diagnostic: a case that warns says
+so in its trailer, and a rule that warns is tested on both halves — the case it fires on
+and the neighbouring name it must leave alone.
 
 `.tags` is the agreement target for `tree-sitter-lemmon` (∆5MM). A context-free grammar can
 say where a tag begins and ends; it cannot be held to the shape a Pratt parser gave a head,

@@ -24,7 +24,12 @@ moved it. Newest last. An entry is removed when its change has been applied.
 
 ## Shell & Core
 
-_No pending changes._
+- **WASM API, `Diagnostic`** — the boundary diagnostic is `{path, span, severity, message,
+  labels}`: `severity` is `error` or `warning`, a program is still produced when the only
+  diagnostics are warnings, and `labels` are path-qualified secondary spans. Wherever the
+  text says `severity` and `code` arrive with the checker as optional fields, `severity`
+  and `labels` have arrived and `code` alone is deferred. `compile`'s diagnostics describe
+  the files passed to that call, not the whole program (∆VNk).
 
 ## From Eleventy to Lemmon
 

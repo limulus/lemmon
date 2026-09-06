@@ -1,0 +1,7 @@
+<lem-fn card(raw: string)>
+  <h1><lem.raw></h1>
+</lem-fn>
+<lem-let raw = "shadowed" />
+<lem-for raw, i in ["loop"]><lem.card(raw)><lem.i></lem-for>
+<lem-let cooked = |raw| raw />
+<lem.cooked(raw)>

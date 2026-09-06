@@ -94,12 +94,12 @@ impl HeadingAdapter for Headings {
 
 #[cfg(test)]
 mod tests {
-    use crate::compile::CompileError;
+    use crate::compile::Diagnostic;
 
     /// Headings are checked through the whole prose stage, since that is what wires
     /// the adapter to comrak — an adapter tested apart from `Plugins` would prove
     /// nothing about the HTML a document actually gets.
-    fn render(src: &str) -> Result<Vec<String>, Vec<CompileError>> {
+    fn render(src: &str) -> Result<Vec<String>, Vec<Diagnostic>> {
         let doc = lemmon_syntax::parse_document(src);
         super::super::render_prose("doc.md", src, &doc)
     }

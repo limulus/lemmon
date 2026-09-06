@@ -23,7 +23,7 @@ use comrak::nodes::{NodeValue, Sourcepos};
 use comrak::{Arena, Options, format_html_with_plugins, options::Plugins, parse_document};
 use lemmon_syntax::{DocumentParse, Span};
 
-use crate::compile::CompileError;
+use crate::compile::Diagnostic;
 use adapters::Headings;
 
 /// comrak's configuration (D08): CommonMark plus footnotes, `{#id}` heading attributes,
@@ -54,14 +54,10 @@ pub(crate) fn render_prose(
     path: &str,
     src: &str,
     doc: &DocumentParse,
-) -> Result<Vec<String>, Vec<CompileError>> {
+) -> Result<Vec<String>, Vec<Diagnostic>> {
     let mut errors = Vec::new();
-    let error = |errors: &mut Vec<CompileError>, span: Span, message: &str| {
-        errors.push(CompileError {
-            path: path.to_owned(),
-            span,
-            message: message.to_owned(),
-        });
+    let error = |errors: &mut Vec<Diagnostic>, span: Span, message: &str| {
+        errors.push(Diagnostic::error(path, span, message));
     };
 
     // The joined prose, and where each run of it came from.
@@ -216,12 +212,12 @@ fn index_u32(index: usize) -> u32 {
 mod tests {
     use super::*;
 
-    fn render(src: &str) -> Result<Vec<String>, Vec<CompileError>> {
+    fn render(src: &str) -> Result<Vec<String>, Vec<Diagnostic>> {
         let doc = lemmon_syntax::parse_document(src);
         render_prose("doc.md", src, &doc)
     }
 
-    fn messages(result: Result<Vec<String>, Vec<CompileError>>) -> Vec<String> {
+    fn messages(result: Result<Vec<String>, Vec<Diagnostic>>) -> Vec<String> {
         result
             .expect_err("an error")
             .iter()

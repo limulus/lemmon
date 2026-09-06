@@ -63,8 +63,14 @@ not a break:
 - `PageRef` is `{path}` until `plan()` exists to mint richer references.
 - `render` returns `{html, diagnostics}` — `html: null` plus one diagnostic when the page
   fails at runtime. `channels` and `deps` are omitted entirely until ∆RGQ, not stubbed.
-- A `Diagnostic` is `{path, span: {start, end}, message}` with byte offsets (invariant 8);
-  `severity` and `code` arrive with the checker as optional fields.
+- A `Diagnostic` is `{path, span: {start, end}, severity, message, labels}` with byte
+  offsets (invariant 8): `severity` is `error` or `warning` — a program is still produced
+  when the only diagnostics are warnings — and `labels` are the secondary spans, each
+  `{path, span, message}`, pointing at the same kind of thing the primary span does (a
+  name, not a whole definition) (∆VNk). A `code` would be an additive field; nothing
+  consumes one yet. `compile`'s diagnostics describe the files passed to that call, plus
+  any resident unit the relink found stale; a resident file's warnings are reported once,
+  by the call that compiled it, so a shell that shows warnings keeps them per path.
 - Errors split by kind: anything wrong with a template or document is a returned
   diagnostic; a thrown `JsError` is reserved for caller bugs — a malformed JSON envelope,
   rendering before a compile has succeeded, rendering a path the program does not have —

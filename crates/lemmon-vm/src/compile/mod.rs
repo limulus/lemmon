@@ -20,7 +20,7 @@ use std::fmt;
 use std::rc::Rc;
 
 use lemmon_syntax::ast::{Item, Spanned};
-use lemmon_syntax::{DocumentParse, Parse, Span, SyntaxToken, parse_document};
+use lemmon_syntax::{DocumentParse, Parse, Severity, Span, SyntaxToken, parse_document};
 
 use crate::builtins;
 use crate::bytecode::{Function, Module, Op};
@@ -30,82 +30,218 @@ use crate::{SourceFile, Value};
 
 /// The ambient record names every template may read. Bound at render time and never
 /// redefinable — a binding or definition that takes one of these names is an error, not
-/// a shadow (D23, `docs/language.md` §Names). Stdlib names *may* be shadowed, which D23
-/// says should warn; there is no warning channel yet, so that stays silent for now.
+/// a shadow (D23, `docs/language.md` §Names). Stdlib names *may* be shadowed, with a
+/// warning ([`shadows_stdlib`]).
 const AMBIENT: &[&str] = &["site", "page", "build"];
 
-/// Something in a file that cannot be compiled, pointed at precisely.
+/// Something a compile has to say about a file, pointed at precisely: an error the file
+/// cannot compile past, or a warning it compiles with.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct CompileError {
+pub struct Diagnostic {
     /// The file the problem is in.
     pub path: String,
     /// The bytes the problem is about.
     pub span: Span,
+    pub severity: Severity,
     /// Human-readable description of the problem.
+    pub message: String,
+    /// Secondary spans worth reading with it, in reading order.
+    pub labels: Vec<Label>,
+}
+
+/// A secondary span a [`Diagnostic`] points at, with a note of its own. Path-qualified,
+/// because a duplicate definition's first occurrence may be in another file.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Label {
+    pub path: String,
+    pub span: Span,
+    /// The note, phrased to read after the diagnostic's message.
     pub message: String,
 }
 
-impl fmt::Display for CompileError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{}:{}..{}: {}",
-            self.path, self.span.start, self.span.end, self.message
-        )
+impl Diagnostic {
+    /// An error about `span` in the file at `path`.
+    #[must_use]
+    pub fn error(path: impl Into<String>, span: Span, message: impl Into<String>) -> Self {
+        Self {
+            path: path.into(),
+            span,
+            severity: Severity::Error,
+            message: message.into(),
+            labels: Vec::new(),
+        }
+    }
+
+    /// A warning about `span` in the file at `path`.
+    #[must_use]
+    pub fn warning(
+        path: impl Into<String>,
+        span: Span,
+        message: impl Into<String>,
+    ) -> Self {
+        Self {
+            severity: Severity::Warning,
+            ..Self::error(path, span, message)
+        }
+    }
+
+    /// Adds a secondary span with its note.
+    #[must_use]
+    pub fn with_label(
+        mut self,
+        path: impl Into<String>,
+        span: Span,
+        message: impl Into<String>,
+    ) -> Self {
+        self.labels.push(Label {
+            path: path.into(),
+            span,
+            message: message.into(),
+        });
+        self
+    }
+
+    /// Whether this diagnostic stops the file from compiling.
+    #[must_use]
+    pub fn is_error(&self) -> bool {
+        self.severity == Severity::Error
+    }
+
+    /// The parser's diagnostic about the file at `path`, whose labels are in the same file.
+    fn from_syntax(path: &str, diagnostic: &lemmon_syntax::Diagnostic) -> Self {
+        Self {
+            path: path.to_owned(),
+            span: diagnostic.span,
+            severity: diagnostic.severity,
+            message: diagnostic.message.clone(),
+            labels: diagnostic
+                .labels
+                .iter()
+                .map(|label| Label {
+                    path: path.to_owned(),
+                    span: label.span,
+                    message: label.message.clone(),
+                })
+                .collect(),
+        }
     }
 }
 
-impl std::error::Error for CompileError {}
+/// The corpus trailer shape: `path:start..end: message`, `warning: ` before a warning's
+/// message, and each label on its own indented line below.
+impl fmt::Display for Diagnostic {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let severity = match self.severity {
+            Severity::Error => "",
+            Severity::Warning => "warning: ",
+        };
+        write!(
+            f,
+            "{}:{}..{}: {severity}{}",
+            self.path, self.span.start, self.span.end, self.message
+        )?;
+        for label in &self.labels {
+            write!(
+                f,
+                "\n  {}:{}..{}: {}",
+                label.path, label.span.start, label.span.end, label.message
+            )?;
+        }
+        Ok(())
+    }
+}
+
+impl std::error::Error for Diagnostic {}
+
+/// What a compile step produces: its output when nothing was an error, and every
+/// diagnostic it raised — warnings included, which is why this is not a `Result`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Compiled<T> {
+    /// The output; `None` exactly when `diagnostics` holds an error.
+    pub output: Option<T>,
+    /// Every diagnostic, in source order.
+    pub diagnostics: Vec<Diagnostic>,
+}
+
+impl<T> Compiled<T> {
+    /// The one constructor: pairs `output` with `diagnostics`, dropping the output when
+    /// any diagnostic is an error. A step that stopped before producing an output passes
+    /// `None`, which it may only do when it has an error to show for it.
+    pub(crate) fn new(output: Option<T>, diagnostics: Vec<Diagnostic>) -> Self {
+        let failed = diagnostics.iter().any(Diagnostic::is_error);
+        debug_assert!(
+            output.is_some() || failed,
+            "a step without output must have an error to explain it"
+        );
+        Self {
+            output: output.filter(|_| !failed),
+            diagnostics,
+        }
+    }
+
+    /// The output, or a panic listing every diagnostic — for tests and harnesses.
+    ///
+    /// # Panics
+    ///
+    /// When the step had an error.
+    #[must_use]
+    pub fn expect_output(self) -> T {
+        match self.output {
+            Some(output) => output,
+            None => {
+                let shown: Vec<String> =
+                    self.diagnostics.iter().map(ToString::to_string).collect();
+                panic!("compile failed:\n{}", shown.join("\n"))
+            }
+        }
+    }
+}
 
 /// Compiles every file of a site into one module: each file [`prepare`]d and compiled
 /// into its own [`Unit`] against the table of every file's signatures, then [`link`]ed.
 ///
 /// A file that does not parse clean yields no unit — nothing is lowered from a tree the
 /// parser had to recover — but the other files still compile, and every problem found
-/// in every file is reported, not just the first.
-///
-/// # Errors
-///
-/// Every diagnostic, each with the path and span it is about.
-pub fn compile(files: &[SourceFile]) -> Result<Module, Vec<CompileError>> {
-    let mut errors = Vec::new();
+/// in every file is reported, not just the first. A module is still produced when the
+/// only diagnostics are warnings.
+pub fn compile(files: &[SourceFile]) -> Compiled<Module> {
+    let mut diagnostics = Vec::new();
     let mut prepared = Vec::new();
     for file in files {
         match prepare(file) {
-            Ok(p) => prepared.push(Some(p)),
-            Err(errs) => {
-                errors.extend(errs);
-                prepared.push(None);
-            }
+            Ok(p) => prepared.push(p),
+            Err(errs) => diagnostics.extend(errs),
         }
     }
-    let (table, table_errors) = SignatureTable::build(
+    let (table, table_diagnostics) = SignatureTable::build(
         prepared
             .iter()
-            .flatten()
             .map(|p| (p.path.as_str(), p.exports.as_slice())),
     );
-    errors.extend(table_errors);
+    diagnostics.extend(table_diagnostics);
     let mut units = Vec::new();
-    for p in prepared.iter().flatten() {
-        match compile_unit(p, &table) {
-            Ok(unit) => units.push(unit),
-            Err(errs) => errors.extend(errs),
-        }
+    for p in &prepared {
+        let compiled = compile_unit(p, &table);
+        diagnostics.extend(compiled.diagnostics);
+        units.extend(compiled.output);
     }
-    if errors.is_empty() {
+    let output = if diagnostics.iter().any(Diagnostic::is_error) {
+        None
+    } else {
         // Every unit was compiled against this same table, so nothing can be
         // unresolved or doubled at link time.
-        return link(&units);
-    }
+        let linked = link(&units);
+        diagnostics.extend(linked.diagnostics);
+        linked.output
+    };
     // In source order, like the parser's diagnostics — the order the passes above happen
     // to find things in is an implementation detail nobody reading a file wants to see.
-    let order = |error: &CompileError| {
-        let file = files.iter().position(|f| f.path == error.path);
-        (file, error.span.start, error.span.end)
+    let order = |diagnostic: &Diagnostic| {
+        let file = files.iter().position(|f| f.path == diagnostic.path);
+        (file, diagnostic.span.start, diagnostic.span.end)
     };
-    errors.sort_by_key(order);
-    Err(errors)
+    diagnostics.sort_by_key(order);
+    Compiled::new(output, diagnostics)
 }
 
 /// A file parsed, its prose rendered, and its exports collected — everything
@@ -116,9 +252,9 @@ pub struct PreparedFile {
     /// A document's prose, rendered by comrak here so markdown never runs later.
     chunks: Option<Vec<String>>,
     exports: Vec<ExportedSignature>,
-    /// Problems found collecting the exports (ambient names, same-file duplicates),
-    /// reported by [`compile_unit`] alongside the rest of the file's errors.
-    errors: Vec<CompileError>,
+    /// What parsing warned about and what collecting the exports found (ambient names,
+    /// same-file duplicates), reported by [`compile_unit`] with the rest of the file's.
+    diagnostics: Vec<Diagnostic>,
 }
 
 impl PreparedFile {
@@ -140,48 +276,51 @@ impl PreparedFile {
 /// # Errors
 ///
 /// The file's parse or prose diagnostics — a file that does not parse clean yields
-/// nothing to compile.
-pub fn prepare(file: &SourceFile) -> Result<PreparedFile, Vec<CompileError>> {
+/// nothing to compile. Parser warnings are kept in the prepared file and reported with
+/// the unit's.
+pub fn prepare(file: &SourceFile) -> Result<PreparedFile, Vec<Diagnostic>> {
     let source = Source::of(file);
-    let parse_errors: Vec<CompileError> = source
+    let mut diagnostics: Vec<Diagnostic> = source
         .parse()
         .diagnostics
         .iter()
-        .map(|d| CompileError {
-            path: file.path.clone(),
-            span: d.span,
-            message: d.message.clone(),
-        })
+        .map(|d| Diagnostic::from_syntax(&file.path, d))
         .collect();
-    if !parse_errors.is_empty() {
-        return Err(parse_errors);
+    if diagnostics.iter().any(Diagnostic::is_error) {
+        return Err(diagnostics);
     }
     // Prose is rendered before anything is lowered, and a document markdown rejected
     // fails the file the way a parse error does: its blocks may be fine, but where
     // their output would go is not known.
     let chunks = match &source {
         Source::Template(_) => None,
-        Source::Document(doc) => Some(document::render_prose(&file.path, &file.text, doc)?),
+        Source::Document(doc) => {
+            match document::render_prose(&file.path, &file.text, doc) {
+                Ok(chunks) => Some(chunks),
+                Err(errors) => {
+                    diagnostics.extend(errors);
+                    return Err(diagnostics);
+                }
+            }
+        }
     };
-    let (exports, errors) = collect_exports(&file.path, source.parse());
+    let (exports, export_diagnostics) = collect_exports(&file.path, source.parse());
+    diagnostics.extend(export_diagnostics);
     Ok(PreparedFile {
         path: file.path.clone(),
         source,
         chunks,
         exports,
-        errors,
+        diagnostics,
     })
 }
 
 /// Collects the signatures of a parsed file's top-level `lem-fn`s, assigning each its
 /// unit-local function index — the entry is 0, so they count from 1. An ambient or
 /// repeated name is an error and exports nothing.
-fn collect_exports(
-    path: &str,
-    parse: &Parse,
-) -> (Vec<ExportedSignature>, Vec<CompileError>) {
+fn collect_exports(path: &str, parse: &Parse) -> (Vec<ExportedSignature>, Vec<Diagnostic>) {
     let mut exports: Vec<ExportedSignature> = Vec::new();
-    let mut errors = Vec::new();
+    let mut diagnostics = Vec::new();
     for item in parse.root().items() {
         let (name, params) = match &item {
             Item::FnBlock(f) => (required(f.name()), f.params()),
@@ -189,21 +328,18 @@ fn collect_exports(
             _ => continue,
         };
         if AMBIENT.contains(&name.text()) {
-            errors.push(CompileError {
-                path: path.to_owned(),
-                span: name.span(),
-                message: ambient_message(name.text()),
-            });
+            diagnostics.push(Diagnostic::error(
+                path,
+                name.span(),
+                ambient_message(name.text()),
+            ));
             continue;
         }
         if let Some(existing) = exports.iter().find(|e| &*e.name == name.text()) {
-            errors.push(CompileError {
-                path: path.to_owned(),
-                span: name.span(),
-                message: duplicate_message(name.text(), path, existing.span),
-            });
+            diagnostics.push(duplicate(path, &name, path, existing.name_span));
             continue;
         }
+        diagnostics.extend(shadows_stdlib(path, &name, false));
         let params: Vec<Rc<str>> = params
             .map(|params| {
                 params
@@ -217,10 +353,9 @@ fn collect_exports(
             params,
             func: index_u32(exports.len() + 1),
             name_span: name.span(),
-            span: item.span(),
         });
     }
-    (exports, errors)
+    (exports, diagnostics)
 }
 
 /// Every project-flat function signature, whichever file defines it — what a file's
@@ -240,23 +375,21 @@ impl SignatureTable {
     /// keeps.
     pub fn build<'a>(
         files: impl IntoIterator<Item = (&'a str, &'a [ExportedSignature])>,
-    ) -> (Self, Vec<CompileError>) {
+    ) -> (Self, Vec<Diagnostic>) {
         let mut table = Self {
             entries: Vec::new(),
         };
-        let mut errors = Vec::new();
+        let mut diagnostics = Vec::new();
         for (path, exports) in files {
             for export in exports {
                 match table.entries.iter().find(|e| e.export.name == export.name) {
-                    Some(existing) => errors.push(CompileError {
-                        path: path.to_owned(),
-                        span: export.name_span,
-                        message: duplicate_message(
-                            &export.name,
-                            &existing.path,
-                            existing.export.span,
-                        ),
-                    }),
+                    Some(existing) => diagnostics.push(duplicate_named(
+                        path,
+                        export.name_span,
+                        &export.name,
+                        &existing.path,
+                        existing.export.name_span,
+                    )),
                     None => table.entries.push(TableEntry {
                         path: path.to_owned(),
                         export: export.clone(),
@@ -264,7 +397,7 @@ impl SignatureTable {
                 }
             }
         }
-        (table, errors)
+        (table, diagnostics)
     }
 
     fn position(&self, name: &str) -> Option<usize> {
@@ -276,13 +409,9 @@ impl SignatureTable {
 /// call to a function another file defines stays a symbolic import, and the signature
 /// it was compiled against is recorded as one of the unit's facts.
 ///
-/// # Errors
-///
-/// Every problem in the file, in source order.
-pub fn compile_unit(
-    prepared: &PreparedFile,
-    table: &SignatureTable,
-) -> Result<Unit, Vec<CompileError>> {
+/// Every problem in the file comes back in source order; the unit only when none of them
+/// is an error.
+pub fn compile_unit(prepared: &PreparedFile, table: &SignatureTable) -> Compiled<Unit> {
     let mut compiler = Compiler {
         path: &prepared.path,
         unit: Unit {
@@ -295,7 +424,7 @@ pub fn compile_unit(
         },
         strings: HashMap::new(),
         table,
-        errors: prepared.errors.clone(),
+        diagnostics: prepared.diagnostics.clone(),
         ctxs: Vec::new(),
     };
     let entry = compiler.reserve(&prepared.path);
@@ -310,21 +439,59 @@ pub fn compile_unit(
     compiler.compile_functions(prepared.source.parse());
     compiler.compile_entry(&prepared.source, prepared.chunks.as_deref());
     compiler.resolve_import_operands();
-    if compiler.errors.is_empty() {
-        return Ok(compiler.unit);
-    }
-    let mut errors = compiler.errors;
-    errors.sort_by_key(|error| (error.span.start, error.span.end));
-    Err(errors)
+    let Compiler {
+        unit,
+        mut diagnostics,
+        ..
+    } = compiler;
+    diagnostics.sort_by_key(|d| (d.span.start, d.span.end));
+    Compiled::new(Some(unit), diagnostics)
 }
 
-/// The message a duplicate definition gets wherever it is found — the same words when
-/// two files compiled together collide as when two units disagree at link time.
-pub(crate) fn duplicate_message(name: &str, path: &str, span: Span) -> String {
-    format!(
-        "`{name}` is already defined in {path} at {}..{}",
-        span.start, span.end
+/// The diagnostic a duplicate definition gets wherever it is found — the same words when
+/// two files compiled together collide as when two units disagree at link time — with
+/// the first definition's name as its label. Labels point at what the primary span
+/// points at: the name, never the whole definition.
+pub(crate) fn duplicate_named(
+    path: &str,
+    name_span: Span,
+    name: &str,
+    first_path: &str,
+    first_span: Span,
+) -> Diagnostic {
+    Diagnostic::error(path, name_span, format!("`{name}` is already defined")).with_label(
+        first_path,
+        first_span,
+        "first defined here",
     )
+}
+
+fn duplicate(
+    path: &str,
+    name: &SyntaxToken,
+    first_path: &str,
+    first_span: Span,
+) -> Diagnostic {
+    duplicate_named(path, name.span(), name.text(), first_path, first_span)
+}
+
+/// The warning a `lem-fn` or `lem-let` gets for taking a stdlib name (D23,
+/// `docs/language.md` §Names): allowed, since site definitions may shadow the stdlib,
+/// but worth knowing about. Parameters and loop bindings are not definitions and never
+/// warn. `shadowed` says whether the stdlib name is what the binding displaces: a
+/// project-flat function of that name already did, and warned where it was defined.
+fn shadows_stdlib(path: &str, name: &SyntaxToken, shadowed: bool) -> Option<Diagnostic> {
+    if shadowed || builtins::lookup(name.text()).is_none() {
+        return None;
+    }
+    Some(Diagnostic::warning(
+        path,
+        name.span(),
+        format!(
+            "`{}` shadows the stdlib function of the same name",
+            name.text()
+        ),
+    ))
 }
 
 fn ambient_message(name: &str) -> String {
@@ -430,7 +597,7 @@ struct Compiler<'a> {
     /// Interned string constants, so a name or text run is stored once.
     strings: HashMap<String, u32>,
     table: &'a SignatureTable,
-    errors: Vec<CompileError>,
+    diagnostics: Vec<Diagnostic>,
     /// The function being compiled, then every lambda open inside it, innermost last.
     ctxs: Vec<FnCtx>,
 }
@@ -466,7 +633,7 @@ impl Compiler<'_> {
                 .unit
                 .exports
                 .iter()
-                .find(|e| &*e.name == name.text() && e.span == item.span())
+                .find(|e| &*e.name == name.text() && e.name_span == name.span())
             else {
                 // Ambient-named or a duplicate: reported when the exports were
                 // collected, and nothing to compile into.
@@ -636,11 +803,8 @@ impl Compiler<'_> {
     }
 
     fn error(&mut self, span: Span, message: impl Into<String>) {
-        self.errors.push(CompileError {
-            path: self.path.to_owned(),
-            span,
-            message: message.into(),
-        });
+        self.diagnostics
+            .push(Diagnostic::error(self.path, span, message));
     }
 
     // --- Scopes ---------------------------------------------------------------------
@@ -660,6 +824,15 @@ impl Compiler<'_> {
             return true;
         }
         false
+    }
+
+    /// Binds a `lem-let`'s name: [`declare`](Self::declare), plus the stdlib-shadowing
+    /// warning a definition gets and a parameter or loop binding does not.
+    fn declare_definition(&mut self, name: &SyntaxToken) -> u16 {
+        let shadowed = self.table.position(name.text()).is_some();
+        let warning = shadows_stdlib(self.path, name, shadowed);
+        self.diagnostics.extend(warning);
+        self.declare(name)
     }
 
     /// Binds `name` in the innermost scope. A name already bound in that same scope is
@@ -752,24 +925,35 @@ mod tests {
     }
 
     fn run_files(files: &[SourceFile], entry: &str) -> Result<String, String> {
-        let module = compile(files).map_err(|errors| {
-            errors
-                .iter()
-                .map(ToString::to_string)
-                .collect::<Vec<_>>()
-                .join("\n")
-        })?;
+        let compiled = compile(files);
+        let Some(module) = compiled.output else {
+            return Err(shown(&compiled.diagnostics).join("\n"));
+        };
         render(&module, entry, &[("page", Value::str("P"))]).map_err(|e| e.to_string())
+    }
+
+    fn shown(diagnostics: &[Diagnostic]) -> Vec<String> {
+        diagnostics.iter().map(ToString::to_string).collect()
+    }
+
+    /// Compiles `files`, asserting there is no module and returning what was reported.
+    fn compile_errors(files: &[SourceFile]) -> Vec<Diagnostic> {
+        let compiled = compile(files);
+        assert!(
+            compiled.output.is_none(),
+            "compiled despite {:?}",
+            compiled.diagnostics
+        );
+        compiled.diagnostics
     }
 
     #[test]
     fn refuses_a_file_that_did_not_parse_clean_with_its_parse_diagnostics() {
-        let errors = compile(&[
+        let errors = compile_errors(&[
             SourceFile::new("a.lem", "<lem-if x>"),
             SourceFile::new("b.lem", "<lem-bogus />"),
-        ])
-        .unwrap_err();
-        let shown: Vec<String> = errors.iter().map(ToString::to_string).collect();
+        ]);
+        let shown = shown(&errors);
         assert_eq!(shown.len(), 2, "{shown:?}");
         assert!(shown[0].starts_with("a.lem:0..7: "), "{shown:?}");
         assert!(shown[1].starts_with("b.lem:0..10: "), "{shown:?}");
@@ -814,12 +998,12 @@ mod tests {
             let lib = prepare(&SourceFile::new("lib.lem", lib_body)).unwrap();
             let page =
                 prepare(&SourceFile::new("page.lem", "<lem.greet(\"you\")>")).unwrap();
-            let (table, errors) = SignatureTable::build([
+            let (table, diagnostics) = SignatureTable::build([
                 ("lib.lem", lib.exports()),
                 ("page.lem", page.exports()),
             ]);
-            assert_eq!(errors, Vec::new());
-            compile_unit(&page, &table).unwrap()
+            assert_eq!(diagnostics, Vec::new());
+            compile_unit(&page, &table).expect_output()
         };
         let unit = unit_against("<lem-fn greet(who: string): string = \"hi \" + who />");
         let edited = unit_against("<lem-fn greet(who: string): string = \"HI \" + who />");
@@ -837,12 +1021,11 @@ mod tests {
     #[test]
     fn reports_a_broken_file_alongside_the_other_files_problems() {
         // One file's parse errors no longer suppress what is wrong elsewhere.
-        let errors = compile(&[
+        let errors = compile_errors(&[
             SourceFile::new("a.lem", "<lem-if x>"),
             SourceFile::new("b.lem", "<lem.missing>"),
-        ])
-        .unwrap_err();
-        let shown: Vec<String> = errors.iter().map(ToString::to_string).collect();
+        ]);
+        let shown = shown(&errors);
         assert_eq!(shown.len(), 2, "{shown:?}");
         assert!(shown[0].starts_with("a.lem:"), "{shown:?}");
         assert_eq!(shown[1], "b.lem:5..12: undefined name `missing`");
@@ -856,26 +1039,25 @@ mod tests {
         ];
         assert_eq!(
             run_files(&files, "a.lem").unwrap_err(),
-            "b.lem:10..11: `f` is already defined in a.lem at 0..23"
+            "b.lem:10..11: `f` is already defined\n  a.lem:8..9: first defined here"
         );
     }
 
     #[test]
     fn cites_the_first_definition_when_a_function_is_redefined_in_the_same_file() {
-        let errors = compile(&[SourceFile::new(
+        let errors = compile_errors(&[SourceFile::new(
             "t.lem",
             "<lem-fn f(): int = 1 />\n<lem-fn f(): int = 2 />",
-        )])
-        .unwrap_err();
+        )]);
         assert_eq!(
             errors[0].to_string(),
-            "t.lem:32..33: `f` is already defined in t.lem at 0..23"
+            "t.lem:32..33: `f` is already defined\n  t.lem:8..9: first defined here"
         );
     }
 
     #[test]
     fn reports_every_problem_in_a_file_rather_than_the_first() {
-        let errors = compile(&[SourceFile::new("t.lem", "<lem.a><lem.b>")]).unwrap_err();
+        let errors = compile_errors(&[SourceFile::new("t.lem", "<lem.a><lem.b>")]);
         assert_eq!(errors.len(), 2);
         assert_eq!(errors[1].to_string(), "t.lem:12..13: undefined name `b`");
     }
@@ -884,22 +1066,20 @@ mod tests {
     fn reports_problems_in_source_order_whichever_pass_found_them() {
         // The undefined name is found compiling the entry, the bad definition while
         // declaring — the later pass, but the earlier bytes.
-        let errors = compile(&[SourceFile::new(
+        let errors = compile_errors(&[SourceFile::new(
             "t.lem",
             "<lem.missing>\n<lem-fn page(): int = 1 />",
-        )])
-        .unwrap_err();
+        )]);
         let spans: Vec<u32> = errors.iter().map(|e| e.span.start).collect();
         assert_eq!(spans, [5, 22]);
     }
 
     #[test]
     fn reports_problems_in_the_order_the_files_were_given() {
-        let errors = compile(&[
+        let errors = compile_errors(&[
             SourceFile::new("b.lem", "<lem.x>"),
             SourceFile::new("a.lem", "<lem.y>"),
-        ])
-        .unwrap_err();
+        ]);
         let paths: Vec<&str> = errors.iter().map(|e| e.path.as_str()).collect();
         assert_eq!(paths, ["b.lem", "a.lem"]);
     }
@@ -917,7 +1097,8 @@ mod tests {
 
     #[test]
     fn interns_a_string_used_twice_as_one_constant() {
-        let module = compile(&[SourceFile::new("t.lem", "<lem.\"a\" + \"a\">")]).unwrap();
+        let module =
+            compile(&[SourceFile::new("t.lem", "<lem.\"a\" + \"a\">")]).expect_output();
         let strings = module
             .constants
             .iter()
@@ -928,7 +1109,8 @@ mod tests {
 
     #[test]
     fn compiles_a_lambda_to_a_function_named_for_what_it_is() {
-        let module = compile(&[SourceFile::new("t.lem", "<lem-let f = |x| x />")]).unwrap();
+        let module =
+            compile(&[SourceFile::new("t.lem", "<lem-let f = |x| x />")]).expect_output();
         assert!(module.functions.iter().any(|f| f.name == "<lambda>"));
     }
 
@@ -974,13 +1156,124 @@ mod tests {
             "t.lem",
             "<lem-let name = 1 /><lem-let f = |o| o.name() />",
         )])
-        .unwrap();
+        .expect_output();
         let lambda = module
             .functions
             .iter()
             .find(|f| f.name == "<lambda>")
             .expect("the lambda");
         assert_eq!(lambda.captures, Vec::<u16>::new());
+    }
+
+    #[test]
+    fn warns_when_a_definition_shadows_the_stdlib_and_still_compiles() {
+        // D23: site definitions may shadow the stdlib, with a warning — and the
+        // shadowing definition is what the name then means.
+        for (src, at) in [
+            (
+                "<lem-fn raw(s: string): int = 2 />\n<lem.raw(\"x\")>",
+                "8..11",
+            ),
+            ("<lem-let raw = 2 />\n<lem.raw>", "9..12"),
+        ] {
+            let compiled = compile(&[SourceFile::new("t.lem", src)]);
+            assert_eq!(
+                shown(&compiled.diagnostics),
+                [format!(
+                    "t.lem:{at}: warning: `raw` shadows the stdlib function of the same name"
+                )],
+                "{src}"
+            );
+            let module = compiled.output.expect("a module still comes with warnings");
+            assert_eq!(render(&module, "t.lem", &[]).unwrap(), "2", "{src}");
+        }
+        // A name that is not the stdlib's does not warn.
+        assert_eq!(
+            compile(&[SourceFile::new("t.lem", "<lem-let cooked = 2 />")]).diagnostics,
+            Vec::new()
+        );
+    }
+
+    #[test]
+    fn leaves_parameters_and_loop_bindings_named_after_the_stdlib_alone() {
+        // Only definitions warn (`docs/language.md` §Names): a parameter or a loop
+        // variable is not a name an author chose against the stdlib.
+        for src in [
+            "<lem-fn f(raw: string): string = raw />",
+            "<lem-let f = |raw| raw />",
+            "<lem-for raw in [1]><lem.raw></lem-for>",
+            "<lem-for k, raw in {a: 1}><lem.raw></lem-for>",
+        ] {
+            let compiled = compile(&[SourceFile::new("t.lem", src)]);
+            assert_eq!(compiled.diagnostics, Vec::new(), "{src}");
+        }
+    }
+
+    #[test]
+    fn does_not_blame_the_stdlib_for_a_binding_that_shadows_a_project_function() {
+        // The `lem-fn raw` displaced the stdlib and warned for it; the `lem-let raw`
+        // displaces that function, which D23 allows silently.
+        let compiled = compile(&[
+            SourceFile::new("lib.lem", "<lem-fn raw(s: string): string = s />"),
+            SourceFile::new(
+                "t.lem",
+                "<lem-fn card(title: string)><lem-let raw = raw(title) /><lem.raw></lem-fn>",
+            ),
+        ]);
+        assert_eq!(
+            shown(&compiled.diagnostics),
+            ["lib.lem:8..11: warning: `raw` shadows the stdlib function of the same name"]
+        );
+        assert!(compiled.output.is_some());
+    }
+
+    #[test]
+    fn keeps_the_output_beside_warnings_and_drops_it_beside_an_error() {
+        let warning = Diagnostic::warning("t.lem", Span::new(0, 1), "w");
+        let error = Diagnostic::error("t.lem", Span::new(0, 1), "e");
+        assert_eq!(
+            Compiled::new(Some(1), vec![warning.clone()]).output,
+            Some(1)
+        );
+        assert_eq!(
+            Compiled::new(Some(1), vec![warning, error.clone()]).output,
+            None
+        );
+        assert_eq!(Compiled::new(None::<i32>, vec![error]).output, None);
+    }
+
+    #[test]
+    fn reports_warnings_in_source_order_with_the_errors() {
+        let errors = compile_errors(&[SourceFile::new(
+            "t.lem",
+            "<lem.missing>\n<lem-let raw = 1 />\n<lem.also>",
+        )]);
+        let severities: Vec<Severity> = errors.iter().map(|d| d.severity).collect();
+        assert_eq!(
+            severities,
+            [Severity::Error, Severity::Warning, Severity::Error]
+        );
+    }
+
+    #[test]
+    fn shows_a_warning_and_its_labels_in_the_trailer_shape() {
+        let diagnostic = Diagnostic::warning("a.lem", Span::new(1, 2), "unused")
+            .with_label("b.lem", Span::new(3, 4), "bound here");
+        assert_eq!(
+            diagnostic.to_string(),
+            "a.lem:1..2: warning: unused\n  b.lem:3..4: bound here"
+        );
+        assert!(!diagnostic.is_error());
+    }
+
+    #[test]
+    fn panics_with_every_diagnostic_when_output_is_expected_of_a_failed_compile() {
+        let result = std::panic::catch_unwind(|| {
+            compile(&[SourceFile::new("t.lem", "<lem.a><lem.b>")]).expect_output()
+        });
+        let message = *result.unwrap_err().downcast::<String>().unwrap();
+        assert!(message.contains("undefined name `a`"), "{message}");
+        assert!(message.contains("undefined name `b`"), "{message}");
     }
 
     #[test]

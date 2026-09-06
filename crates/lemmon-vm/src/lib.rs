@@ -1,10 +1,9 @@
 //! Codegen and the VM for Lemmon: the stages below the typed AST.
 //!
 //! [`compile`] lowers every file of a site to one [`Module`] of bytecode; [`render`]
-//! runs a file's entry function and returns its HTML. The type checker (`∆C8d`) and
-//! document mode (`∆Ldn`) slot in between the parser and [`compile`] when they land;
-//! until then this is an untyped VM, and what `docs/language.md` calls type errors
-//! surface as spanned runtime errors.
+//! runs a file's entry function and returns its HTML. The type checker (`∆C8d`) slots
+//! into [`compile`] when it lands; until then this is an untyped VM, and what
+//! `docs/language.md` calls type errors surface as spanned runtime errors.
 
 mod builtins;
 mod bytecode;
@@ -16,13 +15,14 @@ mod vm;
 
 use std::fmt;
 
-/// Re-exported so consumers of the VM — including the WASM boundary — get spans without
-/// depending on the syntax crate directly.
-pub use lemmon_syntax::Span;
+/// Re-exported so consumers of the VM — including the WASM boundary — get spans and
+/// severities without depending on the syntax crate directly.
+pub use lemmon_syntax::{Severity, Span};
 
 pub use bytecode::{Function, Module, Op};
 pub use compile::{
-    CompileError, PreparedFile, SignatureTable, compile, compile_unit, prepare,
+    Compiled, Diagnostic, Label, PreparedFile, SignatureTable, compile, compile_unit,
+    prepare,
 };
 pub use unit::{ExportedSignature, ImportRef, ImportedSignature, Unit, link};
 pub use value::{Closure, Map, Value};

@@ -6,8 +6,9 @@
 //! changed, compiles each into its own unit against the resident signatures, and
 //! relinks; `loadData` stores the ambient records; `render` runs one file's entry.
 //!
-//! Diagnostics come back as a JSON array of `{path, span: {start, end}, message}`, every
-//! one pointing at source (invariant 8). A thrown `JsError` is reserved for caller bugs
+//! Diagnostics come back as a JSON array of `{path, span: {start, end}, severity,
+//! message, labels}`, every one pointing at source (invariant 8) and every label too. A
+//! thrown `JsError` is reserved for caller bugs
 //! — a malformed envelope, rendering before a compile has succeeded, rendering a path
 //! the program does not have — which have no source span to point at.
 
@@ -15,8 +16,8 @@ use std::collections::BTreeMap;
 use std::rc::Rc;
 
 use lemmon_vm::{
-    CompileError, ExportedSignature, Map, Module, PreparedFile, RuntimeError,
-    SignatureTable, SourceFile, Unit, Value, compile_unit, link, prepare, render,
+    ExportedSignature, Map, Module, PreparedFile, RuntimeError, Severity, SignatureTable,
+    SourceFile, Unit, Value, compile_unit, link, prepare, render,
 };
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::JsError;
@@ -64,10 +65,35 @@ struct PageRef {
     path: String,
 }
 
-/// The boundary form of every diagnostic. `severity` and `code` arrive with the checker
-/// (`∆C8d`) as additive optional fields.
+/// The boundary form of every diagnostic. A `code` would be an additive field; nothing
+/// consumes one yet.
 #[derive(Serialize)]
 struct Diagnostic {
+    path: String,
+    span: SpanOut,
+    severity: SeverityOut,
+    message: String,
+    labels: Vec<LabelOut>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "lowercase")]
+enum SeverityOut {
+    Error,
+    Warning,
+}
+
+impl From<Severity> for SeverityOut {
+    fn from(severity: Severity) -> Self {
+        match severity {
+            Severity::Error => Self::Error,
+            Severity::Warning => Self::Warning,
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct LabelOut {
     path: String,
     span: SpanOut,
     message: String,
@@ -79,28 +105,44 @@ struct SpanOut {
     end: u32,
 }
 
-impl From<CompileError> for Diagnostic {
-    fn from(error: CompileError) -> Self {
+impl From<lemmon_vm::Span> for SpanOut {
+    fn from(span: lemmon_vm::Span) -> Self {
         Self {
-            path: error.path,
-            span: SpanOut {
-                start: error.span.start,
-                end: error.span.end,
-            },
-            message: error.message,
+            start: span.start,
+            end: span.end,
         }
     }
 }
 
+impl From<lemmon_vm::Diagnostic> for Diagnostic {
+    fn from(diagnostic: lemmon_vm::Diagnostic) -> Self {
+        Self {
+            path: diagnostic.path,
+            span: diagnostic.span.into(),
+            severity: diagnostic.severity.into(),
+            message: diagnostic.message,
+            labels: diagnostic
+                .labels
+                .into_iter()
+                .map(|label| LabelOut {
+                    path: label.path,
+                    span: label.span.into(),
+                    message: label.message,
+                })
+                .collect(),
+        }
+    }
+}
+
+/// A runtime failure is always an error, and the VM has one span to point at.
 impl From<RuntimeError> for Diagnostic {
     fn from(error: RuntimeError) -> Self {
         Self {
             path: error.path,
-            span: SpanOut {
-                start: error.span.start,
-                end: error.span.end,
-            },
+            span: error.span.into(),
+            severity: SeverityOut::Error,
             message: error.message,
+            labels: Vec::new(),
         }
     }
 }
@@ -142,7 +184,10 @@ impl Core {
 
     /// Compiles the given files — only the changed ones — into resident units and
     /// relinks the program. `files` is JSON `[{path, text}]`; the result is the JSON
-    /// array of diagnostics, empty on success.
+    /// array of diagnostics about those files (and about any resident unit the relink
+    /// found stale) — none of them an error on success, since a program is still
+    /// produced when the only diagnostics are warnings. A resident file's warnings are
+    /// reported by the call that compiled it, not again by later calls.
     ///
     /// # Errors
     ///
@@ -188,12 +233,12 @@ impl Core {
     fn compile_json(&mut self, files_json: &str) -> Result<String, String> {
         let files: Vec<FileInput> = serde_json::from_str(files_json)
             .map_err(|e| format!("malformed `compile` input: {e}"))?;
-        let mut diagnostics: Vec<Diagnostic> = Vec::new();
+        let mut diagnostics: Vec<lemmon_vm::Diagnostic> = Vec::new();
         let mut prepared = Vec::new();
         for file in &files {
             match prepare(&SourceFile::new(&file.path, &file.text)) {
                 Ok(p) => prepared.push(p),
-                Err(errors) => diagnostics.extend(errors.into_iter().map(Into::into)),
+                Err(errors) => diagnostics.extend(errors),
             }
         }
         // The signature table spans the whole resident program: every unit the incoming
@@ -210,24 +255,27 @@ impl Core {
             .collect();
         exports.extend(prepared.iter().map(|p| (p.path(), p.exports())));
         let (table, table_errors) = SignatureTable::build(exports);
-        diagnostics.extend(table_errors.into_iter().map(Into::into));
+        diagnostics.extend(table_errors);
         for p in &prepared {
-            match compile_unit(p, &table) {
-                Ok(unit) => {
-                    self.units.insert(unit.path.clone(), unit);
-                }
-                Err(errors) => diagnostics.extend(errors.into_iter().map(Into::into)),
+            let compiled = compile_unit(p, &table);
+            diagnostics.extend(compiled.diagnostics);
+            if let Some(unit) = compiled.output {
+                self.units.insert(unit.path.clone(), unit);
             }
         }
         // A file that failed keeps its previous unit, so the program stays renderable
         // — stale until fixed — and the module is only replaced by a clean relink.
-        if diagnostics.is_empty() {
+        // Warnings are not failures: a program that only warns is the new program.
+        if !diagnostics.iter().any(lemmon_vm::Diagnostic::is_error) {
             let units: Vec<Unit> = self.units.values().cloned().collect();
-            match link(&units) {
-                Ok(module) => self.module = Some(module),
-                Err(errors) => diagnostics.extend(errors.into_iter().map(Into::into)),
+            let linked = link(&units);
+            diagnostics.extend(linked.diagnostics);
+            if let Some(module) = linked.output {
+                self.module = Some(module);
             }
         }
+        let diagnostics: Vec<Diagnostic> =
+            diagnostics.into_iter().map(Into::into).collect();
         serde_json::to_string(&diagnostics)
             .map_err(|e| format!("serialising diagnostics failed: {e}"))
     }
@@ -381,8 +429,25 @@ mod tests {
         let reported = diagnostics(&result);
         assert_eq!(reported[0]["path"], "page.lem");
         assert!(reported[0]["span"]["end"].is_number(), "{reported:?}");
+        assert_eq!(reported[0]["severity"], "error");
+        assert_eq!(reported[0]["labels"], serde_json::json!([]));
         // Stale until fixed: the broken compile replaced neither unit nor module.
         assert_eq!(html_of(&core, "page.lem"), "ok");
+    }
+
+    #[test]
+    fn replaces_the_program_when_a_compile_only_warns() {
+        let mut core = Core::new();
+        compile_clean(&mut core, r#"[{"path": "page.lem", "text": "old"}]"#);
+        core.load_data_json(r#"{"ambient": {}}"#).unwrap();
+        let result = core
+            .compile_json(r#"[{"path": "page.lem", "text": "<lem-let raw = 1 />new"}]"#)
+            .unwrap();
+        let reported = diagnostics(&result);
+        assert_eq!(reported.as_array().map(Vec::len), Some(1), "{reported:?}");
+        assert_eq!(reported[0]["severity"], "warning");
+        assert_eq!(reported[0]["span"]["start"], 9);
+        assert_eq!(html_of(&core, "page.lem"), "new");
     }
 
     #[test]
@@ -466,13 +531,7 @@ mod tests {
             .unwrap();
         let reported = diagnostics(&result);
         assert_eq!(reported[0]["path"], "a.lem");
-        assert!(
-            reported[0]["message"]
-                .as_str()
-                .unwrap()
-                .contains("already defined in z.lem"),
-            "{reported:?}"
-        );
+        assert_eq!(reported[0]["labels"][0]["path"], "z.lem", "{reported:?}");
     }
 
     #[test]
@@ -487,13 +546,11 @@ mod tests {
             .unwrap();
         let reported = diagnostics(&result);
         assert_eq!(reported[0]["path"], "b.lem");
-        assert!(
-            reported[0]["message"]
-                .as_str()
-                .unwrap()
-                .contains("`f` is already defined in a.lem"),
-            "{reported:?}"
-        );
+        assert_eq!(reported[0]["message"], "`f` is already defined");
+        // The first definition crosses as a label, path and span intact.
+        assert_eq!(reported[0]["labels"][0]["path"], "a.lem");
+        assert_eq!(reported[0]["labels"][0]["span"]["start"], 8);
+        assert_eq!(reported[0]["labels"][0]["message"], "first defined here");
     }
 
     #[test]

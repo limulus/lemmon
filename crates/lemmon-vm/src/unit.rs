@@ -14,7 +14,7 @@ use lemmon_syntax::Span;
 
 use crate::Value;
 use crate::bytecode::{Function, Module, Op};
-use crate::compile::{CompileError, duplicate_message, index_u32};
+use crate::compile::{Compiled, Diagnostic, duplicate_named, index_u32};
 
 /// One file's compiled output: self-contained except for the functions it names in
 /// other files, which stay symbolic until [`link`] resolves them.
@@ -56,10 +56,9 @@ pub struct ExportedSignature {
     pub params: Vec<Rc<str>>,
     /// The function's index in its unit.
     pub func: u32,
-    /// The name token in the definition — where a duplicate of it is reported.
+    /// The name token in the definition — where a duplicate of it is reported, and what
+    /// a duplicate's label points at.
     pub name_span: Span,
-    /// The whole definition — what a duplicate's message cites.
-    pub span: Span,
 }
 
 /// A foreign signature a unit's calls were compiled against: the callable shape only,
@@ -75,12 +74,11 @@ pub struct ImportedSignature {
 /// Joins units into the [`Module`] the VM runs: constant pools concatenated, function
 /// indices offset, imports resolved to the functions the other units export.
 ///
-/// # Errors
-///
-/// An import no unit exports, or a name two units export — each pointing at the source
-/// that names it, in the order the units were given.
-pub fn link(units: &[Unit]) -> Result<Module, Vec<CompileError>> {
-    let mut errors = Vec::new();
+/// An import no unit exports, or a name two units export, is an error pointing at the
+/// source that names it, in the order the units were given; with any error there is no
+/// module.
+pub fn link(units: &[Unit]) -> Compiled<Module> {
+    let mut diagnostics = Vec::new();
     let mut constant_offsets = Vec::with_capacity(units.len());
     let mut function_offsets = Vec::with_capacity(units.len());
     let (mut constants, mut functions) = (0u32, 0u32);
@@ -97,15 +95,13 @@ pub fn link(units: &[Unit]) -> Result<Module, Vec<CompileError>> {
     for (index, unit) in units.iter().enumerate() {
         for export in &unit.exports {
             match exports.iter().find(|(name, _, _)| *name == &export.name) {
-                Some(&(_, first, existing)) => errors.push(CompileError {
-                    path: unit.path.clone(),
-                    span: export.name_span,
-                    message: duplicate_message(
-                        &export.name,
-                        &units[first].path,
-                        existing.span,
-                    ),
-                }),
+                Some(&(_, first, existing)) => diagnostics.push(duplicate_named(
+                    &unit.path,
+                    export.name_span,
+                    &export.name,
+                    &units[first].path,
+                    existing.name_span,
+                )),
                 None => exports.push((&export.name, index, export)),
             }
         }
@@ -132,24 +128,31 @@ pub fn link(units: &[Unit]) -> Result<Module, Vec<CompileError>> {
                                 .find(|fact| fact.name == import.name)
                                 .expect("an import records the signature it consumed");
                             if fact.params != export.params {
-                                errors.push(CompileError {
-                                    path: unit.path.clone(),
-                                    span: import.span,
-                                    message: stale_signature_message(
-                                        &import.name,
-                                        &fact.params,
-                                        &export.params,
+                                diagnostics.push(
+                                    Diagnostic::error(
+                                        &unit.path,
+                                        import.span,
+                                        stale_signature_message(
+                                            &import.name,
+                                            &fact.params,
+                                            &export.params,
+                                        ),
+                                    )
+                                    .with_label(
+                                        &units[index].path,
+                                        export.name_span,
+                                        "now defined here",
                                     ),
-                                });
+                                );
                             }
                             Some(add_u32(function_offsets[index], export.func))
                         }
                         None => {
-                            errors.push(CompileError {
-                                path: unit.path.clone(),
-                                span: import.span,
-                                message: format!("undefined name `{}`", import.name),
-                            });
+                            diagnostics.push(Diagnostic::error(
+                                &unit.path,
+                                import.span,
+                                format!("undefined name `{}`", import.name),
+                            ));
                             None
                         }
                     }
@@ -157,8 +160,10 @@ pub fn link(units: &[Unit]) -> Result<Module, Vec<CompileError>> {
                 .collect()
         })
         .collect();
-    if !errors.is_empty() {
-        return Err(errors);
+    // An unresolved import is always an error, so past this point every entry of
+    // `resolved` is `Some`; a warning alone builds the module like a clean link does.
+    if diagnostics.iter().any(Diagnostic::is_error) {
+        return Compiled::new(None, diagnostics);
     }
 
     let mut module = Module::default();
@@ -198,7 +203,7 @@ pub fn link(units: &[Unit]) -> Result<Module, Vec<CompileError>> {
             module.functions.push(function);
         }
     }
-    Ok(module)
+    Compiled::new(Some(module), diagnostics)
 }
 
 fn add_u32(a: u32, b: u32) -> u32 {
@@ -236,14 +241,25 @@ mod tests {
             .iter()
             .map(|(path, text)| prepare(&SourceFile::new(*path, *text)).unwrap())
             .collect();
-        let (table, errors) =
+        let (table, diagnostics) =
             SignatureTable::build(prepared.iter().map(|p| (p.path(), p.exports())));
-        assert_eq!(errors, Vec::new());
+        assert_eq!(diagnostics, Vec::new());
         let this = prepared
             .iter()
             .find(|p| p.path() == path)
             .expect("the file compiles against a table that includes it");
-        compile_unit(this, &table).unwrap()
+        compile_unit(this, &table).expect_output()
+    }
+
+    /// Links `units`, asserting there is no module and returning what was reported.
+    fn link_errors(units: &[Unit]) -> Vec<Diagnostic> {
+        let linked = link(units);
+        assert!(
+            linked.output.is_none(),
+            "linked despite {:?}",
+            linked.diagnostics
+        );
+        linked.diagnostics
     }
 
     #[test]
@@ -257,7 +273,7 @@ mod tests {
                 ("page.lem", "<lem.f()>"),
             ],
         );
-        let errors = link(&[page]).unwrap_err();
+        let errors = link_errors(&[page]);
         assert_eq!(errors.len(), 1);
         assert_eq!(errors[0].path, "page.lem");
         assert!(
@@ -288,13 +304,13 @@ mod tests {
                 "<lem-fn pair(b: string, a: string): string = a + b />",
             )],
         );
-        let errors = link(&[lib, page]).unwrap_err();
+        let errors = link_errors(&[lib, page]);
         assert_eq!(errors.len(), 1);
         assert_eq!(errors[0].path, "page.lem");
         assert_eq!(
-            errors[0].message,
-            "`pair` is now `pair(b, a)`, but this file was compiled against \
-             `pair(a, b)` — recompile it"
+            errors[0].to_string(),
+            "page.lem:5..25: `pair` is now `pair(b, a)`, but this file was compiled against \
+             `pair(a, b)` — recompile it\n  lib.lem:8..12: now defined here"
         );
     }
 
@@ -314,7 +330,7 @@ mod tests {
                 "<lem-fn greet(who: string, loudly: bool): string = who />",
             )],
         );
-        let errors = link(&[lib, page]).unwrap_err();
+        let errors = link_errors(&[lib, page]);
         assert_eq!(errors[0].path, "page.lem");
         assert!(
             errors[0].message.contains("`greet(who, loudly)`"),
@@ -343,7 +359,7 @@ mod tests {
                 "<lem-fn greet(who: string): string = \"HELLO \" + who />",
             )],
         );
-        let module = link(&[lib, page]).unwrap();
+        let module = link(&[lib, page]).expect_output();
         assert_eq!(
             render(&module, "page.lem", &[("page", Value::Null)]).unwrap(),
             "HELLO you"
@@ -356,10 +372,10 @@ mod tests {
         // only link can see it — and says what compiling them together would have.
         let a = unit_of("a.lem", &[("a.lem", "<lem-fn f(): int = 1 />")]);
         let b = unit_of("b.lem", &[("b.lem", "<lem-fn f(): int = 2 />")]);
-        let errors = link(&[a, b]).unwrap_err();
+        let errors = link_errors(&[a, b]);
         assert_eq!(
             errors[0].to_string(),
-            "b.lem:8..9: `f` is already defined in a.lem at 0..23"
+            "b.lem:8..9: `f` is already defined\n  a.lem:8..9: first defined here"
         );
     }
 
@@ -373,8 +389,8 @@ mod tests {
         ];
         let lib = unit_of("lib.lem", &files);
         let page = unit_of("page.lem", &files);
-        let module = link(&[lib.clone(), page.clone()]).unwrap();
-        assert_eq!(module, link(&[lib, page]).unwrap());
+        let module = link(&[lib.clone(), page.clone()]).expect_output();
+        assert_eq!(module, link(&[lib, page]).expect_output());
         assert_eq!(
             render(&module, "page.lem", &[("page", Value::Null)]).unwrap(),
             "a42b"

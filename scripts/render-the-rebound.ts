@@ -24,7 +24,11 @@ import {
   type Forgiveness,
   type RenderedElement,
 } from './lib/rendered-html.ts'
-import { loadCore, type SourceFileInput } from '../packages/core/src/index.ts'
+import {
+  loadCore,
+  type Diagnostic,
+  type SourceFileInput,
+} from '../packages/core/src/index.ts'
 
 const SPIKE = 'spike/the-rebound'
 const PAGE_PATH = 'feed/the-rebound/index.md'
@@ -124,9 +128,11 @@ function percentile(samples: number[], p: number): number {
   return sorted[Math.max(0, at)]
 }
 
-function expectClean(diagnostics: unknown[], doing: string): void {
-  if (diagnostics.length > 0) {
-    throw new Error(`unexpected diagnostics ${doing}: ${JSON.stringify(diagnostics)}`)
+function expectClean(diagnostics: Diagnostic[], doing: string): void {
+  // Warnings do not fail a compile, and they are not this harness's concern.
+  const errors = diagnostics.filter((d) => d.severity === 'error')
+  if (errors.length > 0) {
+    throw new Error(`unexpected diagnostics ${doing}: ${JSON.stringify(errors)}`)
   }
 }
 

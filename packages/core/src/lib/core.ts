@@ -22,8 +22,14 @@ export class Core {
 
   /**
    * Compiles the given files — only the changed ones — into resident units and relinks
-   * the program. Empty diagnostics mean success; on failure the previous program stays
+   * the program. No `error` diagnostic means success: a program is still produced when
+   * the only diagnostics are warnings, and on failure the previous program stays
    * renderable, stale until fixed.
+   *
+   * The diagnostics describe the files passed to this call (plus any resident file the
+   * relink found stale), not the whole program: a resident file's warnings were
+   * reported by the call that compiled it. A caller that shows warnings keeps them per
+   * path and replaces a path's entry when it recompiles that path.
    */
   compile(files: SourceFileInput[]): Diagnostic[] {
     return JSON.parse(this.#core.compile(JSON.stringify(files))) as Diagnostic[]

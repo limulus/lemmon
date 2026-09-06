@@ -19,7 +19,7 @@ use rowan::{GreenNode, GreenToken, NodeOrToken};
 
 use crate::parser::{Parse, parse_item_prefix};
 use crate::syntax_kind::SyntaxKind;
-use crate::{Diagnostic, Span};
+use crate::{Diagnostic, Label, Span};
 
 /// A parsed document: the tree over the whole file, plus where its parts are.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -75,9 +75,19 @@ pub fn parse_document(src: &str) -> DocumentParse {
             let block = parse_item_prefix(&src[start..]);
             let end = start + usize::from(block.green.text_len());
             children.extend(block.green.children().map(|child| child.to_owned()));
-            diagnostics.extend(block.diagnostics.into_iter().map(|d| Diagnostic {
-                span: shift(d.span, start),
-                ..d
+            diagnostics.extend(block.diagnostics.into_iter().map(|d| {
+                Diagnostic {
+                    span: shift(d.span, start),
+                    labels: d
+                        .labels
+                        .into_iter()
+                        .map(|l| Label {
+                            span: shift(l.span, start),
+                            ..l
+                        })
+                        .collect(),
+                    ..d
+                }
             }));
             blocks.push(Span::new(index_u32(start), index_u32(end)));
             let rest_end = src[end..].find('\n').map_or(src.len(), |i| end + i);

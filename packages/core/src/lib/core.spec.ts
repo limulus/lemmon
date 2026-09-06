@@ -32,9 +32,32 @@ describe('Core', () => {
         {
           path: 'bad.lem',
           span: { start: 5, end: 9 },
+          severity: 'error',
           message: 'undefined name `nope`',
+          labels: [],
         },
       ])
+    })
+
+    it('should carry a secondary span as a path-qualified label', async () => {
+      const core = await loadCore()
+      core.compile([{ path: 'a.lem', text: '<lem-fn f(): int = 1 />' }])
+      const [collision] = core.compile([{ path: 'b.lem', text: '<lem-fn f(): int = 2 />' }])
+      expect(collision.message).toBe('`f` is already defined')
+      expect(collision.labels).toEqual([
+        { path: 'a.lem', span: { start: 8, end: 9 }, message: 'first defined here' },
+      ])
+    })
+
+    it('should report a warning and still replace the program', async () => {
+      const core = await loadCore()
+      core.compile([{ path: 'page.lem', text: 'old' }])
+      core.loadData({ ambient: {} })
+      const diagnostics = core.compile([
+        { path: 'page.lem', text: '<lem-let raw = 1 />new' },
+      ])
+      expect(diagnostics.map((d) => d.severity)).toEqual(['warning'])
+      expect(core.render({ path: 'page.lem' }).html).toBe('new')
     })
 
     it('should recompile one changed file against the resident rest', async () => {

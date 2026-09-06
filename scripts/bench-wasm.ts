@@ -18,7 +18,11 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
 
-import { loadCore, type SourceFileInput } from '../packages/core/src/index.ts'
+import {
+  loadCore,
+  type Diagnostic,
+  type SourceFileInput,
+} from '../packages/core/src/index.ts'
 
 const CORPUS = 'tests/corpus'
 const SITE_PAGES = 100
@@ -61,9 +65,11 @@ function record(name: string): (fn: () => { in: unknown; out: unknown }) => void
   }
 }
 
-function expectClean(diagnostics: unknown[], doing: string): void {
-  if (diagnostics.length > 0) {
-    throw new Error(`unexpected diagnostics ${doing}: ${JSON.stringify(diagnostics)}`)
+function expectClean(diagnostics: Diagnostic[], doing: string): void {
+  // Warnings do not fail a compile, and they are not this harness's concern.
+  const errors = diagnostics.filter((d) => d.severity === 'error')
+  if (errors.length > 0) {
+    throw new Error(`unexpected diagnostics ${doing}: ${JSON.stringify(errors)}`)
   }
 }
 
@@ -115,7 +121,7 @@ async function corpusScenarios(): Promise<void> {
   const renderOne = record('corpus render (1 page/call)')
   for (const input of inputs) {
     const core = await loadCore()
-    let diagnostics: unknown[] = []
+    let diagnostics: Diagnostic[] = []
     compileOne(() => {
       diagnostics = core.compile([input])
       return { in: [input], out: diagnostics }

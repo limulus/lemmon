@@ -1,0 +1,7 @@
+<lem-fn raw(s: string): string = "[" + s + "]" />
+<lem-fn card(title: string)>
+  <lem-let raw = raw(title) />
+  <h1><lem.raw></h1>
+</lem-fn>
+<lem-let cooked = "fine" />
+<lem.card("Hi")><lem.cooked>

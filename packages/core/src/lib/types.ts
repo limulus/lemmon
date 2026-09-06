@@ -40,13 +40,32 @@ export interface Span {
 }
 
 /**
- * A problem in a template or document, pointing at source (invariant 8). `severity`
- * and `code` arrive with the checker (∆C8d) as additive optional fields.
+ * How much a diagnostic matters: an `error` stops its file from compiling; a `warning`
+ * is reported and the file compiles anyway.
+ */
+export type Severity = 'error' | 'warning'
+
+/**
+ * A secondary span a {@link Diagnostic} points at with a note of its own — where a name
+ * was first defined, what a caller was compiled against. Path-qualified, since it may
+ * be in another file.
+ */
+export interface Label {
+  path: string
+  span: Span
+  message: string
+}
+
+/**
+ * A problem in a template or document, pointing at source (invariant 8), with the
+ * secondary spans worth reading with it. A `code` would be an additive field.
  */
 export interface Diagnostic {
   path: string
   span: Span
+  severity: Severity
   message: string
+  labels: Label[]
 }
 
 /**
