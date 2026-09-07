@@ -4,7 +4,8 @@ This backlog is managed with the **delto** skill — before adding or changing i
 it (and the authoring reference it points to) so the conventions below stay enforced.
 
 Organized as Initiative (`##`) → Epic (`###`) → Item (`-`); initiatives are roughly
-priority-ordered, items 5 lines max. One standing epic, Refactors, precedes the initiatives.
+priority-ordered, items 5 lines max. One standing epic, Refactors, precedes the initiatives,
+and one standing section, Defects, follows them.
 
 Each item starts with a “deltoid” — `∆` followed by 3 alphanumerics, e.g. `∆7hy`. Deltoids
 are immutable and travel with the item into its completed-work journal entry in
@@ -151,3 +152,17 @@ API); the port itself lives in limulus-dot-net on a branch while 11ty stays gree
 - ∆oAl Cutover — at zero unexpected diffs, replace Eleventy with `lem` in limulus-dot-net
   (`build`, `dev`, `verify` scripts, CI, `11ty/` removed), single switch, no dual-serving,
   CloudFront config unchanged; needs: ∆hyz, ∆Vhi
+
+## Defects
+
+Standing section for confirmed bugs in landed code that block no milestone. It sits last so
+that document order stays priority order: an item here is picked up when the code it sits in
+is next touched, or in the slack between milestone items, and no milestone item waits on
+one. Each names where the bug shows — a corpus case or a journal entry — so it can be
+reproduced cold.
+
+- ∆3oX `??` with a mismatched default reports twice — the mismatch, then "cannot print a
+  `T?`" — because `Compiler::check` falls back to the expected type on failure and the `??`
+  lowering in `crates/lemmon-vm/src/compile/expr.rs` cannot tell that from a genuinely
+  optional right side. Decide what type a refused `??` takes so one mistake costs one
+  diagnostic (docs/language.md §Checking); see `render/errors/higher-order-errors.html`
