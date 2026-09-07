@@ -257,13 +257,49 @@ pub fn link(units: &[Unit], index: &ExportIndex) -> Compiled<Module> {
                     }
                     Op::Ambient { name }
                     | Op::GetField { name }
-                    | Op::OptField { name } => {
+                    | Op::OptField { name }
+                    | Op::CallDynamic { name, .. } => {
                         *name = add_u32(constant_offset, *name);
                     }
                     Op::Global { func: target }
                     | Op::Call { func: target, .. }
                     | Op::MakeClosure { func: target, .. } => *target = func(*target),
-                    _ => {}
+                    // Spelled out rather than `_`: an op that names a unit-local table
+                    // and is missed here reads another file's constants or functions,
+                    // and only in a module with more than one file — which no
+                    // single-file corpus case ever builds. A new op must be placed.
+                    Op::Local { .. }
+                    | Op::StoreLocal { .. }
+                    | Op::Index
+                    | Op::CallValue { .. }
+                    | Op::CallBuiltin { .. }
+                    | Op::MakeList { .. }
+                    | Op::MakeMap { .. }
+                    | Op::Jump { .. }
+                    | Op::JumpIfFalse { .. }
+                    | Op::JumpUnlessNull { .. }
+                    | Op::JumpIfFalseKeep { .. }
+                    | Op::JumpIfTrueKeep { .. }
+                    | Op::IterInit { .. }
+                    | Op::IterNext { .. }
+                    | Op::Neg
+                    | Op::Not
+                    | Op::Add
+                    | Op::Sub
+                    | Op::Mul
+                    | Op::Div
+                    | Op::Rem
+                    | Op::Eq
+                    | Op::Ne
+                    | Op::Lt
+                    | Op::Le
+                    | Op::Gt
+                    | Op::Ge
+                    | Op::In
+                    | Op::Emit
+                    | Op::Capture
+                    | Op::EndCapture
+                    | Op::Return => {}
                 }
             }
             module.functions.push(function);
@@ -478,6 +514,28 @@ mod tests {
         assert_eq!(
             render(&module, "page.lem", &[("page", Value::Null)]).unwrap(),
             "HELLO you"
+        );
+    }
+
+    #[test]
+    fn relocates_a_dynamic_calls_name_into_the_linked_constant_pool() {
+        // `x.f(…)` on an `any` carries its method name as a constant index, which only
+        // a second unit's offset can show is relocated: every single-file module links
+        // at offset zero.
+        let files = [
+            ("lib.lem", "<lem-fn f(): string = \"first\" + \"second\" />"),
+            (
+                "page.lem",
+                "<lem-let u: any = \"Hello There\" /><lem.u.slugify()> <lem.f()>",
+            ),
+        ];
+        let lib = unit_of("lib.lem", &files);
+        let page = unit_of("page.lem", &files);
+        let units = [lib, page];
+        let module = link(&units, &ExportIndex::of(&units)).expect_output();
+        assert_eq!(
+            render(&module, "page.lem", &[("page", Value::Null)]).unwrap(),
+            "hello-there firstsecond"
         );
     }
 

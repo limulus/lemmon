@@ -429,6 +429,15 @@ pub(super) fn builtin(builtin: &Builtin, argc: usize) -> Rule<()> {
     }
 }
 
+/// What a lambda is lowered under: its parameter types, and the return type its body is
+/// checked against — `None` leaves the body to inference, as a builtin's function
+/// argument does (D34).
+#[derive(Clone, Debug, PartialEq)]
+pub(super) struct LambdaShape {
+    pub(super) params: Rc<[Type]>,
+    pub(super) ret: Option<Type>,
+}
+
 /// What a lambda with `params` parameters takes from the type expected of it: its
 /// parameter types and the return type its body is checked against, when a function
 /// type of the same arity is expected; nothing when nothing is, or something else is
@@ -437,10 +446,13 @@ pub(super) fn builtin(builtin: &Builtin, argc: usize) -> Rule<()> {
 pub(super) fn lambda_shape(
     expected: Option<&Type>,
     params: usize,
-) -> Rule<Option<(Rc<[Type]>, Type)>> {
+) -> Rule<Option<LambdaShape>> {
     match expectation(expected) {
         Some(Type::Fn(param_tys, ret)) if param_tys.len() == params => {
-            Ok(Some((param_tys.clone(), (**ret).clone())))
+            Ok(Some(LambdaShape {
+                params: param_tys.clone(),
+                ret: Some((**ret).clone()),
+            }))
         }
         Some(want @ Type::Fn(param_tys, _)) => Err(format!(
             "this lambda takes {}, but a `{want}` takes {}",
@@ -448,6 +460,58 @@ pub(super) fn lambda_shape(
             param_tys.len()
         )),
         _ => Ok(None),
+    }
+}
+
+/// The shape of a lambda with `lambda_params` parameters written where `written` expects
+/// a function of `params` and leaves the return to it; a refusal when the arities differ.
+pub(super) fn lambda_of(
+    written: &str,
+    params: Vec<Type>,
+    lambda_params: usize,
+) -> Rule<LambdaShape> {
+    if params.len() == lambda_params {
+        Ok(LambdaShape {
+            params: Rc::from(params),
+            ret: None,
+        })
+    } else {
+        Err(format!(
+            "this lambda takes {}, but {written} passes {}",
+            count(lambda_params, "parameter"),
+            count(params.len(), "argument")
+        ))
+    }
+}
+
+/// Whether a value of type `actual` may stand where `written` expects a function of
+/// `params`: a function whose parameters each accept what is passed — the contravariance
+/// a function type's assignability already has — or an `any`, which the VM checks.
+pub(super) fn function_of(
+    written: &str,
+    params: &[Type],
+    actual: &Type,
+    decls: &dyn Decls,
+) -> Rule {
+    let fits = match actual {
+        Type::Any => true,
+        Type::Fn(wanted, _) => {
+            wanted.len() == params.len()
+                && params
+                    .iter()
+                    .zip(wanted.iter())
+                    .all(|(given, wanted)| assignable(given, wanted, decls))
+        }
+        _ => false,
+    };
+    if fits {
+        Ok(actual.clone())
+    } else {
+        let params: Vec<String> = params.iter().map(ToString::to_string).collect();
+        Err(format!(
+            "{written} takes a function of `({})`, got `{actual}`",
+            params.join(", ")
+        ))
     }
 }
 
@@ -1212,7 +1276,10 @@ mod tests {
         let want = func(vec![Type::Int, Type::String], Type::Bool);
         assert_eq!(
             lambda_shape(Some(&opt(want.clone())), 2),
-            Ok(Some((Rc::from(vec![Type::Int, Type::String]), Type::Bool)))
+            Ok(Some(LambdaShape {
+                params: Rc::from(vec![Type::Int, Type::String]),
+                ret: Some(Type::Bool),
+            }))
         );
         assert_eq!(lambda_shape(Some(&Type::Int), 2), Ok(None));
         assert_eq!(lambda_shape(None, 0), Ok(None));
@@ -1222,6 +1289,48 @@ mod tests {
                 "this lambda takes 1 parameter, but a `(int, string): bool` takes 2"
                     .to_owned()
             )
+        );
+    }
+
+    #[test]
+    fn shapes_a_lambda_a_builtin_passes_arguments_to_with_its_return_left_open() {
+        assert_eq!(
+            lambda_of("`.map`", vec![Type::Int], 1),
+            Ok(LambdaShape {
+                params: Rc::from(vec![Type::Int]),
+                ret: None,
+            })
+        );
+        assert_eq!(
+            lambda_of("`.map`", vec![Type::Int], 2),
+            Err("this lambda takes 2 parameters, but `.map` passes 1 argument".to_owned())
+        );
+    }
+
+    #[test]
+    fn admits_a_function_value_whose_parameters_accept_what_a_builtin_passes() {
+        let decls = &table();
+        let f = func(vec![Type::Any], Type::String);
+        assert_eq!(
+            function_of("`.map`", &[Type::Int], &f, decls),
+            Ok(f.clone())
+        );
+        assert_eq!(
+            function_of("`.map`", &[Type::Int], &Type::Any, decls),
+            Ok(Type::Any)
+        );
+        let g = func(vec![Type::String], Type::String);
+        assert_eq!(
+            function_of("`.map`", &[Type::Int], &g, decls),
+            Err("`.map` takes a function of `(int)`, got `(string): string`".to_owned())
+        );
+        assert_eq!(
+            function_of("`.map`", &[Type::Int, Type::Int], &f, decls),
+            Err("`.map` takes a function of `(int, int)`, got `(any): string`".to_owned())
+        );
+        assert_eq!(
+            function_of("`.map`", &[Type::Int], &Type::Int, decls),
+            Err("`.map` takes a function of `(int)`, got `int`".to_owned())
         );
     }
 

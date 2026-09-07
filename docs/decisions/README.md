@@ -79,8 +79,8 @@ revised the same day from well-known types to host-declared ambient types (revis
 D23 and D29 with it), its `from` clause parsed 2026-09-04 (∆1vS); D31 2026-09-06 (∆C8d);
 D32 2026-09-06 (∆cea), its variant spelling revised 2026-09-07 (∆EN6); D33
 2026-09-07 (∆cE6); D34 2026-09-07 (∆495), retiring the pipe operator from the
-deferred list with it. From D25 on, a record's Status line
-carries the history its row used to.
+deferred list with it, its higher-order half the same day (∆987). From D25 on, a record's
+Status line carries the history its row used to.
 
 ## Record template
 

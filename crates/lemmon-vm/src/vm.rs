@@ -7,10 +7,16 @@
 //!
 //! Every error leaves through [`Vm::fail`], which looks the failing instruction's span up
 //! in the function's parallel span table — so a runtime error cannot exist without one.
+//!
+//! A builtin that takes a function (`map`, `filter`) runs it through [`Host::invoke`]:
+//! the VM pushes the call's frame and runs the loop again, nested, until that frame has
+//! returned, then hands the value back to the builtin mid-instruction. An error inside
+//! the invoked function is placed there, at its own instruction, and passes through the
+//! builtin untouched as a [`Fault::Placed`].
 
 use std::rc::Rc;
 
-use crate::builtins::{self, BUILTINS};
+use crate::builtins::{self, BUILTINS, Fault, Host};
 use crate::bytecode::{Function, Module, Op};
 use crate::value::{Closure, Map};
 use crate::{RuntimeError, Value};
@@ -51,7 +57,7 @@ pub fn render(
         // which cannot trip on the first frame.
         unreachable!("entry call failed: {message}")
     })?;
-    vm.run()?;
+    vm.run_until(0)?;
     Ok(vm.out.pop().expect("the root output buffer"))
 }
 
@@ -80,13 +86,18 @@ struct Vm<'a> {
 }
 
 impl<'a> Vm<'a> {
-    fn run(&mut self) -> Result<(), RuntimeError> {
-        while let Some(frame) = self.frames.last_mut() {
+    /// Runs until only `depth` frames remain: the whole render from `0`, or — inside
+    /// [`Host::invoke`] — until the frame it pushed has returned.
+    fn run_until(&mut self, depth: usize) -> Result<(), RuntimeError> {
+        while self.frames.len() > depth {
+            let frame = self.frames.last_mut().expect("a running frame");
             let (func, pc) = (frame.func, frame.pc);
             frame.pc += 1;
             let op = self.function(func).code[pc];
-            self.step(op)
-                .map_err(|message| self.fail(func, pc, message))?;
+            self.step(op).map_err(|fault| match fault {
+                Fault::Message(message) => self.fail(func, pc, message),
+                Fault::Placed(error) => error,
+            })?;
         }
         Ok(())
     }
@@ -173,7 +184,7 @@ impl<'a> Vm<'a> {
     /// whose key spells a method's name: through `any` the key wins, where a typed
     /// receiver would have taken the method, since a map's entries are never fields to
     /// the checker. ∆PCK is what lets the two agree.
-    fn call_dynamic(&mut self, name: u32, argc: u16) -> Result<(), String> {
+    fn call_dynamic(&mut self, name: u32, argc: u16) -> Result<(), Fault> {
         let name = self.constant_str(name);
         let at = self.stack.len() - 1 - argc as usize;
         let receiver = &self.stack[at];
@@ -181,15 +192,14 @@ impl<'a> Vm<'a> {
             && let Some(callee) = map.get(name).cloned()
         {
             self.stack.remove(at);
-            return self.call_value(callee, argc);
+            return Ok(self.call_value(callee, argc)?);
         }
         let found = builtins::Kind::of_value(receiver)
             .and_then(|kind| builtins::method(kind, name));
         let Some(id) = found else {
-            return Err(format!(
-                "no method `{name}` on {}",
-                self.stack[at].type_name()
-            ));
+            return Err(
+                format!("no method `{name}` on {}", self.stack[at].type_name()).into(),
+            );
         };
         let builtin = &BUILTINS[id as usize];
         if builtin.arity != argc as usize + 1 {
@@ -197,10 +207,12 @@ impl<'a> Vm<'a> {
             return Err(format!(
                 "`.{name}()` takes {wanted} argument{}, got {argc}",
                 if wanted == 1 { "" } else { "s" }
-            ));
+            )
+            .into());
         }
         let args = self.stack.split_off(at);
-        self.stack.push((builtin.call)(&args)?);
+        let result = (builtin.call)(self, &args)?;
+        self.stack.push(result);
         Ok(())
     }
 
@@ -208,7 +220,7 @@ impl<'a> Vm<'a> {
         clippy::too_many_lines,
         reason = "one arm per op is the readable shape"
     )]
-    fn step(&mut self, op: Op) -> Result<(), String> {
+    fn step(&mut self, op: Op) -> Result<(), Fault> {
         match op {
             Op::Const { index } => self.stack.push(self.constant(index).clone()),
             Op::Local { slot } => self.stack.push(self.stack[self.local(slot)].clone()),
@@ -257,7 +269,8 @@ impl<'a> Vm<'a> {
                 let builtin = &BUILTINS[id as usize];
                 debug_assert_eq!(builtin.arity, argc as usize);
                 let args = self.stack.split_off(self.stack.len() - argc as usize);
-                self.stack.push((builtin.call)(&args)?);
+                let result = (builtin.call)(self, &args)?;
+                self.stack.push(result);
             }
             Op::CallDynamic { name, argc } => self.call_dynamic(name, argc)?,
             Op::MakeClosure { func, captures } => {
@@ -319,7 +332,9 @@ impl<'a> Vm<'a> {
                         (Iter::Map(map, 0), empty)
                     }
                     other => {
-                        return Err(format!("cannot iterate over a {}", other.type_name()));
+                        return Err(
+                            format!("cannot iterate over a {}", other.type_name()).into()
+                        );
                     }
                 };
                 if empty {
@@ -357,7 +372,9 @@ impl<'a> Vm<'a> {
                 let value = match self.pop() {
                     Value::Int(i) => Value::Int(i.checked_neg().ok_or("integer overflow")?),
                     Value::Float(f) => Value::Float(-f),
-                    other => return Err(format!("cannot negate a {}", other.type_name())),
+                    other => {
+                        return Err(format!("cannot negate a {}", other.type_name()).into());
+                    }
                 };
                 self.stack.push(value);
             }
@@ -365,7 +382,9 @@ impl<'a> Vm<'a> {
                 let value = match self.pop() {
                     Value::Bool(b) => Value::Bool(!b),
                     other => {
-                        return Err(format!("`!` needs a bool, got {}", other.type_name()));
+                        return Err(
+                            format!("`!` needs a bool, got {}", other.type_name()).into()
+                        );
                     }
                 };
                 self.stack.push(value);
@@ -435,6 +454,21 @@ impl<'a> Vm<'a> {
             Some(other) => Err(format!("`{op}` needs a bool, got {}", other.type_name())),
             None => unreachable!("the compiler balances the stack"),
         }
+    }
+}
+
+impl Host for Vm<'_> {
+    fn invoke(&mut self, callee: &Value, args: Vec<Value>) -> Result<Value, Fault> {
+        let depth = self.frames.len();
+        let base = self.stack.len();
+        let argc = u16::try_from(args.len()).expect("a builtin passes fewer than 65536");
+        self.stack.extend(args);
+        if let Err(message) = self.call_value(callee.clone(), argc) {
+            self.stack.truncate(base);
+            return Err(message.into());
+        }
+        self.run_until(depth).map_err(Fault::Placed)?;
+        Ok(self.pop())
     }
 }
 
@@ -853,6 +887,150 @@ mod tests {
             vec![k(1), Op::CallBuiltin { id: 0, argc: 1 }, Op::Emit],
         ));
         assert_eq!((pc, message.as_str()), (1, "raw() takes a string, got int"));
+    }
+
+    /// `map` (builtin 4) over `constants[0]` with `functions[1]` as the function, then
+    /// `first` (builtin 2) on the result, emitted — with a value pushed before the call
+    /// and emitted after it, so an unbalanced stack would show in the output.
+    fn map_then_first(rest: Vec<Op>) -> Vec<Op> {
+        let mut code = vec![
+            Op::Const { index: 1 },
+            Op::Const { index: 0 },
+            Op::Global { func: 1 },
+            Op::CallBuiltin { id: 4, argc: 2 },
+            Op::CallBuiltin { id: 2, argc: 1 },
+            Op::Emit,
+            Op::Emit,
+        ];
+        code.extend(rest);
+        code
+    }
+
+    #[test]
+    fn invokes_a_function_from_a_builtin_and_hands_its_value_back() {
+        let increment = function(
+            "<lambda>",
+            &["x"],
+            &[],
+            vec![
+                Op::Local { slot: 0 },
+                Op::Const { index: 2 },
+                Op::Add,
+                Op::Return,
+            ],
+        );
+        let entry = function(
+            "t.lem",
+            &[],
+            &[],
+            map_then_first(vec![Op::Const { index: 3 }, Op::Return]),
+        );
+        let constants = vec![
+            Value::list(vec![Value::Int(41), Value::Int(1)]),
+            Value::str("|"),
+            Value::Int(1),
+            Value::Null,
+        ];
+        let module = module(constants, vec![entry, increment]);
+        assert_eq!(render(&module, "t.lem", &[]).unwrap(), "42|");
+    }
+
+    #[test]
+    fn places_an_error_inside_an_invoked_function_at_its_own_instruction() {
+        let negate = function(
+            "<lambda>",
+            &["x"],
+            &[],
+            vec![Op::Local { slot: 0 }, Op::Neg, Op::Return],
+        );
+        let entry = function(
+            "t.lem",
+            &[],
+            &[],
+            map_then_first(vec![Op::Const { index: 2 }, Op::Return]),
+        );
+        let constants = vec![
+            Value::list(vec![Value::str("s")]),
+            Value::str("|"),
+            Value::Null,
+        ];
+        let err =
+            render(&module(constants, vec![entry, negate]), "t.lem", &[]).unwrap_err();
+        // The lambda's `Neg` is at pc 1; the entry's `CallBuiltin` is at pc 3.
+        assert_eq!(
+            (err.span.start, err.message.as_str()),
+            (10, "cannot negate a string")
+        );
+    }
+
+    #[test]
+    fn blames_the_builtins_instruction_when_its_function_cannot_be_called() {
+        let two_params = function(
+            "<lambda>",
+            &["a", "b"],
+            &[],
+            vec![Op::Local { slot: 0 }, Op::Return],
+        );
+        let entry = function(
+            "t.lem",
+            &[],
+            &[],
+            map_then_first(vec![Op::Const { index: 2 }, Op::Return]),
+        );
+        let constants = vec![
+            Value::list(vec![Value::Int(1)]),
+            Value::str("|"),
+            Value::Null,
+        ];
+        let err =
+            render(&module(constants, vec![entry, two_params]), "t.lem", &[]).unwrap_err();
+        assert_eq!(
+            (err.span.start, err.message.as_str()),
+            (30, "`<lambda>` takes 2 arguments, got 1")
+        );
+    }
+
+    #[test]
+    fn refuses_to_invoke_a_value_that_is_not_a_function() {
+        let (pc, message) = error(run(
+            vec![Value::list(vec![Value::Int(1)]), Value::Int(3)],
+            vec![k(1), k(2), Op::CallBuiltin { id: 4, argc: 2 }, Op::Emit],
+        ));
+        assert_eq!((pc, message.as_str()), (2, "cannot call a int"));
+    }
+
+    #[test]
+    fn caps_the_call_depth_through_nested_invokes() {
+        // `f` maps itself over a one-element list: every invoke pushes `f` again, and
+        // the VM re-enters its loop once per level, so this also exercises the native
+        // recursion the cap bounds.
+        let looping = function(
+            "f",
+            &["x"],
+            &[],
+            vec![
+                Op::Const { index: 0 },
+                Op::Global { func: 1 },
+                Op::CallBuiltin { id: 4, argc: 2 },
+                Op::Return,
+            ],
+        );
+        let entry = function(
+            "t.lem",
+            &[],
+            &[],
+            vec![
+                Op::Const { index: 0 },
+                Op::Global { func: 1 },
+                Op::CallBuiltin { id: 4, argc: 2 },
+                Op::Return,
+            ],
+        );
+        let constants = vec![Value::list(vec![Value::Int(1)])];
+        let err =
+            render(&module(constants, vec![entry, looping]), "t.lem", &[]).unwrap_err();
+        assert_eq!(err.message, "call depth exceeded 256 frames");
+        assert_eq!(err.span.start, 20);
     }
 
     fn record() -> Value {

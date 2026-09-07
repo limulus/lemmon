@@ -1,0 +1,2 @@
+<lem-let untyped: any = [1, 2] />
+<lem.untyped.filter(|a| a + 1).first() ?? 0>

@@ -1,0 +1,2 @@
+<lem-let untyped: any = [1, 2] />
+<lem.untyped.map(|a| a.missing).first() ?? 0>

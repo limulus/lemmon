@@ -1,0 +1,10 @@
+<lem-let words = ["a", "b"] />
+<lem-let nums = [1, 2, 3] />
+<lem.nums.map(|n| n.slugify()).first() ?? "">
+<lem.nums.filter(|n| n + 1).first() ?? 0>
+<lem.nums.map(|a, b| a).first() ?? 0>
+<lem.nums.map(|n| n + 1).first() ?? "x">
+<lem.nums.map(|n| n gt 1 ? "x" : "y").first() ?? 0>
+<lem.nums.map(|n| [n]).first() ?? 0>
+<lem.words.map(3).first() ?? "">
+<lem.nums.map(|n| n).first(1)>

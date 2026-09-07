@@ -62,6 +62,14 @@ moved it. Newest last. An entry is removed when its change has been applied.
   that a pipe operator is redundant given UFCS, say instead that it is retired: methods
   answer the chaining, and `|>` cannot be written in a head at all (invariant 3)
   (D34, ∆495).
+- **Checking, builtins and lambdas** — where the text says a builtin has a typing rule,
+  add that the rule may shape each argument from the ones before it: `xs.filter(|a| …)`
+  expects `(T): bool` and yields `[T]`; `xs.map(|a| …)` expects a function of `(T)` and
+  no return in particular, so a lambda there takes `T` as its parameter, its body is
+  inferred, and the result is a list of what it returns. A lambda's parameter is thus
+  typed from the receiver's element type without annotation, and an expected `any`
+  keeps its opt-out meaning everywhere. `map` and `filter` are the first two list
+  methods; the rest arrive with the stdlib (D34, ∆987).
 
 ## Shell & Core
 
@@ -98,6 +106,12 @@ moved it. Newest last. An entry is removed when its change has been applied.
   to derive a UTF-16 column from a byte offset. Spans in the core stay bytes (invariant 8),
   and a span is placed against the text that produced its unit — not the latest text at
   that path, which differs whenever a recompile failed (D33, ∆cE6).
+- **VM, builtins** — where the text describes `CallBuiltin` as a pure call over the
+  argument values, say a builtin runs against the VM as a host: one that takes a function
+  (`map`, `filter`) invokes it re-entrantly — the VM pushes the frame and runs its loop
+  again until that frame returns, inside the one instruction — and a failure inside the
+  invoked function is placed at its own instruction, not the builtin's. The frame cap
+  bounds the native recursion this adds (∆987).
 
 ## From Eleventy to Lemmon
 

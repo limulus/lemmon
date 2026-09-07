@@ -183,7 +183,10 @@ Records store fields in declaration order (GetField is an index). Ops sketch:
 `IterInit/IterNext`, `TypeTest`, `Emit` (type-directed) and `EmitText`, `Capture/EndCapture`
 (slot bodies and `lem-let` blocks), `Channel/EmitChannel` (dedup by hash; placeholders
 resolved at page end), `Track` (dependency recording), `Return`. Runtime errors carry spans
-via the pc→span table.
+via the pc→span table. A builtin that takes a function (`map`, `filter`) runs it through a
+re-entrant invoke inside its `CallBuiltin` step — the VM pushes the frame and runs its loop
+again until that frame returns — so an error inside the closure keeps the closure's own
+span, and the frame cap bounds the native recursion (∆987).
 
 What ∆c8h built is the untyped subset of that: `Value` without the stdlib types, maps in
 place of records with `GetField` by name, and no `TypeTest`/`Channel`/`Track` — those

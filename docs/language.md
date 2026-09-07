@@ -145,7 +145,7 @@ follows:
 | Access | `a.b`, `a?.b`, `xs[i]`, `m["key"]` | `.` asks the type on its left and nothing else: a record's field, an enum's variant when the name on its left is one (below), or — called — a builtin type's method. A map is indexed. `?.` propagates null and needs an optional on its left; `a?.b.c` needs a second `?.`, since `a?.b` is optional. An out-of-range list index or a missing map key is a render error, not null. |
 | Variants | `.hero`, `Placement.hero` | `.hero` is a variant of whichever enum is expected where it stands; where none is, qualify it. A bare `hero` is only ever a name. In a `?:` leave the space — `?.` is one token, so `c ?.hero : .left` reads as a member access. |
 | Calls | `f(x)`, `f(x, nolink: true)`, `xs.first()` | Positional then named. A bare name is a `lem-fn` or an ambient function. `x.f(…)` reads the receiver's type (D34): a builtin type's method — `heading.slugify()`, `words.first()`, `m.keys()` — or a record's field `f` called as the value it holds. Nothing consults the enclosing scope, so a project `lem-fn` is never reached through a dot: it is `rendition(photo, md, jpeg)`, not `photo.rendition(md, jpeg)`. On `any` the VM resolves the name at render time. |
-| Lambdas | `\|a\| a.date`, `\|a, b\| a.date lt b.date` | Parameter types inferred from the expected function type; with none expected they are `any` (provisional). |
+| Lambdas | `\|a\| a.date`, `\|a, b\| a.date lt b.date` | Parameter types inferred from the expected function type, or from the builtin whose argument the lambda is: `xs.map(\|a\| …)` types `a` from the element type of `xs` and infers the return from the body (D34); with none expected they are `any` (provisional). |
 | Arithmetic | `+ - * / %`, unary `-` | `+` also concatenates strings; `string + int` is a type error. |
 | Comparison/logic | `== !=`, `lt lte gt gte`, `&& \|\| !`, `a ?? b`, `c ? a : b` | Equality structural. Ordering on numbers, strings, datetimes. |
 | Membership | `x in xs` | Lists; map keys. |
@@ -363,7 +363,8 @@ hierarchies and `T?`. Diagnostics carry a primary span plus secondary spans wher
   reporting an undefined name.
 - **Where an expectation reaches.** The dotted form needs one, so it is refused where
   none arrives: printing (`<lem.…>`), a `lem-if` or `lem-match` subject, the left of
-  `==`/`in`/`??`, an unannotated `lem-let`, an argument of a builtin or of an `any`, and
+  `==`/`in`/`??`, an unannotated `lem-let`, an argument of an `any` or of a builtin
+  whose rule does not shape it (none shapes one to an enum today), and
   every element of a list or map literal that is not itself expected — the first
   included, since what the first element infers is not an expectation for the rest.
   A comparison against an `any` — an ambient value, until its host types it (∆Iau) — is
@@ -376,9 +377,15 @@ hierarchies and `T?`. Diagnostics carry a primary span plus secondary spans wher
   `string` for a map.
 - **Calls.** Arguments are checked against parameters, named ones after reordering; a
   function value's type checks positionally; a builtin has a typing rule of its own
-  (`raw` takes `string` or `html`); calling `any` checks nothing. A lambda under an
-  expected function type takes its parameter types from it and its body is checked
-  against its return; one with nothing expected has `any` parameters (provisional).
+  (`raw` takes `string` or `html`), and the rule may shape each argument from the ones
+  before it (D34): `xs.filter(|a| …)` expects `(T): bool` of its argument and yields `[T]`;
+  `xs.map(|a| …)` expects a function of `(T)` and no return in particular — a lambda
+  there takes `T` as its parameter and its body is inferred, a function value fits when
+  its parameters accept `T` — and yields a list of what that function returns. Calling
+  `any` checks nothing. A lambda under an expected function type takes its parameter
+  types from it and its body is checked against its return; one with nothing expected
+  has `any` parameters (provisional). A builtin that takes a function runs it at render
+  time, and an error inside it points at the lambda, not at the call.
   `x.f(…)` lowers `x` first and its type decides (D34): a builtin type's method `f`, or
   a record's field `f` called as its value. A name that is neither is an error naming
   the methods that receiver does carry, and the indexing a map wanted instead. Only `any`
@@ -427,8 +434,10 @@ nothing.
   promotion `<lem-import { picture, Photo, PhotoIndex } from plugin("photos") />`
   brings favourites (and types) into the flat namespace. Promotion collisions are the
   same duplicate error.
-- **Ambient:** stdlib (`slugify`, `raw`, `asset`, `url`, `rfc3339`, `rfc822`,
-  `readingTime`, `uniqueId`, …) needs no import; a `lem-fn` or `lem-let` may shadow one of its names, with a warning at
+- **Ambient:** the stdlib functions that make or vouch for a value (`raw`, `asset`,
+  `url`, `datetime`, `uniqueId`, …) need no import — an entry that works on a value is
+  that value's method instead, `heading.slugify()`, `d.rfc3339()`, and occupies no
+  namespace (D34); a `lem-fn` or `lem-let` may shadow an ambient name, with a warning at
   the definition when the name it displaces is the stdlib's — a parameter or loop
   binding of that name is not a shadow, and neither is a definition displacing a project
   function, a parameter, or an outer binding; none of those warn.

@@ -20,10 +20,10 @@ use lemmon_syntax::ast::{
 use lemmon_syntax::{Span, SyntaxKind, SyntaxToken};
 
 use super::names::{BindingKind, Resolved};
-use super::rules::{self, Arg, Rule};
+use super::rules::{self, Arg, LambdaShape, Rule};
 use super::{Compiler, TokenSpan, required};
 use crate::Value;
-use crate::builtins::BUILTINS;
+use crate::builtins::{BUILTINS, Expected};
 use crate::bytecode::Op;
 use crate::decls::Kind;
 use crate::types::{Type, join};
@@ -519,19 +519,29 @@ impl Compiler<'_> {
     }
 
     fn lambda(&mut self, lambda: &Lambda, expected: Option<&Type>) -> Type {
-        let span = lambda.span();
-        let params: Vec<SyntaxToken> = lambda
-            .params()
-            .map(|p| p.names().collect())
-            .unwrap_or_default();
         // Parameter types come from the function type expected here; with none, they
         // are `any` (§Checking). A lambda of the wrong arity is still lowered with `any`
         // parameters, so its body is checked and the names it reads count as read.
-        let shape = rules::lambda_shape(expected, params.len());
+        let shape = rules::lambda_shape(expected, lambda_params(lambda).len());
         let mismatched = shape.is_err();
-        let want = self.rule_or(span, shape, None);
+        let want = self.rule_or(lambda.span(), shape, None);
+        self.lambda_under(lambda, want, mismatched)
+    }
+
+    /// Lowers `lambda` under `want`: its parameter types, and the return its body is
+    /// checked against when the shape names one — with none the body is inferred and
+    /// its type is the lambda's return. `mismatched` says the shape was refused, so the
+    /// lambda's own type is `any`.
+    fn lambda_under(
+        &mut self,
+        lambda: &Lambda,
+        want: Option<LambdaShape>,
+        mismatched: bool,
+    ) -> Type {
+        let span = lambda.span();
+        let params = lambda_params(lambda);
         let param_tys: Rc<[Type]> = match &want {
-            Some((param_tys, _)) => param_tys.clone(),
+            Some(shape) => shape.params.clone(),
             None => Rc::from(vec![Type::Any; params.len()]),
         };
         self.push_frame();
@@ -539,8 +549,8 @@ impl Compiler<'_> {
             self.bind(param, BindingKind::Parameter, ty.clone());
         }
         let body = required(lambda.body());
-        let ret = match &want {
-            Some((_, ret)) => self.check(&body, ret),
+        let ret = match want.as_ref().and_then(|shape| shape.ret.as_ref()) {
+            Some(ret) => self.check(&body, ret),
             None => self.expr(&body),
         };
         self.emit(Op::Return, span);
@@ -746,14 +756,42 @@ impl Compiler<'_> {
             self.discard(positional, &[]);
             return Type::Any;
         }
+        // Arguments lower left to right, each under what the builtin's rule expects of
+        // it given the types so far (D34) — how `xs.map(|a| …)` types `a` from `xs`.
         let mut types = Vec::with_capacity(arity);
         types.extend(receiver);
         for arg in positional {
-            types.push(self.expr(arg));
+            let ty = match (builtin.expect)(&types) {
+                None => self.expr(arg),
+                Some(Expected::Type(want)) => self.check(arg, &want),
+                Some(Expected::Function(params)) => {
+                    self.function_argument(arg, &builtin.written(), params)
+                }
+            };
+            types.push(ty);
         }
         let argc = u16::try_from(arity).expect("fewer than 65536 arguments");
         self.emit(Op::CallBuiltin { id, argc }, span);
         self.rule(span, (BUILTINS[id as usize].ty)(&types))
+    }
+
+    /// Lowers an argument that `written` expects a function of `params` from, its return
+    /// the argument's own (D34): a lambda takes them as its parameter types and its body
+    /// is inferred; anything else is lowered and held to a function that accepts them.
+    fn function_argument(&mut self, arg: &Expr, written: &str, params: Vec<Type>) -> Type {
+        match unparen(arg.clone()) {
+            Expr::Lambda(lambda) => {
+                let shape = rules::lambda_of(written, params, lambda_params(&lambda).len());
+                let mismatched = shape.is_err();
+                let want = self.rule_or(lambda.span(), shape.map(Some), None);
+                self.lambda_under(&lambda, want, mismatched)
+            }
+            other => {
+                let actual = self.expr(&other);
+                let verdict = rules::function_of(written, &params, &actual, self.decls());
+                self.rule(arg.span(), verdict)
+            }
+        }
     }
 
     /// Lowers a call of a value already on the stack: a local, an ambient value, or any
@@ -872,6 +910,14 @@ impl Compiler<'_> {
         self.emit(Op::Call { func, argc }, span);
         self.known(export.signature.ret.clone())
     }
+}
+
+/// The parameter names a lambda declares, in order.
+fn lambda_params(lambda: &Lambda) -> Vec<SyntaxToken> {
+    lambda
+        .params()
+        .map(|p| p.names().collect())
+        .unwrap_or_default()
 }
 
 /// `expr` without the parentheses around it.

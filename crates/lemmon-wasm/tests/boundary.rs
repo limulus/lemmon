@@ -36,3 +36,23 @@ fn throws_a_js_error_for_a_caller_bug() {
     let core = Core::new();
     assert!(core.render(r#"{"path": "never-compiled.lem"}"#).is_err());
 }
+
+/// A builtin taking a function re-enters the VM natively, once per nesting level
+/// (`map` → `invoke` → the loop again). The frame cap bounds that recursion, so this is
+/// where a wasm32 stack must be shown to reach the cap before it overflows: a
+/// `lem-fn` that maps itself over a one-element list nests as deep as the VM allows.
+#[wasm_bindgen_test]
+fn reaches_the_depth_cap_through_nested_invokes_without_trapping() {
+    let mut core = Core::new();
+    let text = "<lem-fn dive(n: int): int = [n].map(dive).first() ?? 0 /><lem.dive(0)>";
+    let files = serde_json::json!([{"path": "deep.lem", "text": text}]).to_string();
+    let diagnostics = core.compile(&files).expect("a well-formed compile payload");
+    assert_eq!(diagnostics, "[]");
+    let result = core
+        .render(r#"{"path": "deep.lem"}"#)
+        .expect("a runtime failure is a diagnostic, not a throw");
+    assert!(
+        result.contains("call depth exceeded 256 frames"),
+        "{result}"
+    );
+}

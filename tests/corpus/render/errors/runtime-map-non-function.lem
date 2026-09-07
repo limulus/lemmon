@@ -1,0 +1,3 @@
+<lem-let nums = [1, 2] />
+<lem-let f: any = 3 />
+<lem.nums.map(f).first() ?? 0>

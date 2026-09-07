@@ -1,0 +1,15 @@
+<lem-fn increment(n: int): int = n + 1 />
+<lem-let words = ["Alpha Beta", "x", "Gamma"] />
+<lem-let nums = [1, 2, 3] />
+<lem-let missing: [int]? = null />
+<lem-let untyped: any = nums />
+<lem-let bump = 10 />
+<lem.words.filter(|w| w != "x").map(|w| w.slugify()).first() ?? "none">
+<lem.nums.map(increment).first() ?? 0> <lem.nums.map(|n| n + bump).first() ?? 0>
+<lem-for n in nums.filter(|n| n gt 1).map(|n| n * n)><lem.n> </lem-for>
+<lem-for row in [[1, 2], [3]].map(|xs| xs.map(|x| x + 1))><lem.row.first() ?? 0> </lem-for>
+<lem.missing?.map(|x| x)?.first() ?? 0>
+<lem.untyped.map(|a| a).first() ?? 0> <lem.untyped.filter(|a| a gt 2).first() ?? 0>
+<lem.nums.map(|n| n gt 1 ? "big" : "small").first() ?? "">
+<lem-fn apply(f: (int): any): any = f(1) />
+<lem.apply(|a| a gt 0 ? "x" : 1)>

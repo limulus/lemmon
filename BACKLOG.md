@@ -25,11 +25,6 @@ absorbs the item and the item is removed.
 Seed items for the next phase (architecture doc 3, phase 1); expect these to be split
 further at claim time.
 
-- ∆987 Higher-order builtins — a re-entrant `Vm::invoke` so a builtin can call a
-  `Value::Fn`, since `Builtin::call` is a pure `fn(&[Value])` and `Vm::call` only pushes a
-  frame, plus D34's rule hook shaping later arguments from earlier ones, proven by `map`
-  and `filter`. One unit: the hook has no consumer without a higher-order method, and no
-  higher-order method runs without the invoke
 - ∆PCK Narrowing and typed lowering — `is` and `lem-match` narrowing, a `TypeTest` op over
   record values that carry their type (`Value::Record`), record literals as map literals
   under an expected record type, enum exhaustiveness on the provisional reading. Split
@@ -47,7 +42,7 @@ further at claim time.
 - ∆Q6L Stdlib — strings/lists/maps, `datetime("…")` (compile-time checked on a literal
   argument; there is no datetime literal) + rfc3339/rfc822 formatting, `slugify`,
   `readingTime`, `url()`, `asset()`, `raw()`, `uniqueId()`, with typed signatures the
-  checker understands, since feeds/sitemap/layout ports all block on these; needs: ∆987
+  checker understands, since feeds/sitemap/layout ports all block on these
 - ∆Hbw Document mode, full rules — nested `lem-let` capture bodies as sub-documents, and
   string-literal reference resolution in prose calls (docs/language.md §Document mode
   items 2 and 6) with the resolved ids reported as compile-time facts (D25); front matter

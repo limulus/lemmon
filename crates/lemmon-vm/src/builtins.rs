@@ -7,12 +7,18 @@
 //! [`method`], which reads no namespace at all. A method's receiver is its first
 //! argument, so `s.slugify()` and a one-argument ambient function push the same stack.
 //!
+//! A builtin runs against a [`Host`] — the VM — so that one taking a function, `map` or
+//! `filter`, can invoke it and get the value back mid-instruction; and its typing rule
+//! has a companion, [`Builtin::expect`], that shapes each argument from the ones before
+//! it, which is what types `xs.map(|a| …)`'s parameter from the receiver's element type.
+//!
 //! The stdlib proper arrives with `∆Q6L` and extends this table; the entries here are
-//! the ones ∆495 needed to prove the two ways in, and `raw` — the one `string` → `html`
-//! cast (invariant 7), which stays an ambient function so the cast stays conspicuous.
+//! the ones ∆495 and ∆987 needed to prove the ways in, and `raw` — the one `string` →
+//! `html` cast (invariant 7), which stays an ambient function so the cast stays
+//! conspicuous.
 
-use crate::Value;
 use crate::types::Type;
+use crate::{RuntimeError, Value};
 
 /// A builtin type as a method's receiver: [`Type`] with its element types dropped,
 /// which is all dispatch needs — every `[T]` carries the same methods, and what `T` is
@@ -86,6 +92,53 @@ pub enum Reach {
     Method(Kind),
 }
 
+/// What a builtin may ask of the VM running it.
+pub trait Host {
+    /// Calls `callee` with `args`, runs it to completion, and hands back its value.
+    ///
+    /// # Errors
+    ///
+    /// A [`Fault::Message`] when `callee` cannot be called with `args` — not a function,
+    /// the wrong arity, the depth cap — and a [`Fault::Placed`] when the call ran and
+    /// failed inside, already pointing at the source that failed.
+    fn invoke(&mut self, callee: &Value, args: Vec<Value>) -> Result<Value, Fault>;
+}
+
+/// How a builtin fails.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Fault {
+    /// A message the VM places at the instruction that called the builtin.
+    Message(String),
+    /// An error raised inside a function the builtin invoked, placed where it happened:
+    /// a lambda body's own span must survive the builtin that ran it (invariant 8).
+    Placed(RuntimeError),
+}
+
+impl From<String> for Fault {
+    fn from(message: String) -> Self {
+        Self::Message(message)
+    }
+}
+
+impl From<&str> for Fault {
+    fn from(message: &str) -> Self {
+        Self::Message(message.to_owned())
+    }
+}
+
+/// What a builtin expects of an argument, given the ones before it.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Expected {
+    /// A value of this type.
+    Type(Type),
+    /// A function of these parameter types whose return is the argument's to decide: a
+    /// lambda takes them as its parameters and its body is inferred, and a function
+    /// value fits when its parameters accept them. `map` asks this of its one argument.
+    /// Spelling it `(T): any` instead would make an expected `any` mean "infer" here
+    /// and "opt out" everywhere else (§Checking, Literals).
+    Function(Vec<Type>),
+}
+
 /// One builtin function.
 pub struct Builtin {
     /// The name templates call it by.
@@ -94,14 +147,19 @@ pub struct Builtin {
     pub reach: Reach,
     /// How many arguments it takes, a method's receiver among them.
     pub arity: usize,
+    /// What the next argument is expected to be, given the types of those before it — a
+    /// method's receiver first. `None` lowers the argument with nothing expected. This
+    /// is what types a lambda's parameters from the receiver's element type (D34):
+    /// `xs.filter(|a| …)` expects `(T): bool` of its one argument.
+    pub expect: fn(&[Type]) -> Option<Expected>,
     /// The typing rule: the result type for the given argument types, or the compile
     /// error's message. A rule rather than a signature, because the stdlib's list
     /// functions are generic over their element type (∆Q6L). A method's rule is asked
     /// only about receivers dispatch has already matched, so it types the result and
     /// does not re-check what kind the receiver was.
     pub ty: fn(&[Type]) -> Result<Type, String>,
-    /// The implementation. An `Err` is the runtime error's message; the VM adds the span.
-    pub call: fn(&[Value]) -> Result<Value, String>,
+    /// The implementation, with the VM to invoke a function argument through.
+    pub call: fn(&mut dyn Host, &[Value]) -> Result<Value, Fault>,
 }
 
 impl Builtin {
@@ -131,6 +189,7 @@ pub const BUILTINS: &[Builtin] = &[
         name: "raw",
         reach: Reach::Ambient,
         arity: 1,
+        expect: unshaped,
         ty: raw_type,
         call: raw,
     },
@@ -138,6 +197,7 @@ pub const BUILTINS: &[Builtin] = &[
         name: "slugify",
         reach: Reach::Method(Kind::String),
         arity: 1,
+        expect: unshaped,
         ty: slugify_type,
         call: slugify,
     },
@@ -145,6 +205,7 @@ pub const BUILTINS: &[Builtin] = &[
         name: "first",
         reach: Reach::Method(Kind::List),
         arity: 1,
+        expect: unshaped,
         ty: first_type,
         call: first,
     },
@@ -152,8 +213,25 @@ pub const BUILTINS: &[Builtin] = &[
         name: "keys",
         reach: Reach::Method(Kind::Map),
         arity: 1,
+        expect: unshaped,
         ty: keys_type,
         call: keys,
+    },
+    Builtin {
+        name: "map",
+        reach: Reach::Method(Kind::List),
+        arity: 2,
+        expect: map_expect,
+        ty: map_type,
+        call: map,
+    },
+    Builtin {
+        name: "filter",
+        reach: Reach::Method(Kind::List),
+        arity: 2,
+        expect: filter_expect,
+        ty: filter_type,
+        call: filter,
     },
 ];
 
@@ -192,13 +270,18 @@ fn raw_type(args: &[Type]) -> Result<Type, String> {
     }
 }
 
+/// The [`Builtin::expect`] of an entry that shapes none of its arguments.
+fn unshaped(_so_far: &[Type]) -> Option<Expected> {
+    None
+}
+
 /// `raw(s)`: vouches for a string as trusted markup. Already-trusted markup passes
 /// through unchanged.
-fn raw(args: &[Value]) -> Result<Value, String> {
+fn raw(_host: &mut dyn Host, args: &[Value]) -> Result<Value, Fault> {
     match &args[0] {
         Value::Str(s) => Ok(Value::Html(s.clone())),
         html @ Value::Html(_) => Ok(html.clone()),
-        other => Err(format!("raw() takes a string, got {}", other.type_name())),
+        other => Err(format!("raw() takes a string, got {}", other.type_name()).into()),
     }
 }
 
@@ -214,7 +297,7 @@ fn slugify_type(_args: &[Type]) -> Result<Type, String> {
 /// slugify differently — dropping `é` would give "Café Life" and "Caf Life" one slug
 /// between them, and a page the other's URL. Folding a letter to its ASCII neighbour is
 /// not here yet (∆Q6L); `url()` percent-encodes what is left.
-fn slugify(args: &[Value]) -> Result<Value, String> {
+fn slugify(_host: &mut dyn Host, args: &[Value]) -> Result<Value, Fault> {
     let text = match &args[0] {
         Value::Str(s) => s.to_lowercase(),
         other => return Err(method_receiver("slugify", "a string", other)),
@@ -240,7 +323,7 @@ fn first_type(args: &[Type]) -> Result<Type, String> {
 
 /// `xs.first()`: the first element, or null when there is none. An empty list is not an
 /// error here, unlike an out-of-range index — that is what the optional is for.
-fn first(args: &[Value]) -> Result<Value, String> {
+fn first(_host: &mut dyn Host, args: &[Value]) -> Result<Value, Fault> {
     match &args[0] {
         Value::List(items) => Ok(items.first().cloned().unwrap_or(Value::Null)),
         other => Err(method_receiver("first", "a list", other)),
@@ -253,7 +336,7 @@ fn keys_type(_args: &[Type]) -> Result<Type, String> {
 }
 
 /// `m.keys()`: the map's keys in insertion order.
-fn keys(args: &[Value]) -> Result<Value, String> {
+fn keys(_host: &mut dyn Host, args: &[Value]) -> Result<Value, Fault> {
     match &args[0] {
         Value::Map(map) => Ok(Value::list(
             map.iter().map(|(k, _)| Value::Str(k.clone())).collect(),
@@ -262,11 +345,86 @@ fn keys(args: &[Value]) -> Result<Value, String> {
     }
 }
 
+/// The element type of the list a method was dispatched on.
+fn element_of(receiver: &Type) -> Type {
+    match receiver {
+        Type::List(element) => (**element).clone(),
+        other => unreachable!("a list method is dispatched on a list, not a `{other}`"),
+    }
+}
+
+/// `[T].map(f: (T): U): [U]` — the one argument is a function of the element type, and
+/// `U` is whatever it returns.
+fn map_expect(so_far: &[Type]) -> Option<Expected> {
+    Some(Expected::Function(vec![element_of(&so_far[0])]))
+}
+
+/// `[T].map(f)` yields a list of what `f` returns; of `any` when `f` is `any`.
+fn map_type(args: &[Type]) -> Result<Type, String> {
+    match &args[1] {
+        Type::Fn(_, ret) => Ok(Type::list((**ret).clone())),
+        Type::Any => Ok(Type::list(Type::Any)),
+        other => {
+            unreachable!("`map`'s argument was checked against a function, not `{other}`")
+        }
+    }
+}
+
+/// `xs.map(f)`: the list of `f` applied to each element, in order.
+fn map(host: &mut dyn Host, args: &[Value]) -> Result<Value, Fault> {
+    let Value::List(items) = &args[0] else {
+        return Err(method_receiver("map", "a list", &args[0]));
+    };
+    let mut out = Vec::with_capacity(items.len());
+    for item in items.iter() {
+        out.push(host.invoke(&args[1], vec![item.clone()])?);
+    }
+    Ok(Value::list(out))
+}
+
+/// `[T].filter(p: (T): bool): [T]` — the one argument is a predicate on the element type.
+fn filter_expect(so_far: &[Type]) -> Option<Expected> {
+    Some(Expected::Type(Type::function(
+        vec![element_of(&so_far[0])],
+        Type::Bool,
+    )))
+}
+
+/// `[T].filter(p)` yields the receiver's own type.
+fn filter_type(args: &[Type]) -> Result<Type, String> {
+    Ok(args[0].clone())
+}
+
+/// `xs.filter(p)`: the elements `p` answers `true` for, in order. A predicate that answers
+/// anything but a `bool` is a runtime error — one that reached here through `any`,
+/// either as the receiver or as the argument, since an `any` argument stands where
+/// `(T): bool` is expected and the checker holds every other one to it.
+fn filter(host: &mut dyn Host, args: &[Value]) -> Result<Value, Fault> {
+    let Value::List(items) = &args[0] else {
+        return Err(method_receiver("filter", "a list", &args[0]));
+    };
+    let mut out = Vec::new();
+    for item in items.iter() {
+        match host.invoke(&args[1], vec![item.clone()])? {
+            Value::Bool(true) => out.push(item.clone()),
+            Value::Bool(false) => {}
+            other => {
+                return Err(format!(
+                    "`.filter()` needs a predicate that returns a bool, got {}",
+                    other.type_name()
+                )
+                .into());
+            }
+        }
+    }
+    Ok(Value::list(out))
+}
+
 /// The runtime refusal of a method reached on the wrong receiver. Only an `any` receiver
 /// can get here — the checker matched every other one before the call was emitted — and
 /// the VM checks it again rather than trusting the value (`value.rs`, module docs).
-fn method_receiver(name: &str, wanted: &str, got: &Value) -> String {
-    format!("`.{name}()` needs {wanted}, got {}", got.type_name())
+fn method_receiver(name: &str, wanted: &str, got: &Value) -> Fault {
+    format!("`.{name}()` needs {wanted}, got {}", got.type_name()).into()
 }
 
 #[cfg(test)]
@@ -274,10 +432,53 @@ mod tests {
     use std::rc::Rc;
 
     use super::*;
-    use crate::{Closure, Map};
+    use crate::{Closure, Map, Span};
 
-    fn call(id: u32, args: &[Value]) -> Result<Value, String> {
-        (BUILTINS[id as usize].call)(args)
+    /// A host that stands in for the VM: `invoke` ignores the callee and applies a Rust
+    /// function to the one argument, so a higher-order builtin can be tested alone.
+    struct Apply(fn(&Value) -> Result<Value, Fault>);
+
+    impl Host for Apply {
+        fn invoke(&mut self, _callee: &Value, args: Vec<Value>) -> Result<Value, Fault> {
+            (self.0)(&args[0])
+        }
+    }
+
+    fn double(value: &Value) -> Result<Value, Fault> {
+        match value {
+            Value::Int(i) => Ok(Value::Int(i * 2)),
+            other => Err(format!("cannot double a {}", other.type_name()).into()),
+        }
+    }
+
+    fn is_positive(value: &Value) -> Result<Value, Fault> {
+        match value {
+            Value::Int(i) => Ok(Value::Bool(*i > 0)),
+            other => Ok(other.clone()),
+        }
+    }
+
+    fn call(id: u32, args: &[Value]) -> Result<Value, Fault> {
+        call_with(id, double, args)
+    }
+
+    fn call_with(
+        id: u32,
+        apply: fn(&Value) -> Result<Value, Fault>,
+        args: &[Value],
+    ) -> Result<Value, Fault> {
+        (BUILTINS[id as usize].call)(&mut Apply(apply), args)
+    }
+
+    fn ints(items: &[i64]) -> Value {
+        Value::list(items.iter().map(|&i| Value::Int(i)).collect())
+    }
+
+    fn func(value: Value) -> Value {
+        Value::Fn(Rc::new(Closure {
+            func: 0,
+            captures: vec![value],
+        }))
     }
 
     #[test]
@@ -292,6 +493,8 @@ mod tests {
         assert_eq!(method(Kind::String, "slugify"), Some(1));
         assert_eq!(method(Kind::List, "first"), Some(2));
         assert_eq!(method(Kind::Map, "keys"), Some(3));
+        assert_eq!(method(Kind::List, "map"), Some(4));
+        assert_eq!(method(Kind::List, "filter"), Some(5));
     }
 
     #[test]
@@ -353,12 +556,12 @@ mod tests {
 
     #[test]
     fn raw_turns_a_string_into_html_unchanged() {
-        assert_eq!(raw(&[Value::str("<b>")]).unwrap(), Value::html("<b>"));
+        assert_eq!(call(0, &[Value::str("<b>")]).unwrap(), Value::html("<b>"));
     }
 
     #[test]
     fn raw_passes_html_through() {
-        assert_eq!(raw(&[Value::html("<b>")]).unwrap(), Value::html("<b>"));
+        assert_eq!(call(0, &[Value::html("<b>")]).unwrap(), Value::html("<b>"));
     }
 
     #[test]
@@ -375,8 +578,105 @@ mod tests {
     #[test]
     fn raw_refuses_anything_else() {
         assert_eq!(
-            raw(&[Value::Int(1)]).unwrap_err(),
-            "raw() takes a string, got int"
+            call(0, &[Value::Int(1)]).unwrap_err(),
+            Fault::from("raw() takes a string, got int")
+        );
+    }
+
+    #[test]
+    fn shapes_no_argument_of_a_first_order_builtin() {
+        // Every entry with no argument past its receiver, wherever the table puts it.
+        let mut seen = 0;
+        for builtin in BUILTINS.iter().filter(|b| b.written_arity() == 0) {
+            assert_eq!((builtin.expect)(&[Type::String]), None, "{}", builtin.name);
+            seen += 1;
+        }
+        assert_eq!(seen, 3);
+    }
+
+    #[test]
+    fn map_expects_a_function_of_the_element_type_with_its_return_left_open() {
+        assert_eq!(
+            map_expect(&[Type::list(Type::Int)]),
+            Some(Expected::Function(vec![Type::Int]))
+        );
+    }
+
+    #[test]
+    fn map_is_typed_by_what_its_function_returns() {
+        let f = Type::function(vec![Type::Int], Type::String);
+        assert_eq!(
+            map_type(&[Type::list(Type::Int), f]),
+            Ok(Type::list(Type::String))
+        );
+        assert_eq!(
+            map_type(&[Type::list(Type::Int), Type::Any]),
+            Ok(Type::list(Type::Any))
+        );
+    }
+
+    #[test]
+    fn map_invokes_its_function_on_each_element_in_order() {
+        assert_eq!(
+            call(4, &[ints(&[1, 2, 3]), func(Value::Null)]).unwrap(),
+            ints(&[2, 4, 6])
+        );
+        assert_eq!(call(4, &[ints(&[]), func(Value::Null)]).unwrap(), ints(&[]));
+    }
+
+    #[test]
+    fn map_passes_a_fault_from_the_function_through_untouched() {
+        let placed = RuntimeError::new("t.lem", Span::new(3, 9), "boom");
+        fn fail(_: &Value) -> Result<Value, Fault> {
+            Err(Fault::Placed(RuntimeError::new(
+                "t.lem",
+                Span::new(3, 9),
+                "boom",
+            )))
+        }
+        assert_eq!(
+            call_with(4, fail, &[ints(&[1]), func(Value::Null)]).unwrap_err(),
+            Fault::Placed(placed)
+        );
+        assert_eq!(
+            call(4, &[Value::list(vec![Value::str("s")]), func(Value::Null)]).unwrap_err(),
+            Fault::from("cannot double a string")
+        );
+    }
+
+    #[test]
+    fn filter_expects_a_predicate_on_the_element_type() {
+        assert_eq!(
+            filter_expect(&[Type::list(Type::String)]),
+            Some(Expected::Type(Type::function(
+                vec![Type::String],
+                Type::Bool
+            )))
+        );
+    }
+
+    #[test]
+    fn filter_is_typed_as_its_receiver_whatever_the_predicate_was() {
+        let xs = Type::list(Type::Int);
+        let p = Type::function(vec![Type::Int], Type::Bool);
+        assert_eq!(filter_type(&[xs.clone(), p]), Ok(xs.clone()));
+        assert_eq!(filter_type(&[xs.clone(), Type::Any]), Ok(xs));
+    }
+
+    #[test]
+    fn filter_keeps_the_elements_its_predicate_answers_true_for() {
+        assert_eq!(
+            call_with(5, is_positive, &[ints(&[-1, 2, 0, 3]), func(Value::Null)]).unwrap(),
+            ints(&[2, 3])
+        );
+    }
+
+    #[test]
+    fn filter_refuses_a_predicate_that_answers_anything_but_a_bool() {
+        let xs = Value::list(vec![Value::str("s")]);
+        assert_eq!(
+            call_with(5, is_positive, &[xs, func(Value::Null)]).unwrap_err(),
+            Fault::from("`.filter()` needs a predicate that returns a bool, got string")
         );
     }
 
@@ -435,15 +735,23 @@ mod tests {
     fn a_method_refuses_a_receiver_only_an_any_call_could_have_handed_it() {
         assert_eq!(
             call(1, &[Value::Int(1)]).unwrap_err(),
-            "`.slugify()` needs a string, got int"
+            Fault::from("`.slugify()` needs a string, got int")
         );
         assert_eq!(
             call(2, &[Value::str("s")]).unwrap_err(),
-            "`.first()` needs a list, got string"
+            Fault::from("`.first()` needs a list, got string")
         );
         assert_eq!(
             call(3, &[Value::Bool(true)]).unwrap_err(),
-            "`.keys()` needs a map, got bool"
+            Fault::from("`.keys()` needs a map, got bool")
+        );
+        assert_eq!(
+            call(4, &[Value::Int(1), func(Value::Null)]).unwrap_err(),
+            Fault::from("`.map()` needs a list, got int")
+        );
+        assert_eq!(
+            call(5, &[Value::str("s"), func(Value::Null)]).unwrap_err(),
+            Fault::from("`.filter()` needs a list, got string")
         );
     }
 }

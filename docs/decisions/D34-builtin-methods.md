@@ -1,7 +1,8 @@
 # D34 — Builtin methods
 
 - **Status:** Accepted 2026-09-07 (∆495); dispatch and UFCS's removal implemented
-  2026-09-07 (∆495), the argument-shaping rule and higher-order methods pending (∆987)
+  2026-09-07 (∆495), the argument-shaping rule and higher-order methods (`map`, `filter`,
+  over a re-entrant invoke) 2026-09-07 (∆987)
 - **Backlog item:** ∆495, ∆987
 - **Normative text:** `docs/language.md` § Expressions (Access, Calls), § Names &
   namespaces (Ambient), § Checking (Calls, Fields)
@@ -60,8 +61,8 @@ holds only the functions above.
 rather than a signature, for exactly this reason; it gains a companion that says what the
 *n*th argument is expected to be given the types already in hand, and arguments lower left
 to right. That is what makes `xs.map(|a| a.date)` take the lambda's parameter from the
-receiver's element type. It needs one more thing nothing has today: a builtin cannot
-call a `Value::Fn`, so a re-entrant invoke arrives with it (∆987).
+receiver's element type. It needed one more thing nothing had when this was decided: a
+builtin could not call a `Value::Fn`, so a re-entrant invoke arrived with it (∆987).
 
 **Through `?.` a method call propagates null**, as a field read does: `xs?.filter(…)` is
 optional in whatever `filter` returns.
@@ -107,8 +108,9 @@ answers — the `any` path, not a second checker.
   Through `?.` the call must be jumped around when the receiver is null, which
   `CallBuiltin` cannot do. On `any` there is no compile-time id at all, so the call is a
   dynamic op that resolves the name against the runtime value. And a higher-order method
-  needs the VM to run a closure and hand back its result, which `Builtin::call` — a pure
-  `fn(&[Value])` — and `Vm::call` — which only pushes a frame — cannot do between them.
+  needs the VM to run a closure and hand back its result, which `Builtin::call` — then a
+  pure `fn(&[Value])` — and `Vm::call` — which only pushes a frame — could not do between
+  them; ∆987 gave a builtin the VM as a host to invoke through.
 - **No grammar change.** `xs.filter(…)` already parses as a member expression called, so
   tree-sitter (∆5MM) and the `.cst`/`.tags` projections are untouched. The corpus's UFCS
   call sites become plain calls, and `<lem-fn slug(s: string): string = s.slugify() />`
