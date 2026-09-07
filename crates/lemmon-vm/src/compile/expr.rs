@@ -578,50 +578,23 @@ impl Compiler<'_> {
         let positional: Vec<Expr> = args.iter().flat_map(ArgList::positional).collect();
         let named: Vec<NamedArg> = args.iter().flat_map(ArgList::named).collect();
 
-        // `x.f(y)` is `f(x, y)` when `x`'s type has no field `f` and `f` names a
-        // function (UFCS); a field `f` is called as the value it holds. "Names a
-        // function" means "resolves to one here" — a local `f` shadows it, as a local
-        // shadows anything. The receiver is lowered before the choice is made: it is
-        // the first value pushed on either path, and its type is what decides.
-        let (resolved, name, receiver) = match &callee {
+        // `.` asks the receiver's type and nothing else (D34): `x.f(…)` calls a builtin
+        // type's method `f`, or a record's field `f` as the value it holds. What the
+        // enclosing scope names `f` never enters into it.
+        let (resolved, name) = match &callee {
             // A qualified variant is not a receiver: the enum claims `Name.x` before
-            // `x` is looked up as a function (∆EN6), so `Placement.hero(…)` falls
-            // through to the plain-callee arm below, which lowers it as the variant it
-            // is and reports the call of a `Placement`.
+            // anything else (∆EN6), so `Placement.hero(…)` falls through to the last arm
+            // below, which lowers it as the variant it is and reports the call of a
+            // `Placement`.
             Expr::Member(member)
-                if !member.is_optional()
-                    && self.enum_object(&required(member.object())).is_none() =>
+                if self.enum_object(&required(member.object())).is_none() =>
             {
-                let name = required(member.name());
-                let object = required(member.object());
-                let function = self.names.peek_callable(name.text());
-                let want =
-                    self.receiver_expectation(&object, function.as_ref(), name.text());
-                let object_ty = match want {
-                    Some(want) => self.check(&object, &want),
-                    None => self.expr(&object),
-                };
-                let field = rules::field_of(&object_ty, name.text(), self.decls());
-                match (field, function) {
-                    (None, Some(resolved)) => {
-                        (Some(resolved), Some(name), Some((object_ty, object.span())))
-                    }
-                    (field, _) => {
-                        return self.call_field(
-                            field,
-                            &object_ty,
-                            member,
-                            &positional,
-                            &named,
-                            span,
-                        );
-                    }
-                }
+                return self.call_member(member, &positional, &named, span);
             }
             Expr::Name(name) => {
                 let name = required(name.name());
                 match self.resolve(name.text()) {
-                    Some(resolved) => (Some(resolved), Some(name), None),
+                    Some(resolved) => (Some(resolved), Some(name)),
                     None => {
                         self.error(name.span(), self.undefined(name.text()));
                         self.discard(&positional, &named);
@@ -629,36 +602,21 @@ impl Compiler<'_> {
                     }
                 }
             }
-            _ => (None, None, None),
+            _ => (None, None),
         };
 
         match resolved {
             Some(Resolved::Function) => {
                 let name = name.expect("a project function has a name");
-                self.call_function(name.text(), receiver, &positional, &named, span)
+                self.call_function(name.text(), &positional, &named, span)
             }
             Some(Resolved::Builtin(id)) => {
                 let name = name.expect("a builtin has a name");
-                let builtin = &BUILTINS[id as usize];
-                let arity = positional.len() + usize::from(receiver.is_some());
-                // One mistake, one diagnostic: a named argument is the argument that
-                // is then missing, so only the first rule broken is reported.
-                let refused = self.reject_named(&named, &name)
-                    || self.require(span, rules::builtin(builtin, arity));
-                if refused {
+                if self.reject_named(&named, &name) {
                     self.discard(&positional, &named);
                     return Type::Any;
                 }
-                let mut types = Vec::with_capacity(arity);
-                if let Some((receiver_ty, _)) = &receiver {
-                    types.push(receiver_ty.clone());
-                }
-                for arg in &positional {
-                    types.push(self.expr(arg));
-                }
-                let argc = u16::try_from(arity).expect("fewer than 65536 arguments");
-                self.emit(Op::CallBuiltin { id, argc }, span);
-                self.rule(span, (builtin.ty)(&types))
+                self.call_builtin(id, None, &positional, span)
             }
             Some(Resolved::Local { .. } | Resolved::Ambient) => {
                 let name = name.expect("a resolved name");
@@ -685,61 +643,117 @@ impl Compiler<'_> {
         }
     }
 
-    /// What a UFCS receiver is lowered expecting, when the expectation can shape it:
-    /// the first parameter of the project function `f` names, for a receiver that could
-    /// never be a record with a field `f` of its own — a list or map literal, a lambda,
-    /// or a dotted variant, which resolves against that parameter. Any other receiver is
-    /// lowered plain, and its type decides between the field and the function.
-    fn receiver_expectation(
-        &self,
-        object: &Expr,
-        function: Option<&Resolved>,
-        fn_name: &str,
-    ) -> Option<Type> {
-        if !matches!(function, Some(Resolved::Function)) {
-            return None;
-        }
-        let param = self.export(fn_name).signature.params.first()?;
-        let want = self.known(param.ty.clone());
-        match unparen(object.clone()) {
-            Expr::List(_) | Expr::Map(_) | Expr::Lambda(_) | Expr::Variant(_) => Some(want),
-            _ => None,
-        }
-    }
-
-    /// Lowers `object.name(…)` as a call of the field `name` — a record's, typed by its
-    /// declaration, or whatever the member rule grants of any other object, whose value
-    /// is already on the stack.
-    fn call_field(
+    /// Lowers `object.name(…)`, the one call form that reads the dot (D34). The receiver
+    /// is lowered first and its type decides everything after: a builtin type's method,
+    /// a record's field called as the value it holds, or — on `any` — a name the VM
+    /// resolves against the value it finds there.
+    ///
+    /// Through `?.` the receiver stays on the stack and the whole call is jumped around
+    /// when it is null, so neither the field nor the method is reached and the result is
+    /// the call's made optional.
+    fn call_member(
         &mut self,
-        field: Option<Type>,
-        object_ty: &Type,
         member: &MemberExpr,
         positional: &[Expr],
         named: &[NamedArg],
         span: Span,
     ) -> Type {
+        let object = required(member.object());
         let name = required(member.name());
         let member_span = member.span();
-        let ty = match field {
-            Some(ty) => ty,
-            None => self.rule(
-                member_span,
-                rules::member(object_ty, name.text(), false, self.decls()),
-            ),
+        let optional = member.is_optional();
+        let object_ty = self.expr(&object);
+        let verdict =
+            rules::callable_member(&object_ty, name.text(), optional, self.decls());
+        let callable = match verdict {
+            Ok(callable) => callable,
+            Err(message) => {
+                self.error(member_span, message);
+                self.discard(positional, named);
+                return Type::Any;
+            }
         };
-        let ty = self.known(ty);
-        let index = self.intern(name.text());
-        self.emit(Op::GetField { name: index }, member_span);
         if let Some(first) = named.first() {
-            self.error(
-                first.span(),
-                "named arguments need a callee that is a `lem-fn` by name",
-            );
+            // A method is a builtin, and no builtin names its parameters — saying so
+            // beats sending the author to look for a `lem-fn` that could not help.
+            let message = match &callable {
+                rules::Callable::Method(_) => {
+                    format!("`.{}()` does not take named arguments", name.text())
+                }
+                _ => "named arguments need a callee that is a `lem-fn` by name".to_owned(),
+            };
+            self.error(first.span(), message);
             self.discard(positional, named);
             return Type::Any;
         }
-        self.call_value(&ty, positional, span, Some(name.text()))
+        let skip = optional.then(|| self.skip_when_null(member_span));
+        // What carries the method or the field is the receiver's own type, which is what
+        // `?.` has an optional around.
+        let receiver = object_ty.strip_optional().clone();
+        let ty = match callable {
+            rules::Callable::Method(id) => {
+                self.call_builtin(id, Some(receiver), positional, span)
+            }
+            rules::Callable::Field(field) => {
+                let index = self.intern(name.text());
+                self.emit(Op::GetField { name: index }, member_span);
+                let field = self.known(field);
+                self.call_value(&field, positional, span, Some(name.text()))
+            }
+            rules::Callable::Dynamic => {
+                for arg in positional {
+                    self.expr(arg);
+                }
+                let index = self.intern(name.text());
+                let argc =
+                    u16::try_from(positional.len()).expect("fewer than 65536 arguments");
+                self.emit(Op::CallDynamic { name: index, argc }, span);
+                Type::Any
+            }
+        };
+        match skip {
+            Some(end) => {
+                self.patch(end);
+                Type::optional(ty)
+            }
+            None => ty,
+        }
+    }
+
+    /// Emits the jump that leaves a null receiver where it stands and steps over the
+    /// call about to be emitted; returns the jump to patch once that call is in.
+    fn skip_when_null(&mut self, span: Span) -> usize {
+        let call = self.emit_jump(Op::JumpUnlessNull { to: 0 }, span);
+        let index = self.constant(Value::Null);
+        self.emit(Op::Const { index }, span);
+        let end = self.emit_jump(Op::Jump { to: 0 }, span);
+        self.patch(call);
+        end
+    }
+
+    /// Lowers a call of `BUILTINS[id]`, reached by its bare name or — with `receiver` —
+    /// as a method, whose value is already the first on the stack.
+    fn call_builtin(
+        &mut self,
+        id: u32,
+        receiver: Option<Type>,
+        positional: &[Expr],
+        span: Span,
+    ) -> Type {
+        let builtin = &BUILTINS[id as usize];
+        let arity = positional.len() + usize::from(receiver.is_some());
+        if self.require(span, rules::builtin(builtin, arity)) {
+            self.discard(positional, &[]);
+            return Type::Any;
+        }
+        let mut types = Vec::with_capacity(arity);
+        types.extend(receiver);
+        for arg in positional {
+            types.push(self.expr(arg));
+        }
+        let argc = u16::try_from(arity).expect("fewer than 65536 arguments");
+        self.emit(Op::CallBuiltin { id, argc }, span);
+        self.rule(span, (BUILTINS[id as usize].ty)(&types))
     }
 
     /// Lowers a call of a value already on the stack: a local, an ambient value, or any
@@ -810,34 +824,29 @@ impl Compiler<'_> {
 
     /// Lowers a call to a project function, reordering named arguments into parameter
     /// order at compile time so the VM only ever sees positional calls, and checking
-    /// each against its parameter's type. A UFCS `receiver` is already lowered — its
-    /// value is the first pushed, which is where the first parameter's argument goes —
-    /// and is checked by its type where it stands.
+    /// each against its parameter's type.
     fn call_function(
         &mut self,
         fn_name: &str,
-        receiver: Option<(Type, Span)>,
         positional: &[Expr],
         named: &[NamedArg],
         span: Span,
     ) -> Type {
         let export = self.export(fn_name);
-        let given: Vec<Given<'_>> = receiver
-            .as_ref()
-            .map(|(ty, span)| Given::Lowered(ty, *span))
-            .into_iter()
-            .chain(positional.iter().map(Given::Expr))
-            .collect();
         let names: Vec<SyntaxToken> =
             named.iter().map(|arg| required(arg.name())).collect();
         let name_texts: Vec<&str> = names.iter().map(SyntaxToken::text).collect();
-        let order =
-            rules::arguments(fn_name, &export.signature.params, given.len(), &name_texts);
+        let order = rules::arguments(
+            fn_name,
+            &export.signature.params,
+            positional.len(),
+            &name_texts,
+        );
         let order = match order {
             Ok(order) => order,
             Err((blame, message)) => {
                 let at = match blame {
-                    Some(Arg::Positional(i)) => given[i].span(),
+                    Some(Arg::Positional(i)) => positional[i].span(),
                     Some(Arg::Named(n)) => names[n].span(),
                     None => span,
                 };
@@ -849,15 +858,9 @@ impl Compiler<'_> {
         for (param, arg) in export.signature.params.iter().zip(order) {
             let param_ty = self.known(param.ty.clone());
             match arg {
-                Arg::Positional(i) => match given[i] {
-                    Given::Expr(expr) => {
-                        self.check(expr, &param_ty);
-                    }
-                    Given::Lowered(ty, at) => {
-                        let verdict = rules::expected(ty.clone(), &param_ty, self.decls());
-                        self.rule_or(at, verdict, param_ty);
-                    }
-                },
+                Arg::Positional(i) => {
+                    self.check(&positional[i], &param_ty);
+                }
                 Arg::Named(n) => {
                     self.check(&required(named[n].value()), &param_ty);
                 }
@@ -868,22 +871,6 @@ impl Compiler<'_> {
         let func = self.func_operand(export, span);
         self.emit(Op::Call { func, argc }, span);
         self.known(export.signature.ret.clone())
-    }
-}
-
-/// A positional argument as a call gives it: still to lower, or — a UFCS receiver —
-/// lowered already, with its type and where it stands.
-enum Given<'a> {
-    Expr(&'a Expr),
-    Lowered(&'a Type, Span),
-}
-
-impl Given<'_> {
-    fn span(&self) -> Span {
-        match self {
-            Self::Expr(expr) => expr.span(),
-            Self::Lowered(_, span) => *span,
-        }
     }
 }
 

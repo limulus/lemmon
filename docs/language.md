@@ -142,9 +142,9 @@ follows:
 | Category | Syntax | Notes |
 |---|---|---|
 | Literals | `"text"`, `"Link: {linkTitle}"`, `42`, `1.5`, `true`, `null`, `[a, b]`, `{k: v}` | String interpolation `{…}` (`{{` for a literal brace — delimiter is a deferred question); until it is settled, an interpolated expression may not itself contain a string literal. No datetime literal: a fixed date is `datetime("2024-11-24")` (stdlib, validated at compile time when the argument is a literal). |
-| Access | `a.b`, `a?.b`, `xs[i]`, `m["key"]` | `.` reads a record's field, or an enum's variant when the name on its left is one (below); a map is indexed. `?.` propagates null and needs an optional on its left; `a?.b.c` needs a second `?.`, since `a?.b` is optional. An out-of-range list index or a missing map key is a render error, not null. |
+| Access | `a.b`, `a?.b`, `xs[i]`, `m["key"]` | `.` asks the type on its left and nothing else: a record's field, an enum's variant when the name on its left is one (below), or — called — a builtin type's method. A map is indexed. `?.` propagates null and needs an optional on its left; `a?.b.c` needs a second `?.`, since `a?.b` is optional. An out-of-range list index or a missing map key is a render error, not null. |
 | Variants | `.hero`, `Placement.hero` | `.hero` is a variant of whichever enum is expected where it stands; where none is, qualify it. A bare `hero` is only ever a name. In a `?:` leave the space — `?.` is one token, so `c ?.hero : .left` reads as a member access. |
-| Calls | `f(x)`, `f(x, nolink: true)` | Positional then named. UFCS: `x.f(y)` resolves to `f(x, y)` when `x`'s type has no field `f` and `f` names a function — so `photo.rendition(md, jpeg)` reads naturally. A record field `f` is called as the value it holds; a non-record receiver (`any` included) has no fields, so `f` is the function. |
+| Calls | `f(x)`, `f(x, nolink: true)`, `xs.first()` | Positional then named. A bare name is a `lem-fn` or an ambient function. `x.f(…)` reads the receiver's type (D34): a builtin type's method — `heading.slugify()`, `words.first()`, `m.keys()` — or a record's field `f` called as the value it holds. Nothing consults the enclosing scope, so a project `lem-fn` is never reached through a dot: it is `rendition(photo, md, jpeg)`, not `photo.rendition(md, jpeg)`. On `any` the VM resolves the name at render time. |
 | Lambdas | `\|a\| a.date`, `\|a, b\| a.date lt b.date` | Parameter types inferred from the expected function type; with none expected they are `any` (provisional). |
 | Arithmetic | `+ - * / %`, unary `-` | `+` also concatenates strings; `string + int` is a type error. |
 | Comparison/logic | `== !=`, `lt lte gt gte`, `&& \|\| !`, `a ?? b`, `c ? a : b` | Equality structural. Ordering on numbers, strings, datetimes. |
@@ -347,8 +347,10 @@ hierarchies and `T?`. Diagnostics carry a primary span plus secondary spans wher
   `asset`, an enum, and `any`. A `bool`, `null`, a list, a map, a record, a function, or
   an optional is a compile error: narrow the optional, or give it a default with `??`.
 - **Fields.** `.` on a record reads a field its declaration or an ancestor's declares,
-  with that field's type; on `any`, `any`. A map has no fields (index it), and neither
-  has an enum. `?.` reads through an optional record and yields an optional.
+  with that field's type; on `any`, `any`. A method is not a field: reading one without
+  calling it is an error naming the call form, since a method is called and never read.
+  A map has no fields (index it), and neither has an enum. `?.` reads through an optional
+  record and yields an optional.
 - **Variants.** `.hero` is a variant of the enum expected where it stands, and of
   nothing else; where no enum is expected it is an error naming the qualified spelling
   that would work instead. Beside an enum the right operand of `==`/`!=` is lowered
@@ -377,11 +379,16 @@ hierarchies and `T?`. Diagnostics carry a primary span plus secondary spans wher
   (`raw` takes `string` or `html`); calling `any` checks nothing. A lambda under an
   expected function type takes its parameter types from it and its body is checked
   against its return; one with nothing expected has `any` parameters (provisional).
-  `x.f(…)` lowers `x` first, then decides: a record field `f` is called as its value,
-  anything else is UFCS (§Expressions). A receiver that could never have a field — a
-  list, map, or lambda literal, or a dotted variant — is lowered expecting `f`'s first
-  parameter, as an argument would be. A qualified variant is not a receiver at all:
-  `Placement.hero(…)` is a call of the variant, and calling an enum is an error.
+  `x.f(…)` lowers `x` first and its type decides (D34): a builtin type's method `f`, or
+  a record's field `f` called as its value. A name that is neither is an error naming
+  the methods that receiver does carry, and the indexing a map wanted instead. Only `any`
+  defers the question to the VM, which tries the field and then the method for the value
+  it finds, and errors with the span if neither answers; a receiver known to be null is
+  refused where it stands, as reading its field is. A method's receiver is its first argument, so an arity message counts
+  as the author wrote it — `xs.first(1)` gives one argument to something that takes none.
+  Through `?.` the call is jumped over entirely when the receiver is null, and its result
+  is optional. A qualified variant is not a receiver at all: `Placement.hero(…)` is a
+  call of the variant, and calling an enum is an error.
 - **Declarations.** A type declared twice, in one file or two, is the duplicate error
   functions get; a declaration may not take a builtin type's name; a field or a variant
   repeated within one declaration is an error at the repeat. An `extends` that names an
@@ -407,7 +414,9 @@ One value namespace, resolved lexically: **locals/params** (innermost wins) →
 share a name, and the type namespace is project-flat with the same duplicate rule as
 the value one. `Name.x` is the one place the type namespace is consulted first: when
 `Name` is a declared enum it is a variant, whatever the value namespace holds. Builtin
-`lem-*` tags occupy no namespace.
+`lem-*` tags occupy no namespace, and neither do the method names a builtin type carries
+(D34): they belong to the type, so a `lem-fn first` collides with nothing and warns about
+nothing.
 
 - **Project-flat:** every `.lem` file in the site shares one namespace; no imports
   between site files. Duplicate definitions are compile errors citing both spans.
@@ -596,7 +605,6 @@ provisional reading in this file and flag it in the PR:
 
 - string interpolation delimiter (`{expr}` vs `${expr}`)
 - `int`/`float` vs a single `number`
-- a pipe operator (`|>`) — possibly redundant given UFCS
 - closed-union syntax and `lem-match` exhaustiveness rules (variant spelling is settled: D32)
 - `==`/`&&` vs `eq`/`and` spelling (consistency with `lt`/`gt`)
 - inline lem tags in prose (reserved for v2; design must remain compatible)

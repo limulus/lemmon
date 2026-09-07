@@ -1,0 +1,9 @@
+<lem-let heading = "Hello, World!" />
+<lem-let words = ["Alpha Beta", "gamma"] />
+<lem-let m = {b: 1, a: 2} />
+<lem-let missing: string? = null />
+<lem.heading.slugify()>
+<lem.words.first() ?? "none"> <lem.m.keys().first() ?? "none">
+<lem.words.first()?.slugify() ?? "none">
+<lem.missing?.slugify() ?? "none">
+<lem.page.title.slugify()>

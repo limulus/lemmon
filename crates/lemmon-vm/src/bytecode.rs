@@ -59,6 +59,10 @@ ops! {
     CallValue { argc: u16 },
     /// Pop `argc` arguments; call the builtin; push its result.
     CallBuiltin { id: u32, argc: u16 },
+    /// Pop `argc` arguments then the receiver under them; call what the receiver's
+    /// field named by `constants[name]` holds, or that name's method for the receiver's
+    /// runtime type. What `x.f(…)` compiles to when `x` is `any` (D34).
+    CallDynamic { name: u32, argc: u16 },
     /// Pop `captures` values; push a closure over `functions[func]`.
     MakeClosure { func: u32, captures: u16 },
     /// Pop `len` values; push them as a list.
@@ -171,7 +175,7 @@ mod tests {
         assert_eq!(Op::Emit.name(), "Emit");
         assert_eq!(Op::Const { index: 3 }.name(), "Const");
         assert!(Op::NAMES.contains(&"IterNext"));
-        assert_eq!(Op::NAMES.len(), 40);
+        assert_eq!(Op::NAMES.len(), 41);
     }
 
     #[test]

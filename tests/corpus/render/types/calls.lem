@@ -12,7 +12,7 @@
 <lem-let triple: (int): int = |v| v * 3 />
 <lem.inc(2)> <lem.untyped(1, "b")> <lem.plusOne(5)> <lem.triple(2)>
 <lem.chip("tag", 3)><lem.chip("bare", null)>
-<lem.3.double()> <lem."you".greet(loudly: false)>
+<lem.double(3)> <lem.greet("you", loudly: false)>
 <lem-let p: any = page />
-<lem.p.title.greet(false)>
+<lem.greet(p.title, false)>
 <lem.raw("<i>x</i>")> <lem.raw(raw("<i>y</i>"))> <lem.raw(p.title)>

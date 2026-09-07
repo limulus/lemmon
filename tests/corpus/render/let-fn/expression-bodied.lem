@@ -4,6 +4,6 @@
 <lem-let article = {title: "The Rebound", draft: null} />
 <lem.double(21)>
 <lem.describe(article, suffix: "!")>
-<lem.article.describe(" (UFCS)")>
-<lem.21.double().double()>
-<lem.article.isDraft() ? "draft" : "published">
+<lem.describe(article, " (plain)")>
+<lem.double(double(21))>
+<lem.isDraft(article) ? "draft" : "published">

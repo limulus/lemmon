@@ -20,7 +20,7 @@ use std::rc::Rc;
 
 use lemmon_syntax::ast::{BinaryOp, UnaryOp};
 
-use crate::builtins::Builtin;
+use crate::builtins::{self, Builtin};
 use crate::decls::{Decls, Kind};
 use crate::types::{Type, assignable, join};
 use crate::unit::Param;
@@ -174,8 +174,17 @@ pub(super) fn member(object: &Type, name: &str, optional: bool, decls: &dyn Decl
     }
 }
 
-/// The type of the field `name` of a value of type `ty`, or why it has none.
+/// The type of the field `name` of a value of type `ty`, or why it has none. A builtin
+/// type's method is named here too: it is not a field, and reading one without calling
+/// it is the mistake worth naming, since a method is called and never read (D34).
 fn field(ty: &Type, name: &str, decls: &dyn Decls) -> Rule {
+    if let Some(kind) = builtins::Kind::of(ty)
+        && builtins::method(kind, name).is_some()
+    {
+        return Err(format!(
+            "`{name}` is a method of `{ty}`: call it as `.{name}()`"
+        ));
+    }
     match ty {
         Type::Any => Ok(Type::Any),
         Type::Map(_) => Err(format!(
@@ -193,16 +202,70 @@ fn field(ty: &Type, name: &str, decls: &dyn Decls) -> Rule {
     }
 }
 
-/// The type of the field `name` of a value of type `ty`, when `ty` is a record that
-/// declares one — what decides whether `x.f(…)` calls the field or the function `f`
-/// (UFCS, `docs/language.md` §Expressions).
-pub(super) fn field_of(ty: &Type, name: &str, decls: &dyn Decls) -> Option<Type> {
-    match ty {
-        Type::Named(record) if decls.kind(record) == Some(Kind::Record) => {
-            decls.field(record, name)
-        }
-        _ => None,
+/// What `object.name(…)` calls (or `object?.name(…)` when `optional`), given the
+/// receiver's type: the method `name` of that builtin type, or the field of that name
+/// called as the value it holds (D34). `.` asks the receiver and nothing else, so a
+/// name that is neither is refused here — naming the methods the receiver does carry,
+/// when it carries any. `?.` wants an optional and reads through it, as it does for a
+/// field; the walk is what jumps the call when the receiver turns out to be null. A
+/// receiver known to be null is refused exactly as reading its field is — `null` is not
+/// `any`, and a call is no reason to hold a knowable mistake back to render time.
+pub(super) fn callable_member(
+    object: &Type,
+    name: &str,
+    optional: bool,
+    decls: &dyn Decls,
+) -> Rule<Callable> {
+    match (object, optional) {
+        (Type::Any, _) => Ok(Callable::Dynamic),
+        (Type::Null, true) => Ok(Callable::Dynamic),
+        (Type::Optional(inner), true) => callable(inner, name, decls),
+        (Type::Optional(_), false) => Err(may_be_null(object, ", or use `?.`")),
+        (other, true) => Err(format!("`?.` needs an optional, got `{other}`")),
+        (other, false) => callable(other, name, decls),
     }
+}
+
+/// [`callable_member`] with the optionality settled: what a receiver of exactly this
+/// type carries under `name`.
+fn callable(ty: &Type, name: &str, decls: &dyn Decls) -> Rule<Callable> {
+    match builtins::Kind::of(ty) {
+        Some(kind) => match builtins::method(kind, name) {
+            Some(id) => Ok(Callable::Method(id)),
+            None => Err(no_method(ty, kind, name)),
+        },
+        None => field(ty, name, decls).map(Callable::Field),
+    }
+}
+
+/// What `object.name(…)` resolved to.
+#[derive(Debug, PartialEq)]
+pub(super) enum Callable {
+    /// `BUILTINS[id]`, whose first argument is the receiver.
+    Method(u32),
+    /// A field holding the function, of this type.
+    Field(Type),
+    /// Nothing decidable: the receiver is `any`, or a `null` the `?.` jump steps over
+    /// before the call is reached, so the VM resolves the name against the value it
+    /// finds (D34).
+    Dynamic,
+}
+
+/// "a `[int]` has no method `frobnicate`", plus what it does have — and, for a map,
+/// the indexing its field read would have suggested, since `m.foo()` for `m["foo"]` is
+/// the mistake a map receiver invites.
+fn no_method(ty: &Type, kind: builtins::Kind, name: &str) -> String {
+    let mut out = format!("a `{ty}` has no method `{name}`");
+    let mut have: Vec<&str> = builtins::methods_of(kind).collect();
+    have.sort_unstable();
+    if !have.is_empty() {
+        let list: Vec<String> = have.iter().map(|m| format!("`.{m}()`")).collect();
+        out.push_str(&format!("; it has {}", list.join(", ")));
+    }
+    if matches!(ty, Type::Map(_)) {
+        out.push_str(&format!("; an entry is `[\"{name}\"]`"));
+    }
+    out
 }
 
 /// The enum `expected` asks for, if it asks for one: a `T?` wanted is a `T` written,
@@ -354,12 +417,15 @@ fn arity(what: &str, wanted: usize, got: usize) -> String {
     format!("{what} takes {}, got {got}", count(wanted, "argument"))
 }
 
-/// Whether `argc` arguments are what a builtin takes.
+/// Whether `argc` arguments are what a builtin takes, the receiver of a method among
+/// them. The message counts as the author wrote it: a receiver stands left of the dot,
+/// so `xs.first(1)` is one argument given to something that takes none.
 pub(super) fn builtin(builtin: &Builtin, argc: usize) -> Rule<()> {
     if argc == builtin.arity {
         Ok(())
     } else {
-        Err(arity(&format!("`{}`", builtin.name), builtin.arity, argc))
+        let written = argc - (builtin.arity - builtin.written_arity());
+        Err(arity(&builtin.written(), builtin.written_arity(), written))
     }
 }
 
@@ -407,7 +473,7 @@ pub(super) fn callee(
 /// An argument of a call, as given.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Arg {
-    /// The `n`th positional argument (a UFCS receiver is the first).
+    /// The `n`th positional argument.
     Positional(usize),
     /// The `n`th named argument.
     Named(usize),
@@ -468,6 +534,7 @@ pub(super) fn arguments(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::builtins::BUILTINS;
     use crate::decls::tests::{Table, enumeration, record};
 
     fn named(name: &str) -> Type {
@@ -731,14 +798,89 @@ mod tests {
             member(&named("Placement"), "hero", false, &table),
             Err("a `Placement` is an enum and has no fields".to_owned())
         );
+    }
+
+    #[test]
+    fn names_a_method_read_without_its_call_rather_than_calling_it_no_field() {
         assert_eq!(
-            field_of(&named("Article"), "layout", &table),
-            Some(Type::function(vec![], Type::Html))
+            member(&Type::String, "slugify", false, &()),
+            Err("`slugify` is a method of `string`: call it as `.slugify()`".to_owned())
         );
-        assert_eq!(field_of(&named("Article"), "nope", &table), None);
-        assert_eq!(field_of(&opt(named("Article")), "title", &table), None);
-        assert_eq!(field_of(&named("Placement"), "hero", &table), None);
-        assert_eq!(field_of(&Type::Any, "title", &table), None);
+        assert_eq!(
+            member(&Type::list(Type::Int), "first", false, &()),
+            Err("`first` is a method of `[int]`: call it as `.first()`".to_owned())
+        );
+    }
+
+    #[test]
+    fn calls_a_builtin_types_method_and_a_records_field() {
+        let table = table();
+        assert_eq!(
+            callable_member(&Type::String, "slugify", false, &()),
+            Ok(Callable::Method(1))
+        );
+        assert_eq!(
+            callable_member(&Type::list(Type::Int), "first", false, &()),
+            Ok(Callable::Method(2))
+        );
+        assert_eq!(
+            callable_member(&Type::map(Type::Int), "keys", false, &()),
+            Ok(Callable::Method(3))
+        );
+        assert_eq!(
+            callable_member(&named("Article"), "layout", false, &table),
+            Ok(Callable::Field(Type::function(vec![], Type::Html)))
+        );
+    }
+
+    #[test]
+    fn leaves_a_call_on_any_to_the_vm_and_reads_through_an_optional_receiver() {
+        assert_eq!(
+            callable_member(&Type::Any, "whatever", false, &()),
+            Ok(Callable::Dynamic)
+        );
+        assert_eq!(
+            callable_member(&Type::Null, "whatever", true, &()),
+            Ok(Callable::Dynamic)
+        );
+        assert_eq!(
+            callable_member(&Type::optional(Type::String), "slugify", true, &()),
+            Ok(Callable::Method(1))
+        );
+        assert_eq!(
+            callable_member(&Type::optional(Type::String), "slugify", false, &()),
+            Err("a `string?` may be null: narrow it with `lem-if`, or use `?.`".to_owned())
+        );
+        assert_eq!(
+            callable_member(&Type::String, "slugify", true, &()),
+            Err("`?.` needs an optional, got `string`".to_owned())
+        );
+    }
+
+    #[test]
+    fn refuses_a_method_a_builtin_type_has_not_got_and_lists_the_ones_it_has() {
+        assert_eq!(
+            callable_member(&Type::String, "nope", false, &()),
+            Err("a `string` has no method `nope`; it has `.slugify()`".to_owned())
+        );
+        assert_eq!(
+            callable_member(&Type::Int, "nope", false, &()),
+            Err("a `int` has no method `nope`".to_owned())
+        );
+    }
+
+    #[test]
+    fn counts_a_methods_receiver_out_of_the_arity_it_reports() {
+        assert_eq!(builtin(&BUILTINS[0], 1), Ok(()));
+        assert_eq!(
+            builtin(&BUILTINS[0], 2),
+            Err("`raw` takes 1 argument, got 2".to_owned())
+        );
+        assert_eq!(builtin(&BUILTINS[1], 1), Ok(()));
+        assert_eq!(
+            builtin(&BUILTINS[1], 2),
+            Err("`.slugify` takes 0 arguments, got 1".to_owned())
+        );
     }
 
     #[test]

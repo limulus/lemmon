@@ -1,7 +1,9 @@
 # D32 — Records and enums
 
 - **Status:** Accepted 2026-09-06 (∆cea); revised 2026-09-07 (∆EN6) to spell a
-  variant with a dot, retiring the bare-variant rule and the shadowing it needed
+  variant with a dot, retiring the bare-variant rule and the shadowing it needed. D34
+  (∆495) then retired UFCS, so a receiver is no longer one of the places an argument's
+  expectation reaches; nothing else here moved with it
 - **Backlog item:** ∆cea, ∆EN6
 - **Normative text:** `docs/language.md` § Types (the records-and-enums paragraph),
   § Expressions (Variants), § Schemas (`extends`), § Names & namespaces (`Name.x`),
@@ -39,10 +41,10 @@ narrows inside (∆PCK). A base must be a record — not an enum, not a builtin 
 type itself through any chain.
 
 **A variant is written with a dot** (∆EN6). `.hero` is a variant of the enum expected
-where it stands — an argument (a UFCS receiver included), an annotated binding, a
-declared return, a `?:` branch under an expectation, and the right of `==`/`!=`/`in`
-when the left is an enum, which is lowered expecting the enum (a list of it under `in`)
-before the operator rule judges the two types. Where no enum is expected, `.hero` is an
+where it stands — an argument, an annotated binding, a declared return, a `?:` branch
+under an expectation, and the right of `==`/`!=`/`in` when the left is an enum, which is
+lowered expecting the enum (a list of it under `in`) before the operator rule judges the
+two types. Where no enum is expected, `.hero` is an
 error naming the qualified spelling instead. **`Placement.hero` needs no expectation**:
 `Name.x` is read in the type namespace before the value namespace, so a qualified
 variant means the same thing wherever it stands — a local of that spelling is still read

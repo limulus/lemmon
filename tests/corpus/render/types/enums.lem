@@ -2,7 +2,7 @@
 <lem-fn place(p: Placement): string = p == .left ? "L" : (p == .right ? "R" : "H") />
 <lem-let where: Placement = .right />
 <lem-let hero = "a local, now only ever a name" />
-<lem.where> <lem.place(where)> <lem.place(.hero)> <lem..left.place()> <lem.hero>
+<lem.where> <lem.place(where)> <lem.place(.hero)> <lem.place(.left)> <lem.hero>
 <lem-if where != .left && where in [.left, .right]>side<lem-else />centre</lem-if>
 <lem-let shown: Placement? = null />
 <lem.shown == .hero ? "hero" : "not hero"> <lem.shown ?? .left> <lem.where == shown ? "same" : "differ">

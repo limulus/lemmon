@@ -1,4 +1,3 @@
 <lem-let snippet = "<em>trusted</em>" />
 <lem.snippet>
 <lem.raw(snippet)>
-<lem.snippet.raw()>

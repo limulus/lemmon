@@ -10,7 +10,7 @@
 
 use std::rc::Rc;
 
-use crate::builtins::BUILTINS;
+use crate::builtins::{self, BUILTINS};
 use crate::bytecode::{Function, Module, Op};
 use crate::value::{Closure, Map};
 use crate::{RuntimeError, Value};
@@ -164,6 +164,46 @@ impl<'a> Vm<'a> {
         }
     }
 
+    /// `x.f(…)` where the checker knew nothing about `x`: the field `f` called as the
+    /// value it holds, else the method `f` of whatever the receiver turned out to be.
+    ///
+    /// The field goes first because a record is still a [`Value::Map`] — the runtime tag
+    /// that would tell one from a map is not here yet (∆PCK) — and a record's own field
+    /// is what the checker would have called had it known the type. The cost is a map
+    /// whose key spells a method's name: through `any` the key wins, where a typed
+    /// receiver would have taken the method, since a map's entries are never fields to
+    /// the checker. ∆PCK is what lets the two agree.
+    fn call_dynamic(&mut self, name: u32, argc: u16) -> Result<(), String> {
+        let name = self.constant_str(name);
+        let at = self.stack.len() - 1 - argc as usize;
+        let receiver = &self.stack[at];
+        if let Value::Map(map) = receiver
+            && let Some(callee) = map.get(name).cloned()
+        {
+            self.stack.remove(at);
+            return self.call_value(callee, argc);
+        }
+        let found = builtins::Kind::of_value(receiver)
+            .and_then(|kind| builtins::method(kind, name));
+        let Some(id) = found else {
+            return Err(format!(
+                "no method `{name}` on {}",
+                self.stack[at].type_name()
+            ));
+        };
+        let builtin = &BUILTINS[id as usize];
+        if builtin.arity != argc as usize + 1 {
+            let wanted = builtin.written_arity();
+            return Err(format!(
+                "`.{name}()` takes {wanted} argument{}, got {argc}",
+                if wanted == 1 { "" } else { "s" }
+            ));
+        }
+        let args = self.stack.split_off(at);
+        self.stack.push((builtin.call)(&args)?);
+        Ok(())
+    }
+
     #[allow(
         clippy::too_many_lines,
         reason = "one arm per op is the readable shape"
@@ -219,6 +259,7 @@ impl<'a> Vm<'a> {
                 let args = self.stack.split_off(self.stack.len() - argc as usize);
                 self.stack.push((builtin.call)(&args)?);
             }
+            Op::CallDynamic { name, argc } => self.call_dynamic(name, argc)?,
             Op::MakeClosure { func, captures } => {
                 let captures = self.stack.split_off(self.stack.len() - captures as usize);
                 self.stack

@@ -1,0 +1,6 @@
+<lem-fn shout(s: string): string = s + "!" />
+<lem-let m = {keys: shout} />
+<lem-let untyped: any = m />
+<lem.m.keys().first() ?? "none">
+<lem.untyped.keys("shadow")>
+<lem.page.title.slugify()>

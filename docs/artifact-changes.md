@@ -40,8 +40,8 @@ moved it. Newest last. An entry is removed when its change has been applied.
   `extends`, add D32's readings: a subtype may redeclare a field only with the identical
   type (to change its default), so `layout` is declared once where its self type is and
   inherited; a variant always carries a dot — `.hero` resolves against
-  the enum expected where it stands (arguments, annotated bindings, returns, a UFCS
-  receiver, the right operand of `==`/`!=`/`in` beside an enum) and `Placement.hero`
+  the enum expected where it stands (arguments, annotated bindings, returns, the right
+  operand of `==`/`!=`/`in` beside an enum) and `Placement.hero`
   needs no expectation, so a bare name is only ever a name and `Name.x` is the one
   place the type namespace is read before the value one (∆EN6 revised ∆cea's bare
   reading; never describe a bare variant or the shadowing it needed); an enum prints as
@@ -49,8 +49,19 @@ moved it. Newest last. An entry is removed when its change has been applied.
   builtin type names and the `map`/`list`/`function` spellings cannot be declared; the
   type namespace is project-flat with the value namespace's duplicate rule, and a type
   may share a name with a function. `.` on a record is typed by its declaration and its
-  ancestors'; `x.f(…)` calls a record field `f` as its value and is UFCS otherwise. Field
+  ancestors'; `x.f(…)` calls a record field `f` as the value it holds. Field
   defaults and `by` indexes are not checked until the loader (∆iCW) (D32, ∆cea).
+- **Calls, and everywhere UFCS is described** — remove it. `x.f(y)` no longer resolves to
+  a project function `f(x, y)`: `.` asks the receiver's type and nothing else, so
+  `photo.rendition(md, jpeg)` is written `rendition(photo, md, jpeg)`. In its place, each
+  builtin type carries its own methods — `heading.slugify()`, `words.first()`,
+  `m.keys()`, and the collection functions the stdlib chains — reached by the receiver's
+  type and named in no namespace at all, so a `lem-fn` may take a method's name freely.
+  A method is called and never read; through `?.` the call is skipped when the receiver
+  is null; on `any` the VM resolves the name at render time. Wherever the text argues
+  that a pipe operator is redundant given UFCS, say instead that it is retired: methods
+  answer the chaining, and `|>` cannot be written in a head at all (invariant 3)
+  (D34, ∆495).
 
 ## Shell & Core
 

@@ -1489,21 +1489,6 @@ mod tests {
     }
 
     #[test]
-    fn leaves_no_capture_behind_when_a_ufcs_probe_finds_a_local() {
-        let module = compile(&[SourceFile::new(
-            "t.lem",
-            "<lem-let name = 1 /><lem-let f = |o| o.name() />",
-        )])
-        .expect_output();
-        let lambda = module
-            .functions
-            .iter()
-            .find(|f| f.name == "<lambda>")
-            .expect("the lambda");
-        assert_eq!(lambda.captures, Vec::<u16>::new());
-    }
-
-    #[test]
     fn warns_when_a_definition_shadows_the_stdlib_and_still_compiles() {
         // D23: site definitions may shadow the stdlib, with a warning — and the
         // shadowing definition is what the name then means.
@@ -1657,8 +1642,12 @@ mod tests {
             "6"
         );
         assert_eq!(
-            run("<lem-fn g(x: int): int = x * 2 /><lem.3.g()>").unwrap(),
+            run("<lem-fn g(x: int): int = x * 2 /><lem.g(3)>").unwrap(),
             "6"
+        );
+        assert_eq!(
+            run("<lem.\"Hello There\".slugify()>").unwrap(),
+            "hello-there"
         );
     }
 }

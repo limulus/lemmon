@@ -406,22 +406,16 @@ impl<'a> Names<'a> {
     /// is that frame's, not necessarily usable here), else what [`outer`](Self::outer)
     /// finds.
     ///
-    /// The UFCS probe asks about a name it may not end up compiling as a call, and a
-    /// lookup that recorded a capture on the way past an enclosing frame would leave the
-    /// slot behind whatever the answer was — nor does a probe count as a read.
+    /// A probe asks about a name it may not end up compiling at all — whether a
+    /// definition displaces a stdlib one — and a lookup that recorded a capture on the
+    /// way past an enclosing frame would leave the slot behind whatever the answer was;
+    /// nor does a probe count as a read.
     pub(crate) fn peek(&self, name: &str) -> Option<Resolved> {
         self.frames
             .iter()
             .rev()
             .find_map(|frame| frame.lookup(name))
             .or_else(|| self.outer(name))
-    }
-
-    /// [`peek`](Self::peek) narrowed to what a call may name: a function or a builtin. A
-    /// local shadows either, and an ambient value is not callable.
-    pub(crate) fn peek_callable(&self, name: &str) -> Option<Resolved> {
-        self.peek(name)
-            .filter(|found| matches!(found, Resolved::Function | Resolved::Builtin(_)))
     }
 
     /// What `name` means in the innermost frame: a local's slot usable there, capturing
@@ -906,18 +900,6 @@ mod tests {
         let inner = names.pop_frame();
         assert!(inner.captures().is_empty());
         assert_eq!(inner.n_locals(), 0);
-    }
-
-    #[test]
-    fn offers_a_call_only_a_function_or_builtin_never_a_local_or_an_ambient_value() {
-        let index = index(&["f"]);
-        let mut names = in_frame(Some(&index));
-        assert_eq!(names.peek_callable("f"), Some(Resolved::Function));
-        assert_eq!(names.peek_callable("raw"), Some(Resolved::Builtin(0)));
-        assert_eq!(names.peek_callable("page"), None);
-        bind(&mut names, "raw", at(0), BindingKind::Definition);
-        names.push_frame();
-        assert_eq!(names.peek_callable("raw"), None);
     }
 
     #[test]
