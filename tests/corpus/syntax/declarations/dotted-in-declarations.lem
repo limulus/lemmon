@@ -1,0 +1,5 @@
+<lem-enum Placement = .hero | .left />
+<lem-enum Size = small | large />
+<lem-type Photo>
+  placement: Placement = .hero
+</lem-type>

@@ -1,10 +1,23 @@
 
 --- diagnostics
-render/errors/enum-errors.lem:3:20..3:24: `Size` has no variant `smal`
-render/errors/enum-errors.lem:4:11..4:17: `Size` has no variant `medium`
-render/errors/enum-errors.lem:5:6..5:11: undefined name `small`
-render/errors/enum-errors.lem:5:23..5:30: expected `Size`, got `string`
-render/errors/enum-errors.lem:5:38..5:47: cannot compare `Size` with `null`
-render/errors/enum-errors.lem:6:9..6:21: cannot compare `Size` with `string`
-render/errors/enum-errors.lem:7:37..7:44: expected `Size?`, got `string`
-render/errors/enum-errors.lem:10:11..10:15: expected `Size`, got `string`
+render/errors/enum-errors.lem:6:20..6:25: `Size` has no variant `smal`
+render/errors/enum-errors.lem:7:11..7:18: `Size` has no variant `medium`
+render/errors/enum-errors.lem:7:31..7:36: undefined name `small`
+render/errors/enum-errors.lem:7:49..7:58: `Size` has no variant `smal`
+render/errors/enum-errors.lem:8:6..8:12: no enum is expected here: qualify the variant as `Enum.small`
+render/errors/enum-errors.lem:8:19..8:23: `Size` is an enum, not a value
+render/errors/enum-errors.lem:8:30..8:33: `Box` is a record, not a value
+render/errors/enum-errors.lem:8:40..8:43: `Box` is a record, not a value
+render/errors/enum-errors.lem:8:55..8:66: `Size` is an enum: read a variant with `.`, not `?.`
+render/errors/enum-errors.lem:9:6..9:10: `Size` is an enum, not a value
+render/errors/enum-errors.lem:9:20..9:23: `Box` is a record, not a value
+render/errors/enum-errors.lem:10:11..10:18: expected `Size`, got `string`
+render/errors/enum-errors.lem:10:26..10:35: cannot compare `Size` with `null`
+render/errors/enum-errors.lem:11:9..11:21: cannot compare `Size` with `string`
+render/errors/enum-errors.lem:12:38..12:45: expected `Size?`, got `string`
+render/errors/enum-errors.lem:15:11..15:15: expected `Size`, got `string`
+render/errors/enum-errors.lem:16:6..16:23: a `Size` is an enum and has no fields
+render/errors/enum-errors.lem:16:30..16:42: cannot call a `Size`
+render/errors/enum-errors.lem:17:7..17:13: no enum is expected here: qualify the variant as `Enum.small`
+render/errors/enum-errors.lem:17:29..17:35: no enum is expected here: qualify the variant as `Enum.small`
+render/errors/enum-errors.lem:18:16..18:22: no enum is expected here: qualify the variant as `Enum.small`

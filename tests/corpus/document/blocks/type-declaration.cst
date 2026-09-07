@@ -1,4 +1,4 @@
-Root@0..304
+Root@0..305
   TypeDecl@0..42
     OpenTag@0..9 "<lem-type"
     Trivia@9..10 " "
@@ -116,23 +116,24 @@ Root@0..304
     SelfClose@278..280 "/>"
   Text@280..282
     Text@280..282 "\n\n"
-  AccessTag@282..303
+  AccessTag@282..304
     OpenAccess@282..287 "<lem."
-    Head@287..302
-      CallExpr@287..302
+    Head@287..303
+      CallExpr@287..303
         NameRef@287..291
           Ident@287..291 "note"
-        ArgList@291..302
+        ArgList@291..303
           LParen@291..292 "("
           NameRef@292..293
             Ident@292..293 "n"
           Comma@293..294 ","
           Trivia@294..295 " "
-          NameRef@295..301
-            Ident@295..301 "urgent"
-          RParen@301..302 ")"
-    Close@302..303 ">"
-  Text@303..304
-    Text@303..304 "\n"
+          VariantRef@295..302
+            Dot@295..296 "."
+            Ident@296..302 "urgent"
+          RParen@302..303 ")"
+    Close@303..304 ">"
+  Text@304..305
+    Text@304..305 "\n"
 
 --- diagnostics

@@ -159,6 +159,8 @@ syntax_kinds! {
     MapEntry,
     Literal,
     NameRef,
+    /// `.hero` — an enum variant, resolved against the type expected here.
+    VariantRef,
     ParenExpr,
     /// `expr is Type`
     TypeTest,

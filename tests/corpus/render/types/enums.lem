@@ -1,10 +1,11 @@
 <lem-enum Placement = hero | left | right />
-<lem-fn place(p: Placement): string = p == left ? "L" : (p == right ? "R" : "H") />
-<lem-let where: Placement = right />
-<lem-let hero = "a local named like a variant" />
-<lem-let left = "only ever read as the variant" />
-<lem.where> <lem.place(where)> <lem.place(hero)> <lem.place(left)> <lem.left.place()>
-<lem-if where != left && where in [left, right]>side<lem-else />centre</lem-if>
+<lem-fn place(p: Placement): string = p == .left ? "L" : (p == .right ? "R" : "H") />
+<lem-let where: Placement = .right />
+<lem-let hero = "a local, now only ever a name" />
+<lem.where> <lem.place(where)> <lem.place(.hero)> <lem..left.place()> <lem.hero>
+<lem-if where != .left && where in [.left, .right]>side<lem-else />centre</lem-if>
 <lem-let shown: Placement? = null />
-<lem.shown == hero ? "hero" : "not hero"> <lem.shown ?? left> <lem.where == shown ? "same" : "differ">
-<lem.(hero)>
+<lem.shown == .hero ? "hero" : "not hero"> <lem.shown ?? .left> <lem.where == shown ? "same" : "differ">
+<lem.Placement.hero> <lem.place(Placement.left)>
+<lem-let Placement = "a local spelled like the enum" />
+<lem.Placement> <lem.place(Placement.hero)>

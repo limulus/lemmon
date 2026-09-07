@@ -205,31 +205,51 @@ pub(super) fn field_of(ty: &Type, name: &str, decls: &dyn Decls) -> Option<Type>
     }
 }
 
-/// The variant rule (D32): whether a bare `name` where `expected` is wanted is a
-/// variant of the enum expected. `None` when it is not one — no enum is expected, or
-/// the name `is_name` of something else — so the name is an ordinary name; a refusal
-/// when an enum is expected and the name is neither its variant nor anything else.
-pub(super) fn variant(
+/// The enum `expected` asks for, if it asks for one: a `T?` wanted is a `T` written,
+/// as it is for a literal.
+pub(super) fn expected_enum<'a>(
+    expected: Option<&'a Type>,
+    decls: &dyn Decls,
+) -> Option<&'a str> {
+    match expectation(expected) {
+        Some(Type::Named(name)) if decls.kind(name) == Some(Kind::Enum) => Some(name),
+        _ => None,
+    }
+}
+
+/// The dotted variant rule (D32, revised by ∆EN6): `.hero` is a variant of whichever
+/// enum is expected where it stands, and of nothing else. Where no enum is expected it
+/// has none to belong to — the refusal names the qualified spelling, which needs no
+/// expectation and so works wherever the dotted one does not.
+pub(super) fn dotted_variant(
     expected: Option<&Type>,
     name: &str,
-    is_name: bool,
     decls: &dyn Decls,
-) -> Option<Rule<()>> {
-    let Some(Type::Named(enum_name)) = expectation(expected) else {
-        return None;
-    };
-    let variants = decls.variants(enum_name)?;
+) -> Rule {
+    match expected_enum(expected, decls) {
+        Some(enum_name) => qualified_variant(enum_name, name, decls),
+        None => Err(format!(
+            "no enum is expected here: qualify the variant as `Enum.{name}`"
+        )),
+    }
+}
+
+/// The qualified variant rule: `Placement.hero`, which says which enum it belongs to
+/// and so stands anywhere. `enum_name` is a declared enum — the walk checks that
+/// before it decides the expression is this and not a field access.
+pub(super) fn qualified_variant(enum_name: &str, name: &str, decls: &dyn Decls) -> Rule {
+    let variants = decls
+        .variants(enum_name)
+        .expect("a qualified variant is only read off a declared enum");
     if variants.iter().any(|(v, _)| &**v == name) {
-        Some(Ok(()))
-    } else if is_name {
-        None
+        Ok(Type::Named(Rc::from(enum_name)))
     } else {
-        Some(Err(format!("`{enum_name}` has no variant `{name}`")))
+        Err(format!("`{enum_name}` has no variant `{name}`"))
     }
 }
 
 /// What the right operand of `op` is lowered expecting when the left is an enum, so a
-/// bare variant may stand there: the enum itself under `==`/`!=`, and a list of it
+/// dotted variant may stand there: the enum itself under `==`/`!=`, and a list of it
 /// under `in`. The expectation only shapes the operand — a literal, a variant — and
 /// the operator rule then judges the two types, so an optional on either side is
 /// still compared as the operator allows.
@@ -722,35 +742,62 @@ mod tests {
     }
 
     #[test]
-    fn admits_a_variant_only_where_its_enum_is_expected() {
+    fn admits_a_dotted_variant_only_where_an_enum_is_expected() {
+        let table = table();
+        let refused =
+            Err("no enum is expected here: qualify the variant as `Enum.hero`".to_owned());
+        assert_eq!(
+            dotted_variant(Some(&named("Placement")), "hero", &table),
+            Ok(named("Placement"))
+        );
+        // An optional expectation asks for the variant the same way a literal is asked.
+        assert_eq!(
+            dotted_variant(Some(&opt(named("Placement"))), "left", &table),
+            Ok(named("Placement"))
+        );
+        assert_eq!(
+            dotted_variant(Some(&named("Placement")), "hreo", &table),
+            Err("`Placement` has no variant `hreo`".to_owned())
+        );
+        // Every expectation that is not an enum refuses the same way: a record, a
+        // builtin type, `any`, and nothing expected at all.
+        assert_eq!(
+            dotted_variant(Some(&named("Article")), "hero", &table),
+            refused
+        );
+        assert_eq!(dotted_variant(Some(&Type::String), "hero", &table), refused);
+        assert_eq!(dotted_variant(Some(&Type::Any), "hero", &table), refused);
+        assert_eq!(dotted_variant(None, "hero", &table), refused);
+    }
+
+    #[test]
+    fn admits_a_qualified_variant_with_nothing_expected() {
         let table = table();
         assert_eq!(
-            variant(Some(&named("Placement")), "hero", false, &table),
-            Some(Ok(()))
+            qualified_variant("Placement", "hero", &table),
+            Ok(named("Placement"))
         );
         assert_eq!(
-            variant(Some(&opt(named("Placement"))), "left", false, &table),
-            Some(Ok(()))
+            qualified_variant("Placement", "hreo", &table),
+            Err("`Placement` has no variant `hreo`".to_owned())
         );
-        // A variant before a name of the same spelling; a name before a refusal.
+    }
+
+    #[test]
+    fn reads_the_expected_enum_through_an_optional_and_past_everything_else() {
+        let table = table();
         assert_eq!(
-            variant(Some(&named("Placement")), "hero", true, &table),
-            Some(Ok(()))
-        );
-        assert_eq!(
-            variant(Some(&named("Placement")), "hreo", true, &table),
-            None
-        );
-        assert_eq!(
-            variant(Some(&named("Placement")), "hreo", false, &table),
-            Some(Err("`Placement` has no variant `hreo`".to_owned()))
+            expected_enum(Some(&named("Placement")), &table),
+            Some("Placement")
         );
         assert_eq!(
-            variant(Some(&named("Article")), "hero", false, &table),
-            None
+            expected_enum(Some(&opt(named("Placement"))), &table),
+            Some("Placement")
         );
-        assert_eq!(variant(Some(&Type::String), "hero", false, &table), None);
-        assert_eq!(variant(None, "hero", false, &table), None);
+        assert_eq!(expected_enum(Some(&named("Article")), &table), None);
+        assert_eq!(expected_enum(Some(&named("Nope")), &table), None);
+        assert_eq!(expected_enum(Some(&Type::Any), &table), None);
+        assert_eq!(expected_enum(None, &table), None);
     }
 
     #[test]

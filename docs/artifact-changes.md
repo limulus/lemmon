@@ -39,10 +39,13 @@ moved it. Newest last. An entry is removed when its change has been applied.
 - **Records and enums** — where the type list says records are nominal with single
   `extends`, add D32's readings: a subtype may redeclare a field only with the identical
   type (to change its default), so `layout` is declared once where its self type is and
-  inherited; a bare variant name resolves only where its enum is expected (arguments,
-  annotated bindings, returns, a UFCS receiver, the right operand of `==`/`!=`/`in`
-  beside an enum) and wins over a local of the same name there; an enum prints as its
-  variant's name and is that name as a string at run time; a record has no printed form;
+  inherited; a variant always carries a dot — `.hero` resolves against
+  the enum expected where it stands (arguments, annotated bindings, returns, a UFCS
+  receiver, the right operand of `==`/`!=`/`in` beside an enum) and `Placement.hero`
+  needs no expectation, so a bare name is only ever a name and `Name.x` is the one
+  place the type namespace is read before the value one (∆EN6 revised ∆cea's bare
+  reading; never describe a bare variant or the shadowing it needed); an enum prints as
+  its variant's name and is that name as a string at run time; a record has no printed form;
   builtin type names and the `map`/`list`/`function` spellings cannot be declared; the
   type namespace is project-flat with the value namespace's duplicate rule, and a type
   may share a name with a function. `.` on a record is typed by its declaration and its

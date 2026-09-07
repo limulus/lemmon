@@ -1,0 +1,10 @@
+<lem.place(.hero)>
+<lem-let p: Placement = .left />
+<lem.Placement.hero>
+<lem..left.place()>
+<lem.(cond ? .hero : .left)>
+<lem.(.hero.foo)>
+<lem.f(.in)>
+<lem.f(.)>
+<lem.(cond ?.hero : .left)>
+<lem.ok>

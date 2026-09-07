@@ -10,4 +10,4 @@ A declaration in a document takes its line, like a definition.
 </lem-fn>
 <lem-let n: any = {text: "Mind the gap."} />
 
-<lem.note(n, urgent)>
+<lem.note(n, .urgent)>

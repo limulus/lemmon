@@ -28,6 +28,8 @@ ast_enum!(
         Literal(Literal),
         /// A bare name.
         Name(NameRef),
+        /// `.hero`
+        Variant(VariantRef),
         /// `(a)`
         Paren(ParenExpr),
         /// `a is T`
@@ -404,6 +406,20 @@ ast_node!(
 
 impl NameRef {
     /// The name's token.
+    #[must_use]
+    pub fn name(&self) -> Option<SyntaxToken> {
+        token(&self.syntax, SyntaxKind::Ident)
+    }
+}
+
+ast_node!(
+    /// `.hero` — a variant of whichever enum is expected here.
+    VariantRef,
+    VariantRef
+);
+
+impl VariantRef {
+    /// The variant's token, without its dot.
     #[must_use]
     pub fn name(&self) -> Option<SyntaxToken> {
         token(&self.syntax, SyntaxKind::Ident)

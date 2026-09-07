@@ -1,4 +1,4 @@
-Root@0..304
+Root@0..305
   TypeDecl@0..42
     CloseTag@31..42
   Text@42..43
@@ -14,5 +14,5 @@ Root@0..304
   Text@235..236
   LetVoid@236..280
   Text@280..282
-  AccessTag@282..303
-  Text@303..304
+  AccessTag@282..304
+  Text@304..305

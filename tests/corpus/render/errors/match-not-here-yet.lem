@@ -1,4 +1,4 @@
 <lem-let size: any = "small" />
 <lem-match size>
-  <lem-case small>s</lem-case>
+  <lem-case .small>s</lem-case>
 </lem-match>

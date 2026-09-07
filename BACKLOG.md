@@ -25,11 +25,6 @@ absorbs the item and the item is removed.
 Seed items for the next phase (architecture doc 3, phase 1); expect these to be split
 further at claim time.
 
-- ∆EN6 Dotted enum variants — a variant always starts with a dot: `.hero` where the enum is
-  expected (arguments, annotated bindings, `lem-case` patterns, the right of `==`/`in`), and
-  `Placement.hero` anywhere, when nothing around it says which enum. A bare `hero` is then
-  only ever a name, so D32's variant-over-local shadowing goes; the expectation paths stay
-  as what `.hero` asks for. `.` opening an expression is new to the scanner; needs: ∆cea
 - ∆PCK Narrowing and typed lowering — `is` and `lem-match` narrowing, a `TypeTest` op over
   record values that carry their type (`Value::Record`), record literals as map literals
   under an expected record type, enum exhaustiveness on the provisional reading. Split

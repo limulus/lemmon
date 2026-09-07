@@ -127,10 +127,10 @@ follows:
 | `lem-if` / `lem-else-if` / `lem-else` | `bool` or optional | No truthiness: condition must be `bool`, or an optional (non-null test — narrows `T?` to `T` in the branch). Separators are void. |
 | `lem-for` | `x in list` · `x, i in list` · `k, v in map` | Iteration; `<lem-else />` inside gives the empty case. Bodies cannot mutate → parallelizable later. |
 | `lem-let` | `name = expr` / `name: T = expr` / `name: T from source` → void · bare `name` → block | Immutable binding, scoped to the enclosing block. Block form binds the rendered body as `html` (the capture form; in documents the body is a document). The `from` form binds what the host loads from a glob, a data file, `plugin("…")`, or `env("…")`; it is allowed only at the top level of `site.lem` (D30). Unused bindings warn. |
-| `lem-match` / `lem-case` / `lem-default` | subject; patterns | Patterns: subtype (`Til as t`), literal, enum variant (a bare name), `null`. Cases are blocks, the optional `lem-default` last. Exhaustive over enums/closed unions, else `lem-default` required. |
+| `lem-match` / `lem-case` / `lem-default` | subject; patterns | Patterns: subtype (`Til as t`), literal, enum variant (dotted, `.hero`), `null`. Cases are blocks, the optional `lem-default` last. Exhaustive over enums/closed unions, else `lem-default` required. |
 | `lem-fn` | signature | **Definition only** (calls go through `lem.`). Block body returns `html`, closes `</lem-fn>`; a `: html` on it is allowed and nothing else is. Expression body `(…): T = expr` is void and returns the declared `T` — the annotation is required, since a signature is read from the head alone (invariant 11). |
 | `lem-type` | `Name` / `Name extends Base` | Record schema (block); fields in the body, one per line, lexed in fields mode (D29). See § Schemas. |
-| `lem-enum` | `Name = a \| b \| c` | Enum (void). Bare variant names in expressions where the enum is expected; strings in front matter. |
+| `lem-enum` | `Name = a \| b \| c` | Enum (void); its variants are written bare here, and nowhere else. In an expression a variant is `.hero` where the enum is expected and `Placement.hero` anywhere; a string in front matter. |
 | `lem-page` | bindings; optional `for x in xs` | Marks a `.lem` file as a page template; its `name = expr` bindings are the page's own fields, as front matter is a document's (`layout`, `title`, `url`…), on a record that extends the host's `Page` (D30). With `for`: one page per item; `page.prev`/`page.next` are the generated neighbours. Void. |
 | `lem-import` | `name from plugin("p")` · `{ names } from plugin("p")` | Bind a plugin's shipped functions/types — qualified or promoted (D23). Site files never import each other. Void; lives in `site.lem`. |
 | `lem-style` / `lem-head` | — | Block side channels: collected per page from every function actually called, deduplicated. |
@@ -142,7 +142,8 @@ follows:
 | Category | Syntax | Notes |
 |---|---|---|
 | Literals | `"text"`, `"Link: {linkTitle}"`, `42`, `1.5`, `true`, `null`, `[a, b]`, `{k: v}` | String interpolation `{…}` (`{{` for a literal brace — delimiter is a deferred question); until it is settled, an interpolated expression may not itself contain a string literal. No datetime literal: a fixed date is `datetime("2024-11-24")` (stdlib, validated at compile time when the argument is a literal). |
-| Access | `a.b`, `a?.b`, `xs[i]`, `m["key"]` | `.` reads a record's field; a map is indexed. `?.` propagates null and needs an optional on its left; `a?.b.c` needs a second `?.`, since `a?.b` is optional. An out-of-range list index or a missing map key is a render error, not null. |
+| Access | `a.b`, `a?.b`, `xs[i]`, `m["key"]` | `.` reads a record's field, or an enum's variant when the name on its left is one (below); a map is indexed. `?.` propagates null and needs an optional on its left; `a?.b.c` needs a second `?.`, since `a?.b` is optional. An out-of-range list index or a missing map key is a render error, not null. |
+| Variants | `.hero`, `Placement.hero` | `.hero` is a variant of whichever enum is expected where it stands; where none is, qualify it. A bare `hero` is only ever a name. In a `?:` leave the space — `?.` is one token, so `c ?.hero : .left` reads as a member access. |
 | Calls | `f(x)`, `f(x, nolink: true)` | Positional then named. UFCS: `x.f(y)` resolves to `f(x, y)` when `x`'s type has no field `f` and `f` names a function — so `photo.rendition(md, jpeg)` reads naturally. A record field `f` is called as the value it holds; a non-record receiver (`any` included) has no fields, so `f` is the function. |
 | Lambdas | `\|a\| a.date`, `\|a, b\| a.date lt b.date` | Parameter types inferred from the expected function type; with none expected they are `any` (provisional). |
 | Arithmetic | `+ - * / %`, unary `-` | `+` also concatenates strings; `string + int` is a type error. |
@@ -169,11 +170,13 @@ says wherever it is written. A record's fields are its own and its ancestors'; `
 one, typed by the declaration, and a field a record does not declare is a compile error.
 A subtype may redeclare a field only with the identical type — that changes its default,
 nothing else — so a subtype is always usable for its base. An enum's value is one of its
-variants: a bare variant name is that variant wherever the enum is expected (an argument,
-an annotated binding, a declared return, and the right operand of `==`/`!=`/`in` when the
-left is an enum), and an ordinary name everywhere else. An enum prints as its variant's
-name, compares by it, and at run time is that name as a string; a record has no printed
-form (provisional readings, both: the enum question is deferred).
+variants, and a variant always carries a dot: `.hero` is a variant of whichever enum is
+expected where it stands (an argument, an annotated binding, a declared return, and the
+right operand of `==`/`!=`/`in` when the left is an enum), and `Placement.hero` is one
+wherever nothing says which enum — including where nothing is expected at all. A bare
+`hero` is only ever a name. An enum prints as its variant's name, compares by it, and at
+run time is that name as a string; a record has no printed form (provisional readings,
+both: the enum question is deferred).
 
 `any` is the spelled unknown: assignable to and from everything, and every operation on
 it is `any` again, checked at render time by the VM with a span. It is what an ambient
@@ -346,13 +349,23 @@ hierarchies and `T?`. Diagnostics carry a primary span plus secondary spans wher
 - **Fields.** `.` on a record reads a field its declaration or an ancestor's declares,
   with that field's type; on `any`, `any`. A map has no fields (index it), and neither
   has an enum. `?.` reads through an optional record and yields an optional.
-- **Variants.** A bare name where an enum is expected is that enum's variant before it
-  is anything else — a local of the same name is shadowed there, since the expectation
-  is explicit, and is unused unless something else reads it. A name that is neither a
-  variant nor a name in scope is reported as the variant it is not. Beside an enum the
-  right operand of `==`/`!=` is lowered expecting the enum, and of `in` a list of it,
-  so a variant may stand there; the operator then judges both types as it always does.
-  Where no enum is expected a bare variant is an undefined name.
+- **Variants.** `.hero` is a variant of the enum expected where it stands, and of
+  nothing else; where no enum is expected it is an error naming the qualified spelling
+  that would work instead. Beside an enum the right operand of `==`/`!=` is lowered
+  expecting the enum, and of `in` a list of it, so a dotted variant may stand there; the
+  operator then judges both types as it always does. `Placement.hero` needs no
+  expectation: `Name.x` is read in the type namespace first, so a qualified variant means
+  the same thing wherever it stands, whatever a local of that spelling holds — that local
+  is still read as a value by its bare name, and warns as unused if nothing does. A bare
+  name is never a variant, and a declared type used as a value says so rather than
+  reporting an undefined name.
+- **Where an expectation reaches.** The dotted form needs one, so it is refused where
+  none arrives: printing (`<lem.…>`), a `lem-if` or `lem-match` subject, the left of
+  `==`/`in`/`??`, an unannotated `lem-let`, an argument of a builtin or of an `any`, and
+  every element of a list or map literal that is not itself expected — the first
+  included, since what the first element infers is not an expectation for the rest.
+  A comparison against an `any` — an ambient value, until its host types it (∆Iau) — is
+  the common one. The qualified form works in all of them.
 - **Operators.** `+ - * / %` on numbers (`int∘int` is `int`, any `float` makes `float`),
   `+` also on two strings; `lt lte gt gte` on numbers, strings, datetimes; `==`/`!=` on
   two numbers or two assignable types, never functions; `??` and `?.` need an optional
@@ -366,8 +379,9 @@ hierarchies and `T?`. Diagnostics carry a primary span plus secondary spans wher
   against its return; one with nothing expected has `any` parameters (provisional).
   `x.f(…)` lowers `x` first, then decides: a record field `f` is called as its value,
   anything else is UFCS (§Expressions). A receiver that could never have a field — a
-  list, map, or lambda literal, or a variant of the enum `f`'s first parameter
-  expects — is lowered expecting that parameter, as an argument would be.
+  list, map, or lambda literal, or a dotted variant — is lowered expecting `f`'s first
+  parameter, as an argument would be. A qualified variant is not a receiver at all:
+  `Placement.hero(…)` is a call of the variant, and calling an enum is an error.
 - **Declarations.** A type declared twice, in one file or two, is the duplicate error
   functions get; a declaration may not take a builtin type's name; a field or a variant
   repeated within one declaration is an error at the repeat. An `extends` that names an
@@ -391,7 +405,9 @@ One value namespace, resolved lexically: **locals/params** (innermost wins) →
 **project** → **ambient**. Types are separate, distinguished by capitalization
 (`Article` type / `article` value) — a convention, not a rule: a type and a function may
 share a name, and the type namespace is project-flat with the same duplicate rule as
-the value one. Builtin `lem-*` tags occupy no namespace.
+the value one. `Name.x` is the one place the type namespace is consulted first: when
+`Name` is a declared enum it is a variant, whatever the value namespace holds. Builtin
+`lem-*` tags occupy no namespace.
 
 - **Project-flat:** every `.lem` file in the site shares one namespace; no imports
   between site files. Duplicate definitions are compile errors citing both spans.
@@ -581,6 +597,6 @@ provisional reading in this file and flag it in the PR:
 - string interpolation delimiter (`{expr}` vs `${expr}`)
 - `int`/`float` vs a single `number`
 - a pipe operator (`|>`) — possibly redundant given UFCS
-- enum/closed-union syntax details and `lem-match` exhaustiveness rules
+- closed-union syntax and `lem-match` exhaustiveness rules (variant spelling is settled: D32)
 - `==`/`&&` vs `eq`/`and` spelling (consistency with `lt`/`gt`)
 - inline lem tags in prose (reserved for v2; design must remain compatible)

@@ -4,10 +4,10 @@
   <lem-default><li><lem.timeChip(article)></li></lem-default>
 </lem-match>
 <lem-match photo.placement>
-  <lem-case hero>
+  <lem-case .hero>
     <lem.heroPhoto(photo)>
   </lem-case>
-  <lem-case left>
+  <lem-case .left>
     <lem.floatPhoto(photo, side: "left")>
   </lem-case>
 </lem-match>

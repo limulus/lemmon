@@ -193,7 +193,7 @@ fn visit_expr(e: Option<Expr>, out: &mut Vec<(u32, u32)>) {
         }
         Expr::Paren(p) => visit_expr(p.inner(), out),
         Expr::TypeTest(t) => visit_expr(t.expr(), out),
-        Expr::Literal(_) | Expr::Name(_) => {}
+        Expr::Literal(_) | Expr::Name(_) | Expr::Variant(_) => {}
     }
 }
 

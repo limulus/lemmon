@@ -685,6 +685,14 @@ fn pattern(p: &mut Parser<'_>) {
             literal.complete(p, SyntaxKind::Literal);
             m.complete(p, SyntaxKind::Pattern);
         }
+        // `.hero` — a variant of the subject's enum. Dotted only: the bare slot below
+        // is the type pattern, and nothing here resolves a name to tell them apart.
+        Some(TokenKind::Dot) => {
+            let m = p.start();
+            p.bump();
+            expr::expect_name(p, "a variant name");
+            m.complete(p, SyntaxKind::Pattern);
+        }
         Some(TokenKind::Ident) => {
             let m = p.start();
             p.bump();

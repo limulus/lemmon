@@ -559,6 +559,36 @@ mod tests {
     }
 
     #[test]
+    fn records_an_enum_a_qualified_variant_named() {
+        // `Placement.hero` is the one place an enum's name is written with no
+        // annotation behind it to have recorded it (∆EN6). Without the fact, dropping
+        // the variant would leave this unit fresh and its `Op::Const` a variant the
+        // enum no longer has.
+        fn files(types: &str) -> [(&str, &str); 2] {
+            [
+                ("types.lem", types),
+                // No annotation anywhere: the qualified variant is the only thing in
+                // this file that names the enum, so it is the only thing that can
+                // have recorded it.
+                ("page.lem", "<lem.Placement.hero>"),
+            ]
+        }
+        let both = "<lem-enum Placement = hero | left />";
+        let page = unit_of("page.lem", &files(both));
+        let names: Vec<&str> = page.type_refs.iter().map(|r| &*r.name).collect();
+        assert_eq!(names, ["Placement"]);
+        let dropped = "<lem-enum Placement = left />";
+        let types = unit_of("types.lem", &[("types.lem", dropped)]);
+        let errors = link_errors(&[types, page]);
+        assert!(
+            errors[0]
+                .message
+                .starts_with("`Placement` is now `Placement = left`"),
+            "{errors:?}"
+        );
+    }
+
+    #[test]
     fn records_a_type_reached_only_through_another_types_chain() {
         // page.lem names `LinkPost` alone; checking it against `Article` walked the
         // chain, so `Article`'s declaration is a fact too, and a change to it — say a

@@ -25,6 +25,7 @@ use super::{Compiler, TokenSpan, required};
 use crate::Value;
 use crate::builtins::BUILTINS;
 use crate::bytecode::Op;
+use crate::decls::Kind;
 use crate::types::{Type, join};
 
 impl Compiler<'_> {
@@ -83,27 +84,17 @@ impl Compiler<'_> {
         let span = expr.span();
         match expr {
             Expr::Literal(literal) => self.literal(literal),
-            // A bare name where an enum is expected is that enum's variant before it
-            // is anything else (D32); a name that is neither is reported as the
-            // variant it is not.
-            Expr::Name(name) => {
-                let token = required(name.name());
-                let is_name = self.names.peek(token.text()).is_some();
-                match rules::variant(expected, token.text(), is_name, self.decls()) {
-                    Some(Ok(())) => {
-                        let index = self.intern(token.text());
-                        self.emit(Op::Const { index }, token.span());
-                        expected
-                            .expect("a variant is only granted under an expectation")
-                            .strip_optional()
-                            .clone()
-                    }
-                    Some(Err(message)) => {
-                        self.error(token.span(), message);
-                        Type::Any
-                    }
-                    None => self.name(&token),
-                }
+            Expr::Name(name) => self.name(&required(name.name())),
+            // `.hero` is a variant of whichever enum is expected here (∆EN6); nothing
+            // else resolves it, so a bare name is only ever a name.
+            Expr::Variant(variant) => {
+                let token = required(variant.name());
+                let ty = self.rule(
+                    variant.span(),
+                    rules::dotted_variant(expected, token.text(), self.decls()),
+                );
+                self.emit_variant(token.text(), variant.span());
+                ty
             }
             Expr::Paren(paren) => self.lower(&required(paren.inner()), expected),
             Expr::Member(member) => self.member(member),
@@ -189,15 +180,77 @@ impl Compiler<'_> {
                 Type::Any
             }
             None => {
-                self.error(span, format!("undefined name `{}`", token.text()));
+                self.error(span, self.undefined(token.text()));
                 Type::Any
             }
         }
     }
 
+    /// Why a name resolves to nothing: a name the project declares as a type is not a
+    /// value, and saying so beats "undefined name" for the author who wrote `Placement`
+    /// where its variant belonged.
+    fn undefined(&self, name: &str) -> String {
+        match self.decls().kind(name) {
+            Some(Kind::Enum) => format!("`{name}` is an enum, not a value"),
+            Some(Kind::Record) => format!("`{name}` is a record, not a value"),
+            None => format!("undefined name `{name}`"),
+        }
+    }
+
+    /// Emits a variant: an enum is its variant's name at run time (D32), so the value
+    /// on the stack is that name as a string constant.
+    fn emit_variant(&mut self, name: &str, span: Span) {
+        let index = self.intern(name);
+        self.emit(Op::Const { index }, span);
+    }
+
+    /// The enum `object.…` reads a variant off, when `object` is a bare name the
+    /// project declares as one. The type namespace answers `Name.x` before the value
+    /// namespace does, so `Placement.hero` means the same thing wherever it stands,
+    /// whatever a local of that spelling holds (∆EN6).
+    fn enum_object(&self, object: &Expr) -> Option<Rc<str>> {
+        let Expr::Name(name) = object else {
+            return None;
+        };
+        let token = required(name.name());
+        (self.decls().kind(token.text()) == Some(Kind::Enum))
+            .then(|| Rc::from(token.text()))
+    }
+
+    /// Lowers `Placement.hero`, having established that `Placement` is a declared enum.
+    /// The declaration is a fact this unit consumed (D25): the name is written here with
+    /// no annotation behind it to have noted it.
+    fn qualified_variant(
+        &mut self,
+        enum_name: &Rc<str>,
+        member: &MemberExpr,
+        object_span: Span,
+    ) -> Type {
+        let name = required(member.name());
+        self.note_type(enum_name, object_span);
+        let ty = if member.is_optional() {
+            self.error(
+                member.span(),
+                format!("`{enum_name}` is an enum: read a variant with `.`, not `?.`"),
+            );
+            Type::Any
+        } else {
+            self.rule(
+                member.span(),
+                rules::qualified_variant(enum_name, name.text(), self.decls()),
+            )
+        };
+        self.emit_variant(name.text(), member.span());
+        ty
+    }
+
     fn member(&mut self, member: &MemberExpr) -> Type {
         let span = member.span();
-        let object_ty = self.expr(&required(member.object()));
+        let object = required(member.object());
+        if let Some(enum_name) = self.enum_object(&object) {
+            return self.qualified_variant(&enum_name, member, object.span());
+        }
+        let object_ty = self.expr(&object);
         let name = required(member.name());
         let index = self.intern(name.text());
         let optional = member.is_optional();
@@ -531,7 +584,14 @@ impl Compiler<'_> {
         // shadows anything. The receiver is lowered before the choice is made: it is
         // the first value pushed on either path, and its type is what decides.
         let (resolved, name, receiver) = match &callee {
-            Expr::Member(member) if !member.is_optional() => {
+            // A qualified variant is not a receiver: the enum claims `Name.x` before
+            // `x` is looked up as a function (∆EN6), so `Placement.hero(…)` falls
+            // through to the plain-callee arm below, which lowers it as the variant it
+            // is and reports the call of a `Placement`.
+            Expr::Member(member)
+                if !member.is_optional()
+                    && self.enum_object(&required(member.object())).is_none() =>
+            {
                 let name = required(member.name());
                 let object = required(member.object());
                 let function = self.names.peek_callable(name.text());
@@ -563,10 +623,7 @@ impl Compiler<'_> {
                 match self.resolve(name.text()) {
                     Some(resolved) => (Some(resolved), Some(name), None),
                     None => {
-                        self.error(
-                            name.span(),
-                            format!("undefined name `{}`", name.text()),
-                        );
+                        self.error(name.span(), self.undefined(name.text()));
                         self.discard(&positional, &named);
                         return Type::Any;
                     }
@@ -631,7 +688,7 @@ impl Compiler<'_> {
     /// What a UFCS receiver is lowered expecting, when the expectation can shape it:
     /// the first parameter of the project function `f` names, for a receiver that could
     /// never be a record with a field `f` of its own — a list or map literal, a lambda,
-    /// or a bare name that is a variant of that parameter's enum. Any other receiver is
+    /// or a dotted variant, which resolves against that parameter. Any other receiver is
     /// lowered plain, and its type decides between the field and the function.
     fn receiver_expectation(
         &self,
@@ -645,13 +702,7 @@ impl Compiler<'_> {
         let param = self.export(fn_name).signature.params.first()?;
         let want = self.known(param.ty.clone());
         match unparen(object.clone()) {
-            Expr::List(_) | Expr::Map(_) | Expr::Lambda(_) => Some(want),
-            Expr::Name(name) => {
-                let token = required(name.name());
-                let verdict =
-                    rules::variant(Some(&want), token.text(), false, self.decls());
-                matches!(verdict, Some(Ok(()))).then_some(want)
-            }
+            Expr::List(_) | Expr::Map(_) | Expr::Lambda(_) | Expr::Variant(_) => Some(want),
             _ => None,
         }
     }

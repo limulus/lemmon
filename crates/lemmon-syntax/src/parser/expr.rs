@@ -159,6 +159,15 @@ fn prefix(p: &mut Parser<'_>) -> Option<CompletedMarker> {
             | TokenKind::False
             | TokenKind::Null,
         ) => SyntaxKind::Literal,
+        // A leading `.` opens a variant: `.hero` is the variant of whichever enum is
+        // expected where it stands. The parser resolves no names, so which enum that is
+        // stays the compiler's question; here it is only ever `.` then a name.
+        Some(TokenKind::Dot) => {
+            let m = p.start();
+            p.bump();
+            expect_name(p, "a variant name");
+            return Some(m.complete(p, SyntaxKind::VariantRef));
+        }
         Some(TokenKind::LParen) => {
             let m = p.start();
             p.bump();

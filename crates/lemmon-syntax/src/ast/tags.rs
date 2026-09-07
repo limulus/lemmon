@@ -517,8 +517,8 @@ impl DefaultTag {
 }
 
 ast_node!(
-    /// A `lem-case` pattern: a literal (`null` included), a bare variant name, or
-    /// `Type as name`.
+    /// A `lem-case` pattern: a literal (`null` included), a dotted variant (`.hero`),
+    /// or `Type as name`.
     Pattern,
     Pattern
 );
@@ -530,9 +530,20 @@ impl Pattern {
         child(&self.syntax)
     }
 
-    /// The name, when the pattern is a variant name or a type: its first identifier.
+    /// The variant's name, when the pattern is a dotted variant.
+    #[must_use]
+    pub fn variant(&self) -> Option<SyntaxToken> {
+        token(&self.syntax, SyntaxKind::Dot)?;
+        token(&self.syntax, SyntaxKind::Ident)
+    }
+
+    /// The type's name, when the pattern is a type. A dotted variant declines: it is a
+    /// value of the subject's enum, never a type, and the two share this slot's shape.
     #[must_use]
     pub fn name(&self) -> Option<SyntaxToken> {
+        if token(&self.syntax, SyntaxKind::Dot).is_some() {
+            return None;
+        }
         token(&self.syntax, SyntaxKind::Ident)
     }
 
@@ -987,35 +998,46 @@ mod tests {
     #[test]
     fn exposes_the_cases_and_default_of_a_match() {
         let src = "<lem-match a>\n  <lem-case Til as t>1</lem-case>\n  \
-                   <lem-case hero>2</lem-case>\n  <lem-case null>3</lem-case>\n  \
-                   <lem-default>4</lem-default>\n</lem-match>";
+                   <lem-case .hero>2</lem-case>\n  <lem-case Til>3</lem-case>\n  \
+                   <lem-case null>4</lem-case>\n  \
+                   <lem-default>5</lem-default>\n</lem-match>";
         let Item::Match(tag) = first_item(src) else {
             panic!("expected a match");
         };
         assert_eq!(expr_text(tag.subject()), Some("a".into()));
         let cases: Vec<CaseTag> = tag.cases().collect();
-        assert_eq!(cases.len(), 3);
+        assert_eq!(cases.len(), 4);
         let pattern = cases[0].pattern().expect("a pattern");
         assert_eq!(text(pattern.name()), "Til");
         assert_eq!(text(pattern.binding()), "t");
         assert!(pattern.literal().is_none());
+        assert!(pattern.variant().is_none());
+        // A dotted variant and a bare type share this slot's shape, so each accessor
+        // declines the other's pattern rather than reading it as its own (∆EN6).
         let pattern = cases[1].pattern().expect("a pattern");
-        assert_eq!(text(pattern.name()), "hero");
-        assert!(pattern.binding().is_none());
-        let pattern = cases[2].pattern().expect("a pattern");
+        assert_eq!(text(pattern.variant()), "hero");
         assert!(pattern.name().is_none());
+        assert!(pattern.binding().is_none());
+        assert!(pattern.literal().is_none());
+        let pattern = cases[2].pattern().expect("a pattern");
+        assert_eq!(text(pattern.name()), "Til");
+        assert!(pattern.variant().is_none());
+        assert!(pattern.binding().is_none());
+        let pattern = cases[3].pattern().expect("a pattern");
+        assert!(pattern.name().is_none());
+        assert!(pattern.variant().is_none());
         assert!(matches!(
             pattern.literal().and_then(|l| l.kind()),
             Some(LiteralKind::Null)
         ));
         assert_eq!(
-            item_texts(&cases[2].body().expect("a body").items().collect::<Vec<_>>()),
-            vec!["3"]
+            item_texts(&cases[3].body().expect("a body").items().collect::<Vec<_>>()),
+            vec!["4"]
         );
         let default = tag.default().expect("a default");
         assert_eq!(
             item_texts(&default.body().expect("a body").items().collect::<Vec<_>>()),
-            vec!["4"]
+            vec!["5"]
         );
         // The cases are not items of the match's block: only its layout text is.
         assert!(
