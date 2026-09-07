@@ -14,4 +14,4 @@ Root@0..71
         Text@17..71 "\n  never closed\n\nMore prose that the blo"…
 
 --- diagnostics
-0..7: unclosed `lem-if`: expected `</lem-if>` before end of input
+1:1..1:8: unclosed `lem-if`: expected `</lem-if>` before end of input

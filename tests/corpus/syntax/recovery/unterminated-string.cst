@@ -36,5 +36,5 @@ Root@0..160
     Text@127..160 "\n<p>And the end of the file.</p>\n"
 
 --- diagnostics
-0..33: unterminated tag: expected `>` before `<`
-17..32: unterminated string literal: expected `"`
+1:1..2:1: unterminated tag: expected `>` before `<`
+1:18..1:33: unterminated string literal: expected `"`

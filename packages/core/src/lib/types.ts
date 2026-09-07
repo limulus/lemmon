@@ -33,10 +33,32 @@ export interface PageRef {
   path: string
 }
 
-/** A byte range in a source file. */
+/**
+ * A place in a source file, as the Language Server Protocol defines it: both fields
+ * zero-based, and `character` counting UTF-16 code units from the start of the line —
+ * not bytes, and not characters. A display that counts from one adds one to each.
+ */
+export interface Position {
+  line: number
+  character: number
+}
+
+/** Both ends of a {@link Span} as positions — the LSP's `Range`. */
+export interface Range {
+  start: Position
+  end: Position
+}
+
+/**
+ * A range in a source file, as both of the things a consumer needs: the byte offsets the
+ * core works in, and the same two points as LSP positions. The core computes `range`
+ * because it holds the bytes; deriving a UTF-16 column from a byte offset here would mean
+ * re-encoding the source.
+ */
 export interface Span {
   start: number
   end: number
+  range: Range
 }
 
 /**

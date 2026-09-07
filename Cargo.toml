@@ -25,6 +25,9 @@ logos = "0.16.1"
 proptest = "1.11.0"
 tempfile = "3.24.0"
 rowan = "0.17.0"
+# rust-analyzer's offset -> line:col mapping; shares rowan's `text-size` and keeps
+# line starts rather than the text, so a resident index costs almost nothing.
+line-index = "0.1.2"
 # No default features: they pull in the CLI and syntect, which the core does not use yet
 # and which would grow the .wasm by about a megabyte when it does.
 comrak = { version = "0.54.0", default-features = false, features = ["attributes"] }

@@ -8,6 +8,7 @@
 pub mod ast;
 mod diagnostic;
 mod document;
+mod line_index;
 mod parser;
 mod scanner;
 mod syntax_kind;
@@ -16,6 +17,7 @@ mod token;
 pub use ast::AstNode;
 pub use diagnostic::{Diagnostic, Label, Severity};
 pub use document::{DocumentParse, parse_document};
+pub use line_index::{LineIndex, Position, Range};
 pub use parser::{Parse, dump, parse, tag_dump};
 pub use scanner::{ScanResult, scan};
 pub use syntax_kind::{Lemmon, SyntaxElement, SyntaxKind, SyntaxNode, SyntaxToken};
@@ -25,7 +27,8 @@ pub use token::{Token, TokenKind};
 ///
 /// Every Lemmon diagnostic — compile, load, and runtime alike — carries one, so this is
 /// the single type the entire core depends on. Byte offsets, not character offsets: they
-/// are what the scanner produces and what editors expect back over LSP.
+/// are what the scanner produces, and what makes a span exact. An editor wants
+/// `{line, character}` instead, which is [`LineIndex`]'s job, at the edge.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Span {
     /// Byte offset of the first byte in the range.

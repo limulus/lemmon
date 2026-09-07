@@ -34,5 +34,5 @@ Root@0..81
     Text@80..81 "\n"
 
 --- diagnostics
-0..9: unknown tag `lem-fore`; did you mean `lem-for`?
-30..40: unknown tag `lem-fore`; did you mean `lem-for`?
+1:1..1:10: unknown tag `lem-fore`; did you mean `lem-for`?
+3:1..3:11: unknown tag `lem-fore`; did you mean `lem-for`?

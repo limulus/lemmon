@@ -64,8 +64,12 @@ not a break:
 - `PageRef` is `{path}` until `plan()` exists to mint richer references.
 - `render` returns `{html, diagnostics}` — `html: null` plus one diagnostic when the page
   fails at runtime. `channels` and `deps` are omitted entirely until ∆RGQ, not stubbed.
-- A `Diagnostic` is `{path, span: {start, end}, severity, message, labels}` with byte
-  offsets (invariant 8): `severity` is `error` or `warning` — a program is still produced
+- A `Diagnostic` is `{path, span: {start, end, range}, severity, message, labels}`. The
+  span carries byte offsets (invariant 8) *and* `range`, the same two points as
+  `{line, character}` LSP positions — zero-based, `character` in UTF-16 code units. The
+  core computes them because it holds the bytes; the shell and the language server would
+  otherwise each re-encode the source to turn a byte offset into a UTF-16 column.
+  `severity` is `error` or `warning` — a program is still produced
   when the only diagnostics are warnings — and `labels` are the secondary spans, each
   `{path, span, message}`, pointing at the same kind of thing the primary span does (a
   name, not a whole definition) (∆VNk). A `code` would be an additive field; nothing
@@ -199,7 +203,7 @@ VM time (that number is the Phase 0 exit criterion).
 | Scanner        | `logos` 0.16                                             | `morph()` = text↔tag mode switch; a third, fields mode, lexes a `lem-type` body (D29)                                                                                                                                    |
 | Parser         | hand-written RD + Pratt                                  | Chosen in the ∆7Ib bake-off over `lelwel` 0.10 (`docs/journal/∆7Ib-parser-bake-off.md`): LL(1) forced tag names into the token vocabulary and junk out of heads, costing recovery fidelity for ~700 fewer owned lines    |
 | Syntax tree    | `rowan` 0.17 green/red CST                               | lossless + recovering; no incremental reparse needed (rust-analyzer's own conclusion). `lemmon_syntax::ast` is the typed view over it that the checker and codegen read; the CST stays for the formatter and diagnostics |
-| Diagnostics    | structured JSON + `ariadne`/`annotate-snippets` renderer | spans first-class                                                                                                                                                                                                        |
+| Diagnostics    | structured JSON + `ariadne`/`annotate-snippets` renderer | spans first-class; `line-index` 0.1 (rust-analyzer's, sharing rowan's `text-size`) turns a byte offset into an LSP position at the boundary                                                                                                                                                                                                        |
 | Markdown       | `comrak` 0.54 + `syntect` 5.3 + `two-face`               | in-core (D08); wasm32-clean. comrak is in (`default-features = false` + `attributes`, with a heading adapter since its renderer ignores `{#id}`); syntect is not yet (∆BfR)                                                     |
 | WASM           | `wasm-bindgen` 0.2.127, CLI direct (no wasm-pack)        | `wasm-bindgen --target web` runs in `scripts/stage-wasm.ts`: caller-supplied bytes keep loading injectable and browser-reusable, and the repo owns staging, so wasm-pack’s own package layout would only fight it (∆TNT)                                                                                                                                                                                   |
 | Serde          | `serde_json` (rmp-serde optional)                        | avoid serde-wasm-bindgen for bulk data                                                                                                                                                                                   |
@@ -245,6 +249,9 @@ tools like the revisions updater.
   stage, grouped by what a case is for (`syntax/` today; `render/` and `document/` follow)
   and by language feature below that. `lemmon-syntax` owns `.cst` (the lossless tree with
   its diagnostics trailer) and `.tags` (the tag-boundary projection); the VM adds `.html`.
+  Tree and projection carry byte ranges, since `.tags` is what a tree-sitter grammar is
+  held to; the trailers render one-based `line:col` instead, so a blessed diff can be
+  matched to the source by eye.
   Whether a case parses clean is data — an empty diagnostics section — not a directory.
   `crates/lemmon-corpus` does discovery, blessing (`npm run corpus:bless`), and failure
   reporting for every stage. Gates: no orphaned expectations, and every `SyntaxKind` reached

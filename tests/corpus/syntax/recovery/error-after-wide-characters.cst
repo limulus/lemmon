@@ -1,0 +1,18 @@
+Root@0..107
+  Text@0..53
+    Text@0..53 "<article>\n  <p>I’m rebuilding limulus."…
+  IfTag@53..107
+    OpenTag@53..60 "<lem-if"
+    Trivia@60..61 " "
+    Head@61..73
+      MemberExpr@61..73
+        NameRef@61..65
+          Ident@61..65 "page"
+        Dot@65..66 "."
+        Ident@66..73 "subhead"
+    Block@73..107
+      Text@73..107
+        Text@73..107 "<em>more soon</em></p>\n</article>\n"
+
+--- diagnostics
+2:38..2:58: unterminated tag: expected `>` before `<`

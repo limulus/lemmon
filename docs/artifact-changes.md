@@ -77,6 +77,13 @@ moved it. Newest last. An entry is removed when its change has been applied.
   byte-identical. The VM section's "maps in place of records" stands: records are
   checked by declaration but a record value is a map and an enum value a string until
   ∆PCK's `Value::Record` (D32, ∆cea). The boundary is unchanged.
+- **WASM API, `Diagnostic`** — where the text gives a diagnostic's span as `{start, end}`,
+  say it is `{start, end, range}`: byte offsets *and* the same two points as LSP
+  `Position`s, zero-based with `character` in UTF-16 code units. The core computes them
+  because it holds the bytes; a consumer in JavaScript would have to re-encode the source
+  to derive a UTF-16 column from a byte offset. Spans in the core stay bytes (invariant 8),
+  and a span is placed against the text that produced its unit — not the latest text at
+  that path, which differs whenever a recompile failed (D33, ∆cE6).
 
 ## From Eleventy to Lemmon
 

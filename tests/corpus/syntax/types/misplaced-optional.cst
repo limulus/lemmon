@@ -107,7 +107,7 @@ Root@0..120
     Text@119..120 "\n"
 
 --- diagnostics
-12..13: expected a type, found `?`
-45..46: expected `]`, found `)`
-77..78: expected `:` and a return type, found `)`
-110..111: expected `:`, found `}`
+1:13..1:14: expected a type, found `?`
+2:19..2:20: expected `]`, found `)`
+3:19..3:20: expected `:` and a return type, found `)`
+4:20..4:21: expected `:`, found `}`

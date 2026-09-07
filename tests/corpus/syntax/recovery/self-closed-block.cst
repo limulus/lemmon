@@ -17,4 +17,4 @@ Root@0..60
     Text@46..60 "\n<p>after</p>\n"
 
 --- diagnostics
-10..12: `lem-if` is a block tag and cannot be self-closed: expected `>`
+1:11..1:13: `lem-if` is a block tag and cannot be self-closed: expected `>`

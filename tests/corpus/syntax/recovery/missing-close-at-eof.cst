@@ -37,5 +37,5 @@ Root@0..61
             Text@55..61 "</li>\n"
 
 --- diagnostics
-0..7: unclosed `lem-if`: expected `</lem-if>` before end of input
-13..21: unclosed `lem-for`: expected `</lem-for>` before end of input
+1:1..1:8: unclosed `lem-if`: expected `</lem-if>` before end of input
+2:3..2:11: unclosed `lem-for`: expected `</lem-for>` before end of input

@@ -1,15 +1,21 @@
 //! Case discovery and expectation blessing for the golden corpus in `tests/corpus`.
 //!
-//! Deliberately stage-agnostic: this crate knows where cases live and how an expectation
-//! file is compared and rewritten, and nothing about scanning, parsing, or rendering. So
-//! every stage crate can take it as a dev-dependency without a cycle, and adding a stage
-//! means adding an extension to [`EXPECTATIONS`] and one [`check`] call — never a second
-//! walker with its own blessing protocol.
+//! Deliberately stage-agnostic: this crate knows where cases live, how an expectation
+//! file is compared and rewritten, and how a diagnostics trailer is displayed — and
+//! nothing about scanning, parsing, or rendering. So adding a stage means adding an
+//! extension to [`EXPECTATIONS`] and one [`check`] call, never a second walker with its
+//! own blessing protocol.
+//!
+//! The one dependency is `lemmon-syntax`, for the [`LineIndex`] behind that display.
+//! `lemmon-syntax` takes this crate back as a *dev*-dependency, which Cargo allows: its
+//! library is built before this one, and only its test target links this one.
 
 use std::fmt::Write as _;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+
+use lemmon_syntax::{LineIndex, Position};
 
 /// Every extension a stage may check a case against, one per stage artifact.
 ///
@@ -66,6 +72,27 @@ impl Case {
     #[must_use]
     pub fn expectation(&self, ext: &str) -> PathBuf {
         self.input.with_extension(ext)
+    }
+
+    /// The path this case is compiled under — its name with the input's extension, as
+    /// `render/canonical/article-card.lem`.
+    ///
+    /// A stage that compiles a case decides document mode by this path, the way it will
+    /// for a site; the trailer display uses it to tell a span in this case's own source
+    /// from one in another file.
+    ///
+    /// # Panics
+    ///
+    /// If the input's extension is not UTF-8, which [`cases`] cannot produce — it only
+    /// collects paths whose extension it matched against [`INPUTS`].
+    #[must_use]
+    pub fn path(&self) -> String {
+        let ext = self
+            .input
+            .extension()
+            .and_then(|e| e.to_str())
+            .expect("an input extension");
+        format!("{}.{ext}", self.name)
     }
 }
 
@@ -129,7 +156,7 @@ pub fn check(group: &str, ext: &str, produce: impl Fn(&Case) -> String) {
     let update = std::env::var_os(UPDATE).is_some();
     let mut report = String::new();
     for case in cases(group) {
-        let actual = produce(&case);
+        let actual = with_positions(&case, &produce(&case));
         let path = case.expectation(ext);
         if update {
             fs::write(&path, &actual)
@@ -145,6 +172,115 @@ pub fn check(group: &str, ext: &str, produce: impl Fn(&Case) -> String) {
         report.is_empty(),
         "{report}\nrun `npm run corpus:bless` to accept these, then review the diff"
     );
+}
+
+/// The line that opens a diagnostics trailer in every stage's expectation format.
+const TRAILER: &str = "--- diagnostics";
+
+/// Rewrites the byte spans of a diagnostics trailer as one-based `line:col..line:col`
+/// against the case's own source.
+///
+/// The offsets a stage produces are exact but unreadable: nobody reviewing a blessed diff
+/// can match `89..94` to a place in the file, and reviewing that diff is the corpus's
+/// whole safety mechanism — blessing is a proposal, not a fix. Positions are rendered
+/// here, once, rather than by each stage, so both trailers agree without either crate
+/// having to hold the convention.
+///
+/// Only the trailer moves. A `.tags` projection has none and passes through untouched, as
+/// does the tree above the marker in a `.cst`: those spans are the tree-sitter agreement
+/// target (invariant 9), and byte ranges are what a context-free grammar can be held to.
+///
+/// One-based, unlike the zero-based [`Position`] it renders — that is the LSP's type, and
+/// this is a display for people.
+fn with_positions(case: &Case, produced: &str) -> String {
+    let Some(start) = trailer_start(produced) else {
+        return produced.to_owned();
+    };
+    let (head, trailer) = produced.split_at(start);
+    let index = LineIndex::new(&case.source);
+    let path = case.path();
+    let mut out = String::from(head);
+    for line in trailer.split_inclusive('\n') {
+        out.push_str(&placed(line, &index, &path, &case.name));
+    }
+    out
+}
+
+/// The byte offset just past the last [`TRAILER`] line, or `None` if there is none.
+///
+/// The *last*, because a rendered page is free to contain the marker as ordinary output;
+/// the trailer a stage appends is always the final one.
+fn trailer_start(produced: &str) -> Option<usize> {
+    let mut found = None;
+    let mut offset = 0;
+    for line in produced.split_inclusive('\n') {
+        if line.strip_suffix('\n').unwrap_or(line) == TRAILER {
+            found = Some(offset + line.len());
+        }
+        offset += line.len();
+    }
+    found
+}
+
+/// One trailer line with its span replaced by positions, keeping its indent, its path
+/// qualifier, and its line terminator.
+///
+/// A span qualified by *another* file's path is left in bytes: the harness holds one
+/// case's source and has nothing to place it in. Rendering it against this case's source
+/// would be worse than leaving it — a position that looks right and points nowhere.
+///
+/// # Panics
+///
+/// If the line carries no span. Every trailer line does by construction, so one that
+/// does not is a stage regression worth stopping the run for rather than a line to skip
+/// past (invariant 8, and "errors over guesses").
+fn placed(line: &str, index: &LineIndex, case_path: &str, case_name: &str) -> String {
+    let (text, newline) = match line.strip_suffix('\n') {
+        Some(text) => (text, "\n"),
+        None => (line, ""),
+    };
+    let Some((indent, path, span, message)) = split_trailer_line(text) else {
+        // Named, because this fires mid-run over a hundred-odd cases — and under
+        // `corpus:bless`, before any diff exists to read it out of.
+        panic!("{case_name}: this trailer line carries no span: {text}");
+    };
+    if !path.is_empty() && path != case_path {
+        return line.to_owned();
+    }
+    let qualifier = if path.is_empty() {
+        String::new()
+    } else {
+        format!("{path}:")
+    };
+    let (start, end) = span;
+    format!(
+        "{indent}{qualifier}{}..{}: {message}{newline}",
+        shown(index.position(start)),
+        shown(index.position(end))
+    )
+}
+
+/// A trailer line as `(indent, path, (start, end), message)`, or `None` if it is not one.
+///
+/// Anchored at the front — the span is everything before the first `": "` — so that a
+/// message which itself contains a byte range is never mistaken for the line's own.
+fn split_trailer_line(text: &str) -> Option<(&str, &str, (u32, u32), &str)> {
+    let indent_len = text.len() - text.trim_start_matches(' ').len();
+    let (indent, rest) = text.split_at(indent_len);
+    let (locator, message) = rest.split_once(": ")?;
+    let (path, span) = locator.rsplit_once(':').unwrap_or(("", locator));
+    let (start, end) = span.split_once("..")?;
+    Some((
+        indent,
+        path,
+        (start.parse().ok()?, end.parse().ok()?),
+        message,
+    ))
+}
+
+/// A [`Position`] as a reader counts: from one, on both axes.
+fn shown(position: Position) -> String {
+    format!("{}:{}", position.line + 1, position.character + 1)
 }
 
 /// Appends the first line at which `actual` departs from `expected`, and how many more
@@ -310,6 +446,126 @@ mod tests {
     #[should_panic(expected = "is not a corpus expectation")]
     fn refuses_an_extension_no_stage_declared() {
         check("syntax", "sexp", |_| String::new());
+    }
+
+    /// A case whose source is `text`, named so that [`Case::path`] is `syntax/x.lem`.
+    fn case_of(text: &str) -> Case {
+        Case {
+            name: "syntax/x".to_owned(),
+            input: PathBuf::from("syntax/x.lem"),
+            source: text.to_owned(),
+        }
+    }
+
+    /// The extension is the part that matters: it is what a stage decides document mode
+    /// by, so a template and a document must not come out named alike.
+    #[test]
+    fn names_the_path_a_case_is_compiled_under_from_its_input_extension() {
+        let template = &cases("syntax")[0];
+        assert_eq!(template.path(), format!("{}.lem", template.name));
+        let document = &cases("document")[0];
+        assert_eq!(document.path(), format!("{}.md", document.name));
+    }
+
+    #[test]
+    fn renders_a_bare_span_as_one_based_line_and_column() {
+        let produced = format!("{TRAILER}\n5..7: unexpected\n");
+        assert_eq!(
+            with_positions(&case_of("ab\ncdef"), &produced),
+            format!("{TRAILER}\n2:3..2:5: unexpected\n")
+        );
+    }
+
+    #[test]
+    fn renders_a_span_qualified_by_this_case_s_own_path() {
+        let produced = format!("{TRAILER}\nsyntax/x.lem:0..2: not callable\n");
+        assert_eq!(
+            with_positions(&case_of("ab\ncd"), &produced),
+            format!("{TRAILER}\nsyntax/x.lem:1:1..1:3: not callable\n")
+        );
+    }
+
+    /// The harness holds one case's source, so a span in another file has nothing to be
+    /// placed against. Bytes are honest there; a position would look right and point
+    /// nowhere.
+    #[test]
+    fn leaves_a_span_in_another_file_in_bytes() {
+        let produced = format!("{TRAILER}\nsyntax/other.lem:0..2: defined here\n");
+        assert_eq!(with_positions(&case_of("ab\ncd"), &produced), produced);
+    }
+
+    #[test]
+    fn keeps_the_indent_of_a_label() {
+        let produced = format!("{TRAILER}\n5..7: redefined\n  0..1: first here\n");
+        assert_eq!(
+            with_positions(&case_of("ab\ncdef"), &produced),
+            format!("{TRAILER}\n2:3..2:5: redefined\n  1:1..1:2: first here\n")
+        );
+    }
+
+    /// Everything above the marker is the tree, whose byte ranges are the tree-sitter
+    /// agreement target.
+    #[test]
+    fn leaves_the_tree_above_the_marker_untouched() {
+        let produced =
+            format!("Root@0..7\n  Text@0..7 \"ab\\ncdef\"\n\n{TRAILER}\n5..7: x\n");
+        let placed = with_positions(&case_of("ab\ncdef"), &produced);
+        assert!(
+            placed.starts_with("Root@0..7\n  Text@0..7 \"ab\\ncdef\"\n\n"),
+            "{placed}"
+        );
+        assert!(placed.ends_with("2:3..2:5: x\n"), "{placed}");
+    }
+
+    /// What `.tags` goes through: a projection with no trailer at all.
+    #[test]
+    fn leaves_a_dump_with_no_trailer_alone() {
+        let produced = "Root@0..7\n  Text@0..7\n";
+        assert_eq!(with_positions(&case_of("ab\ncdef"), produced), produced);
+    }
+
+    #[test]
+    fn leaves_an_empty_trailer_alone() {
+        let produced = format!("Root@0..2\n\n{TRAILER}\n");
+        assert_eq!(with_positions(&case_of("ab"), &produced), produced);
+    }
+
+    /// A rendered page may print the marker as ordinary output; the trailer a stage
+    /// appends is always the last one.
+    #[test]
+    fn takes_the_last_marker_as_the_one_that_opens_the_trailer() {
+        let produced = format!("{TRAILER}\nnot a diagnostic at all\n{TRAILER}\n0..2: x\n");
+        assert_eq!(
+            with_positions(&case_of("ab"), &produced),
+            format!("{TRAILER}\nnot a diagnostic at all\n{TRAILER}\n1:1..1:3: x\n")
+        );
+    }
+
+    /// The span is what precedes the first `": "`, so a message quoting a byte range of
+    /// its own is not mistaken for it.
+    #[test]
+    fn reads_the_span_from_the_front_of_the_line() {
+        let produced = format!("{TRAILER}\n0..2: expected 4..9 here\n");
+        assert_eq!(
+            with_positions(&case_of("ab"), &produced),
+            format!("{TRAILER}\n1:1..1:3: expected 4..9 here\n")
+        );
+    }
+
+    #[test]
+    #[should_panic(
+        expected = "syntax/x: this trailer line carries no span: something went wrong"
+    )]
+    fn refuses_a_trailer_line_that_carries_no_span() {
+        let produced = format!("{TRAILER}\nsomething went wrong\n");
+        let _ = with_positions(&case_of("ab"), &produced);
+    }
+
+    #[test]
+    #[should_panic(expected = "syntax/x: this trailer line carries no span: 0..zz: bad")]
+    fn refuses_a_trailer_line_whose_span_is_not_a_byte_range() {
+        let produced = format!("{TRAILER}\n0..zz: bad\n");
+        let _ = with_positions(&case_of("ab"), &produced);
     }
 
     #[test]

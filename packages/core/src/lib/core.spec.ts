@@ -26,17 +26,32 @@ describe('Core', () => {
       expect(core.compile(layoutChain)).toEqual([])
     })
 
-    it('should report problems as diagnostics with byte spans', async () => {
+    it('should report problems as diagnostics with byte spans and positions', async () => {
       const core = await loadCore()
       expect(core.compile([{ path: 'bad.lem', text: '<lem.nope>' }])).toEqual([
         {
           path: 'bad.lem',
-          span: { start: 5, end: 9 },
+          span: {
+            start: 5,
+            end: 9,
+            range: { start: { line: 0, character: 5 }, end: { line: 0, character: 9 } },
+          },
           severity: 'error',
           message: 'undefined name `nope`',
           labels: [],
         },
       ])
+    })
+
+    it('should count a position in UTF-16 code units, not bytes', async () => {
+      const core = await loadCore()
+      // `’` is three bytes and one code unit, so the byte offset and the column part
+      // company on this line — which is the whole reason the core computes the position.
+      const [diagnostic] = core.compile([
+        { path: 'bad.lem', text: '<p>ok</p>\nI’m <lem.nope>' },
+      ])
+      expect(diagnostic.span.start).toBe(21)
+      expect(diagnostic.span.range.start).toEqual({ line: 1, character: 9 })
     })
 
     it('should carry a secondary span as a path-qualified label', async () => {
@@ -45,7 +60,15 @@ describe('Core', () => {
       const [collision] = core.compile([{ path: 'b.lem', text: '<lem-fn f(): int = 2 />' }])
       expect(collision.message).toBe('`f` is already defined')
       expect(collision.labels).toEqual([
-        { path: 'a.lem', span: { start: 8, end: 9 }, message: 'first defined here' },
+        {
+          path: 'a.lem',
+          span: {
+            start: 8,
+            end: 9,
+            range: { start: { line: 0, character: 8 }, end: { line: 0, character: 9 } },
+          },
+          message: 'first defined here',
+        },
       ])
     })
 

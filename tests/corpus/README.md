@@ -36,13 +36,29 @@ basename:
 
 | File          | Produced by                    | Contents                                                                                                                                                         |
 | ------------- | ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `<name>.cst`  | `lemmon_syntax::dump`          | The lossless tree, one node or token per line, then `--- diagnostics` and one `start..end: message` per line; for a `.md`, the tree `parse_document` assembled   |
+| `<name>.cst`  | `lemmon_syntax::dump`          | The lossless tree, one node or token per line, then `--- diagnostics` and one `line:col..line:col: message` per line; for a `.md`, the tree `parse_document` assembled |
 | `<name>.tags` | `lemmon_syntax::tag_dump`      | The tag-boundary projection: text runs, tag nodes, close tags, and the errors standing where an item would, with heads, expressions, and `Block` wrappers elided |
-| `<name>.html` | `lemmon_vm::{compile, render}` | The rendered output, then `--- diagnostics` and one `path:start..end: message` per compile diagnostic — warnings too — or for the runtime error that stopped the render |
+| `<name>.html` | `lemmon_vm::{compile, render}` | The rendered output, then `--- diagnostics` and one `path:line:col..line:col: message` per compile diagnostic — warnings too — or for the runtime error that stopped the render |
+
+### Positions in a trailer
+
+The stages produce byte spans — that is what the core works in (invariant 8) — and
+`crates/lemmon-corpus` renders them here as **one-based** `line:col`, because the point of
+a blessed diff is that someone reads it, and nobody can match `89..94` to a place in a file
+by eye. `syntax/recovery/error-after-wide-characters` pins the convention: columns count
+UTF-16 code units, so an emoji before the error costs two columns and three bytes costs
+one. (The core's own `Position` is the LSP's, counting from zero; the extra one is the
+display's.)
+
+A span in *another* file — a label pointing where a name was first defined — stays in
+bytes: the harness holds one case's source and has nothing to place it against.
+
+Everywhere else the byte ranges stand. The tree in a `.cst` keeps `@start..end`, and all
+of `.tags` does, because that projection is what a tree-sitter grammar is held to.
 
 In both trailers a warning's message is prefixed `warning: `, and each secondary span a
-diagnostic carries follows it on its own line, indented two spaces, as `start..end: note`
-(path-qualified in `.html`). A warning is data like any diagnostic: a case that warns says
+diagnostic carries follows it on its own line, indented two spaces, as
+`line:col..line:col: note` (path-qualified in `.html`). A warning is data like any diagnostic: a case that warns says
 so in its trailer, and a rule that warns is tested on both halves — the case it fires on
 and the neighbouring name it must leave alone.
 
@@ -70,6 +86,9 @@ it is a proposal.** Read the resulting `git diff` before keeping it:
   parse (or render) clean no longer does. That is a regression until proven otherwise.
 - A span shifting in `.tags` means a tag boundary moved, which is a language change and
   needs `docs/language.md` to say so.
+- A trailer line that moved without its message changing is a span that moved. Open the
+  input at the line and column it now names and check that is what the diagnostic is
+  about — that is what the positions are there for.
 
 ## Adding a case
 

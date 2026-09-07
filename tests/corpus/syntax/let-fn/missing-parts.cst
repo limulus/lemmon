@@ -73,7 +73,7 @@ Root@0..102
     Text@101..102 "\n"
 
 --- diagnostics
-13..15: expected an expression before `/>`
-25..26: expected a name, found `:`
-46..47: expected a name before `>`
-74..75: expected a function name, found `(`
+1:14..1:16: expected an expression before `/>`
+2:10..2:11: expected a name, found `:`
+3:9..3:10: expected a name before `>`
+6:9..6:10: expected a function name, found `(`

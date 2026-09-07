@@ -20,12 +20,6 @@ Standing epic for reshaping working code that belongs to no milestone. An item s
 only while doing it first makes the work below it smaller; if that work is claimed first, it
 absorbs the item and the item is removed.
 
-- ∆cE6 Line and column in corpus diagnostic trailers — the `.cst`/`.html` trailers print byte
-  spans only (`89..94`, `path:89..94`), which a reader cannot match to the source by eye; have
-  `crates/lemmon-corpus` render `line:col` beside each span (labels too), update
-  `tests/corpus/README.md`, and re-bless once. Spans stay bytes in the core (invariant 8);
-  the display step is one `lem check` (∆4tG) and the LSP (∆5MM) will each need as well
-
 ## Phase 1 — Language complete, tooling from day one
 
 Seed items for the next phase (architecture doc 3, phase 1); expect these to be split

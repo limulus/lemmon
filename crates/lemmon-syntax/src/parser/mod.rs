@@ -107,6 +107,11 @@ pub(crate) fn parse_item_prefix(src: &str) -> Parse {
 /// spaces per depth, then a blank line, `--- diagnostics`, and one diagnostic per line —
 /// `start..end: message`, with `warning: ` before a warning's message and each label on
 /// its own line below, indented, as `start..end: note`.
+///
+/// The spans here are byte offsets. What lands in a checked-in `.cst` is not: the corpus
+/// harness renders the trailer's spans as `line:col` against the case's source, since
+/// nobody can match a byte offset to a place in a file by eye. The tree above the
+/// trailer keeps its byte ranges either way.
 /// Takes a [`Parse`] rather than source so that a document's tree — assembled by
 /// [`parse_document`](crate::parse_document), not parsed — dumps the same way.
 #[must_use]

@@ -18,4 +18,4 @@ Root@0..64
     Text@50..64 "\n<p>after</p>\n"
 
 --- diagnostics
-0..17: unterminated tag: expected `>` before `<`
+1:1..2:1: unterminated tag: expected `>` before `<`

@@ -61,6 +61,6 @@ Root@0..53
     Text@52..53 "\n"
 
 --- diagnostics
-10..11: expected an expression, found `:`
-29..30: expected an expression, found `)`
-41..42: expected an expression, found `)`
+1:11..1:12: expected an expression, found `:`
+2:14..2:15: expected an expression, found `)`
+3:10..3:11: expected an expression, found `)`

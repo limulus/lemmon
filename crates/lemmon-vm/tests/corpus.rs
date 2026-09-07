@@ -34,22 +34,11 @@ fn globals() -> Vec<(&'static str, Value)> {
     vec![("page", Value::map(page)), ("site", Value::map(site))]
 }
 
-/// The path a case is compiled under: its name with the input's extension, since the
-/// compiler decides document mode by the path the way it will for a site.
-fn path(case: &Case) -> String {
-    let ext = case
-        .input
-        .extension()
-        .and_then(|e| e.to_str())
-        .expect("an input extension");
-    format!("{}.{ext}", case.name)
-}
-
 /// Renders a case: its output, then `--- diagnostics` and one entry per compile
 /// diagnostic — warnings too — or for the runtime error, in the shape `.cst` uses for
 /// the parser's.
 fn html(case: &Case) -> String {
-    let path = path(case);
+    let path = case.path();
     let files = [SourceFile::new(&path, &case.source)];
     let mut out = String::new();
     let compiled = compile(&files);
@@ -87,7 +76,7 @@ fn renders_every_document_as_expected() {
 fn emitted_ops() -> BTreeSet<&'static str> {
     lemmon_corpus::cases(GROUP)
         .iter()
-        .filter_map(|case| compile(&[SourceFile::new(path(case), &case.source)]).output)
+        .filter_map(|case| compile(&[SourceFile::new(case.path(), &case.source)]).output)
         .flat_map(|module: Module| {
             module
                 .functions

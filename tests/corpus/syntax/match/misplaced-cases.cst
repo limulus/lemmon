@@ -151,14 +151,14 @@ Root@0..334
     Text@333..334 "\n"
 
 --- diagnostics
-0..9: `lem-case` outside `lem-match`
-44..60: `lem-match` holds only `lem-case` and `lem-default`
-60..65: `lem-match` holds only `lem-case` and `lem-default`
-101..110: `lem-case` cannot follow `lem-default`
-140..152: duplicate `lem-default`: a `lem-match` has at most one `lem-default`
-175..184: `lem-case` cannot follow `lem-default`
-184..185: expected a pattern before `>`
-209..218: `lem-case` cannot follow `lem-default`
-225..226: expected a name to bind before `>`
-277..284: `lem-match` holds only `lem-case` and `lem-default`
-287..296: `lem-case` outside `lem-match`
+1:1..1:10: `lem-case` outside `lem-match`
+2:14..4:3: `lem-match` holds only `lem-case` and `lem-default`
+4:3..4:8: `lem-match` holds only `lem-case` and `lem-default`
+6:3..6:12: `lem-case` cannot follow `lem-default`
+7:3..7:15: duplicate `lem-default`: a `lem-match` has at most one `lem-default`
+8:3..8:12: `lem-case` cannot follow `lem-default`
+8:12..8:13: expected a pattern before `>`
+9:3..9:12: `lem-case` cannot follow `lem-default`
+9:19..9:20: expected a name to bind before `>`
+12:3..12:10: `lem-match` holds only `lem-case` and `lem-default`
+12:13..12:22: `lem-case` outside `lem-match`

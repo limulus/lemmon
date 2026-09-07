@@ -20,7 +20,7 @@ use std::fmt;
 
 /// Re-exported so consumers of the VM — including the WASM boundary — get spans and
 /// severities without depending on the syntax crate directly.
-pub use lemmon_syntax::{Severity, Span};
+pub use lemmon_syntax::{LineIndex, Position, Range, Severity, Span};
 
 pub use bytecode::{Function, Module, Op};
 pub use compile::{

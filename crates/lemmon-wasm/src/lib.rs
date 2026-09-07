@@ -6,8 +6,12 @@
 //! changed, compiles each into its own unit against the resident signatures, and
 //! relinks; `loadData` stores the ambient records; `render` runs one file's entry.
 //!
-//! Diagnostics come back as a JSON array of `{path, span: {start, end}, severity,
-//! message, labels}`, every one pointing at source (invariant 8) and every label too. A
+//! Diagnostics come back as a JSON array of
+//! `{path, span: {start, end, range}, severity, message, labels}`, every one pointing at
+//! source (invariant 8) and every label too. `span` carries both what the core works in —
+//! byte offsets — and `range`, the same two points as zero-based UTF-16 LSP positions, so
+//! neither `lem check` nor the language server has to redo that conversion in JavaScript,
+//! where a byte offset is the awkward direction to convert from. A
 //! thrown `JsError` is reserved for caller bugs
 //! — a malformed envelope, rendering before a compile has succeeded, rendering a path
 //! the program does not have — which have no source span to point at.
@@ -16,8 +20,8 @@ use std::collections::BTreeMap;
 use std::rc::Rc;
 
 use lemmon_vm::{
-    ExportIndex, Map, Module, RuntimeError, Severity, SourceFile, Unit, Value,
-    compile_unit, link, prepare, render, repeated_path,
+    ExportIndex, LineIndex, Map, Module, Position, RuntimeError, Severity, SourceFile,
+    Unit, Value, compile_unit, link, prepare, render, repeated_path,
 };
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::JsError;
@@ -99,47 +103,113 @@ struct LabelOut {
     message: String,
 }
 
+/// A span as both of the things a consumer needs: the byte offsets the core works in,
+/// and the two LSP positions an editor or a printed diagnostic wants.
 #[derive(Serialize)]
 struct SpanOut {
     start: u32,
     end: u32,
+    range: RangeOut,
 }
 
-impl From<lemmon_vm::Span> for SpanOut {
-    fn from(span: lemmon_vm::Span) -> Self {
+/// Zero-based line and UTF-16 `character`, exactly as the LSP defines a position — so a
+/// language server can pass one straight through.
+#[derive(Serialize)]
+struct PositionOut {
+    line: u32,
+    character: u32,
+}
+
+#[derive(Serialize)]
+struct RangeOut {
+    start: PositionOut,
+    end: PositionOut,
+}
+
+impl From<Position> for PositionOut {
+    fn from(position: Position) -> Self {
         Self {
-            start: span.start,
-            end: span.end,
+            line: position.line,
+            character: position.character,
         }
     }
 }
 
-impl From<lemmon_vm::Diagnostic> for Diagnostic {
-    fn from(diagnostic: lemmon_vm::Diagnostic) -> Self {
+impl SpanOut {
+    /// Places `span` in the file `index` describes.
+    fn placed(span: lemmon_vm::Span, index: &LineIndex) -> Self {
+        let range = index.range(span);
         Self {
+            start: span.start,
+            end: span.end,
+            range: RangeOut {
+                start: range.start.into(),
+                end: range.end.into(),
+            },
+        }
+    }
+}
+
+/// Every resident file's line index, by path — what places a span at the boundary.
+type LineIndexes = BTreeMap<String, LineIndex>;
+
+/// The index that places a span in `path`: the text of the call in progress if that call
+/// carried the file, otherwise the text the resident unit at that path was compiled from.
+///
+/// The two differ exactly when a recompile failed. That file keeps its previous unit, and
+/// the unit's spans are offsets into the text that produced it — so a diagnostic the
+/// relink raises about it has to be placed against *that* text, not the newer one at the
+/// same path, which may be shorter than the span it is asked to place.
+///
+/// # Panics
+///
+/// If neither has the path. Every diagnostic names a file the core was handed and still
+/// holds, so a miss is a bug in the core rather than anything a caller can provoke.
+fn index_for<'a>(
+    path: &str,
+    incoming: Option<&'a LineIndexes>,
+    resident: &'a LineIndexes,
+) -> &'a LineIndex {
+    incoming
+        .and_then(|indexes| indexes.get(path))
+        .or_else(|| resident.get(path))
+        .unwrap_or_else(|| panic!("no line index for `{path}`, which a diagnostic names"))
+}
+
+impl Diagnostic {
+    /// Places a compile diagnostic and each of its labels — a label by *its own* path,
+    /// since it may point into a different file than the diagnostic does.
+    fn placed(
+        diagnostic: lemmon_vm::Diagnostic,
+        incoming: &LineIndexes,
+        resident: &LineIndexes,
+    ) -> Self {
+        let index = index_for(&diagnostic.path, Some(incoming), resident);
+        Self {
+            span: SpanOut::placed(diagnostic.span, index),
             path: diagnostic.path,
-            span: diagnostic.span.into(),
             severity: diagnostic.severity.into(),
             message: diagnostic.message,
             labels: diagnostic
                 .labels
                 .into_iter()
                 .map(|label| LabelOut {
+                    span: SpanOut::placed(
+                        label.span,
+                        index_for(&label.path, Some(incoming), resident),
+                    ),
                     path: label.path,
-                    span: label.span.into(),
                     message: label.message,
                 })
                 .collect(),
         }
     }
-}
 
-/// A runtime failure is always an error, and the VM has one span to point at.
-impl From<RuntimeError> for Diagnostic {
-    fn from(error: RuntimeError) -> Self {
+    /// A runtime failure is always an error, and the VM has one span to point at.
+    fn placed_runtime(error: RuntimeError, resident: &LineIndexes) -> Self {
         Self {
+            span: SpanOut::placed(error.span, index_for(&error.path, None, resident)),
             path: error.path,
-            span: error.span.into(),
             severity: SeverityOut::Error,
             message: error.message,
             labels: Vec::new(),
@@ -170,6 +240,12 @@ pub struct Core {
     module: Option<Module>,
     /// The ambient records `loadData` stored, bound at every render.
     ambient: Vec<(String, Value)>,
+    /// For each resident unit, an index over the text *that unit* was compiled from —
+    /// which is not always the latest text at that path, since a file whose recompile
+    /// failed keeps its previous unit. Updated in lockstep with `units`, so it grows
+    /// with them and no faster. Line starts and each line's non-ASCII characters, not
+    /// the text: an all-ASCII file costs a handful of bytes per line.
+    unit_indexes: LineIndexes,
 }
 
 #[wasm_bindgen]
@@ -183,6 +259,7 @@ impl Core {
             index: ExportIndex::new(),
             module: None,
             ambient: Vec::new(),
+            unit_indexes: BTreeMap::new(),
         }
     }
 
@@ -243,6 +320,12 @@ impl Core {
         if let Some(path) = repeated_path(files.iter().map(|file| file.path.as_str())) {
             return Err(format!("malformed `compile` input: `{path}` given twice"));
         }
+        // Indexed up front, before `prepare`, so that a file which fails to even parse
+        // can still have its own diagnostics placed.
+        let incoming: LineIndexes = files
+            .iter()
+            .map(|file| (file.path.clone(), LineIndex::new(&file.text)))
+            .collect();
         let mut diagnostics: Vec<lemmon_vm::Diagnostic> = Vec::new();
         let mut prepared = Vec::new();
         for file in &files {
@@ -268,6 +351,11 @@ impl Core {
             let compiled = compile_unit(p, &self.index);
             diagnostics.extend(compiled.diagnostics);
             if let Some(unit) = compiled.output {
+                // In lockstep: the index kept for a unit is the one over the text that
+                // produced it, so the unit's spans stay placeable for as long as it is
+                // resident — including after a later recompile of that path fails.
+                self.unit_indexes
+                    .insert(unit.path.clone(), incoming[&unit.path].clone());
                 self.units.insert(unit.path.clone(), unit);
             }
         }
@@ -292,8 +380,14 @@ impl Core {
             ExportIndex::of(self.units.values()),
             "the index describes the resident units"
         );
-        let diagnostics: Vec<Diagnostic> =
-            diagnostics.into_iter().map(Into::into).collect();
+        debug_assert!(
+            self.units.keys().eq(self.unit_indexes.keys()),
+            "an index for every resident unit and no others"
+        );
+        let diagnostics: Vec<Diagnostic> = diagnostics
+            .into_iter()
+            .map(|d| Diagnostic::placed(d, &incoming, &self.unit_indexes))
+            .collect();
         serde_json::to_string(&diagnostics)
             .map_err(|e| format!("serialising diagnostics failed: {e}"))
     }
@@ -312,7 +406,9 @@ impl Core {
             }
         }
         self.ambient = ambient;
-        // Nothing to validate against until schemas exist (`∆iCW`).
+        // Nothing to validate against until schemas exist (`∆iCW`). Those diagnostics
+        // will point into the host's YAML envelope rather than a resident file, so they
+        // will need a line index this core does not hold — ∆iCW's to work out.
         Ok("[]".to_owned())
     }
 
@@ -338,7 +434,7 @@ impl Core {
             },
             Err(error) => RenderResult {
                 html: None,
-                diagnostics: vec![error.into()],
+                diagnostics: vec![Diagnostic::placed_runtime(error, &self.unit_indexes)],
             },
         };
         serde_json::to_string(&result)
@@ -591,6 +687,100 @@ mod tests {
         assert_eq!(reported[0]["labels"][0]["message"], "first defined here");
     }
 
+    /// The column is UTF-16 code units from the start of the line, so the `’` before the
+    /// tag costs one column while costing three bytes. Asserting both is what tells the
+    /// two apart: a position quietly rendered from the byte offset would read 11.
+    #[test]
+    fn places_a_diagnostic_at_its_line_and_column_not_its_byte_offset() {
+        let mut core = Core::new();
+        let result = core
+            .compile_json(r#"[{"path": "page.lem", "text": "<p>ok</p>\nI’m <lem.nope>"}]"#)
+            .unwrap();
+        let reported = diagnostics(&result);
+        assert_eq!(reported[0]["path"], "page.lem");
+        assert_eq!(reported[0]["span"]["start"], 21);
+        assert_eq!(reported[0]["span"]["range"]["start"]["line"], 1);
+        assert_eq!(reported[0]["span"]["range"]["start"]["character"], 9);
+        assert_eq!(reported[0]["span"]["range"]["end"]["character"], 13);
+    }
+
+    /// A label is placed in the file *it* names, not the one the diagnostic is reported
+    /// against. The two files put their `f` on different lines, so placing the label
+    /// against `b.lem` would show up as line 0.
+    #[test]
+    fn places_a_label_in_the_file_it_points_into() {
+        let mut core = Core::new();
+        compile_clean(
+            &mut core,
+            r#"[{"path": "a.lem", "text": "<p>x</p>\n<lem-fn f(): int = 1 />"}]"#,
+        );
+        let result = core
+            .compile_json(r#"[{"path": "b.lem", "text": "<lem-fn f(): int = 2 />"}]"#)
+            .unwrap();
+        let reported = diagnostics(&result);
+        assert_eq!(reported[0]["span"]["range"]["start"]["line"], 0);
+        assert_eq!(reported[0]["labels"][0]["path"], "a.lem");
+        assert_eq!(
+            reported[0]["labels"][0]["span"]["range"]["start"]["line"],
+            1
+        );
+        assert_eq!(
+            reported[0]["labels"][0]["span"]["range"]["start"]["character"],
+            8
+        );
+    }
+
+    /// The case the resident indexes exist for: a relink blames a file the *reporting*
+    /// call never received, whose text is long gone. Dropping an index with its call
+    /// would panic here.
+    #[test]
+    fn places_a_diagnostic_about_a_file_this_call_never_received() {
+        let mut core = Core::new();
+        compile_clean(
+            &mut core,
+            r#"[
+                {"path": "lib.lem", "text": "<lem-fn n(): int = 1 />"},
+                {"path": "page.lem", "text": "<p>hi</p>\n<lem.n()>"}
+            ]"#,
+        );
+        let result = core
+            .compile_json(r#"[{"path": "lib.lem", "text": "no functions here"}]"#)
+            .unwrap();
+        let reported = diagnostics(&result);
+        assert_eq!(reported[0]["path"], "page.lem");
+        assert_eq!(reported[0]["span"]["range"]["start"]["line"], 1);
+        assert_eq!(reported[0]["span"]["range"]["start"]["character"], 5);
+    }
+
+    /// A file whose recompile fails keeps its previous unit, whose spans are offsets into
+    /// the text that *produced* it. Placing them against the newer text at that path
+    /// points at the wrong bytes — or, when the new text is shorter, past its end.
+    #[test]
+    fn places_a_stale_unit_s_span_against_the_text_that_produced_it() {
+        let mut core = Core::new();
+        compile_clean(
+            &mut core,
+            r#"[
+                {"path": "lib.lem", "text": "<lem-fn n(): int = 1 />"},
+                {"path": "page.lem", "text": "<p>a long first line</p>\n<lem.n()>"}
+            ]"#,
+        );
+        // page.lem now fails to compile, so it keeps the unit above — but its text at
+        // this path is henceforth this much shorter one.
+        let failed = core
+            .compile_json(r#"[{"path": "page.lem", "text": "<lem.nope>"}]"#)
+            .unwrap();
+        assert!(!diagnostics(&failed).as_array().unwrap().is_empty());
+        // Now a clean compile relinks, and the stale unit still imports `n`.
+        let result = core
+            .compile_json(r#"[{"path": "lib.lem", "text": "no functions here"}]"#)
+            .unwrap();
+        let reported = diagnostics(&result);
+        assert_eq!(reported[0]["path"], "page.lem");
+        assert_eq!(reported[0]["span"]["range"]["start"]["line"], 1);
+        assert_eq!(reported[0]["span"]["range"]["start"]["character"], 5);
+    }
+
     #[test]
     fn reports_a_collision_once_and_never_takes_the_refused_definition() {
         let mut core = Core::new();
@@ -699,6 +889,14 @@ mod tests {
         assert_eq!(result["html"], serde_json::Value::Null);
         assert_eq!(result["diagnostics"][0]["path"], "page.lem");
         assert_eq!(result["diagnostics"][0]["span"]["start"], 5);
+        assert_eq!(
+            result["diagnostics"][0]["span"]["range"]["start"]["line"],
+            0
+        );
+        assert_eq!(
+            result["diagnostics"][0]["span"]["range"]["start"]["character"],
+            5
+        );
     }
 
     #[test]

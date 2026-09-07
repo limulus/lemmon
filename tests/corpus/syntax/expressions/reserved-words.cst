@@ -84,8 +84,8 @@ Root@0..72
     Text@71..72 "\n"
 
 --- diagnostics
-8..10: expected `)`, found `as`
-22..24: `as` is a reserved word and cannot be used as a named-argument name
-37..39: `as` is a reserved word and cannot be used as a member name
-48..50: `in` is a reserved word and cannot be used as a named-argument name
-55..57: `is` is a reserved word and cannot be used as a named-argument name
+1:9..1:11: expected `)`, found `as`
+2:8..2:10: `as` is a reserved word and cannot be used as a named-argument name
+3:8..3:10: `as` is a reserved word and cannot be used as a member name
+4:8..4:10: `in` is a reserved word and cannot be used as a named-argument name
+4:15..4:17: `is` is a reserved word and cannot be used as a named-argument name

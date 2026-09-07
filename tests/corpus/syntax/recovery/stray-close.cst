@@ -24,4 +24,4 @@ Root@0..53
     Text@52..53 "\n"
 
 --- diagnostics
-14..22: stray `</lem-if>`: no `lem-if` is open
+2:1..2:9: stray `</lem-if>`: no `lem-if` is open

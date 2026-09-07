@@ -67,9 +67,9 @@ Root@0..225
     Text@224..225 "\n"
 
 --- diagnostics
-0..10: `lem-style` is not supported yet (∆RGQ)
-66..75: `lem-head` is not supported yet (∆RGQ)
-129..138: `lem-page` is not supported yet (∆RGQ)
-156..167: `lem-import` is not supported yet (∆PgF)
-178..189: `lem-script` is not supported yet (∆RGQ)
-193..202: `lem-emit` is not supported yet (∆RGQ)
+1:1..1:11: `lem-style` is not supported yet (∆RGQ)
+4:1..4:10: `lem-head` is not supported yet (∆RGQ)
+7:1..7:10: `lem-page` is not supported yet (∆RGQ)
+8:1..8:12: `lem-import` is not supported yet (∆PgF)
+9:1..9:12: `lem-script` is not supported yet (∆RGQ)
+10:1..10:10: `lem-emit` is not supported yet (∆RGQ)

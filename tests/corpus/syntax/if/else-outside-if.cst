@@ -67,6 +67,6 @@ Root@0..116
     Text@115..116 "\n"
 
 --- diagnostics
-0..9: `lem-else` outside `lem-if`
-36..48: `lem-else-if` is only allowed inside `lem-if`
-89..101: `lem-else-if` cannot follow `lem-else`
+1:1..1:10: `lem-else` outside `lem-if`
+3:3..3:15: `lem-else-if` is only allowed inside `lem-if`
+5:23..5:35: `lem-else-if` cannot follow `lem-else`

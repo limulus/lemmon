@@ -29,4 +29,4 @@ Root@0..52
         Text@51..52 "\n"
 
 --- diagnostics
-0..13: unterminated tag: expected `>` before `<`
+1:1..2:1: unterminated tag: expected `>` before `<`

@@ -63,6 +63,6 @@ Root@0..53
     Text@52..53 "\n"
 
 --- diagnostics
-15..16: expected `]` before `>`
-27..28: expected `]` before `>`
-41..42: unexpected `)` in tag head
+1:16..1:17: expected `]` before `>`
+2:11..2:12: expected `]` before `>`
+3:13..3:14: unexpected `)` in tag head

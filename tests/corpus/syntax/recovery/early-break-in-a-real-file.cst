@@ -131,4 +131,4 @@ Root@0..482
     Text@481..482 "\n"
 
 --- diagnostics
-0..59: unterminated tag: expected `>` before `<`
+1:1..2:3: unterminated tag: expected `>` before `<`

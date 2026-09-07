@@ -68,9 +68,9 @@ Root@0..161
     Text@160..161 "\n"
 
 --- diagnostics
-0..8: unknown tag `lem-iff`; did you mean `lem-if`?
-26..35: unknown tag `lem-iff`; did you mean `lem-if`?
-37..46: unknown tag `lem-lett`; did you mean `lem-let`?
-56..71: unknown tag `lem-collection`
-84..93: unknown tag `lem-data`
-103..118: unknown tag `lem-frobnicate`
+1:1..1:9: unknown tag `lem-iff`; did you mean `lem-if`?
+3:1..3:10: unknown tag `lem-iff`; did you mean `lem-if`?
+4:1..4:10: unknown tag `lem-lett`; did you mean `lem-let`?
+5:1..5:16: unknown tag `lem-collection`
+6:1..6:10: unknown tag `lem-data`
+7:1..7:16: unknown tag `lem-frobnicate`

@@ -133,8 +133,12 @@ impl Diagnostic {
     }
 }
 
-/// The corpus trailer shape: `path:start..end: message`, `warning: ` before a warning's
-/// message, and each label on its own indented line below.
+/// `path:start..end: message`, `warning: ` before a warning's message, and each label on
+/// its own indented line below.
+///
+/// Byte offsets, for a Rust-side reader who has the source open. The corpus trailer is
+/// built from this and then has its spans rendered as `line:col` by the harness; how
+/// `lem check` prints one is the shell's to decide (∆4tG).
 impl fmt::Display for Diagnostic {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let severity = match self.severity {

@@ -58,7 +58,7 @@ Root@0..63
     Text@49..63 "\n<p>after</p>\n"
 
 --- diagnostics
-10..11: expected an expression, found `)`
-20..21: expected a member name before `>`
-32..33: expected an expression, found `,`
-47..48: expected an expression, found `)`
+1:11..1:12: expected an expression, found `)`
+2:8..2:9: expected a member name before `>`
+3:11..3:12: expected an expression, found `,`
+4:12..4:13: expected an expression, found `)`
