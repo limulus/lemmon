@@ -294,7 +294,10 @@ record, and a `from` binding compiles to a diagnostic until the loader exists._
 
 Checking is not a pass of its own: the compiler's one walk types each expression as it
 lowers it (D31), so every rule below is applied where the code for the construct is
-emitted, and a type error is a compile error that leaves the file without a unit.
+emitted, and a type error is a compile error that leaves the file without a unit. A
+construct a rule refuses then takes whatever type keeps the rest of the file checkable —
+the type that was expected where one was, `any` where there is nothing better — so one
+mistake costs one diagnostic and never a train of follow-ons.
 
 Bidirectional with local inference: declared types on parameters, fields, and annotated
 `lem-let`s; inferred for unannotated bindings and lambda parameters. An expectation flows

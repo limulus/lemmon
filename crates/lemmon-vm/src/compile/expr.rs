@@ -4,8 +4,12 @@
 //! Checking is bidirectional (`docs/language.md` §Checking): where a type is expected —
 //! an annotated binding, a parameter, a list under a typed list — [`Compiler::check`]
 //! flows the expectation into literals, lambdas, and conditionals, and everything else
-//! is inferred and then compared. An expression that fails types as `any`, so that one
-//! mistake costs one diagnostic and the rest of the file is still checked.
+//! is inferred and then compared. The walk emits, asks, and reports: the rules that
+//! decide a type from its operands' types live in [`rules`](super::rules), and what a
+//! rule refuses is reported here, at the construct's span. The construct then takes
+//! whatever type keeps the rest of the file checkable — the type that was expected
+//! where one was, `any` where there is nothing better — so that one mistake costs one
+//! diagnostic.
 
 use std::rc::Rc;
 
@@ -16,17 +20,12 @@ use lemmon_syntax::ast::{
 use lemmon_syntax::{Span, SyntaxKind, SyntaxToken};
 
 use super::names::{BindingKind, Resolved};
+use super::rules::{self, Arg, Rule};
 use super::{Compiler, TokenSpan, required};
 use crate::Value;
 use crate::builtins::BUILTINS;
 use crate::bytecode::Op;
-use crate::types::{Type, assignable, join};
-use crate::unit::Param;
-
-/// The type an expectation asks its literal for: a `T?` wanted is a `T` written.
-fn expectation(expected: Option<&Type>) -> Option<&Type> {
-    expected.map(Type::strip_optional)
-}
+use crate::types::{Type, join};
 
 impl Compiler<'_> {
     /// Lowers `expr`, leaving its value on the stack, and returns its type.
@@ -39,6 +38,30 @@ impl Compiler<'_> {
     /// was wanted.
     pub(super) fn check(&mut self, expr: &Expr, expected: &Type) -> Type {
         self.expr_in(expr, Some(expected))
+    }
+
+    /// What a rule granted, or `any` once what it refused is reported at `span`.
+    pub(super) fn rule(&mut self, span: Span, verdict: Rule) -> Type {
+        self.rule_or(span, verdict, Type::Any)
+    }
+
+    /// What a rule granted, or `fallback` once what it refused is reported at `span`.
+    pub(super) fn rule_or<T>(&mut self, span: Span, verdict: Rule<T>, fallback: T) -> T {
+        verdict.unwrap_or_else(|message| {
+            self.error(span, message);
+            fallback
+        })
+    }
+
+    /// Reports what a rule refused at `span`, if it refused; whether it did.
+    pub(super) fn require(&mut self, span: Span, verdict: Rule<()>) -> bool {
+        match verdict {
+            Ok(()) => false,
+            Err(message) => {
+                self.error(span, message);
+                true
+            }
+        }
     }
 
     fn expr_in(&mut self, expr: &Expr, expected: Option<&Type>) -> Type {
@@ -66,11 +89,10 @@ impl Compiler<'_> {
             }
         };
         match expected {
-            Some(expected) if !assignable(&actual, expected) => {
-                self.error(span, format!("expected `{expected}`, got `{actual}`"));
-                expected.clone()
+            Some(expected) => {
+                self.rule_or(span, rules::expected(actual, expected), expected.clone())
             }
-            _ => actual,
+            None => actual,
         }
     }
 
@@ -158,57 +180,7 @@ impl Compiler<'_> {
             Op::GetField { name: index }
         };
         self.emit(op, span);
-        match (&object_ty, optional) {
-            (Type::Any, _) => Type::Any,
-            // A value known to be null is an optional with nothing inside: `?.` on it
-            // is null again.
-            (Type::Null, true) => Type::Null,
-            (Type::Optional(inner), true) => self
-                .field_type(inner, name.text(), span)
-                .map_or(Type::Any, Type::optional),
-            (Type::Optional(_), false) => {
-                self.may_be_null(&object_ty, span, ", or use `?.`");
-                Type::Any
-            }
-            (other, true) => {
-                self.error(span, format!("`?.` needs an optional, got `{other}`"));
-                Type::Any
-            }
-            (other, false) => self
-                .field_type(other, name.text(), span)
-                .unwrap_or(Type::Any),
-        }
-    }
-
-    /// The type of the field `name` of a value of type `ty`, or the error that it has
-    /// none. Records arrive with ∆cea; today only `any` has fields.
-    fn field_type(&mut self, ty: &Type, name: &str, span: Span) -> Option<Type> {
-        match ty {
-            Type::Any => Some(Type::Any),
-            Type::Map(_) => {
-                self.error(
-                    span,
-                    format!("a `{ty}` has no fields: index a map as `[\"{name}\"]`"),
-                );
-                None
-            }
-            Type::Null => {
-                self.error(span, format!("cannot read field `{name}` of null"));
-                None
-            }
-            other => {
-                self.error(span, format!("a `{other}` has no field `{name}`"));
-                None
-            }
-        }
-    }
-
-    /// The error for reading through a `T?` as if it were a `T`.
-    fn may_be_null(&mut self, ty: &Type, span: Span, alternative: &str) {
-        self.error(
-            span,
-            format!("a `{ty}` may be null: narrow it with `lem-if`{alternative}"),
-        );
+        self.rule(span, rules::member(&object_ty, name.text(), optional))
     }
 
     fn index(&mut self, index: &IndexExpr) -> Type {
@@ -216,27 +188,7 @@ impl Compiler<'_> {
         let object_ty = self.expr(&required(index.object()));
         let index_ty = self.expr(&required(index.index()));
         self.emit(Op::Index, span);
-        let (element, key) = match &object_ty {
-            Type::Any => return Type::Any,
-            Type::Optional(_) => {
-                self.may_be_null(&object_ty, span, "");
-                return Type::Any;
-            }
-            Type::List(element) => ((**element).clone(), Type::Int),
-            Type::Map(value) => ((**value).clone(), Type::String),
-            other => {
-                self.error(span, format!("cannot index a `{other}`"));
-                return Type::Any;
-            }
-        };
-        if !assignable(&index_ty, &key) {
-            let what = if key == Type::Int { "list" } else { "map" };
-            self.error(
-                span,
-                format!("a {what} is indexed by `{key}`, got `{index_ty}`"),
-            );
-        }
-        element
+        self.rule(span, rules::index(&object_ty, &index_ty))
     }
 
     fn unary(&mut self, unary: &UnaryExpr) -> Type {
@@ -250,18 +202,7 @@ impl Compiler<'_> {
             },
             span,
         );
-        match (op, &ty) {
-            (UnaryOp::Neg, Type::Int | Type::Float | Type::Any) => ty,
-            (UnaryOp::Neg, other) => {
-                self.error(span, format!("cannot negate a `{other}`"));
-                Type::Any
-            }
-            (UnaryOp::Not, Type::Bool | Type::Any) => Type::Bool,
-            (UnaryOp::Not, other) => {
-                self.error(span, format!("`!` needs a `bool`, got `{other}`"));
-                Type::Bool
-            }
-        }
+        self.rule(span, rules::unary(op, &ty))
     }
 
     fn binary(&mut self, binary: &BinaryExpr) -> Type {
@@ -277,10 +218,10 @@ impl Compiler<'_> {
                 } else {
                     Op::JumpIfTrueKeep { to: 0 }
                 };
-                self.logical(&lhs_ty, token.text(), lhs.span());
+                self.require(lhs.span(), rules::logical(token.text(), &lhs_ty));
                 let end = self.emit_jump(jump, span);
                 let rhs_ty = self.expr(&rhs);
-                self.logical(&rhs_ty, token.text(), rhs.span());
+                self.require(rhs.span(), rules::logical(token.text(), &rhs_ty));
                 self.patch(end);
                 Type::Bool
             }
@@ -340,101 +281,7 @@ impl Compiler<'_> {
                     },
                     span,
                 );
-                self.operator(op, token.text(), &lhs_ty, &rhs_ty, span)
-            }
-        }
-    }
-
-    /// The operand rule of `&&` and `||`.
-    fn logical(&mut self, ty: &Type, symbol: &str, span: Span) {
-        if !matches!(ty, Type::Bool | Type::Any) {
-            self.error(span, format!("`{symbol}` needs a `bool`, got `{ty}`"));
-        }
-    }
-
-    /// The type a binary operator's result has, or the error that its operands do not
-    /// fit it (`docs/language.md` §Expressions). An `any` on either side is the VM's to
-    /// check: the result is `any` where the operator yields its operands' type, and
-    /// `bool` where it yields one.
-    fn operator(
-        &mut self,
-        op: BinaryOp,
-        symbol: &str,
-        lhs: &Type,
-        rhs: &Type,
-        span: Span,
-    ) -> Type {
-        let mismatch = |this: &mut Self| {
-            this.error(
-                span,
-                format!("cannot apply `{symbol}` to `{lhs}` and `{rhs}`"),
-            );
-        };
-        let any = *lhs == Type::Any || *rhs == Type::Any;
-        match op {
-            BinaryOp::Add
-            | BinaryOp::Sub
-            | BinaryOp::Mul
-            | BinaryOp::Div
-            | BinaryOp::Rem => match (lhs, rhs) {
-                _ if any => Type::Any,
-                (Type::Int, Type::Int) => Type::Int,
-                (a, b) if a.is_number() && b.is_number() => Type::Float,
-                (Type::String, Type::String) if op == BinaryOp::Add => Type::String,
-                _ => {
-                    mismatch(self);
-                    Type::Any
-                }
-            },
-            BinaryOp::Lt | BinaryOp::Lte | BinaryOp::Gt | BinaryOp::Gte => {
-                let ordered = any
-                    || (lhs.is_number() && rhs.is_number())
-                    || matches!(
-                        (lhs, rhs),
-                        (Type::String, Type::String) | (Type::Datetime, Type::Datetime)
-                    );
-                if !ordered {
-                    mismatch(self);
-                }
-                Type::Bool
-            }
-            BinaryOp::Eq | BinaryOp::NotEq => {
-                // Numbers compare numerically whatever their type, as the VM does.
-                let numbers = lhs.is_number() && rhs.is_number();
-                if matches!(lhs, Type::Fn(..)) || matches!(rhs, Type::Fn(..)) {
-                    self.error(span, "functions cannot be compared");
-                } else if !(numbers || assignable(lhs, rhs) || assignable(rhs, lhs)) {
-                    self.error(span, format!("cannot compare `{lhs}` with `{rhs}`"));
-                }
-                Type::Bool
-            }
-            BinaryOp::In => {
-                match rhs {
-                    Type::Any => {}
-                    Type::List(element) => {
-                        if !assignable(lhs, element) {
-                            self.error(
-                                span,
-                                format!(
-                                    "`in` on a `{rhs}` needs `{element}` on its left, got `{lhs}`"
-                                ),
-                            );
-                        }
-                    }
-                    Type::Map(_) => {
-                        if !assignable(lhs, &Type::String) {
-                            self.error(
-                                span,
-                                format!("`in` on a map needs a `string` key on its left, got `{lhs}`"),
-                            );
-                        }
-                    }
-                    _ => mismatch(self),
-                }
-                Type::Bool
-            }
-            BinaryOp::And | BinaryOp::Or | BinaryOp::Coalesce => {
-                unreachable!("short-circuit operators are lowered by `binary`")
+                self.rule(span, rules::operator(op, token.text(), &lhs_ty, &rhs_ty))
             }
         }
     }
@@ -455,45 +302,30 @@ impl Compiler<'_> {
         self.patch(end);
         match expected {
             Some(expected) => expected.clone(),
-            None => join(&then_ty, &else_ty).unwrap_or_else(|| {
-                self.error(
-                    span,
-                    format!(
-                        "the branches have different types: `{then_ty}` and `{else_ty}`"
-                    ),
-                );
-                Type::Any
-            }),
+            None => self.rule(span, rules::branches(&then_ty, &else_ty)),
         }
     }
 
-    /// The condition rule: a `lem-if` or `?:` tests a `bool` or an optional (`any` is
-    /// the VM's to test, and `null` is an optional with nothing inside). An optional
-    /// that is a plain local name — parenthesised or not — narrows that binding to its
-    /// inner type wherever the condition holds, returned for the caller to open. A
-    /// binding an enclosing condition already narrowed passes as the optional it was
-    /// declared.
+    /// Applies the condition rule to a `lem-if` or `?:` condition: an optional that is
+    /// a plain local name — parenthesised or not — narrows that binding to its inner
+    /// type wherever the condition holds, returned for the caller to open. A binding an
+    /// enclosing condition already narrowed passes as the optional it was declared.
     pub(super) fn condition(&mut self, expr: &Expr, ty: &Type) -> Option<(Span, Type)> {
         let expr = unparen(expr.clone());
-        match ty {
-            Type::Bool | Type::Any | Type::Null => None,
-            Type::Optional(inner) => {
+        match rules::condition(ty) {
+            Ok(None) => None,
+            Ok(Some(inner)) => {
                 let Expr::Name(name) = &expr else {
                     return None;
                 };
                 match self.names.peek(required(name.name()).text()) {
-                    Some(Resolved::Local { binder, .. }) => {
-                        Some((binder, (**inner).clone()))
-                    }
+                    Some(Resolved::Local { binder, .. }) => Some((binder, inner)),
                     _ => None,
                 }
             }
-            _ if self.declared_optional(&expr) => None,
-            other => {
-                self.error(
-                    expr.span(),
-                    format!("a condition must be a `bool` or an optional, got `{other}`"),
-                );
+            Err(_) if self.declared_optional(&expr) => None,
+            Err(message) => {
+                self.error(expr.span(), message);
                 None
             }
         }
@@ -524,7 +356,7 @@ impl Compiler<'_> {
     }
 
     fn list(&mut self, list: &ListLit, expected: Option<&Type>) -> Type {
-        let want = literal_expectation(expected, |ty| match ty {
+        let want = rules::literal_expectation(expected, |ty| match ty {
             Type::List(element) => Some(element),
             _ => None,
         });
@@ -539,7 +371,7 @@ impl Compiler<'_> {
     }
 
     fn map(&mut self, map: &MapLit, expected: Option<&Type>) -> Type {
-        let want = literal_expectation(expected, |ty| match ty {
+        let want = rules::literal_expectation(expected, |ty| match ty {
             Type::Map(value) => Some(value),
             _ => None,
         });
@@ -572,8 +404,7 @@ impl Compiler<'_> {
 
     /// Lowers one element of a list or map literal: checked against the element type
     /// `want`ed, or — with nothing wanted — inferred and folded into `so_far`, which the
-    /// first element sets, a `null` makes optional, and an element that fits neither is
-    /// reported against.
+    /// first element sets and an element that fits neither leaves as it was.
     fn literal_element(
         &mut self,
         item: &Expr,
@@ -588,13 +419,9 @@ impl Compiler<'_> {
         let ty = self.expr(item);
         *so_far = Some(match so_far.take() {
             None => ty,
-            Some(so_far) => join(&so_far, &ty).unwrap_or_else(|| {
-                self.error(
-                    item.span(),
-                    format!("expected `{so_far}`, got `{ty}`: a {what} share one type"),
-                );
-                so_far
-            }),
+            Some(so_far) => {
+                self.rule_or(item.span(), rules::element(&so_far, &ty, what), so_far)
+            }
         });
     }
 
@@ -607,25 +434,9 @@ impl Compiler<'_> {
         // Parameter types come from the function type expected here; with none, they
         // are `any` (§Checking). A lambda of the wrong arity is still lowered with `any`
         // parameters, so its body is checked and the names it reads count as read.
-        let mut mismatched = false;
-        let want: Option<(Rc<[Type]>, Type)> = match expectation(expected) {
-            Some(Type::Fn(param_tys, ret)) if param_tys.len() == params.len() => {
-                Some((param_tys.clone(), (**ret).clone()))
-            }
-            Some(want @ Type::Fn(param_tys, _)) => {
-                self.error(
-                    span,
-                    format!(
-                        "this lambda takes {}, but a `{want}` takes {}",
-                        count(params.len(), "parameter"),
-                        param_tys.len()
-                    ),
-                );
-                mismatched = true;
-                None
-            }
-            _ => None,
-        };
+        let shape = rules::lambda_shape(expected, params.len());
+        let mismatched = shape.is_err();
+        let want = self.rule_or(span, shape, None);
         let param_tys: Rc<[Type]> = match &want {
             Some((param_tys, _)) => param_tys.clone(),
             None => Rc::from(vec![Type::Any; params.len()]),
@@ -720,15 +531,7 @@ impl Compiler<'_> {
                 // One mistake, one diagnostic: a named argument is the argument that
                 // is then missing, so only the first rule broken is reported.
                 let refused = self.reject_named(&named, &name)
-                    || (arity != builtin.arity && {
-                        self.arity_error(
-                            span,
-                            &format!("`{}`", builtin.name),
-                            builtin.arity,
-                            arity,
-                        );
-                        true
-                    });
+                    || self.require(span, rules::builtin(builtin, arity));
                 if refused {
                     self.discard(receiver.as_ref(), &positional, &named);
                     return Type::Any;
@@ -742,13 +545,7 @@ impl Compiler<'_> {
                 }
                 let argc = u16::try_from(arity).expect("fewer than 65536 arguments");
                 self.emit(Op::CallBuiltin { id, argc }, span);
-                match (builtin.ty)(&types) {
-                    Ok(ty) => ty,
-                    Err(message) => {
-                        self.error(span, message);
-                        Type::Any
-                    }
-                }
+                self.rule(span, (builtin.ty)(&types))
             }
             Some(Resolved::Local { .. } | Resolved::Ambient) => {
                 let name = name.expect("a resolved name");
@@ -784,32 +581,26 @@ impl Compiler<'_> {
         span: Span,
         name: Option<&str>,
     ) -> Type {
-        let ret = match callee {
-            Type::Fn(params, ret) => {
-                if params.len() != positional.len() {
-                    let what =
-                        name.map_or("this function".to_owned(), |n| format!("`{n}`"));
-                    self.arity_error(span, &what, params.len(), positional.len());
-                    self.discard(None, positional, &[]);
-                    return Type::Any;
-                }
-                for (arg, param) in positional.iter().zip(params.iter()) {
-                    self.check(arg, param);
-                }
-                (**ret).clone()
-            }
-            Type::Any => {
-                for arg in positional {
-                    self.expr(arg);
-                }
-                Type::Any
-            }
-            other => {
-                self.error(span, format!("cannot call a `{other}`"));
+        let (params, ret) = match rules::callee(callee, name, positional.len()) {
+            Ok(granted) => granted,
+            Err(message) => {
+                self.error(span, message);
                 self.discard(None, positional, &[]);
                 return Type::Any;
             }
         };
+        match params {
+            Some(params) => {
+                for (arg, param) in positional.iter().zip(params.iter()) {
+                    self.check(arg, param);
+                }
+            }
+            None => {
+                for arg in positional {
+                    self.expr(arg);
+                }
+            }
+        }
         let argc = u16::try_from(positional.len()).expect("fewer than 65536 arguments");
         self.emit(Op::CallValue { argc }, span);
         ret
@@ -827,14 +618,6 @@ impl Compiler<'_> {
             }
             None => false,
         }
-    }
-
-    /// "`f` takes 2 arguments, got 1"
-    fn arity_error(&mut self, span: Span, what: &str, wanted: usize, got: usize) {
-        self.error(
-            span,
-            format!("{what} takes {}, got {got}", count(wanted, "argument")),
-        );
     }
 
     /// Lowers a call's operands after an error that stops the call from compiling: the
@@ -870,60 +653,33 @@ impl Compiler<'_> {
         span: Span,
     ) -> Type {
         let export = self.export(fn_name);
-        let params: &[Param] = &export.signature.params;
-        let mut slots: Vec<Option<Expr>> = vec![None; params.len()];
-        let given = receiver.iter().cloned().chain(positional.iter().cloned());
-        let mut failed = false;
-        for (i, arg) in given.enumerate() {
-            match slots.get_mut(i) {
-                Some(slot) => *slot = Some(arg),
-                None => {
-                    self.arity_error(
-                        arg.span(),
-                        &format!("`{fn_name}`"),
-                        params.len(),
-                        i + 1 + named.len(),
-                    );
-                    failed = true;
-                    break;
-                }
+        let given: Vec<&Expr> = receiver.iter().chain(positional).collect();
+        let names: Vec<SyntaxToken> =
+            named.iter().map(|arg| required(arg.name())).collect();
+        let name_texts: Vec<&str> = names.iter().map(SyntaxToken::text).collect();
+        let order =
+            rules::arguments(fn_name, &export.signature.params, given.len(), &name_texts);
+        let order = match order {
+            Ok(order) => order,
+            Err((blame, message)) => {
+                let at = match blame {
+                    Some(Arg::Positional(i)) => given[i].span(),
+                    Some(Arg::Named(n)) => names[n].span(),
+                    None => span,
+                };
+                self.error(at, message);
+                self.discard(receiver.as_ref(), positional, named);
+                return Type::Any;
             }
-        }
-        for arg in named {
-            let name = required(arg.name());
-            let Some(i) = params.iter().position(|p| &*p.name == name.text()) else {
-                self.error(
-                    name.span(),
-                    format!("`{fn_name}` has no parameter `{}`", name.text()),
-                );
-                failed = true;
-                break;
+        };
+        for (param, arg) in export.signature.params.iter().zip(order) {
+            match arg {
+                Arg::Positional(i) => self.check(given[i], &param.ty),
+                Arg::Named(n) => self.check(&required(named[n].value()), &param.ty),
             };
-            if slots[i].is_some() {
-                self.error(name.span(), format!("`{}` is already given", name.text()));
-                failed = true;
-                break;
-            }
-            slots[i] = Some(required(arg.value()));
         }
-        if !failed {
-            let mut missing = params.iter().zip(&slots).filter(|(_, s)| s.is_none());
-            if let Some((param, _)) = missing.next() {
-                self.error(
-                    span,
-                    format!("missing argument `{}` in call to `{fn_name}`", param.name),
-                );
-                failed = true;
-            }
-        }
-        if failed {
-            self.discard(receiver.as_ref(), positional, named);
-            return Type::Any;
-        }
-        for (param, slot) in params.iter().zip(slots) {
-            self.check(&slot.expect("every slot is filled"), &param.ty);
-        }
-        let argc = u16::try_from(params.len()).expect("fewer than 65536 parameters");
+        let argc = u16::try_from(export.signature.params.len())
+            .expect("fewer than 65536 parameters");
         let func = self.func_operand(export, span);
         self.emit(Op::Call { func, argc }, span);
         export.signature.ret.clone()
@@ -936,25 +692,6 @@ fn unparen(mut expr: Expr) -> Expr {
         expr = required(paren.inner());
     }
     expr
-}
-
-/// "1 argument", "2 arguments".
-fn count(n: usize, noun: &str) -> String {
-    format!("{n} {noun}{}", if n == 1 { "" } else { "s" })
-}
-
-/// The element type a list or map literal is checked against, if the expectation says:
-/// `pick` reads it from the expected container, and an expected `any` opts the whole
-/// literal out of checking — its elements are `any` too.
-fn literal_expectation(
-    expected: Option<&Type>,
-    pick: fn(&Type) -> Option<&Rc<Type>>,
-) -> Option<Type> {
-    match expectation(expected) {
-        Some(Type::Any) => Some(Type::Any),
-        Some(ty) => pick(ty).map(|element| (**element).clone()),
-        None => None,
-    }
 }
 
 /// The text of a string literal token: the quotes dropped and every `\c` replaced by
@@ -988,21 +725,5 @@ mod tests {
     #[test]
     fn keeps_a_trailing_backslash_from_panicking() {
         assert_eq!(decode_string("\"a\\"), "a");
-    }
-
-    #[test]
-    fn counts_with_the_plural_the_number_wants() {
-        assert_eq!(count(1, "argument"), "1 argument");
-        assert_eq!(count(0, "parameter"), "0 parameters");
-    }
-
-    #[test]
-    fn strips_one_optional_from_an_expectation() {
-        assert_eq!(
-            expectation(Some(&Type::optional(Type::Int))),
-            Some(&Type::Int)
-        );
-        assert_eq!(expectation(Some(&Type::Int)), Some(&Type::Int));
-        assert_eq!(expectation(None), None);
     }
 }

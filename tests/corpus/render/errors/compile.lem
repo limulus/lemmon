@@ -1,6 +1,7 @@
 <lem-fn f(a: int, b: int): int = a + b />
 <lem-fn f(x: int): int = x />
 <lem.f(1, 2, 3)>
+<lem.f(1, 2, 3, 4, c: 5)>
 <lem.f(1, c: 2)>
 <lem.f(1, a: 2)>
 <lem.f(1)>

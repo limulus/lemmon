@@ -20,12 +20,6 @@ Standing epic for reshaping working code that belongs to no milestone. An item s
 only while doing it first makes the work below it smaller; if that work is claimed first, it
 absorbs the item and the item is removed.
 
-- ∆2c6 Pure typing rules beside the walk — move the checker's rules that need no
-  emitting (`operator`, `field_type`, the index, condition, print, and arity rules) out of
-  `crates/lemmon-vm/src/compile/expr.rs` into a `rules.rs` of pure functions returning a
-  type or a message, leaving the walk to emit, ask, and report. The rules then test
-  without compiling a template, and ∆cea's field and variant rules have one place to go
-
 ## Phase 1 — Language complete, tooling from day one
 
 Seed items for the next phase (architecture doc 3, phase 1); expect these to be split

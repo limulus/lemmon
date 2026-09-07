@@ -1,0 +1,10 @@
+<lem-let n = 1 />
+<lem-let s = "s" />
+<lem-let flags = [n lt s, 1, "x"] />
+<lem-let flag = !n />
+<lem-let xs = [true] />
+<lem.n == s>
+<lem.flag>
+<lem.flags[0]>
+<lem.xs["a"]>
+<lem-if flag && (n in n)>a refused operand still guards</lem-if>

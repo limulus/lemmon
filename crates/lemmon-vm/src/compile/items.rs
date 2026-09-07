@@ -8,7 +8,7 @@ use lemmon_syntax::ast::{ForTag, Item, LetBlock, LetVoid, Spanned};
 
 use super::names::BindingKind;
 use super::whitespace::{Arm, Body, Kind, Piece};
-use super::{Compiler, TokenSpan, annotations, required};
+use super::{Compiler, TokenSpan, annotations, required, rules};
 use crate::bytecode::Op;
 use crate::types::Type;
 
@@ -118,7 +118,7 @@ impl Compiler<'_> {
             }
             Item::Access(tag) => {
                 let ty = self.expr(&required(tag.expr()));
-                self.printable(&ty, tag.span());
+                self.require(tag.span(), rules::printable(&ty));
                 self.emit(Op::Emit, tag.span());
             }
             Item::LetVoid(tag) => self.lower_let_void(tag),
@@ -174,34 +174,6 @@ impl Compiler<'_> {
         }
     }
 
-    /// The print rule (`docs/language.md` §Escaping): what `<lem.…>` may print. A `bool`,
-    /// `null`, a list, a map, or a function has no printed form; an optional has one
-    /// once it is known not to be null; `any` is the VM's to print.
-    fn printable(&mut self, ty: &Type, span: Span) {
-        match ty {
-            Type::String
-            | Type::Html
-            | Type::Int
-            | Type::Float
-            | Type::Datetime
-            | Type::Url
-            | Type::Asset
-            | Type::Any => {}
-            Type::Optional(_) => self.error(
-                span,
-                format!(
-                    "cannot print a `{ty}`: narrow it with `lem-if`, or give it a default \
-                     with `??`"
-                ),
-            ),
-            Type::Fn(..) => self.error(
-                span,
-                format!("cannot print a `{ty}`: call it with `(…)` to print its result"),
-            ),
-            other => self.error(span, format!("cannot print a `{other}`")),
-        }
-    }
-
     fn lower_if(&mut self, arms: Vec<Arm>) {
         let mut ends = Vec::new();
         for arm in arms {
@@ -239,16 +211,11 @@ impl Compiler<'_> {
         let span = tag.span();
 
         let ty = self.expr(&iterable);
-        // What the loop binds: a list's element and its index, or a map's key and value.
-        let (first_ty, second_ty) = match &ty {
-            Type::Any => (Type::Any, Type::Any),
-            Type::List(element) => ((**element).clone(), Type::Int),
-            Type::Map(value) => (Type::String, (**value).clone()),
-            other => {
-                self.error(iterable.span(), format!("cannot iterate over a `{other}`"));
-                (Type::Any, Type::Any)
-            }
-        };
+        let (first_ty, second_ty) = self.rule_or(
+            iterable.span(),
+            rules::iterable(&ty),
+            (Type::Any, Type::Any),
+        );
         let init = self.emit_jump(Op::IterInit { exit: 0 }, iterable.span());
         let top = self.here();
         let next = self.emit_jump(

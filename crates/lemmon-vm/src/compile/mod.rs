@@ -4,17 +4,19 @@
 //! runs only on files that parsed clean, so every `Option` an accessor returns is `Some`
 //! here; [`required`] says so in one place. The driver lives in this module; [`items`]
 //! lowers what stands in a body, [`expr`] lowers heads and types them as it goes,
-//! [`annotations`] reads types as written, and [`names`] owns every rule about names —
-//! what may be bound where, what a name means and what type it has, in one stated
-//! order. There is no separate checking pass: the one walk that emits an expression's
-//! code is the walk that knows its type, so the checker's rules live beside the
-//! lowering they guard (`docs/language.md` §Checking). What is typed `any` is checked
-//! by the VM at run time instead.
+//! [`rules`] holds the typing rules the walk asks — pure functions from types to a type
+//! or a message — [`annotations`] reads types as written, and [`names`] owns every rule
+//! about names — what may be bound where, what a name means and what type it has, in
+//! one stated order. There is no separate checking pass: the one walk that emits an
+//! expression's code is the walk that knows its type, so the checker's rules are
+//! applied where the lowering they guard happens (`docs/language.md` §Checking). What
+//! is typed `any` is checked by the VM at run time instead.
 
 mod annotations;
 mod expr;
 mod items;
 mod names;
+mod rules;
 mod whitespace;
 
 use std::collections::{HashMap, HashSet};
