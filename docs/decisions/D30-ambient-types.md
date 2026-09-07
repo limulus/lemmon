@@ -89,7 +89,9 @@ declaring `Page` (`url`, `inputPath`, `prev`, `next`, `draft`) and `Build` (`tim
 - A subtype that redeclares `layout` with its own parameter type — `Article`'s
   `(Article, html): html` over a site base record's `(SitePage, html): html` — narrows a
   parameter, which ordinary subtyping forbids. The field is only ever called with its own
-  record, so ∆cea decides whether `layout` gets that rule or each leaf schema declares it.
+  record, so ∆cea had to decide whether `layout` gets that rule or each leaf schema
+  declares it. D32 decided: neither. A subtype may not redeclare a field with another
+  type, so `layout` is declared once, where its self type is, and inherited below it.
 - A feed reads other pages' rendered bodies (`a.body` for each article), and `body` is
   no longer a `Page` field. A rendered document body as a value needs a form of its own
   (∆ePP, ∆RGQ).

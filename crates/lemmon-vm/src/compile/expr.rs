@@ -65,14 +65,47 @@ impl Compiler<'_> {
     }
 
     fn expr_in(&mut self, expr: &Expr, expected: Option<&Type>) -> Type {
+        let actual = self.lower(expr, expected);
+        match expected {
+            Some(expected) => self.rule_or(
+                expr.span(),
+                rules::expected(actual, expected, self.decls()),
+                expected.clone(),
+            ),
+            None => actual,
+        }
+    }
+
+    /// Lowers `expr` under an expectation without holding it to one: the expectation
+    /// shapes what it can — a literal's elements, a lambda's parameters, a bare
+    /// variant — and the type that comes back is the caller's to judge.
+    fn lower(&mut self, expr: &Expr, expected: Option<&Type>) -> Type {
         let span = expr.span();
-        let actual = match expr {
+        match expr {
             Expr::Literal(literal) => self.literal(literal),
+            // A bare name where an enum is expected is that enum's variant before it
+            // is anything else (D32); a name that is neither is reported as the
+            // variant it is not.
             Expr::Name(name) => {
                 let token = required(name.name());
-                self.name(&token)
+                let is_name = self.names.peek(token.text()).is_some();
+                match rules::variant(expected, token.text(), is_name, self.decls()) {
+                    Some(Ok(())) => {
+                        let index = self.intern(token.text());
+                        self.emit(Op::Const { index }, token.span());
+                        expected
+                            .expect("a variant is only granted under an expectation")
+                            .strip_optional()
+                            .clone()
+                    }
+                    Some(Err(message)) => {
+                        self.error(token.span(), message);
+                        Type::Any
+                    }
+                    None => self.name(&token),
+                }
             }
-            Expr::Paren(paren) => self.expr_in(&required(paren.inner()), expected),
+            Expr::Paren(paren) => self.lower(&required(paren.inner()), expected),
             Expr::Member(member) => self.member(member),
             Expr::Index(index) => self.index(index),
             Expr::Unary(unary) => self.unary(unary),
@@ -87,12 +120,6 @@ impl Compiler<'_> {
                 self.error(span, "`is` needs narrowing, which is not here yet (∆PCK)");
                 Type::Any
             }
-        };
-        match expected {
-            Some(expected) => {
-                self.rule_or(span, rules::expected(actual, expected), expected.clone())
-            }
-            None => actual,
         }
     }
 
@@ -144,7 +171,7 @@ impl Compiler<'_> {
                 let export = self.export(token.text());
                 let func = self.func_operand(export, span);
                 self.emit(Op::Global { func }, span);
-                export.signature.ty()
+                self.known(export.signature.ty())
             }
             Some(Resolved::Builtin(_)) => {
                 self.error(
@@ -180,7 +207,11 @@ impl Compiler<'_> {
             Op::GetField { name: index }
         };
         self.emit(op, span);
-        self.rule(span, rules::member(&object_ty, name.text(), optional))
+        let ty = self.rule(
+            span,
+            rules::member(&object_ty, name.text(), optional, self.decls()),
+        );
+        self.known(ty)
     }
 
     fn index(&mut self, index: &IndexExpr) -> Type {
@@ -188,7 +219,7 @@ impl Compiler<'_> {
         let object_ty = self.expr(&required(index.object()));
         let index_ty = self.expr(&required(index.index()));
         self.emit(Op::Index, span);
-        self.rule(span, rules::index(&object_ty, &index_ty))
+        self.rule(span, rules::index(&object_ty, &index_ty, self.decls()))
     }
 
     fn unary(&mut self, unary: &UnaryExpr) -> Type {
@@ -239,7 +270,8 @@ impl Compiler<'_> {
                         let rhs_ty = self.check(&rhs, &Type::optional((**inner).clone()));
                         // The one type both sides share — `T` when the default is one,
                         // `T?` when it may itself be null, `any` when it is unknown.
-                        join(inner, &rhs_ty).unwrap_or_else(|| (**inner).clone())
+                        join(inner, &rhs_ty, self.decls())
+                            .unwrap_or_else(|| (**inner).clone())
                     }
                     // Inside a `lem-if` on it, the binding is already known to hold a
                     // value; a default there is dead, not wrong.
@@ -260,7 +292,10 @@ impl Compiler<'_> {
                 ty
             }
             _ => {
-                let rhs_ty = self.expr(&rhs);
+                // Beside an enum the right operand is lowered expecting it, so a bare
+                // variant may stand there; the operator rule still judges both types.
+                let want = rules::operand_expectation(op, &lhs_ty, self.decls());
+                let rhs_ty = self.lower(&rhs, want.as_ref());
                 self.emit(
                     match op {
                         BinaryOp::Add => Op::Add,
@@ -281,7 +316,10 @@ impl Compiler<'_> {
                     },
                     span,
                 );
-                self.rule(span, rules::operator(op, token.text(), &lhs_ty, &rhs_ty))
+                self.rule(
+                    span,
+                    rules::operator(op, token.text(), &lhs_ty, &rhs_ty, self.decls()),
+                )
             }
         }
     }
@@ -302,7 +340,7 @@ impl Compiler<'_> {
         self.patch(end);
         match expected {
             Some(expected) => expected.clone(),
-            None => self.rule(span, rules::branches(&then_ty, &else_ty)),
+            None => self.rule(span, rules::branches(&then_ty, &else_ty, self.decls())),
         }
     }
 
@@ -419,9 +457,11 @@ impl Compiler<'_> {
         let ty = self.expr(item);
         *so_far = Some(match so_far.take() {
             None => ty,
-            Some(so_far) => {
-                self.rule_or(item.span(), rules::element(&so_far, &ty, what), so_far)
-            }
+            Some(so_far) => self.rule_or(
+                item.span(),
+                rules::element(&so_far, &ty, what, self.decls()),
+                so_far,
+            ),
         });
     }
 
@@ -485,24 +525,40 @@ impl Compiler<'_> {
         let positional: Vec<Expr> = args.iter().flat_map(ArgList::positional).collect();
         let named: Vec<NamedArg> = args.iter().flat_map(ArgList::named).collect();
 
-        // `x.f(y)` is `f(x, y)` when `f` names a function (UFCS); otherwise it is a
-        // field holding a function value. "Names a function" means "resolves to one
-        // here" — a local `f` shadows it, as a local shadows anything — until records
-        // (∆cea) give a receiver fields of its own to consult first.
-        let ufcs = match &callee {
+        // `x.f(y)` is `f(x, y)` when `x`'s type has no field `f` and `f` names a
+        // function (UFCS); a field `f` is called as the value it holds. "Names a
+        // function" means "resolves to one here" — a local `f` shadows it, as a local
+        // shadows anything. The receiver is lowered before the choice is made: it is
+        // the first value pushed on either path, and its type is what decides.
+        let (resolved, name, receiver) = match &callee {
             Expr::Member(member) if !member.is_optional() => {
                 let name = required(member.name());
-                self.names
-                    .peek_callable(name.text())
-                    .map(|resolved| (resolved, name))
+                let object = required(member.object());
+                let function = self.names.peek_callable(name.text());
+                let want =
+                    self.receiver_expectation(&object, function.as_ref(), name.text());
+                let object_ty = match want {
+                    Some(want) => self.check(&object, &want),
+                    None => self.expr(&object),
+                };
+                let field = rules::field_of(&object_ty, name.text(), self.decls());
+                match (field, function) {
+                    (None, Some(resolved)) => {
+                        (Some(resolved), Some(name), Some((object_ty, object.span())))
+                    }
+                    (field, _) => {
+                        return self.call_field(
+                            field,
+                            &object_ty,
+                            member,
+                            &positional,
+                            &named,
+                            span,
+                        );
+                    }
+                }
             }
-            _ => None,
-        };
-        let (resolved, name, receiver) = match (ufcs, &callee) {
-            (Some((resolved, name)), Expr::Member(member)) => {
-                (Some(resolved), Some(name), Some(required(member.object())))
-            }
-            (_, Expr::Name(name)) => {
+            Expr::Name(name) => {
                 let name = required(name.name());
                 match self.resolve(name.text()) {
                     Some(resolved) => (Some(resolved), Some(name), None),
@@ -511,7 +567,7 @@ impl Compiler<'_> {
                             name.span(),
                             format!("undefined name `{}`", name.text()),
                         );
-                        self.discard(None, &positional, &named);
+                        self.discard(&positional, &named);
                         return Type::Any;
                     }
                 }
@@ -533,12 +589,12 @@ impl Compiler<'_> {
                 let refused = self.reject_named(&named, &name)
                     || self.require(span, rules::builtin(builtin, arity));
                 if refused {
-                    self.discard(receiver.as_ref(), &positional, &named);
+                    self.discard(&positional, &named);
                     return Type::Any;
                 }
                 let mut types = Vec::with_capacity(arity);
-                if let Some(receiver) = &receiver {
-                    types.push(self.expr(receiver));
+                if let Some((receiver_ty, _)) = &receiver {
+                    types.push(receiver_ty.clone());
                 }
                 for arg in &positional {
                     types.push(self.expr(arg));
@@ -550,7 +606,7 @@ impl Compiler<'_> {
             Some(Resolved::Local { .. } | Resolved::Ambient) => {
                 let name = name.expect("a resolved name");
                 if self.reject_named(&named, &name) {
-                    self.discard(None, &positional, &named);
+                    self.discard(&positional, &named);
                     return Type::Any;
                 }
                 let ty = self.name(&name);
@@ -562,13 +618,77 @@ impl Compiler<'_> {
                         first.span(),
                         "named arguments need a callee that is a `lem-fn` by name",
                     );
-                    self.discard(Some(&callee), &positional, &named);
+                    self.expr(&callee);
+                    self.discard(&positional, &named);
                     return Type::Any;
                 }
                 let ty = self.expr(&callee);
                 self.call_value(&ty, &positional, span, None)
             }
         }
+    }
+
+    /// What a UFCS receiver is lowered expecting, when the expectation can shape it:
+    /// the first parameter of the project function `f` names, for a receiver that could
+    /// never be a record with a field `f` of its own — a list or map literal, a lambda,
+    /// or a bare name that is a variant of that parameter's enum. Any other receiver is
+    /// lowered plain, and its type decides between the field and the function.
+    fn receiver_expectation(
+        &self,
+        object: &Expr,
+        function: Option<&Resolved>,
+        fn_name: &str,
+    ) -> Option<Type> {
+        if !matches!(function, Some(Resolved::Function)) {
+            return None;
+        }
+        let param = self.export(fn_name).signature.params.first()?;
+        let want = self.known(param.ty.clone());
+        match unparen(object.clone()) {
+            Expr::List(_) | Expr::Map(_) | Expr::Lambda(_) => Some(want),
+            Expr::Name(name) => {
+                let token = required(name.name());
+                let verdict =
+                    rules::variant(Some(&want), token.text(), false, self.decls());
+                matches!(verdict, Some(Ok(()))).then_some(want)
+            }
+            _ => None,
+        }
+    }
+
+    /// Lowers `object.name(…)` as a call of the field `name` — a record's, typed by its
+    /// declaration, or whatever the member rule grants of any other object, whose value
+    /// is already on the stack.
+    fn call_field(
+        &mut self,
+        field: Option<Type>,
+        object_ty: &Type,
+        member: &MemberExpr,
+        positional: &[Expr],
+        named: &[NamedArg],
+        span: Span,
+    ) -> Type {
+        let name = required(member.name());
+        let member_span = member.span();
+        let ty = match field {
+            Some(ty) => ty,
+            None => self.rule(
+                member_span,
+                rules::member(object_ty, name.text(), false, self.decls()),
+            ),
+        };
+        let ty = self.known(ty);
+        let index = self.intern(name.text());
+        self.emit(Op::GetField { name: index }, member_span);
+        if let Some(first) = named.first() {
+            self.error(
+                first.span(),
+                "named arguments need a callee that is a `lem-fn` by name",
+            );
+            self.discard(positional, named);
+            return Type::Any;
+        }
+        self.call_value(&ty, positional, span, Some(name.text()))
     }
 
     /// Lowers a call of a value already on the stack: a local, an ambient value, or any
@@ -585,7 +705,7 @@ impl Compiler<'_> {
             Ok(granted) => granted,
             Err(message) => {
                 self.error(span, message);
-                self.discard(None, positional, &[]);
+                self.discard(positional, &[]);
                 return Type::Any;
             }
         };
@@ -620,17 +740,13 @@ impl Compiler<'_> {
         }
     }
 
-    /// Lowers a call's operands after an error that stops the call from compiling: the
+    /// Lowers a call's arguments after an error that stops the call from compiling: the
     /// names they read still count as read, and the mistakes inside them are still
-    /// reported. The code emitted is unbalanced, and never runs — an error yields no
+    /// reported. A receiver was lowered before the call was decided, so it is never
+    /// among them. The code emitted is unbalanced, and never runs — an error yields no
     /// unit.
-    fn discard(
-        &mut self,
-        receiver: Option<&Expr>,
-        positional: &[Expr],
-        named: &[NamedArg],
-    ) {
-        for expr in receiver.into_iter().chain(positional).chain(
+    fn discard(&mut self, positional: &[Expr], named: &[NamedArg]) {
+        for expr in positional.iter().chain(
             named
                 .iter()
                 .map(|arg| required(arg.value()))
@@ -643,17 +759,24 @@ impl Compiler<'_> {
 
     /// Lowers a call to a project function, reordering named arguments into parameter
     /// order at compile time so the VM only ever sees positional calls, and checking
-    /// each against its parameter's type.
+    /// each against its parameter's type. A UFCS `receiver` is already lowered — its
+    /// value is the first pushed, which is where the first parameter's argument goes —
+    /// and is checked by its type where it stands.
     fn call_function(
         &mut self,
         fn_name: &str,
-        receiver: Option<Expr>,
+        receiver: Option<(Type, Span)>,
         positional: &[Expr],
         named: &[NamedArg],
         span: Span,
     ) -> Type {
         let export = self.export(fn_name);
-        let given: Vec<&Expr> = receiver.iter().chain(positional).collect();
+        let given: Vec<Given<'_>> = receiver
+            .as_ref()
+            .map(|(ty, span)| Given::Lowered(ty, *span))
+            .into_iter()
+            .chain(positional.iter().map(Given::Expr))
+            .collect();
         let names: Vec<SyntaxToken> =
             named.iter().map(|arg| required(arg.name())).collect();
         let name_texts: Vec<&str> = names.iter().map(SyntaxToken::text).collect();
@@ -668,21 +791,48 @@ impl Compiler<'_> {
                     None => span,
                 };
                 self.error(at, message);
-                self.discard(receiver.as_ref(), positional, named);
+                self.discard(positional, named);
                 return Type::Any;
             }
         };
         for (param, arg) in export.signature.params.iter().zip(order) {
+            let param_ty = self.known(param.ty.clone());
             match arg {
-                Arg::Positional(i) => self.check(given[i], &param.ty),
-                Arg::Named(n) => self.check(&required(named[n].value()), &param.ty),
-            };
+                Arg::Positional(i) => match given[i] {
+                    Given::Expr(expr) => {
+                        self.check(expr, &param_ty);
+                    }
+                    Given::Lowered(ty, at) => {
+                        let verdict = rules::expected(ty.clone(), &param_ty, self.decls());
+                        self.rule_or(at, verdict, param_ty);
+                    }
+                },
+                Arg::Named(n) => {
+                    self.check(&required(named[n].value()), &param_ty);
+                }
+            }
         }
         let argc = u16::try_from(export.signature.params.len())
             .expect("fewer than 65536 parameters");
         let func = self.func_operand(export, span);
         self.emit(Op::Call { func, argc }, span);
-        export.signature.ret.clone()
+        self.known(export.signature.ret.clone())
+    }
+}
+
+/// A positional argument as a call gives it: still to lower, or — a UFCS receiver —
+/// lowered already, with its type and where it stands.
+enum Given<'a> {
+    Expr(&'a Expr),
+    Lowered(&'a Type, Span),
+}
+
+impl Given<'_> {
+    fn span(&self) -> Span {
+        match self {
+            Self::Expr(expr) => expr.span(),
+            Self::Lowered(_, span) => *span,
+        }
     }
 }
 

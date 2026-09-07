@@ -143,7 +143,7 @@ follows:
 |---|---|---|
 | Literals | `"text"`, `"Link: {linkTitle}"`, `42`, `1.5`, `true`, `null`, `[a, b]`, `{k: v}` | String interpolation `{…}` (`{{` for a literal brace — delimiter is a deferred question); until it is settled, an interpolated expression may not itself contain a string literal. No datetime literal: a fixed date is `datetime("2024-11-24")` (stdlib, validated at compile time when the argument is a literal). |
 | Access | `a.b`, `a?.b`, `xs[i]`, `m["key"]` | `.` reads a record's field; a map is indexed. `?.` propagates null and needs an optional on its left; `a?.b.c` needs a second `?.`, since `a?.b` is optional. An out-of-range list index or a missing map key is a render error, not null. |
-| Calls | `f(x)`, `f(x, nolink: true)` | Positional then named. UFCS: `x.f(y)` resolves to `f(x, y)` when `x`'s type has no field `f` and `f` names a function — so `photo.rendition(md, jpeg)` reads naturally. Until records exist (∆cea), "has no field" is "is not a record". |
+| Calls | `f(x)`, `f(x, nolink: true)` | Positional then named. UFCS: `x.f(y)` resolves to `f(x, y)` when `x`'s type has no field `f` and `f` names a function — so `photo.rendition(md, jpeg)` reads naturally. A record field `f` is called as the value it holds; a non-record receiver (`any` included) has no fields, so `f` is the function. |
 | Lambdas | `\|a\| a.date`, `\|a, b\| a.date lt b.date` | Parameter types inferred from the expected function type; with none expected they are `any` (provisional). |
 | Arithmetic | `+ - * / %`, unary `-` | `+` also concatenates strings; `string + int` is a type error. |
 | Comparison/logic | `== !=`, `lt lte gt gte`, `&& \|\| !`, `a ?? b`, `c ? a : b` | Equality structural. Ordering on numbers, strings, datetimes. |
@@ -162,6 +162,18 @@ binds, never assigns; no `while`; recursion is allowed.
 for base, narrowing via `is`/`lem-match`) · enums · function types `(A, B): T` ·
 the host's ambient records — the standard shell declares `Page` and `Build` — and the
 type of `site`, derived from `site.lem` (D30, below).
+
+Records and enums are nominal, by name (D32): `lem-type`/`lem-enum` declare them
+project-flat in the type namespace (§Names), and a declared name is what its declaration
+says wherever it is written. A record's fields are its own and its ancestors'; `.` reads
+one, typed by the declaration, and a field a record does not declare is a compile error.
+A subtype may redeclare a field only with the identical type — that changes its default,
+nothing else — so a subtype is always usable for its base. An enum's value is one of its
+variants: a bare variant name is that variant wherever the enum is expected (an argument,
+an annotated binding, a declared return, and the right operand of `==`/`!=`/`in` when the
+left is an enum), and an ordinary name everywhere else. An enum prints as its variant's
+name, compares by it, and at run time is that name as a string; a record has no printed
+form (provisional readings, both: the enum question is deferred).
 
 `any` is the spelled unknown: assignable to and from everything, and every operation on
 it is `any` again, checked at render time by the VM with a span. It is what an ambient
@@ -185,7 +197,7 @@ the checker's question, not the parser's.
 - Optionals are the only nullable type; the checker forces `?.`, `??`, or narrowing.
 - `{K: V}` is always keyed by `string`; any other `K` is an error at the annotation.
   `map`, `list`, and `function` are not type names, and an author who writes one is told
-  the Lemmon spelling.
+  the Lemmon spelling. Neither they nor the builtin type names can be declared.
 
 ### Schemas
 
@@ -212,6 +224,13 @@ the checker's question, not the parser's.
 - Plain string keys that name another record (`author: string` → `site.authors`) are
   checked at load; a miss is a load error at the YAML position.
 - **Extra front-matter keys are errors** (opt out per type with `extra: {string: any}`).
+- **`extends`** names a record — never an enum, a builtin type, or the type itself
+  through any chain — and a field an ancestor declares may be redeclared only with the
+  same type, to give it a default (D32). So `layout: (Article, html): html` is declared
+  once, on `Article`, and a `LinkPost extends Article` inherits it: a layout that only a
+  link post needs takes an `Article` and narrows inside.
+- _Not yet (∆iCW): defaults and `by` indexes are parsed and kept, not checked — their
+  scope (`body`, `path`, `self`, `site`) is the loader's._
 - Schemas are the source of truth; JSON Schema is derived output (`lem schema export`),
   never authored (rationale: the same types statically check template expressions —
   subtyping, function types, `html`/`asset` semantics, reference fields).
@@ -308,8 +327,8 @@ hierarchies and `T?`. Diagnostics carry a primary span plus secondary spans wher
 
 - **Assignability.** `any` both ways; `null` and `T` to `T?`; `T?` to `U?` when `T` to
   `U`; lists and maps covariant (values are immutable); functions contravariant in their
-  parameters and covariant in their return; a subtype to its base (∆cea); otherwise the
-  same type.
+  parameters and covariant in their return; a record to any record it extends (D32);
+  otherwise the same type.
 - **Literals.** `[…]`/`{…}` under an expected list or map check each element against
   it; under an expected `any` the literal is opted out and its elements are `any` too.
   Without either, the first element sets the type, a `null` makes it optional, and an
@@ -322,8 +341,18 @@ hierarchies and `T?`. Diagnostics carry a primary span plus secondary spans wher
   still accepted as a condition and on the left of `??`, since it was declared optional.
   `&&`, `||`, and `!` take `bool` only.
 - **Printing.** `<lem.…>` prints `string`, `html`, `int`, `float`, `datetime`, `url`,
-  `asset`, and `any`. A `bool`, `null`, a list, a map, a function, or an optional is a
-  compile error: narrow the optional, or give it a default with `??`.
+  `asset`, an enum, and `any`. A `bool`, `null`, a list, a map, a record, a function, or
+  an optional is a compile error: narrow the optional, or give it a default with `??`.
+- **Fields.** `.` on a record reads a field its declaration or an ancestor's declares,
+  with that field's type; on `any`, `any`. A map has no fields (index it), and neither
+  has an enum. `?.` reads through an optional record and yields an optional.
+- **Variants.** A bare name where an enum is expected is that enum's variant before it
+  is anything else — a local of the same name is shadowed there, since the expectation
+  is explicit, and is unused unless something else reads it. A name that is neither a
+  variant nor a name in scope is reported as the variant it is not. Beside an enum the
+  right operand of `==`/`!=` is lowered expecting the enum, and of `in` a list of it,
+  so a variant may stand there; the operator then judges both types as it always does.
+  Where no enum is expected a bare variant is an undefined name.
 - **Operators.** `+ - * / %` on numbers (`int∘int` is `int`, any `float` makes `float`),
   `+` also on two strings; `lt lte gt gte` on numbers, strings, datetimes; `==`/`!=` on
   two numbers or two assignable types, never functions; `??` and `?.` need an optional
@@ -335,6 +364,18 @@ hierarchies and `T?`. Diagnostics carry a primary span plus secondary spans wher
   (`raw` takes `string` or `html`); calling `any` checks nothing. A lambda under an
   expected function type takes its parameter types from it and its body is checked
   against its return; one with nothing expected has `any` parameters (provisional).
+  `x.f(…)` lowers `x` first, then decides: a record field `f` is called as its value,
+  anything else is UFCS (§Expressions). A receiver that could never have a field — a
+  list, map, or lambda literal, or a variant of the enum `f`'s first parameter
+  expects — is lowered expecting that parameter, as an argument would be.
+- **Declarations.** A type declared twice, in one file or two, is the duplicate error
+  functions get; a declaration may not take a builtin type's name; a field or a variant
+  repeated within one declaration is an error at the repeat. An `extends` that names an
+  enum, an unknown type, or the type itself (through any chain) is an error at the base
+  name; a field redeclared with another type is an error at the field, labelled with
+  the ancestor's. An unknown type anywhere is an error at the name, and what carries it
+  is `any` from then on. Another file's declaration a file checked against is one of its
+  unit's compile-time facts (D25): a change to that shape makes the unit stale at link.
 - **Iteration.** `lem-for` over `[T]` binds `T` (and an `int` index), over
   `{string: V}` a `string` key and `V`, over `any` two `any`s.
 - **Unused.** A `lem-let` (either form) or a `lem-fn`/lambda parameter that nothing reads
@@ -348,7 +389,9 @@ are the `any` path, not a second checker.
 
 One value namespace, resolved lexically: **locals/params** (innermost wins) →
 **project** → **ambient**. Types are separate, distinguished by capitalization
-(`Article` type / `article` value). Builtin `lem-*` tags occupy no namespace.
+(`Article` type / `article` value) — a convention, not a rule: a type and a function may
+share a name, and the type namespace is project-flat with the same duplicate rule as
+the value one. Builtin `lem-*` tags occupy no namespace.
 
 - **Project-flat:** every `.lem` file in the site shares one namespace; no imports
   between site files. Duplicate definitions are compile errors citing both spans.

@@ -36,6 +36,18 @@ moved it. Newest last. An entry is removed when its change has been applied.
   loop bindings do not). `{K: V}` keys are always `string`. An expression-bodied `lem-fn`
   must declare its return type (invariant 11). `.` reads records, `[]` indexes maps, and
   a map miss is a render error like a list's (∆C8d).
+- **Records and enums** — where the type list says records are nominal with single
+  `extends`, add D32's readings: a subtype may redeclare a field only with the identical
+  type (to change its default), so `layout` is declared once where its self type is and
+  inherited; a bare variant name resolves only where its enum is expected (arguments,
+  annotated bindings, returns, a UFCS receiver, the right operand of `==`/`!=`/`in`
+  beside an enum) and wins over a local of the same name there; an enum prints as its
+  variant's name and is that name as a string at run time; a record has no printed form;
+  builtin type names and the `map`/`list`/`function` spellings cannot be declared; the
+  type namespace is project-flat with the value namespace's duplicate rule, and a type
+  may share a name with a function. `.` on a record is typed by its declaration and its
+  ancestors'; `x.f(…)` calls a record field `f` as its value and is UFCS otherwise. Field
+  defaults and `by` indexes are not checked until the loader (∆iCW) (D32, ∆cea).
 
 ## Shell & Core
 
@@ -57,6 +69,14 @@ moved it. Newest last. An entry is removed when its change has been applied.
   walk types each expression as it lowers it (D31). `Unit::facts` carry typed signatures
   (parameter names and types, return type), and a callee whose type changed under a
   caller is a link diagnostic naming the caller (∆C8d).
+- **Separate compilation, facts** — where the text lists the compile-time facts, say the
+  export index has a type namespace beside the functions, that a unit records a second
+  kind of fact — the declaration of every foreign type its checking reached, span-free,
+  at the use that reached it — and that a declaration whose shape changed under a
+  consumer is a link diagnostic naming the consumer, while a default edit leaves it
+  byte-identical. The VM section's "maps in place of records" stands: records are
+  checked by declaration but a record value is a map and an enum value a string until
+  ∆PCK's `Value::Record` (D32, ∆cea). The boundary is unchanged.
 
 ## From Eleventy to Lemmon
 

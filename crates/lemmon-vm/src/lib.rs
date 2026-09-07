@@ -8,6 +8,7 @@
 mod builtins;
 mod bytecode;
 mod compile;
+mod decls;
 mod document;
 mod exports;
 mod types;
@@ -26,7 +27,8 @@ pub use compile::{
     Compiled, Diagnostic, Label, PreparedFile, compile, compile_unit, prepare,
     repeated_path,
 };
-pub use exports::{Export, ExportIndex};
+pub use decls::{Declaration, Decls, FieldDecl, Kind, Shape, ShapeFact, TypeFact};
+pub use exports::{Export, ExportIndex, TypeExport};
 pub use types::Type;
 pub use unit::{ExportedSignature, ImportRef, ImportedSignature, Param, Unit, link};
 pub use value::{Closure, Map, Value};

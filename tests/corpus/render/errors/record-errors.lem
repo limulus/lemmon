@@ -1,0 +1,42 @@
+<lem-type Page>
+  url: url
+  title: string
+</lem-type>
+<lem-type Article extends Page>
+  title: int
+  hero: Photo?
+  hero: string
+</lem-type>
+<lem-type Loop extends Loop>
+  x: int
+</lem-type>
+<lem-type A extends B>
+  a: int
+</lem-type>
+<lem-type B extends A>
+  b: int
+</lem-type>
+<lem-type Page>
+  again: bool
+</lem-type>
+<lem-type string>
+  s: string
+</lem-type>
+<lem-type Sized extends Size>
+  n: int
+</lem-type>
+<lem-type Plain extends map>
+  n: int
+</lem-type>
+<lem-type Orphan extends Undeclared>
+  n: int
+</lem-type>
+<lem-enum Size = small | large | small />
+<lem-fn card(pg: Page, size: Size, m: {string: int}, nope: Nope, art: Article, bags: [{string: Nope}], f: (Nope): Nope?)>
+  <lem.pg.author> <lem.size.name> <lem.pg> <lem.m.views> <lem.art.hero> <lem.bags[0]["x"]> <lem.f(1)>
+  <lem-type Nested>
+    n: int
+  </lem-type>
+  <lem-enum Inner = a | b />
+  <lem.pg.title> <lem.pg.url>
+</lem-fn>

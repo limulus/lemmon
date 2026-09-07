@@ -13,8 +13,9 @@ page rendering end-to-end from the WASM core) is done and Phase 1 is under way. 
 parser → typed AST → compiler → VM run the language over scalar, list, map, optional, and
 function types with `any` as the spelled unknown; `.md` goes through document mode; the
 checker is not a separate pass but the compiler's own walk, which types each expression
-as it lowers it (D31). Records and enums (∆cea), narrowing over `is`/`lem-match` (∆PCK),
-and host-declared ambient types (∆Iau) are next. Compilation is per-file: each file
+as it lowers it (D31), and records and enums are declared project-flat and checked by
+declaration (D32). Narrowing over `is`/`lem-match` (∆PCK) and host-declared ambient
+types (∆Iau) are next. Compilation is per-file: each file
 becomes a `Unit`, and a link step joins units into the `Module` the VM runs (D25,
 invariant 11).
 `crates/lemmon-wasm` exposes the resident `Core` (`compile`/`loadData`/`render`), and

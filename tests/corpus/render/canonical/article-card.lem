@@ -1,10 +1,29 @@
-<lem-fn picture(photo: any, sizes: any, class: string)>
+<lem-type Photo>
+  url: url
+  alt: string
+</lem-type>
+<lem-type Vod>
+  poster: url
+  alt: string
+</lem-type>
+<lem-type Article>
+  title: string
+  url: url
+  author: string
+  date: string
+  image: Photo?
+  hero: Photo?
+  vod: Vod?
+  subhead: string?
+  teaser: string?
+</lem-type>
+<lem-fn picture(photo: Photo, sizes: [string], class: string)>
   <img src="<lem.photo.url>" alt="<lem.photo.alt>" class="<lem.class>" sizes="<lem.sizes[0]>">
 </lem-fn>
-<lem-fn authorChip(article: any, nolink: bool)>
+<lem-fn authorChip(article: Article, nolink: bool)>
   <lem-if nolink><span><lem.article.author></span><lem-else /><a href="/<lem.article.author>/"><lem.article.author></a></lem-if>
 </lem-fn>
-<lem-fn publishedChip(article: any)>
+<lem-fn publishedChip(article: Article)>
   <time><lem.article.date></time>
 </lem-fn>
 <lem-fn chipList(size: string, slot: html)>
@@ -12,14 +31,15 @@
     <lem.slot>
   </ul>
 </lem-fn>
-<lem-fn articleCard(article: any)>
+<lem-fn articleCard(article: Article)>
   <article class="article-card">
     <a href="<lem.article.url>">
       <lem-let preview = article.image ?? article.hero />
+      <lem-let vod = article.vod />
       <lem-if preview>
         <lem.picture(preview, ["md"], class: "preview")>
-      <lem-else-if article.vod />
-        <img src="<lem.article.vod.poster>" alt="<lem.article.vod.alt>" class="preview">
+      <lem-else-if vod />
+        <img src="<lem.vod.poster>" alt="<lem.vod.alt>" class="preview">
       </lem-if>
       <div class="text-content">
         <header>

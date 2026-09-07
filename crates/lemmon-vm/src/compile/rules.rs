@@ -6,10 +6,10 @@
 //! span. The construct then takes whatever type keeps the rest of the file checkable —
 //! the type that was expected where one was, `any` where there is nothing better — so
 //! that one mistake costs one diagnostic (`docs/language.md` §Checking). Nothing here
-//! sees the compiler: a rule takes the types and names it judges and nothing else,
-//! which is what lets it be tested without compiling a template, and what gives
-//! records' field rules (∆cea) one place to go. The relations the rules are built on —
-//! [`assignable`], [`join`] — live with [`Type`] itself.
+//! sees the compiler: a rule takes the types and names it judges — and the declaration
+//! table, where a record's fields or ancestry decide — and nothing else, which is what
+//! lets it be tested without compiling a template. The relations the rules are built on
+//! — [`assignable`], [`join`] — live with [`Type`] itself.
 //!
 //! What stays in the walk needs more than types and names: `??`, whose right side is
 //! lowered under an expectation the left side decides; the `is` placeholder; and the
@@ -21,6 +21,7 @@ use std::rc::Rc;
 use lemmon_syntax::ast::{BinaryOp, UnaryOp};
 
 use crate::builtins::Builtin;
+use crate::decls::{Decls, Kind};
 use crate::types::{Type, assignable, join};
 use crate::unit::Param;
 
@@ -34,8 +35,8 @@ fn expectation(expected: Option<&Type>) -> Option<&Type> {
 
 /// Whether a value of type `actual` may stand where `expected` is wanted: the
 /// inferred-then-compared half of bidirectional checking.
-pub(super) fn expected(actual: Type, expected: &Type) -> Rule {
-    if assignable(&actual, expected) {
+pub(super) fn expected(actual: Type, expected: &Type, decls: &dyn Decls) -> Rule {
+    if assignable(&actual, expected, decls) {
         Ok(actual)
     } else {
         Err(format!("expected `{expected}`, got `{actual}`"))
@@ -59,15 +60,15 @@ pub(super) fn literal_expectation(
 /// The type a literal's elements share once `next` joins those `so_far`: a `null` makes
 /// it optional, and an element that fits neither is refused — a literal's elements
 /// share one type, never `any`.
-pub(super) fn element(so_far: &Type, next: &Type, what: &str) -> Rule {
-    join(so_far, next).ok_or_else(|| {
+pub(super) fn element(so_far: &Type, next: &Type, what: &str, decls: &dyn Decls) -> Rule {
+    join(so_far, next, decls).ok_or_else(|| {
         format!("expected `{so_far}`, got `{next}`: a {what} share one type")
     })
 }
 
 /// The type of a `?:` with nothing expected of it: the one its branches share.
-pub(super) fn branches(then: &Type, otherwise: &Type) -> Rule {
-    join(then, otherwise).ok_or_else(|| {
+pub(super) fn branches(then: &Type, otherwise: &Type, decls: &dyn Decls) -> Rule {
+    join(then, otherwise, decls).ok_or_else(|| {
         format!("the branches have different types: `{then}` and `{otherwise}`")
     })
 }
@@ -96,7 +97,13 @@ pub(super) fn logical(symbol: &str, operand: &Type) -> Rule<()> {
 /// the result is `any` where the operator yields its operands' type, and `bool` where
 /// it yields one. The short-circuit operators are not among these: `&&` and `||` are
 /// answered by [`logical`] one operand at a time, and `??` by the walk.
-pub(super) fn operator(op: BinaryOp, symbol: &str, lhs: &Type, rhs: &Type) -> Rule {
+pub(super) fn operator(
+    op: BinaryOp,
+    symbol: &str,
+    lhs: &Type,
+    rhs: &Type,
+    decls: &dyn Decls,
+) -> Rule {
     let mismatch = || format!("cannot apply `{symbol}` to `{lhs}` and `{rhs}`");
     let any = *lhs == Type::Any || *rhs == Type::Any;
     match op {
@@ -127,7 +134,8 @@ pub(super) fn operator(op: BinaryOp, symbol: &str, lhs: &Type, rhs: &Type) -> Ru
             let numbers = lhs.is_number() && rhs.is_number();
             if matches!(lhs, Type::Fn(..)) || matches!(rhs, Type::Fn(..)) {
                 Err("functions cannot be compared".to_owned())
-            } else if numbers || assignable(lhs, rhs) || assignable(rhs, lhs) {
+            } else if numbers || assignable(lhs, rhs, decls) || assignable(rhs, lhs, decls)
+            {
                 Ok(Type::Bool)
             } else {
                 Err(format!("cannot compare `{lhs}` with `{rhs}`"))
@@ -135,11 +143,11 @@ pub(super) fn operator(op: BinaryOp, symbol: &str, lhs: &Type, rhs: &Type) -> Ru
         }
         BinaryOp::In => match rhs {
             Type::Any => Ok(Type::Bool),
-            Type::List(element) if assignable(lhs, element) => Ok(Type::Bool),
+            Type::List(element) if assignable(lhs, element, decls) => Ok(Type::Bool),
             Type::List(element) => Err(format!(
                 "`in` on a `{rhs}` needs `{element}` on its left, got `{lhs}`"
             )),
-            Type::Map(_) if assignable(lhs, &Type::String) => Ok(Type::Bool),
+            Type::Map(_) if assignable(lhs, &Type::String, decls) => Ok(Type::Bool),
             Type::Map(_) => Err(format!(
                 "`in` on a map needs a `string` key on its left, got `{lhs}`"
             )),
@@ -151,30 +159,96 @@ pub(super) fn operator(op: BinaryOp, symbol: &str, lhs: &Type, rhs: &Type) -> Ru
     }
 }
 
-/// The type of `object.name` (or `object?.name` when `optional`). Only `any` has fields
-/// until records arrive (∆cea); `?.` needs an optional on its left and yields an
-/// optional, and a value known to be null is an optional with nothing inside, so `?.`
-/// on it is null again.
-pub(super) fn member(object: &Type, name: &str, optional: bool) -> Rule {
+/// The type of `object.name` (or `object?.name` when `optional`). A record's fields are
+/// its declaration's and its ancestors'; `any` has every field; `?.` needs an optional
+/// on its left and yields an optional, and a value known to be null is an optional with
+/// nothing inside, so `?.` on it is null again.
+pub(super) fn member(object: &Type, name: &str, optional: bool, decls: &dyn Decls) -> Rule {
     match (object, optional) {
         (Type::Any, _) => Ok(Type::Any),
         (Type::Null, true) => Ok(Type::Null),
-        (Type::Optional(inner), true) => field(inner, name).map(Type::optional),
+        (Type::Optional(inner), true) => field(inner, name, decls).map(Type::optional),
         (Type::Optional(_), false) => Err(may_be_null(object, ", or use `?.`")),
         (other, true) => Err(format!("`?.` needs an optional, got `{other}`")),
-        (other, false) => field(other, name),
+        (other, false) => field(other, name, decls),
     }
 }
 
 /// The type of the field `name` of a value of type `ty`, or why it has none.
-fn field(ty: &Type, name: &str) -> Rule {
+fn field(ty: &Type, name: &str, decls: &dyn Decls) -> Rule {
     match ty {
         Type::Any => Ok(Type::Any),
         Type::Map(_) => Err(format!(
             "a `{ty}` has no fields: index a map as `[\"{name}\"]`"
         )),
         Type::Null => Err(format!("cannot read field `{name}` of null")),
+        Type::Named(record) => match decls.kind(record) {
+            Some(Kind::Record) => decls
+                .field(record, name)
+                .ok_or_else(|| format!("a `{ty}` has no field `{name}`")),
+            Some(Kind::Enum) => Err(format!("a `{ty}` is an enum and has no fields")),
+            None => unreachable!("an undeclared name is read as `any` before any rule"),
+        },
         other => Err(format!("a `{other}` has no field `{name}`")),
+    }
+}
+
+/// The type of the field `name` of a value of type `ty`, when `ty` is a record that
+/// declares one — what decides whether `x.f(…)` calls the field or the function `f`
+/// (UFCS, `docs/language.md` §Expressions).
+pub(super) fn field_of(ty: &Type, name: &str, decls: &dyn Decls) -> Option<Type> {
+    match ty {
+        Type::Named(record) if decls.kind(record) == Some(Kind::Record) => {
+            decls.field(record, name)
+        }
+        _ => None,
+    }
+}
+
+/// The variant rule (D32): whether a bare `name` where `expected` is wanted is a
+/// variant of the enum expected. `None` when it is not one — no enum is expected, or
+/// the name `is_name` of something else — so the name is an ordinary name; a refusal
+/// when an enum is expected and the name is neither its variant nor anything else.
+pub(super) fn variant(
+    expected: Option<&Type>,
+    name: &str,
+    is_name: bool,
+    decls: &dyn Decls,
+) -> Option<Rule<()>> {
+    let Some(Type::Named(enum_name)) = expectation(expected) else {
+        return None;
+    };
+    let variants = decls.variants(enum_name)?;
+    if variants.iter().any(|(v, _)| &**v == name) {
+        Some(Ok(()))
+    } else if is_name {
+        None
+    } else {
+        Some(Err(format!("`{enum_name}` has no variant `{name}`")))
+    }
+}
+
+/// What the right operand of `op` is lowered expecting when the left is an enum, so a
+/// bare variant may stand there: the enum itself under `==`/`!=`, and a list of it
+/// under `in`. The expectation only shapes the operand — a literal, a variant — and
+/// the operator rule then judges the two types, so an optional on either side is
+/// still compared as the operator allows.
+pub(super) fn operand_expectation(
+    op: BinaryOp,
+    lhs: &Type,
+    decls: &dyn Decls,
+) -> Option<Type> {
+    let enum_lhs = lhs
+        .strip_optional()
+        .named()
+        .is_some_and(|name| decls.kind(name) == Some(Kind::Enum));
+    if !enum_lhs {
+        return None;
+    }
+    match op {
+        BinaryOp::Eq | BinaryOp::NotEq => Some(lhs.clone()),
+        BinaryOp::In => Some(Type::list(Type::optional(lhs.clone()))),
+        _ => None,
     }
 }
 
@@ -185,7 +259,7 @@ fn may_be_null(ty: &Type, alternative: &str) -> String {
 
 /// The type of `object[index]`: a list's element under an `int`, a map's value under a
 /// `string`; `any` is the VM's to index.
-pub(super) fn index(object: &Type, index: &Type) -> Rule {
+pub(super) fn index(object: &Type, index: &Type, decls: &dyn Decls) -> Rule {
     let (element, key) = match object {
         Type::Any => return Ok(Type::Any),
         Type::Optional(_) => return Err(may_be_null(object, "")),
@@ -193,7 +267,7 @@ pub(super) fn index(object: &Type, index: &Type) -> Rule {
         Type::Map(value) => ((**value).clone(), Type::String),
         other => return Err(format!("cannot index a `{other}`")),
     };
-    if assignable(index, &key) {
+    if assignable(index, &key, decls) {
         Ok(element)
     } else {
         let what = if key == Type::Int { "list" } else { "map" };
@@ -215,9 +289,10 @@ pub(super) fn condition(ty: &Type) -> Rule<Option<Type>> {
 }
 
 /// The print rule (`docs/language.md` §Escaping): what `<lem.…>` may print. A `bool`,
-/// `null`, a list, a map, or a function has no printed form; an optional has one once
-/// it is known not to be null; `any` is the VM's to print.
-pub(super) fn printable(ty: &Type) -> Rule<()> {
+/// `null`, a list, a map, a record, or a function has no printed form; an enum prints
+/// its variant's name; an optional has a printed form once it is known not to be null;
+/// `any` is the VM's to print.
+pub(super) fn printable(ty: &Type, decls: &dyn Decls) -> Rule<()> {
     match ty {
         Type::String
         | Type::Html
@@ -227,6 +302,7 @@ pub(super) fn printable(ty: &Type) -> Rule<()> {
         | Type::Url
         | Type::Asset
         | Type::Any => Ok(()),
+        Type::Named(name) if decls.kind(name) == Some(Kind::Enum) => Ok(()),
         Type::Optional(_) => Err(format!(
             "cannot print a `{ty}`: narrow it with `lem-if`, or give it a default with `??`"
         )),
@@ -372,6 +448,27 @@ pub(super) fn arguments(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::decls::tests::{Table, enumeration, record};
+
+    fn named(name: &str) -> Type {
+        Type::Named(Rc::from(name))
+    }
+
+    /// `Article extends Page`, and an enum, for the rules that read declarations.
+    fn table() -> Table {
+        Table(vec![
+            record("Page", None, &[("url", Type::Url)]),
+            record(
+                "Article",
+                Some("Page"),
+                &[
+                    ("title", Type::String),
+                    ("layout", Type::function(vec![], Type::Html)),
+                ],
+            ),
+            enumeration("Placement", &["hero", "left"]),
+        ])
+    }
 
     fn opt(inner: Type) -> Type {
         Type::optional(inner)
@@ -413,20 +510,20 @@ mod tests {
     #[test]
     fn joins_a_literals_elements_and_refuses_one_that_fits_neither() {
         assert_eq!(
-            element(&Type::Int, &Type::Null, "list's elements"),
+            element(&Type::Int, &Type::Null, "list's elements", &()),
             Ok(opt(Type::Int))
         );
         assert_eq!(
-            element(&Type::Int, &Type::String, "map's values"),
+            element(&Type::Int, &Type::String, "map's values", &()),
             Err("expected `int`, got `string`: a map's values share one type".to_owned())
         );
     }
 
     #[test]
     fn joins_a_ternarys_branches_and_refuses_two_that_share_nothing() {
-        assert_eq!(branches(&Type::Int, &Type::Null), Ok(opt(Type::Int)));
+        assert_eq!(branches(&Type::Int, &Type::Null, &()), Ok(opt(Type::Int)));
         assert_eq!(
-            branches(&Type::Int, &Type::String),
+            branches(&Type::Int, &Type::String, &()),
             Err("the branches have different types: `int` and `string`".to_owned())
         );
     }
@@ -465,19 +562,19 @@ mod tests {
     #[test]
     fn types_arithmetic_by_its_operands() {
         assert_eq!(
-            operator(BinaryOp::Add, "+", &Type::Int, &Type::Int),
+            operator(BinaryOp::Add, "+", &Type::Int, &Type::Int, &()),
             Ok(Type::Int)
         );
         assert_eq!(
-            operator(BinaryOp::Mul, "*", &Type::Int, &Type::Float),
+            operator(BinaryOp::Mul, "*", &Type::Int, &Type::Float, &()),
             Ok(Type::Float)
         );
         assert_eq!(
-            operator(BinaryOp::Rem, "%", &Type::Float, &Type::Float),
+            operator(BinaryOp::Rem, "%", &Type::Float, &Type::Float, &()),
             Ok(Type::Float)
         );
         assert_eq!(
-            operator(BinaryOp::Sub, "-", &Type::Any, &Type::Bool),
+            operator(BinaryOp::Sub, "-", &Type::Any, &Type::Bool, &()),
             Ok(Type::Any)
         );
     }
@@ -485,15 +582,15 @@ mod tests {
     #[test]
     fn concatenates_strings_with_plus_and_nothing_else() {
         assert_eq!(
-            operator(BinaryOp::Add, "+", &Type::String, &Type::String),
+            operator(BinaryOp::Add, "+", &Type::String, &Type::String, &()),
             Ok(Type::String)
         );
         assert_eq!(
-            operator(BinaryOp::Sub, "-", &Type::String, &Type::String),
+            operator(BinaryOp::Sub, "-", &Type::String, &Type::String, &()),
             Err("cannot apply `-` to `string` and `string`".to_owned())
         );
         assert_eq!(
-            operator(BinaryOp::Add, "+", &Type::String, &Type::Int),
+            operator(BinaryOp::Add, "+", &Type::String, &Type::Int, &()),
             Err("cannot apply `+` to `string` and `int`".to_owned())
         );
     }
@@ -501,27 +598,27 @@ mod tests {
     #[test]
     fn orders_numbers_strings_and_datetimes_among_themselves() {
         assert_eq!(
-            operator(BinaryOp::Lt, "lt", &Type::Int, &Type::Float),
+            operator(BinaryOp::Lt, "lt", &Type::Int, &Type::Float, &()),
             Ok(Type::Bool)
         );
         assert_eq!(
-            operator(BinaryOp::Gte, "gte", &Type::String, &Type::String),
+            operator(BinaryOp::Gte, "gte", &Type::String, &Type::String, &()),
             Ok(Type::Bool)
         );
         assert_eq!(
-            operator(BinaryOp::Gt, "gt", &Type::Datetime, &Type::Datetime),
+            operator(BinaryOp::Gt, "gt", &Type::Datetime, &Type::Datetime, &()),
             Ok(Type::Bool)
         );
         assert_eq!(
-            operator(BinaryOp::Lte, "lte", &Type::Any, &Type::Bool),
+            operator(BinaryOp::Lte, "lte", &Type::Any, &Type::Bool, &()),
             Ok(Type::Bool)
         );
         assert_eq!(
-            operator(BinaryOp::Lt, "lt", &Type::Int, &Type::String),
+            operator(BinaryOp::Lt, "lt", &Type::Int, &Type::String, &()),
             Err("cannot apply `lt` to `int` and `string`".to_owned())
         );
         assert_eq!(
-            operator(BinaryOp::Gt, "gt", &Type::Bool, &Type::Bool),
+            operator(BinaryOp::Gt, "gt", &Type::Bool, &Type::Bool, &()),
             Err("cannot apply `gt` to `bool` and `bool`".to_owned())
         );
     }
@@ -529,24 +626,24 @@ mod tests {
     #[test]
     fn compares_numbers_and_assignable_types_but_never_functions() {
         assert_eq!(
-            operator(BinaryOp::Eq, "==", &Type::Int, &Type::Float),
+            operator(BinaryOp::Eq, "==", &Type::Int, &Type::Float, &()),
             Ok(Type::Bool)
         );
         assert_eq!(
-            operator(BinaryOp::NotEq, "!=", &Type::Int, &opt(Type::Int)),
+            operator(BinaryOp::NotEq, "!=", &Type::Int, &opt(Type::Int), &()),
             Ok(Type::Bool)
         );
         assert_eq!(
-            operator(BinaryOp::Eq, "==", &opt(Type::Int), &Type::Int),
+            operator(BinaryOp::Eq, "==", &opt(Type::Int), &Type::Int, &()),
             Ok(Type::Bool)
         );
         assert_eq!(
-            operator(BinaryOp::Eq, "==", &Type::Int, &Type::String),
+            operator(BinaryOp::Eq, "==", &Type::Int, &Type::String, &()),
             Err("cannot compare `int` with `string`".to_owned())
         );
         let f = func(vec![], Type::Int);
         assert_eq!(
-            operator(BinaryOp::Eq, "==", &f, &f),
+            operator(BinaryOp::Eq, "==", &f, &f, &()),
             Err("functions cannot be compared".to_owned())
         );
     }
@@ -554,46 +651,209 @@ mod tests {
     #[test]
     fn checks_the_left_of_in_against_the_lists_element_or_a_maps_key() {
         assert_eq!(
-            operator(BinaryOp::In, "in", &Type::Int, &Type::list(Type::Int)),
+            operator(BinaryOp::In, "in", &Type::Int, &Type::list(Type::Int), &()),
             Ok(Type::Bool)
         );
         assert_eq!(
-            operator(BinaryOp::In, "in", &Type::String, &Type::map(Type::Int)),
+            operator(
+                BinaryOp::In,
+                "in",
+                &Type::String,
+                &Type::map(Type::Int),
+                &()
+            ),
             Ok(Type::Bool)
         );
         assert_eq!(
-            operator(BinaryOp::In, "in", &Type::Bool, &Type::Any),
+            operator(BinaryOp::In, "in", &Type::Bool, &Type::Any, &()),
             Ok(Type::Bool)
         );
         assert_eq!(
-            operator(BinaryOp::In, "in", &Type::String, &Type::list(Type::Int)),
+            operator(
+                BinaryOp::In,
+                "in",
+                &Type::String,
+                &Type::list(Type::Int),
+                &()
+            ),
             Err("`in` on a `[int]` needs `int` on its left, got `string`".to_owned())
         );
         assert_eq!(
-            operator(BinaryOp::In, "in", &Type::Int, &Type::map(Type::Int)),
+            operator(BinaryOp::In, "in", &Type::Int, &Type::map(Type::Int), &()),
             Err("`in` on a map needs a `string` key on its left, got `int`".to_owned())
         );
         assert_eq!(
-            operator(BinaryOp::In, "in", &Type::Int, &Type::Int),
+            operator(BinaryOp::In, "in", &Type::Int, &Type::Int, &()),
             Err("cannot apply `in` to `int` and `int`".to_owned())
         );
     }
 
     #[test]
-    fn reads_a_field_of_any_and_of_nothing_else_yet() {
-        assert_eq!(member(&Type::Any, "f", false), Ok(Type::Any));
-        assert_eq!(member(&Type::Any, "f", true), Ok(Type::Any));
-        assert_eq!(member(&opt(Type::Any), "f", true), Ok(Type::Any));
+    fn reads_a_field_of_a_record_by_its_declaration_and_its_ancestors() {
+        let table = table();
         assert_eq!(
-            member(&Type::String, "length", false),
+            member(&named("Article"), "title", false, &table),
+            Ok(Type::String)
+        );
+        assert_eq!(
+            member(&named("Article"), "url", false, &table),
+            Ok(Type::Url)
+        );
+        assert_eq!(
+            member(&opt(named("Article")), "url", true, &table),
+            Ok(opt(Type::Url))
+        );
+        assert_eq!(
+            member(&named("Article"), "nope", false, &table),
+            Err("a `Article` has no field `nope`".to_owned())
+        );
+        assert_eq!(
+            member(&named("Placement"), "hero", false, &table),
+            Err("a `Placement` is an enum and has no fields".to_owned())
+        );
+        assert_eq!(
+            field_of(&named("Article"), "layout", &table),
+            Some(Type::function(vec![], Type::Html))
+        );
+        assert_eq!(field_of(&named("Article"), "nope", &table), None);
+        assert_eq!(field_of(&opt(named("Article")), "title", &table), None);
+        assert_eq!(field_of(&named("Placement"), "hero", &table), None);
+        assert_eq!(field_of(&Type::Any, "title", &table), None);
+    }
+
+    #[test]
+    fn admits_a_variant_only_where_its_enum_is_expected() {
+        let table = table();
+        assert_eq!(
+            variant(Some(&named("Placement")), "hero", false, &table),
+            Some(Ok(()))
+        );
+        assert_eq!(
+            variant(Some(&opt(named("Placement"))), "left", false, &table),
+            Some(Ok(()))
+        );
+        // A variant before a name of the same spelling; a name before a refusal.
+        assert_eq!(
+            variant(Some(&named("Placement")), "hero", true, &table),
+            Some(Ok(()))
+        );
+        assert_eq!(
+            variant(Some(&named("Placement")), "hreo", true, &table),
+            None
+        );
+        assert_eq!(
+            variant(Some(&named("Placement")), "hreo", false, &table),
+            Some(Err("`Placement` has no variant `hreo`".to_owned()))
+        );
+        assert_eq!(
+            variant(Some(&named("Article")), "hero", false, &table),
+            None
+        );
+        assert_eq!(variant(Some(&Type::String), "hero", false, &table), None);
+        assert_eq!(variant(None, "hero", false, &table), None);
+    }
+
+    #[test]
+    fn expects_an_enum_of_the_right_operand_only_beside_an_enum() {
+        let table = table();
+        let placement = named("Placement");
+        assert_eq!(
+            operand_expectation(BinaryOp::Eq, &placement, &table),
+            Some(placement.clone())
+        );
+        assert_eq!(
+            operand_expectation(BinaryOp::NotEq, &opt(placement.clone()), &table),
+            Some(opt(placement.clone()))
+        );
+        assert_eq!(
+            operand_expectation(BinaryOp::In, &placement, &table),
+            Some(Type::list(opt(placement.clone())))
+        );
+        assert_eq!(operand_expectation(BinaryOp::Lt, &placement, &table), None);
+        assert_eq!(
+            operand_expectation(BinaryOp::Eq, &named("Article"), &table),
+            None
+        );
+        assert_eq!(operand_expectation(BinaryOp::Eq, &Type::Int, &table), None);
+    }
+
+    #[test]
+    fn compares_records_along_their_chain() {
+        let table = table();
+        assert_eq!(
+            operator(
+                BinaryOp::Eq,
+                "==",
+                &named("Article"),
+                &named("Page"),
+                &table
+            ),
+            Ok(Type::Bool)
+        );
+        assert_eq!(
+            operator(
+                BinaryOp::Eq,
+                "==",
+                &named("Article"),
+                &named("Placement"),
+                &table
+            ),
+            Err("cannot compare `Article` with `Placement`".to_owned())
+        );
+        assert_eq!(
+            operator(
+                BinaryOp::In,
+                "in",
+                &named("Article"),
+                &Type::list(named("Page")),
+                &table
+            ),
+            Ok(Type::Bool)
+        );
+    }
+
+    #[test]
+    fn assigns_a_record_to_its_base_and_joins_them_to_the_base() {
+        let table = table();
+        assert_eq!(
+            expected(named("Article"), &named("Page"), &table),
+            Ok(named("Article"))
+        );
+        assert_eq!(
+            expected(named("Page"), &named("Article"), &table),
+            Err("expected `Article`, got `Page`".to_owned())
+        );
+        assert_eq!(
+            branches(&named("Article"), &named("Page"), &table),
+            Ok(named("Page"))
+        );
+    }
+
+    #[test]
+    fn prints_an_enum_and_never_a_record() {
+        let table = table();
+        assert_eq!(printable(&named("Placement"), &table), Ok(()));
+        assert_eq!(
+            printable(&named("Article"), &table),
+            Err("cannot print a `Article`".to_owned())
+        );
+    }
+
+    #[test]
+    fn reads_a_field_of_any_and_of_nothing_else_undeclared() {
+        assert_eq!(member(&Type::Any, "f", false, &()), Ok(Type::Any));
+        assert_eq!(member(&Type::Any, "f", true, &()), Ok(Type::Any));
+        assert_eq!(member(&opt(Type::Any), "f", true, &()), Ok(Type::Any));
+        assert_eq!(
+            member(&Type::String, "length", false, &()),
             Err("a `string` has no field `length`".to_owned())
         );
         assert_eq!(
-            member(&Type::map(Type::Int), "a", false),
+            member(&Type::map(Type::Int), "a", false, &()),
             Err("a `{string: int}` has no fields: index a map as `[\"a\"]`".to_owned())
         );
         assert_eq!(
-            member(&Type::Null, "f", false),
+            member(&Type::Null, "f", false, &()),
             Err("cannot read field `f` of null".to_owned())
         );
     }
@@ -601,32 +861,41 @@ mod tests {
     #[test]
     fn reads_through_an_optional_only_with_the_optional_chain() {
         assert_eq!(
-            member(&opt(Type::String), "length", false),
+            member(&opt(Type::String), "length", false, &()),
             Err("a `string?` may be null: narrow it with `lem-if`, or use `?.`".to_owned())
         );
         assert_eq!(
-            member(&opt(Type::String), "length", true),
+            member(&opt(Type::String), "length", true, &()),
             Err("a `string` has no field `length`".to_owned())
         );
-        assert_eq!(member(&Type::Null, "f", true), Ok(Type::Null));
+        assert_eq!(member(&Type::Null, "f", true, &()), Ok(Type::Null));
         assert_eq!(
-            member(&Type::String, "length", true),
+            member(&Type::String, "length", true, &()),
             Err("`?.` needs an optional, got `string`".to_owned())
         );
     }
 
     #[test]
     fn indexes_a_list_by_int_and_a_map_by_string() {
-        assert_eq!(index(&Type::list(Type::Bool), &Type::Int), Ok(Type::Bool));
-        assert_eq!(index(&Type::map(Type::Bool), &Type::String), Ok(Type::Bool));
-        assert_eq!(index(&Type::list(Type::Bool), &Type::Any), Ok(Type::Bool));
-        assert_eq!(index(&Type::Any, &Type::Bool), Ok(Type::Any));
         assert_eq!(
-            index(&Type::list(Type::Int), &Type::String),
+            index(&Type::list(Type::Bool), &Type::Int, &()),
+            Ok(Type::Bool)
+        );
+        assert_eq!(
+            index(&Type::map(Type::Bool), &Type::String, &()),
+            Ok(Type::Bool)
+        );
+        assert_eq!(
+            index(&Type::list(Type::Bool), &Type::Any, &()),
+            Ok(Type::Bool)
+        );
+        assert_eq!(index(&Type::Any, &Type::Bool, &()), Ok(Type::Any));
+        assert_eq!(
+            index(&Type::list(Type::Int), &Type::String, &()),
             Err("a list is indexed by `int`, got `string`".to_owned())
         );
         assert_eq!(
-            index(&Type::map(Type::Int), &Type::Int),
+            index(&Type::map(Type::Int), &Type::Int, &()),
             Err("a map is indexed by `string`, got `int`".to_owned())
         );
     }
@@ -634,11 +903,11 @@ mod tests {
     #[test]
     fn refuses_to_index_an_optional_or_a_scalar() {
         assert_eq!(
-            index(&opt(Type::map(Type::Int)), &Type::String),
+            index(&opt(Type::map(Type::Int)), &Type::String, &()),
             Err("a `{string: int}?` may be null: narrow it with `lem-if`".to_owned())
         );
         assert_eq!(
-            index(&Type::Int, &Type::Int),
+            index(&Type::Int, &Type::Int, &()),
             Err("cannot index a `int`".to_owned())
         );
     }
@@ -667,30 +936,30 @@ mod tests {
             Type::Asset,
             Type::Any,
         ] {
-            assert_eq!(printable(&ty), Ok(()), "{ty}");
+            assert_eq!(printable(&ty, &()), Ok(()), "{ty}");
         }
     }
 
     #[test]
     fn refuses_to_print_what_has_no_printed_form() {
         assert_eq!(
-            printable(&Type::Bool),
+            printable(&Type::Bool, &()),
             Err("cannot print a `bool`".to_owned())
         );
         assert_eq!(
-            printable(&Type::Null),
+            printable(&Type::Null, &()),
             Err("cannot print a `null`".to_owned())
         );
         assert_eq!(
-            printable(&Type::list(Type::Int)),
+            printable(&Type::list(Type::Int), &()),
             Err("cannot print a `[int]`".to_owned())
         );
         assert_eq!(
-            printable(&Type::map(Type::Int)),
+            printable(&Type::map(Type::Int), &()),
             Err("cannot print a `{string: int}`".to_owned())
         );
         assert_eq!(
-            printable(&opt(Type::String)),
+            printable(&opt(Type::String), &()),
             Err(
                 "cannot print a `string?`: narrow it with `lem-if`, or give it a default \
                  with `??`"
@@ -698,7 +967,7 @@ mod tests {
             )
         );
         assert_eq!(
-            printable(&func(vec![Type::Int], Type::Int)),
+            printable(&func(vec![Type::Int], Type::Int), &()),
             Err(
                 "cannot print a `(int): int`: call it with `(…)` to print its result"
                     .to_owned()
@@ -731,10 +1000,10 @@ mod tests {
 
     #[test]
     fn admits_what_fits_the_expectation_and_names_both_types_otherwise() {
-        assert_eq!(expected(Type::Int, &opt(Type::Int)), Ok(Type::Int));
-        assert_eq!(expected(Type::Any, &Type::Int), Ok(Type::Any));
+        assert_eq!(expected(Type::Int, &opt(Type::Int), &()), Ok(Type::Int));
+        assert_eq!(expected(Type::Any, &Type::Int, &()), Ok(Type::Any));
         assert_eq!(
-            expected(Type::String, &Type::Int),
+            expected(Type::String, &Type::Int, &()),
             Err("expected `int`, got `string`".to_owned())
         );
     }

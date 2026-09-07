@@ -16,6 +16,7 @@ use lemmon_syntax::Span;
 use crate::Value;
 use crate::bytecode::{Function, Module, Op};
 use crate::compile::{Compiled, Diagnostic, index_u32};
+use crate::decls::{Declaration, TypeFact};
 use crate::exports::ExportIndex;
 use crate::types::Type;
 
@@ -35,16 +36,33 @@ pub struct Unit {
     pub imports: Vec<ImportRef>,
     /// The top-level `lem-fn`s this file defines, as other files may call them.
     pub exports: Vec<ExportedSignature>,
+    /// The top-level `lem-type`s and `lem-enum`s this file declares, as other files
+    /// may name them.
+    pub types: Vec<Declaration>,
     /// The compile-time facts this unit consumed: the foreign signatures its calls were
-    /// compiled against. With the file's text, these are the whole cache key (D25) — an
-    /// edit that changes neither leaves this unit byte-identical.
+    /// compiled against. With the file's text and [`type_refs`](Self::type_refs),
+    /// these are the whole cache key (D25) — an edit that changes none of them leaves
+    /// this unit byte-identical.
     pub facts: Vec<ImportedSignature>,
+    /// The second kind of fact: the foreign types this file's checking depended on,
+    /// each with the declaration it was compiled against, at the first use that reached
+    /// it — an annotation, an `extends`, or a consumed signature.
+    pub type_refs: Vec<TypeRef>,
 }
 
-/// A symbolic reference to a function another file defines.
+/// A foreign type a unit was compiled against: where this file first reached it, and
+/// the declaration it consumed there.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TypeRef {
+    pub name: Rc<str>,
+    pub span: Span,
+    pub fact: TypeFact,
+}
+
+/// A symbolic reference to a function or type another file defines.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ImportRef {
-    /// The function's project-flat name.
+    /// The project-flat name.
     pub name: Rc<str>,
     /// Where this file first uses the name — where an unresolved import points.
     pub span: Span,
@@ -103,7 +121,11 @@ pub struct ImportedSignature {
 /// The index is the project's one answer to what a name means (`∆e5i`), so linking
 /// derives nothing about names itself: it decides only where each unit's functions land.
 /// An import the index has no definition for is an error pointing at the source that
-/// names it, in the order the units were given; with any error there is no module.
+/// names it, in the order the units were given; with any error there is no module. A
+/// type a unit was compiled against is checked the same way: one the index no longer
+/// declares, or declares differently, leaves the unit stale — its field reads and
+/// assignability checks were made against the old shape — and the error names the
+/// file to recompile.
 ///
 /// # Panics
 ///
@@ -130,6 +152,28 @@ pub fn link(units: &[Unit], index: &ExportIndex) -> Compiled<Module> {
     let resolved: Vec<Vec<Option<u32>>> = units
         .iter()
         .map(|unit| {
+            for reference in &unit.type_refs {
+                match index.lookup_type(&reference.name) {
+                    Some(export) if export.decl.fact() == reference.fact => {}
+                    Some(export) => diagnostics.push(
+                        Diagnostic::error(
+                            &unit.path,
+                            reference.span,
+                            stale_type_message(&export.decl.fact(), &reference.fact),
+                        )
+                        .with_label(
+                            &export.path,
+                            export.decl.name_span,
+                            "now declared here",
+                        ),
+                    ),
+                    None => diagnostics.push(Diagnostic::error(
+                        &unit.path,
+                        reference.span,
+                        format!("unknown type `{}`", reference.name),
+                    )),
+                }
+            }
             unit.imports
                 .iter()
                 .map(|import| {
@@ -246,6 +290,17 @@ fn stale_signature_message(
     )
 }
 
+/// What a consumer is told when the type it was compiled against has changed shape
+/// under it: both shapes, so the difference is visible without opening the declaration.
+fn stale_type_message(declared: &TypeFact, compiled: &TypeFact) -> String {
+    format!(
+        "`{}` is now `{}`, but this file was compiled against `{}` — recompile it",
+        declared.name,
+        declared.text(),
+        compiled.text()
+    )
+}
+
 /// A signature the way it is declared: `name(a: string, b: int): html`.
 fn signature(name: &str, params: &[Param], ret: &Type) -> String {
     let params: Vec<String> = params
@@ -271,6 +326,7 @@ mod tests {
         let mut index = ExportIndex::new();
         for p in &prepared {
             index.offer(p.path(), p.exports());
+            index.offer_types(p.path(), p.types());
         }
         let this = prepared
             .iter()
@@ -443,5 +499,126 @@ mod tests {
             render(&module, "page.lem", &[("page", Value::Null)]).unwrap(),
             "a42b"
         );
+    }
+
+    const ARTICLE: &str =
+        "<lem-type Article>\n  title: string\n  date: datetime\n</lem-type>";
+
+    #[test]
+    fn refuses_to_link_a_unit_whose_type_changed_shape_under_it() {
+        // page.lem read `a.title` as a `string` and printed it; with `title` now an
+        // `int`, or gone, that check no longer holds and the unit must be recompiled.
+        let page = unit_of(
+            "page.lem",
+            &[
+                ("types.lem", ARTICLE),
+                ("page.lem", "<lem-fn card(a: Article): string = a.title />"),
+            ],
+        );
+        for (edit, expect) in [
+            (
+                "<lem-type Article>\n  title: int\n</lem-type>",
+                "page.lem:16..23: `Article` is now `Article {title: int}`, but this file \
+                 was compiled against `Article {title: string, date: datetime}` — \
+                 recompile it\n  types.lem:10..17: now declared here",
+            ),
+            (
+                "<lem-type Photo>\n  alt: string\n</lem-type>",
+                "page.lem:16..23: unknown type `Article`",
+            ),
+        ] {
+            let types = unit_of("types.lem", &[("types.lem", edit)]);
+            let errors = link_errors(&[types, page.clone()]);
+            assert_eq!(errors.len(), 1, "{errors:?}");
+            assert_eq!(errors[0].to_string(), expect);
+        }
+    }
+
+    #[test]
+    fn links_a_unit_whose_type_only_changed_its_defaults() {
+        // A default runs at load, never at compile (∆iCW), so it is not part of the
+        // shape a consumer depends on — the other half of the rule, and invariant 11
+        // for declarations: the consumer's unit is byte-identical either way.
+        let against = |types: &str| {
+            unit_of(
+                "page.lem",
+                &[
+                    ("types.lem", types),
+                    ("page.lem", "<lem-fn card(a: Article): string = a.title />"),
+                ],
+            )
+        };
+        let page = against(ARTICLE);
+        let defaulted =
+            "<lem-type Article>\n  title: string = \"T\"\n  date: datetime\n</lem-type>";
+        let edited = against(defaulted);
+        assert_eq!(page, edited);
+        let types = unit_of("types.lem", &[("types.lem", defaulted)]);
+        let units = [types, page];
+        assert!(link(&units, &ExportIndex::of(&units)).output.is_some());
+    }
+
+    #[test]
+    fn records_a_type_reached_only_through_another_types_chain() {
+        // page.lem names `LinkPost` alone; checking it against `Article` walked the
+        // chain, so `Article`'s declaration is a fact too, and a change to it — say a
+        // `LinkPost` that no longer extends it — is caught at link time.
+        fn files(types: &str) -> [(&str, &str); 2] {
+            [
+                ("types.lem", types),
+                (
+                    "page.lem",
+                    "<lem-fn card(a: Article): string = a.title />\n\
+                     <lem-fn link(l: LinkPost): string = card(l) />",
+                ),
+            ]
+        }
+        let chained = "<lem-type Article>\n  title: string\n</lem-type>\n\
+                       <lem-type LinkPost extends Article>\n  link: url\n</lem-type>";
+        let page = unit_of("page.lem", &files(chained));
+        let names: Vec<&str> = page.type_refs.iter().map(|r| &*r.name).collect();
+        assert_eq!(names, ["Article", "LinkPost"]);
+        let severed = "<lem-type Article>\n  title: string\n</lem-type>\n\
+                       <lem-type LinkPost>\n  link: url\n</lem-type>";
+        let types = unit_of("types.lem", &[("types.lem", severed)]);
+        let errors = link_errors(&[types, page]);
+        assert!(
+            errors[0]
+                .message
+                .starts_with("`LinkPost` is now `LinkPost {link: url}`"),
+            "{errors:?}"
+        );
+    }
+
+    #[test]
+    fn reports_a_units_stale_types_beside_its_stale_imports() {
+        // One pass per unit, so a file's diagnostics stay together and in span order
+        // whatever kind they are.
+        let page = unit_of(
+            "page.lem",
+            &[
+                (
+                    "lib.lem",
+                    "<lem-type Article>\n  title: string\n</lem-type>\n\
+                     <lem-fn f(s: string): string = s />",
+                ),
+                (
+                    "page.lem",
+                    "<lem-fn card(a: Article): string = f(a.title) />\n\
+                     <lem-fn other(): string = f(\"x\") />",
+                ),
+            ],
+        );
+        let lib = unit_of(
+            "lib.lem",
+            &[(
+                "lib.lem",
+                "<lem-type Article>\n  title: int\n</lem-type>\n\
+                 <lem-fn f(s: int): string = \"s\" />",
+            )],
+        );
+        let errors = link_errors(&[lib, page]);
+        let starts: Vec<u32> = errors.iter().map(|e| e.span.start).collect();
+        assert_eq!(starts, [16, 35]);
     }
 }

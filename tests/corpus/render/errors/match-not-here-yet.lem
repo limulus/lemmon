@@ -1,7 +1,3 @@
-<lem-enum Size = small | large />
-<lem-type Card>
-  title: string
-</lem-type>
 <lem-let size: any = "small" />
 <lem-match size>
   <lem-case small>s</lem-case>

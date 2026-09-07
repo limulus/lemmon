@@ -1,0 +1,26 @@
+<lem-type Photo>
+  url: url
+  alt: string
+</lem-type>
+<lem-type Article>
+  title: string
+  subhead: string?
+  hero: Photo?
+  tags: [string]
+  meta: {string: int}
+</lem-type>
+<lem-fn card(article: Article)>
+  <h1><lem.article.title></h1>
+  <p><lem.article.subhead ?? "(no subhead)"></p>
+  <lem-let hero = article.hero />
+  <lem-if hero><img src="<lem.hero.url>" alt="<lem.hero.alt>"><lem-else />(no hero)</lem-if>
+  <lem.article.hero?.alt ?? "-"> <lem.article.tags[0]> <lem.article.meta["views"]>
+  <lem-for tag in article.tags><lem.tag>;</lem-for>
+</lem-fn>
+<lem-let articles: any = [
+  {title: "One", subhead: null, hero: {url: "/one.jpg", alt: "One"}, tags: ["a", "b"], meta: {views: 3}},
+  {title: "Two", subhead: "Second", hero: null, tags: ["c"], meta: {views: 0}},
+] />
+<lem-for article in articles>
+<lem.card(article)>
+</lem-for>

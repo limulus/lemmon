@@ -1,0 +1,138 @@
+Root@0..304
+  TypeDecl@0..42
+    OpenTag@0..9 "<lem-type"
+    Trivia@9..10 " "
+    Head@10..14
+      Ident@10..14 "Note"
+    Close@14..15 ">"
+    FieldList@15..31
+      Newline@15..16 "\n"
+      Trivia@16..18 "  "
+      Field@18..30
+        Ident@18..22 "text"
+        TypeAnnotation@22..30
+          Colon@22..23 ":"
+          Trivia@23..24 " "
+          NamedType@24..30
+            Ident@24..30 "string"
+      Newline@30..31 "\n"
+    CloseTag@31..42
+      CloseTag@31..41 "</lem-type"
+      Close@41..42 ">"
+  Text@42..43
+    Text@42..43 "\n"
+  EnumDecl@43..76
+    OpenTag@43..52 "<lem-enum"
+    Trivia@52..53 " "
+    Head@53..73
+      Ident@53..57 "Tone"
+      Trivia@57..58 " "
+      Eq@58..59 "="
+      Trivia@59..60 " "
+      Ident@60..64 "calm"
+      Trivia@64..65 " "
+      Pipe@65..66 "|"
+      Trivia@66..67 " "
+      Ident@67..73 "urgent"
+    Trivia@73..74 " "
+    SelfClose@74..76 "/>"
+  Text@76..142
+    Text@76..142 "\n\nA declaration in a document takes its "…
+  FnBlock@142..235
+    OpenTag@142..149 "<lem-fn"
+    Trivia@149..150 " "
+    Head@150..175
+      Ident@150..154 "note"
+      Params@154..175
+        LParen@154..155 "("
+        Param@155..162
+          Ident@155..156 "n"
+          TypeAnnotation@156..162
+            Colon@156..157 ":"
+            Trivia@157..158 " "
+            NamedType@158..162
+              Ident@158..162 "Note"
+        Comma@162..163 ","
+        Trivia@163..164 " "
+        Param@164..174
+          Ident@164..168 "tone"
+          TypeAnnotation@168..174
+            Colon@168..169 ":"
+            Trivia@169..170 " "
+            NamedType@170..174
+              Ident@170..174 "Tone"
+        RParen@174..175 ")"
+    Close@175..176 ">"
+    Block@176..226
+      Text@176..193
+        Text@176..193 "\n  <aside class=\""
+      AccessTag@193..203
+        OpenAccess@193..198 "<lem."
+        Head@198..202
+          NameRef@198..202
+            Ident@198..202 "tone"
+        Close@202..203 ">"
+      Text@203..205
+        Text@203..205 "\">"
+      AccessTag@205..217
+        OpenAccess@205..210 "<lem."
+        Head@210..216
+          MemberExpr@210..216
+            NameRef@210..211
+              Ident@210..211 "n"
+            Dot@211..212 "."
+            Ident@212..216 "text"
+        Close@216..217 ">"
+      Text@217..226
+        Text@217..226 "</aside>\n"
+    CloseTag@226..235
+      CloseTag@226..234 "</lem-fn"
+      Close@234..235 ">"
+  Text@235..236
+    Text@235..236 "\n"
+  LetVoid@236..280
+    OpenTag@236..244 "<lem-let"
+    Trivia@244..245 " "
+    Head@245..277
+      Ident@245..246 "n"
+      TypeAnnotation@246..251
+        Colon@246..247 ":"
+        Trivia@247..248 " "
+        NamedType@248..251
+          Ident@248..251 "any"
+      Trivia@251..252 " "
+      Eq@252..253 "="
+      Trivia@253..254 " "
+      MapLit@254..277
+        LBrace@254..255 "{"
+        MapEntry@255..276
+          Ident@255..259 "text"
+          Colon@259..260 ":"
+          Trivia@260..261 " "
+          Literal@261..276
+            StringLit@261..276 "\"Mind the gap.\""
+        RBrace@276..277 "}"
+    Trivia@277..278 " "
+    SelfClose@278..280 "/>"
+  Text@280..282
+    Text@280..282 "\n\n"
+  AccessTag@282..303
+    OpenAccess@282..287 "<lem."
+    Head@287..302
+      CallExpr@287..302
+        NameRef@287..291
+          Ident@287..291 "note"
+        ArgList@291..302
+          LParen@291..292 "("
+          NameRef@292..293
+            Ident@292..293 "n"
+          Comma@293..294 ","
+          Trivia@294..295 " "
+          NameRef@295..301
+            Ident@295..301 "urgent"
+          RParen@301..302 ")"
+    Close@302..303 ">"
+  Text@303..304
+    Text@303..304 "\n"
+
+--- diagnostics

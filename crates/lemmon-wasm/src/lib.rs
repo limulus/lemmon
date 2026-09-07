@@ -255,8 +255,14 @@ impl Core {
         // files now is what puts a collision's blame on the file just handed in, since
         // a name a resident file owns stays that file's. The refusal is reported by the
         // compile below, so a collision is reported once, by the call that made it.
+        // Every incoming file is withdrawn before any is offered, so a name that moved
+        // from one of them to another is free when its new home offers it.
+        for p in &prepared {
+            self.index.withdraw(p.path());
+        }
         for p in &prepared {
             self.index.offer(p.path(), p.exports());
+            self.index.offer_types(p.path(), p.types());
         }
         for p in &prepared {
             let compiled = compile_unit(p, &self.index);
@@ -409,6 +415,24 @@ mod tests {
             .unwrap();
         assert_eq!(loaded, "[]");
         assert_eq!(html_of(&core, "page.lem"), "Hi! on limulus.net");
+    }
+
+    #[test]
+    fn lets_a_declaration_move_between_two_files_in_one_compile() {
+        // The new home comes first in the batch, while the old one still owns the
+        // name: withdrawing every incoming file before offering any is what keeps
+        // this from being a collision — or a panic in the new home's compile.
+        let mut core = Core::new();
+        compile_clean(
+            &mut core,
+            r#"[{"path":"a.lem","text":"<lem-type Article>\n  title: string\n</lem-type>\n<lem-fn f(): int = 1 />"},{"path":"page.lem","text":"<lem-fn card(a: Article): string = a.title />"}]"#,
+        );
+        compile_clean(
+            &mut core,
+            r#"[{"path":"types.lem","text":"<lem-type Article>\n  title: string\n</lem-type>\n<lem-fn f(): int = 2 />"},{"path":"a.lem","text":""}]"#,
+        );
+        assert_eq!(core.index.lookup_type("Article").unwrap().path, "types.lem");
+        assert!(core.index.defined_in("f", "types.lem"));
     }
 
     #[test]

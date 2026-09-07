@@ -23,16 +23,20 @@ use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::rc::Rc;
 
-use lemmon_syntax::ast::{Item, Spanned};
+use lemmon_syntax::ast::{EnumDecl, Item, Spanned, TypeDecl, TypeExpr};
 use lemmon_syntax::{DocumentParse, Parse, Severity, Span, SyntaxToken, parse_document};
 
 use crate::bytecode::{Function, Module, Op};
+use crate::decls::{Declaration, Decls, FieldDecl, Kind, Shape};
 use crate::document;
 use crate::exports::{Export, ExportIndex};
 use crate::types::Type;
-use crate::unit::{ExportedSignature, ImportRef, ImportedSignature, Param, Unit, link};
+use crate::unit::{
+    ExportedSignature, ImportRef, ImportedSignature, Param, TypeRef, Unit, link,
+};
 use crate::{SourceFile, Value};
 
+use annotations::Reserved;
 pub(crate) use names::duplicate_named;
 use names::{BindingKind, Frame, Names, Resolved};
 
@@ -228,6 +232,7 @@ pub fn compile(files: &[SourceFile]) -> Compiled<Module> {
     let mut index = ExportIndex::new();
     for p in &prepared {
         index.offer(&p.path, &p.exports);
+        index.offer_types(&p.path, &p.types);
     }
     let mut units = Vec::new();
     for p in &prepared {
@@ -266,16 +271,22 @@ pub fn repeated_path<'a>(paths: impl IntoIterator<Item = &'a str>) -> Option<&'a
     paths.into_iter().find(|path| !seen.insert(path))
 }
 
-/// A file parsed, its prose rendered, and its exports collected — everything
-/// [`compile_unit`] needs that comes from this file alone.
+/// A file parsed, its prose rendered, and its exports and declarations collected —
+/// everything [`compile_unit`] needs that comes from this file alone.
 pub struct PreparedFile {
     path: String,
     source: Source,
     /// A document's prose, rendered by comrak here so markdown never runs later.
     chunks: Option<Vec<String>>,
     exports: Vec<ExportedSignature>,
-    /// What parsing warned about and what collecting the exports found (ambient names,
-    /// same-file duplicates), reported by [`compile_unit`] with the rest of the file's.
+    types: Vec<Declaration>,
+    /// Every declared type name the signatures and declarations use, where it is
+    /// written. Whether each is declared is the index's question, asked by
+    /// [`compile_unit`] once every file's declarations are in.
+    type_uses: Vec<ImportRef>,
+    /// What parsing warned about and what collecting the exports and declarations
+    /// found (ambient names, same-file duplicates, reserved type names), reported by
+    /// [`compile_unit`] with the rest of the file's.
     diagnostics: Vec<Diagnostic>,
 }
 
@@ -291,9 +302,17 @@ impl PreparedFile {
     pub fn exports(&self) -> &[ExportedSignature] {
         &self.exports
     }
+
+    /// The top-level `lem-type`s and `lem-enum`s the file declares — the
+    /// [`ExportIndex`]'s other input.
+    #[must_use]
+    pub fn types(&self) -> &[Declaration] {
+        &self.types
+    }
 }
 
-/// Parses `file`, renders a document's prose, and collects its exported signatures.
+/// Parses `file`, renders a document's prose, and collects its exported signatures and
+/// declarations.
 ///
 /// # Errors
 ///
@@ -326,13 +345,20 @@ pub fn prepare(file: &SourceFile) -> Result<PreparedFile, Vec<Diagnostic>> {
             }
         }
     };
-    let (exports, export_diagnostics) = collect_exports(&file.path, source.parse());
+    let mut type_uses = Vec::new();
+    let (exports, export_diagnostics) =
+        collect_exports(&file.path, source.parse(), &mut type_uses);
     diagnostics.extend(export_diagnostics);
+    let (types, type_diagnostics) =
+        collect_declarations(&file.path, source.parse(), &mut type_uses);
+    diagnostics.extend(type_diagnostics);
     Ok(PreparedFile {
         path: file.path.clone(),
         source,
         chunks,
         exports,
+        types,
+        type_uses,
         diagnostics,
     })
 }
@@ -343,7 +369,11 @@ pub fn prepare(file: &SourceFile) -> Result<PreparedFile, Vec<Diagnostic>> {
 ///
 /// A signature is read from the head alone, never the body (invariant 11): a block body
 /// returns `html`, and an expression body must declare what it returns.
-fn collect_exports(path: &str, parse: &Parse) -> (Vec<ExportedSignature>, Vec<Diagnostic>) {
+fn collect_exports(
+    path: &str,
+    parse: &Parse,
+    uses: &mut Vec<ImportRef>,
+) -> (Vec<ExportedSignature>, Vec<Diagnostic>) {
     let mut names = Names::new(path, None);
     let mut diagnostics = Vec::new();
     let mut exports: Vec<ExportedSignature> = Vec::new();
@@ -366,6 +396,7 @@ fn collect_exports(path: &str, parse: &Parse) -> (Vec<ExportedSignature>, Vec<Di
                             path,
                             &required(required(p.type_annotation()).ty()),
                             &mut diagnostics,
+                            uses,
                         ),
                     })
                     .collect()
@@ -378,6 +409,7 @@ fn collect_exports(path: &str, parse: &Parse) -> (Vec<ExportedSignature>, Vec<Di
                     path,
                     &required(annotation.ty()),
                     &mut diagnostics,
+                    uses,
                 );
                 if declared != Type::Html {
                     diagnostics.push(Diagnostic::error(
@@ -388,9 +420,12 @@ fn collect_exports(path: &str, parse: &Parse) -> (Vec<ExportedSignature>, Vec<Di
                 }
                 Type::Html
             }
-            (Some(annotation), false) => {
-                annotations::resolve(path, &required(annotation.ty()), &mut diagnostics)
-            }
+            (Some(annotation), false) => annotations::resolve(
+                path,
+                &required(annotation.ty()),
+                &mut diagnostics,
+                uses,
+            ),
             (None, false) => {
                 diagnostics.push(Diagnostic::error(
                     path,
@@ -416,13 +451,150 @@ fn collect_exports(path: &str, parse: &Parse) -> (Vec<ExportedSignature>, Vec<Di
     (exports, diagnostics)
 }
 
+/// Collects a parsed file's top-level `lem-type`s and `lem-enum`s. The rules that need
+/// only this file are applied here — a reserved name (a builtin type's, or a spelling
+/// the hints answer for) cannot be declared, a name declared twice in one file is a
+/// duplicate, and so is a field or a variant repeated within one declaration — and a
+/// refused declaration exports nothing. Whether a base or a field's type is declared,
+/// and what it declares, waits for the index ([`Compiler::check_declarations`]).
+fn collect_declarations(
+    path: &str,
+    parse: &Parse,
+    uses: &mut Vec<ImportRef>,
+) -> (Vec<Declaration>, Vec<Diagnostic>) {
+    let mut diagnostics = Vec::new();
+    let mut declared: Vec<Declaration> = Vec::new();
+    for item in parse.root().items() {
+        let (name, shape) = match &item {
+            Item::TypeDecl(decl) => (
+                required(decl.name()),
+                record_shape(path, decl, &mut diagnostics, uses),
+            ),
+            Item::EnumDecl(decl) => (
+                required(decl.name()),
+                enum_shape(path, decl, &mut diagnostics),
+            ),
+            _ => continue,
+        };
+        let refusal = match annotations::reserved(name.text()) {
+            Some(Reserved::Builtin) => Some(format!(
+                "`{}` is a builtin type and cannot be declared",
+                name.text()
+            )),
+            Some(Reserved::Hint(hint)) => {
+                Some(format!("`{}` cannot be declared: {hint}", name.text()))
+            }
+            None => None,
+        };
+        if let Some(message) = refusal {
+            diagnostics.push(Diagnostic::error(path, name.span(), message));
+            continue;
+        }
+        if let Some(first) = declared.iter().find(|d| &*d.name == name.text()) {
+            diagnostics.push(duplicate_named(
+                path,
+                name.span(),
+                name.text(),
+                path,
+                first.name_span,
+            ));
+            continue;
+        }
+        declared.push(Declaration {
+            name: Rc::from(name.text()),
+            name_span: name.span(),
+            shape,
+        });
+    }
+    (declared, diagnostics)
+}
+
+/// A `lem-type`'s shape. A base that is a reserved name is refused here and dropped —
+/// a declared one is a use, judged with the rest; a field repeated within the
+/// declaration is a duplicate, its type still resolved so what it names is reported.
+fn record_shape(
+    path: &str,
+    decl: &TypeDecl,
+    diagnostics: &mut Vec<Diagnostic>,
+    uses: &mut Vec<ImportRef>,
+) -> Shape {
+    let base = decl.base().and_then(|base| {
+        let refusal = match annotations::reserved(base.text()) {
+            Some(Reserved::Builtin) => {
+                Some(format!("`{}` is a builtin type, not a record", base.text()))
+            }
+            Some(Reserved::Hint(hint)) => {
+                Some(format!("`{}` is not a record: {hint}", base.text()))
+            }
+            None => None,
+        };
+        if let Some(message) = refusal {
+            diagnostics.push(Diagnostic::error(path, base.span(), message));
+            return None;
+        }
+        uses.push(ImportRef {
+            name: Rc::from(base.text()),
+            span: base.span(),
+        });
+        Some((Rc::from(base.text()), base.span()))
+    });
+    let mut fields: Vec<FieldDecl> = Vec::new();
+    for field in decl.fields() {
+        let name = required(field.name());
+        let ty = annotations::resolve(
+            path,
+            &required(required(field.type_annotation()).ty()),
+            diagnostics,
+            uses,
+        );
+        if let Some(first) = fields.iter().find(|f| &*f.name == name.text()) {
+            diagnostics.push(duplicate_named(
+                path,
+                name.span(),
+                name.text(),
+                path,
+                first.span,
+            ));
+            continue;
+        }
+        fields.push(FieldDecl {
+            name: Rc::from(name.text()),
+            ty,
+            span: name.span(),
+        });
+    }
+    Shape::Record { base, fields }
+}
+
+/// A `lem-enum`'s shape; a variant repeated within the declaration is a duplicate.
+fn enum_shape(path: &str, decl: &EnumDecl, diagnostics: &mut Vec<Diagnostic>) -> Shape {
+    let mut variants: Vec<(Rc<str>, Span)> = Vec::new();
+    for variant in decl.variants() {
+        if let Some((_, first)) = variants.iter().find(|(v, _)| &**v == variant.text()) {
+            diagnostics.push(duplicate_named(
+                path,
+                variant.span(),
+                variant.text(),
+                path,
+                *first,
+            ));
+            continue;
+        }
+        variants.push((Rc::from(variant.text()), variant.span()));
+    }
+    Shape::Enum { variants }
+}
+
 /// Compiles one prepared file into its [`Unit`], resolving names against `index`. A
 /// call to a function another file defines stays a symbolic import, and the signature
-/// it was compiled against is recorded as one of the unit's facts.
+/// it was compiled against is recorded as one of the unit's facts; so is the
+/// declaration of every type another file declares that the checking depended on.
 ///
-/// A definition the index refused — another file already owns the name — is reported
-/// here, so a collision is reported once, by the compile that introduced it, and the
-/// refused file yields no unit.
+/// A definition or declaration the index refused — another file already owns the name
+/// — is reported here, so a collision is reported once, by the compile that introduced
+/// it, and the refused file yields no unit. So is everything about a declaration that
+/// needs every file's declarations in: an unknown type, a base that is not a record, a
+/// cycle, a field redeclared with another type.
 ///
 /// Every problem in the file comes back in source order; the unit only when none of them
 /// is an error.
@@ -435,7 +607,9 @@ pub fn compile_unit(prepared: &PreparedFile, index: &ExportIndex) -> Compiled<Un
             functions: Vec::new(),
             imports: Vec::new(),
             exports: prepared.exports.clone(),
+            types: prepared.types.clone(),
             facts: Vec::new(),
+            type_refs: Vec::new(),
         },
         strings: HashMap::new(),
         index,
@@ -446,6 +620,8 @@ pub fn compile_unit(prepared: &PreparedFile, index: &ExportIndex) -> Compiled<Un
     };
     let entry = compiler.reserve(&prepared.path);
     debug_assert_eq!(entry, 0, "the entry is a unit's first function");
+    compiler.check_type_uses(&prepared.type_uses);
+    compiler.check_declarations(&prepared.types);
     for export in &prepared.exports {
         let func = compiler.reserve(&export.name);
         debug_assert_eq!(
@@ -594,8 +770,11 @@ impl<'a> Compiler<'a> {
                 // collected, and nothing to compile into.
                 continue;
             };
-            let (func, params, ret) =
-                (export.func, export.params.clone(), export.ret.clone());
+            let (func, params, ret) = (
+                export.func,
+                export.params.clone(),
+                self.known(export.ret.clone()),
+            );
             self.push_frame();
             let tokens: Vec<SyntaxToken> = match &item {
                 Item::FnBlock(f) => f.params(),
@@ -605,7 +784,8 @@ impl<'a> Compiler<'a> {
             .map(|params| params.params().map(|p| required(p.name())).collect())
             .unwrap_or_default();
             for (token, param) in tokens.iter().zip(&params) {
-                self.bind(token, BindingKind::Parameter, param.ty.clone());
+                let ty = self.known(param.ty.clone());
+                self.bind(token, BindingKind::Parameter, ty);
             }
             match &item {
                 Item::FnBlock(f) => {
@@ -683,6 +863,169 @@ impl<'a> Compiler<'a> {
             .expect("a name resolved as a function is in the index")
     }
 
+    /// The declaration table the rules consult.
+    fn decls(&self) -> &'a dyn Decls {
+        self.index
+    }
+
+    /// `ty` with every undeclared name read as `any`: the file that wrote the name was
+    /// told, and nothing more is known about it, so nothing more is said of what
+    /// carries it (one mistake, one diagnostic).
+    fn known(&self, ty: Type) -> Type {
+        ty.rewrite_named(&|name| {
+            self.index.lookup_type(name).is_none().then_some(Type::Any)
+        })
+    }
+
+    /// Resolves an annotation written in this file, now that the index can say which
+    /// names are declared.
+    fn annotation(&mut self, ty: &TypeExpr) -> Type {
+        let mut uses = Vec::new();
+        let ty = annotations::resolve(self.path, ty, &mut self.diagnostics, &mut uses);
+        self.check_type_uses(&uses);
+        self.known(ty)
+    }
+
+    /// Reports each use of a type the project does not declare, and records each use
+    /// of one it does as a fact of this unit.
+    fn check_type_uses(&mut self, uses: &[ImportRef]) {
+        for reference in uses {
+            if self.index.lookup_type(&reference.name).is_none() {
+                self.error(reference.span, format!("unknown type `{}`", reference.name));
+            } else {
+                self.note_type(&reference.name, reference.span);
+            }
+        }
+    }
+
+    /// The rules on this file's own declarations that need every file's declarations
+    /// in: the project kept another file's declaration of the name; the base is an enum
+    /// (an unknown base was reported as an unknown type); the chain of bases returns to
+    /// the type; a field an ancestor declares is redeclared with another type — the
+    /// same type is allowed, since that only changes its default (D32).
+    fn check_declarations(&mut self, types: &[Declaration]) {
+        for decl in types {
+            let owner = self
+                .index
+                .lookup_type(&decl.name)
+                .expect("a declaration is in the index");
+            if owner.path != self.path {
+                self.diagnostics.push(duplicate_named(
+                    self.path,
+                    decl.name_span,
+                    &decl.name,
+                    &owner.path,
+                    owner.decl.name_span,
+                ));
+                continue;
+            }
+            let Shape::Record {
+                base: Some((base, base_span)),
+                fields,
+            } = &decl.shape
+            else {
+                continue;
+            };
+            let Some(base_export) = self.index.lookup_type(base) else {
+                continue;
+            };
+            if base_export.decl.kind() == Kind::Enum {
+                self.error(*base_span, format!("`{base}` is an enum, not a record"));
+                continue;
+            }
+            let chain = self.index.chain(base);
+            if chain.iter().any(|ancestor| ancestor.name == decl.name) {
+                let through = if chain[0].name == decl.name {
+                    String::new()
+                } else {
+                    format!(" through `{base}`")
+                };
+                self.error(
+                    *base_span,
+                    format!("`{}` extends itself{through}", decl.name),
+                );
+                continue;
+            }
+            for field in fields {
+                let redeclared = chain.iter().find_map(|ancestor| match &ancestor.shape {
+                    Shape::Record { fields, .. } => fields
+                        .iter()
+                        .find(|f| f.name == field.name)
+                        .map(|f| (ancestor, f)),
+                    Shape::Enum { .. } => None,
+                });
+                if let Some((ancestor, first)) = redeclared
+                    && first.ty != field.ty
+                {
+                    let owner = self
+                        .index
+                        .lookup_type(&ancestor.name)
+                        .expect("an ancestor is in the index");
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            self.path,
+                            field.span,
+                            format!(
+                                "`{}` is a `{}` in `{}` and cannot be redeclared as a `{}`",
+                                field.name, first.ty, ancestor.name, field.ty
+                            ),
+                        )
+                        .with_label(
+                            &owner.path,
+                            first.span,
+                            "declared here",
+                        ),
+                    );
+                }
+            }
+        }
+    }
+
+    /// Records the type `name` — reached at `span` — as a fact of this unit when
+    /// another file declares it, along with every type its declaration reaches: its
+    /// bases and the types its fields name, since checking against it may walk any of
+    /// them. Over-recording costs a needless recompile, never a wrong one. A foreign
+    /// type whose base is not declared is reported here: its fields and its place in
+    /// the chain cannot be known, and the file that declares it has already said so.
+    fn note_type(&mut self, name: &str, span: Span) {
+        if self.unit.type_refs.iter().any(|r| &*r.name == name) {
+            return;
+        }
+        let mut pending: Vec<Rc<str>> = vec![Rc::from(name)];
+        let mut seen: Vec<Rc<str>> = Vec::new();
+        while let Some(name) = pending.pop() {
+            if seen.contains(&name) {
+                continue;
+            }
+            seen.push(name.clone());
+            let Some(export) = self.index.lookup_type(&name) else {
+                continue;
+            };
+            let foreign = export.path != self.path;
+            if foreign && !self.unit.type_refs.iter().any(|r| r.name == name) {
+                self.unit.type_refs.push(TypeRef {
+                    name: name.clone(),
+                    span,
+                    fact: export.decl.fact(),
+                });
+            }
+            if let Shape::Record { base, fields } = &export.decl.shape {
+                if let Some((base, _)) = base {
+                    if foreign && self.index.lookup_type(base).is_none() {
+                        self.error(
+                            span,
+                            format!("`{name}` extends `{base}`, which is not declared"),
+                        );
+                    }
+                    pending.push(base.clone());
+                }
+                for field in fields {
+                    field.ty.named_types(&mut pending);
+                }
+            }
+        }
+    }
+
     /// The `func` operand for the project function `export`: the local index when this
     /// file defines it, an import-tagged one otherwise — recorded symbolically, with
     /// the signature consumed as a fact, the first time the name is used.
@@ -703,6 +1046,12 @@ impl<'a> Compiler<'a> {
                     params: export.signature.params.clone(),
                     ret: export.signature.ret.clone(),
                 });
+                // The types the signature names were consumed with it.
+                let mut named = Vec::new();
+                export.signature.ty().named_types(&mut named);
+                for name in named {
+                    self.note_type(&name, span);
+                }
                 self.unit.imports.len() - 1
             }
         };
@@ -911,7 +1260,9 @@ mod tests {
                 prepare(&SourceFile::new("page.lem", "<lem.greet(\"you\")>")).unwrap();
             let mut index = ExportIndex::new();
             index.offer("lib.lem", lib.exports());
+            index.offer_types("lib.lem", lib.types());
             index.offer("page.lem", page.exports());
+            index.offer_types("page.lem", page.types());
             compile_unit(&page, &index).expect_output()
         };
         let unit = unit_against("<lem-fn greet(who: string): string = \"hi \" + who />");
@@ -929,6 +1280,58 @@ mod tests {
             }]
         );
         assert_eq!(unit.imports.len(), 1);
+    }
+
+    #[test]
+    fn records_every_type_a_consumed_signature_names_wherever_it_stands() {
+        // The signature is the fact; the types it names — inside a map, a function
+        // type, an optional — were consumed with it, each at the call that consumed it.
+        let types = "<lem-type Article>\n  title: string\n</lem-type>\n\
+                     <lem-type Photo>\n  alt: string\n</lem-type>\n\
+                     <lem-type Vod>\n  poster: url\n</lem-type>";
+        let lib = "<lem-fn f(m: {string: Article}, g: (Photo): Vod?): [Article] = [] />";
+        let page = "<lem-let xs = f({}, |p| null) />";
+        let prepared: Vec<_> = [("types.lem", types), ("lib.lem", lib), ("page.lem", page)]
+            .iter()
+            .map(|(path, text)| prepare(&SourceFile::new(*path, *text)).unwrap())
+            .collect();
+        let mut index = ExportIndex::new();
+        for p in &prepared {
+            index.offer(p.path(), p.exports());
+            index.offer_types(p.path(), p.types());
+        }
+        let unit = compile_unit(&prepared[2], &index).expect_output();
+        let names: Vec<&str> = unit.type_refs.iter().map(|r| &*r.name).collect();
+        assert_eq!(names, ["Article", "Photo", "Vod"]);
+        let call = unit.imports[0].span;
+        assert_eq!(call, Span::new(14, 29));
+        assert!(unit.type_refs.iter().all(|r| r.span == call));
+        assert!(unit.type_refs.iter().all(|r| r.fact.name == r.name));
+    }
+
+    #[test]
+    fn tells_a_consumer_when_a_foreign_types_base_is_not_declared() {
+        // types.lem reports the unknown base at its `extends`; page.lem, which cannot
+        // check `l.title` without the chain, says why at its own use rather than
+        // claiming `LinkPost` has no such field.
+        let errors = compile_errors(&[
+            SourceFile::new(
+                "types.lem",
+                "<lem-type LinkPost extends Article>\n  link: url\n</lem-type>",
+            ),
+            SourceFile::new(
+                "page.lem",
+                "<lem-fn t(l: LinkPost): string = l.link + l.title />",
+            ),
+        ]);
+        assert_eq!(
+            shown(&errors),
+            [
+                "types.lem:27..34: unknown type `Article`",
+                "page.lem:13..21: `LinkPost` extends `Article`, which is not declared",
+                "page.lem:42..49: a `LinkPost` has no field `title`",
+            ]
+        );
     }
 
     #[test]

@@ -1,0 +1,18 @@
+Root@0..304
+  TypeDecl@0..42
+    CloseTag@31..42
+  Text@42..43
+  EnumDecl@43..76
+  Text@76..142
+  FnBlock@142..235
+    Text@176..193
+    AccessTag@193..203
+    Text@203..205
+    AccessTag@205..217
+    Text@217..226
+    CloseTag@226..235
+  Text@235..236
+  LetVoid@236..280
+  Text@280..282
+  AccessTag@282..303
+  Text@303..304

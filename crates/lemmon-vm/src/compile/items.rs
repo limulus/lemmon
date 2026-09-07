@@ -8,7 +8,7 @@ use lemmon_syntax::ast::{ForTag, Item, LetBlock, LetVoid, Spanned};
 
 use super::names::BindingKind;
 use super::whitespace::{Arm, Body, Kind, Piece};
-use super::{Compiler, TokenSpan, annotations, required, rules};
+use super::{Compiler, TokenSpan, required, rules};
 use crate::bytecode::Op;
 use crate::types::Type;
 
@@ -118,7 +118,7 @@ impl Compiler<'_> {
             }
             Item::Access(tag) => {
                 let ty = self.expr(&required(tag.expr()));
-                self.require(tag.span(), rules::printable(&ty));
+                self.require(tag.span(), rules::printable(&ty, self.decls()));
                 self.emit(Op::Emit, tag.span());
             }
             Item::LetVoid(tag) => self.lower_let_void(tag),
@@ -145,18 +145,15 @@ impl Compiler<'_> {
             Item::FnBlock(_) | Item::FnVoid(_) => {
                 self.error(item.span(), "`lem-fn` must be at the top level of a file");
             }
-            // Parsed by `lemmon-syntax` (∆up2) for the checker to consume; until the
-            // type namespace exists nothing can be lowered from them. Each names the
-            // item it waits on, so the placeholder gate (∆DA2) notices when that item
-            // has landed.
-            Item::TypeDecl(_) => self.error(
-                item.span(),
-                "`lem-type` needs the type namespace, which is not here yet (∆cea)",
-            ),
-            Item::EnumDecl(_) => self.error(
-                item.span(),
-                "`lem-enum` needs the type namespace, which is not here yet (∆cea)",
-            ),
+            // Declarations were collected into the index before anything was lowered;
+            // like definitions they stand in the piece list only for the line rule.
+            Item::TypeDecl(_) | Item::EnumDecl(_) if level != Level::Nested => {}
+            Item::TypeDecl(_) => {
+                self.error(item.span(), "`lem-type` must be at the top level of a file");
+            }
+            Item::EnumDecl(_) => {
+                self.error(item.span(), "`lem-enum` must be at the top level of a file");
+            }
             Item::Match(tag) => {
                 // The subject is lowered for its diagnostics: the names it reads count
                 // as read, and what is wrong inside it is still reported.
@@ -253,11 +250,7 @@ impl Compiler<'_> {
         // has what the value has.
         let ty = match tag.type_annotation() {
             Some(annotation) => {
-                let declared = annotations::resolve(
-                    self.path,
-                    &required(annotation.ty()),
-                    &mut self.diagnostics,
-                );
+                let declared = self.annotation(&required(annotation.ty()));
                 self.check(&value, &declared);
                 declared
             }

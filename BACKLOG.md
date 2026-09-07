@@ -20,16 +20,22 @@ Standing epic for reshaping working code that belongs to no milestone. An item s
 only while doing it first makes the work below it smaller; if that work is claimed first, it
 absorbs the item and the item is removed.
 
+- ∆cE6 Line and column in corpus diagnostic trailers — the `.cst`/`.html` trailers print byte
+  spans only (`89..94`, `path:89..94`), which a reader cannot match to the source by eye; have
+  `crates/lemmon-corpus` render `line:col` beside each span (labels too), update
+  `tests/corpus/README.md`, and re-bless once. Spans stay bytes in the core (invariant 8);
+  the display step is one `lem check` (∆4tG) and the LSP (∆5MM) will each need as well
+
 ## Phase 1 — Language complete, tooling from day one
 
 Seed items for the next phase (architecture doc 3, phase 1); expect these to be split
 further at claim time.
 
-- ∆cea Records and enums — `lem-type`/`lem-enum` resolved project-flat through a type
-  namespace in the export index, `extends` with no field redeclaration in subtypes (D30's
-  `layout` question), field access typed by declaration, bare variants where an enum is
-  expected, and a consumed type's shape as a compile-time fact (D25). Split from ∆C8d
-  because nothing produces a record value before ∆iCW and ∆PCK
+- ∆EN6 Dotted enum variants — a variant always starts with a dot: `.hero` where the enum is
+  expected (arguments, annotated bindings, `lem-case` patterns, the right of `==`/`in`), and
+  `Placement.hero` anywhere, when nothing around it says which enum. A bare `hero` is then
+  only ever a name, so D32's variant-over-local shadowing goes; the expectation paths stay
+  as what `.hero` asks for. `.` opening an expression is new to the scanner; needs: ∆cea
 - ∆PCK Narrowing and typed lowering — `is` and `lem-match` narrowing, a `TypeTest` op over
   record values that carry their type (`Value::Record`), record literals as map literals
   under an expected record type, enum exhaustiveness on the provisional reading. Split

@@ -1,0 +1,10 @@
+<lem-enum Size = small | large />
+<lem-fn show(size: Size): string = size == small ? "s" : "l" />
+<lem-let s: Size = smal />
+<lem.show(medium)> <lem.show(small)>
+<lem.small> <lem.show("small")> <lem.s == null ? "-" : "+">
+<lem-if s == "small">text</lem-if>
+<lem-let both = s == large || s in ["large"] />
+<lem.both ? "y" : "n">
+<lem-let word = "small" />
+<lem.show(word)> <lem.show(s)>

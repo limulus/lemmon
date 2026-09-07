@@ -1,0 +1,24 @@
+<lem-type Page>
+  url: url
+  draft: bool = false
+</lem-type>
+<lem-type Article extends Page>
+  title: string
+  layout: (Article, html): html = article
+</lem-type>
+<lem-type LinkPost extends Article>
+  linkTitle: string
+  title: string = "Link: {linkTitle}"
+</lem-type>
+<lem-fn article(post: Article, body: html)>
+  <article><h1><lem.post.title></h1><lem.body></article>
+</lem-fn>
+<lem-fn link(post: LinkPost, first: Article): html = post.layout(post, raw(post.linkTitle + " / " + first.title)) />
+<lem-fn pick(a: LinkPost, b: Article, flag: bool): Article = flag ? a : b />
+<lem-let posts: any = [
+  {url: "/a/", draft: false, title: "A", layout: article},
+  {url: "/b/", draft: false, title: "B", layout: article, linkTitle: "Elsewhere"},
+] />
+<lem.link(posts[1], posts[0])>
+<lem.pick(posts[1], posts[0], true).url> <lem.pick(posts[1], posts[0], false).title>
+<lem-if posts[1] == posts[0]>same<lem-else />different</lem-if>

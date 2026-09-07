@@ -155,12 +155,17 @@ exports are offered to it in turn, a name another file already owns stays that f
 and both `compile_unit` and `link` read that one answer rather than deriving their own.
 A refused definition is reported where its file compiles, next to the stdlib-shadowing
 warning that asks the index the same question; an import the index has no definition for
-is a spanned link diagnostic. The facts live on
-`Unit::facts` — today only the imported-signatures kind exists, typed since ∆C8d: the
-parameter names and types and the return type a call was checked against, so a callee
-whose type changed under a caller is a link diagnostic naming the caller. Invariant 11 is
-a test: editing a callee's body leaves the caller's unit byte-identical. `∆RGQ` makes the
-reported facts cross the boundary and the serialized form (`exportModule`) first-class.
+is a spanned link diagnostic. The index has a type namespace beside the functions
+(∆cea): each file's `lem-type`/`lem-enum` declarations are offered under the same rule,
+and annotations resolve to a name alone that the index gives a shape. Two kinds of fact
+live on the unit — `Unit::facts`, the imported signatures (parameter names and types and
+the return type a call was checked against, typed since ∆C8d), and `Unit::type_refs`,
+the declarations of every foreign type the checking reached, each at the use that reached
+it — so a callee whose type changed under a caller, or a type whose shape changed under a
+consumer, is a link diagnostic naming the file to recompile, in that file's own order. Invariant 11 is a test:
+editing a callee's body, or a declaration's default, leaves the consumer's unit
+byte-identical. `∆RGQ` makes the reported facts cross the boundary and the serialized
+form (`exportModule`) first-class.
 
 ## VM
 
@@ -177,10 +182,12 @@ resolved at page end), `Track` (dependency recording), `Return`. Runtime errors 
 via the pc→span table.
 
 What ∆c8h built is the untyped subset of that: `Value` without the stdlib types, maps in
-place of records with `GetField` by name, and no `TypeTest`/`Channel`/`Track` — those arrive
-with records and narrowing (∆cea, ∆PCK), the stdlib (∆Q6L), and side channels (∆RGQ). The
-VM is the runtime for `any` (∆C8d): its type checks fire only on values the checker let
-through as `any`, and stay for that reason.
+place of records with `GetField` by name, and no `TypeTest`/`Channel`/`Track` — those
+arrive with narrowing (∆PCK), the stdlib (∆Q6L), and side channels (∆RGQ). Records are
+checked by declaration since ∆cea, but a record value is still a map and an enum value its
+variant's name as a string: the checker, not the VM, is what knows the type. The VM is
+the runtime for `any` (∆C8d): its type checks fire only on values the checker let through
+as `any`, and stay for that reason.
 
 Calibration, not promise: whole site tens of ms inside WASM; single page well under 1 ms of
 VM time (that number is the Phase 0 exit criterion).
