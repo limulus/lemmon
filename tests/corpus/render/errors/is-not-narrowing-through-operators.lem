@@ -1,0 +1,11 @@
+<lem-type Article>
+  title: string
+</lem-type>
+<lem-type LinkPost extends Article>
+  link: string
+</lem-type>
+<lem-let a: Article = {title: "T"} />
+<lem-if a is LinkPost && true><lem.a.link></lem-if>
+<lem-if !(a is LinkPost)>not<lem-else /><lem.a.link></lem-if>
+<lem-let b: bool = a is LinkPost />
+<lem-if b><lem.a.link></lem-if>

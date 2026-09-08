@@ -16,7 +16,7 @@ use lemmon_syntax::Span;
 use crate::Value;
 use crate::bytecode::{Function, Module, Op};
 use crate::compile::{Compiled, Diagnostic, index_u32};
-use crate::decls::{Declaration, TypeFact};
+use crate::decls::{Declaration, Decls, Shape, TypeFact};
 use crate::exports::ExportIndex;
 use crate::types::Type;
 
@@ -232,7 +232,26 @@ pub fn link(units: &[Unit], index: &ExportIndex) -> Compiled<Module> {
         return Compiled::new(None, diagnostics);
     }
 
-    let mut module = Module::default();
+    // Every record the project declares, whichever unit it came from, with its chain
+    // closed here: a type test asks the table at run time, so the table is the module's
+    // and not any unit's, and the walk over declarations happens once rather than per
+    // test.
+    let types = index
+        .types()
+        .filter(|export| matches!(export.decl.shape, Shape::Record { .. }))
+        .map(|export| {
+            let chain = index
+                .chain(&export.decl.name)
+                .iter()
+                .map(|decl| decl.name.clone())
+                .collect();
+            (export.decl.name.clone(), chain)
+        })
+        .collect();
+    let mut module = Module {
+        types,
+        ..Module::default()
+    };
     for (position, unit) in units.iter().enumerate() {
         let (constant_offset, function_offset) =
             (constant_offsets[position], function_offsets[position]);
@@ -258,7 +277,9 @@ pub fn link(units: &[Unit], index: &ExportIndex) -> Compiled<Module> {
                     Op::Ambient { name }
                     | Op::GetField { name }
                     | Op::OptField { name }
-                    | Op::CallDynamic { name, .. } => {
+                    | Op::CallDynamic { name, .. }
+                    | Op::MakeRecord { name, .. }
+                    | Op::TypeTest { name } => {
                         *name = add_u32(constant_offset, *name);
                     }
                     Op::Global { func: target }
@@ -537,6 +558,104 @@ mod tests {
             render(&module, "page.lem", &[("page", Value::Null)]).unwrap(),
             "hello-there firstsecond"
         );
+    }
+
+    #[test]
+    fn relocates_a_record_literals_and_a_type_tests_name_into_the_linked_pool() {
+        // Both ops carry a constant index, which only a second unit's offset can show
+        // is relocated: every single-file module — every corpus case — links at offset
+        // zero. Without the relocation the record is tagged with, and the test asks
+        // about, whatever string sits at that index in the first unit's pool.
+        let files = [
+            (
+                "types.lem",
+                "<lem-type Photo>\n  url: string\n</lem-type>\
+                 <lem-type Framed extends Photo>\n  frame: string\n</lem-type>\
+                 <lem-fn pad(): string = \"first\" + \"second\" />",
+            ),
+            (
+                "page.lem",
+                "<lem-let framed: Framed = {url: \"/p.jpg\", frame: \"oak\"} />\
+                 <lem-let photos: [Photo] = [framed] />\
+                 <lem-for p in photos>\
+                 <lem-if p is Framed><lem.p.frame><lem-else />plain</lem-if>\
+                 </lem-for>",
+            ),
+        ];
+        let units = [unit_of("types.lem", &files), unit_of("page.lem", &files)];
+        let module = link(&units, &ExportIndex::of(&units)).expect_output();
+        assert_eq!(
+            render(&module, "page.lem", &[("page", Value::Null)]).unwrap(),
+            "oak"
+        );
+    }
+
+    #[test]
+    fn records_a_type_that_only_a_type_test_names() {
+        // `x is T` is a place a foreign type is written with no annotation behind it to
+        // have recorded it. Without the fact, dropping the declaration would leave this
+        // unit fresh and its `Op::TypeTest` asking about a type the project no longer
+        // has.
+        fn files(types: &str) -> [(&str, &str); 2] {
+            [
+                ("types.lem", types),
+                // `LinkPost` is named nowhere else here: `a` is annotated `Article`.
+                (
+                    "page.lem",
+                    "<lem-let a: Article = {title: \"T\"} />\
+                     <lem-if a is LinkPost>l</lem-if>",
+                ),
+            ]
+        }
+        let both = "<lem-type Article>\n  title: string\n</lem-type>\
+                    <lem-type LinkPost extends Article>\n  link: string\n</lem-type>";
+        let page = unit_of("page.lem", &files(both));
+        let names: Vec<&str> = page.type_refs.iter().map(|r| &*r.name).collect();
+        assert!(names.contains(&"LinkPost"), "{names:?}");
+        let changed = "<lem-type Article>\n  title: string\n</lem-type>\
+                       <lem-type LinkPost extends Article>\n  href: string\n</lem-type>";
+        let types = unit_of("types.lem", &[("types.lem", changed)]);
+        let errors = link_errors(&[types, page]);
+        assert!(
+            errors[0].message.starts_with("`LinkPost` is now"),
+            "{errors:?}"
+        );
+    }
+
+    #[test]
+    fn tables_every_records_base_from_whichever_unit_declares_it() {
+        let files = [
+            (
+                "types.lem",
+                "<lem-type Page>\n  url: string\n</lem-type>\
+                 <lem-type Article extends Page>\n  title: string\n</lem-type>\
+                 <lem-enum Placement = hero | left />",
+            ),
+            (
+                "page.lem",
+                "<lem-type LinkPost extends Article>\n  link: string\n</lem-type>x",
+            ),
+        ];
+        let units = [unit_of("types.lem", &files), unit_of("page.lem", &files)];
+        let module = link(&units, &ExportIndex::of(&units)).expect_output();
+        let mut types: Vec<String> = module
+            .types
+            .iter()
+            .map(|(name, chain)| {
+                let chain: Vec<&str> = chain.iter().map(|a| &**a).collect();
+                format!("{name}: {}", chain.join(", "))
+            })
+            .collect();
+        types.sort();
+        assert_eq!(
+            types,
+            [
+                "Article: Article, Page",
+                "LinkPost: LinkPost, Article, Page",
+                "Page: Page",
+            ]
+        );
+        assert!(module.is_a("LinkPost", "Page"));
     }
 
     #[test]

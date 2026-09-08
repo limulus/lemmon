@@ -124,10 +124,10 @@ follows:
 | Tag | Head | Semantics |
 |---|---|---|
 | `lem.` | expression | Print/call. Strings HTML-escaped; `html` verbatim; other types formatted by type (datetime → ISO, asset → hashed URL…). Formatter parenthesizes non-path heads: `<lem.(a ?? b)>`. |
-| `lem-if` / `lem-else-if` / `lem-else` | `bool` or optional | No truthiness: condition must be `bool`, or an optional (non-null test — narrows `T?` to `T` in the branch). Separators are void. |
+| `lem-if` / `lem-else-if` / `lem-else` | `bool` or optional | No truthiness: condition must be `bool`, or an optional (non-null test — narrows a `T?` path such as `article.hero` to `T` in the branch, as `x is T` narrows `x` to `T`; § Checking, Narrowing). Separators are void. |
 | `lem-for` | `x in list` · `x, i in list` · `k, v in map` | Iteration; `<lem-else />` inside gives the empty case. Bodies cannot mutate → parallelizable later. |
 | `lem-let` | `name = expr` / `name: T = expr` / `name: T from source` → void · bare `name` → block | Immutable binding, scoped to the enclosing block. Block form binds the rendered body as `html` (the capture form; in documents the body is a document). The `from` form binds what the host loads from a glob, a data file, `plugin("…")`, or `env("…")`; it is allowed only at the top level of `site.lem` (D30). Unused bindings warn. |
-| `lem-match` / `lem-case` / `lem-default` | subject; patterns | Patterns: subtype (`Til as t`), literal, enum variant (dotted, `.hero`), `null`. Cases are blocks, the optional `lem-default` last. Exhaustive over enums/closed unions, else `lem-default` required. |
+| `lem-match` / `lem-case` / `lem-default` | subject; patterns | Patterns: a record type (`Til`, or `Til as t` to bind it), a literal, an enum variant (dotted, `.hero`), `null`. Cases are blocks, tried in order, the optional `lem-default` last. A type case narrows the subject in its body and binds `t` to it. Exhaustive over enums (every variant, and `null` for a `T?`), else `lem-default` required — a record is matched by its subtypes, and that set is open (D35; the exact rules are a deferred question). |
 | `lem-fn` | signature | **Definition only** (calls go through `lem.`). Block body returns `html`, closes `</lem-fn>`; a `: html` on it is allowed and nothing else is. Expression body `(…): T = expr` is void and returns the declared `T` — the annotation is required, since a signature is read from the head alone (invariant 11). |
 | `lem-type` | `Name` / `Name extends Base` | Record schema (block); fields in the body, one per line, lexed in fields mode (D29). See § Schemas. |
 | `lem-enum` | `Name = a \| b \| c` | Enum (void); its variants are written bare here, and nowhere else. In an expression a variant is `.hero` where the enum is expected and `Placement.hero` anywhere; a string in front matter. |
@@ -141,7 +141,7 @@ follows:
 
 | Category | Syntax | Notes |
 |---|---|---|
-| Literals | `"text"`, `"Link: {linkTitle}"`, `42`, `1.5`, `true`, `null`, `[a, b]`, `{k: v}` | String interpolation `{…}` (`{{` for a literal brace — delimiter is a deferred question); until it is settled, an interpolated expression may not itself contain a string literal. No datetime literal: a fixed date is `datetime("2024-11-24")` (stdlib, validated at compile time when the argument is a literal). |
+| Literals | `"text"`, `"Link: {linkTitle}"`, `42`, `1.5`, `true`, `null`, `[a, b]`, `{k: v}` | A `{k: v}` written where a record is expected is a value of that record (§ Checking, Literals). String interpolation `{…}` (`{{` for a literal brace — delimiter is a deferred question); until it is settled, an interpolated expression may not itself contain a string literal. No datetime literal: a fixed date is `datetime("2024-11-24")` (stdlib, validated at compile time when the argument is a literal). |
 | Access | `a.b`, `a?.b`, `xs[i]`, `m["key"]` | `.` asks the type on its left and nothing else: a record's field, an enum's variant when the name on its left is one (below), or — called — a builtin type's method. A map is indexed. `?.` propagates null and needs an optional on its left; `a?.b.c` needs a second `?.`, since `a?.b` is optional. An out-of-range list index or a missing map key is a render error, not null. |
 | Variants | `.hero`, `Placement.hero` | `.hero` is a variant of whichever enum is expected where it stands; where none is, qualify it. A bare `hero` is only ever a name. In a `?:` leave the space — `?.` is one token, so `c ?.hero : .left` reads as a member access. |
 | Calls | `f(x)`, `f(x, nolink: true)`, `xs.first()` | Positional then named. A bare name is a `lem-fn` or an ambient function. `x.f(…)` reads the receiver's type (D34): a builtin type's method — `heading.slugify()`, `words.first()`, `m.keys()` — or a record's field `f` called as the value it holds. Nothing consults the enclosing scope, so a project `lem-fn` is never reached through a dot: it is `rendition(photo, md, jpeg)`, not `photo.rendition(md, jpeg)`. On `any` the VM resolves the name at render time. |
@@ -149,7 +149,7 @@ follows:
 | Arithmetic | `+ - * / %`, unary `-` | `+` also concatenates strings; `string + int` is a type error. |
 | Comparison/logic | `== !=`, `lt lte gt gte`, `&& \|\| !`, `a ?? b`, `c ? a : b` | Equality structural. Ordering on numbers, strings, datetimes. |
 | Membership | `x in xs` | Lists; map keys. |
-| Type tests | `x is LinkPost` | Narrows in the branch, like `lem-match`. |
+| Type tests | `x is LinkPost` | A `bool`; `LinkPost` is a declared record. As a `lem-if` or `?:` condition it narrows `x` — a local or a field path — to `LinkPost` in the branch, like a `lem-match` case (§ Checking, Narrowing). A test that always holds or never can is an error. At run time it reads the tag a record value carries (D35). |
 
 Every comma-separated list — list and map literals, call arguments, `lem-fn` parameters,
 lambda parameters — accepts one optional trailing comma (D24); an empty slot is an error.
@@ -336,13 +336,48 @@ hierarchies and `T?`. Diagnostics carry a primary span plus secondary spans wher
   it; under an expected `any` the literal is opted out and its elements are `any` too.
   Without either, the first element sets the type, a `null` makes it optional, and an
   element that fits neither is an error — a list's elements share one type, never `any`.
-  An empty `[]`/`{}` with nothing expected is `[any]`/`{string: any}`.
+  An empty `[]`/`{}` with nothing expected is `[any]`/`{string: any}`. A `{…}` where a
+  record is expected (a `T?` included) is a value of that record — the expected type,
+  never a subtype: every key must name a field the record or an ancestor declares, each
+  value is checked against its field, an omitted optional field is null, and an omitted
+  non-optional field is an error, whether or not the field has a default — defaults are
+  the loader's, evaluated where `body` and `site` exist (D35). A map that is not a
+  literal never stands for a record.
 - **Conditions.** `lem-if`, `lem-else-if`, and `?:` test a `bool` or an optional — no
-  truthiness. An optional condition that is a plain local name (parenthesised or not)
-  narrows that binding to its inner type in the arm it guards (not in `lem-else`); an
-  inner binding of the same name ends the narrowing. Inside such an arm the binding is
-  still accepted as a condition and on the left of `??`, since it was declared optional.
-  `&&`, `||`, and `!` take `bool` only.
+  truthiness. `&&`, `||`, and `!` take `bool` only. What a condition narrows is below.
+- **Narrowing.** A condition that is an optional *path* — a local, or fields read off
+  one with plain `.`s (`article.hero`, `a.hero.credit`), parenthesised or not — narrows
+  that path to its inner type in the arm it guards; one that is `path is T` narrows it
+  to `T`. Values are immutable, so a path narrowed at the top of an arm holds throughout
+  it, a lambda written inside included. The narrowing is of that path alone: `a.hero`
+  narrowed says nothing of `a.hero.caption`, which needs its own test. It reaches
+  neither `lem-else` nor anything built with an operator — `x is T && c`, `!(x is T)`
+  — nor a `?.` step, which is optional by construction; an inner binding of the same
+  name ends it. Inside such an arm the path is still accepted as a condition and on the
+  left of `??`, since it was declared optional. A path rooted at an ambient value is
+  not narrowed until ∆Iau types them; today they are `any`, which needs none.
+- **Type tests.** `x is T` is a `bool`. `T` must be a declared record (an enum is
+  compared with `==`; a builtin type is no record), and `x` a record — or an optional
+  one, or `any`. The test must be able to go either way: `T` is a subtype of `x`'s type,
+  or, when `x` is optional, its type itself (a null test). `x`'s own type on a
+  non-optional, an ancestor of it, or an unrelated record is an error. At run time a
+  record value carries its declared name and answers by it, `null` is no record, and
+  any other value — a map that reached the test through `any` — is a render error:
+  nothing but a record carries a type to test (D35).
+- **Matching.** `lem-match` evaluates its subject once and tries the cases in order. A
+  literal case compares as `==` does; `null` needs a subject that may be null; `.hero`
+  needs an enum subject (a `T?` included) and names one of its variants; a type case
+  `T` or `T as t` is the type test above, and its body sees the subject — when it is a
+  path — narrowed to `T`, and `t` bound to it (`t` warns if unread; drop the `as` to
+  not bind). A bare `<lem-case hero>` is a type pattern, so it reports `hero` as the
+  unknown type it is; an enum's name there is told to match its variants, where the same
+  name under `is` is told to compare with `==` — the one thing the two forms differ on.
+  A pattern spelled twice is an error at the repeat, judged by the value it holds rather
+  than by how it is written, so two spellings of one string are one pattern. With no
+  `lem-default` the cases must cover the subject, and only an enum can be covered —
+  every variant, and `null` when it is optional; a record needs a default, since a
+  subtype may be declared in any file, and so does anything else (the provisional
+  reading; the exact rules are deferred).
 - **Printing.** `<lem.…>` prints `string`, `html`, `int`, `float`, `datetime`, `url`,
   `asset`, an enum, and `any`. A `bool`, `null`, a list, a map, a record, a function, or
   an optional is a compile error: narrow the optional, or give it a default with `??`.

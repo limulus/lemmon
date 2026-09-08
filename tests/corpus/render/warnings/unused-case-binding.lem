@@ -1,0 +1,15 @@
+<lem-type Article>
+  title: string
+</lem-type>
+<lem-type LinkPost extends Article>
+  link: string
+</lem-type>
+<lem-let a: Article = {title: "T"} />
+<lem-match a>
+  <lem-case LinkPost as l>a link post, without reading it</lem-case>
+  <lem-default><lem.a.title></lem-default>
+</lem-match>
+<lem-match a>
+  <lem-case LinkPost as l><lem.l.link></lem-case>
+  <lem-default><lem.a.title></lem-default>
+</lem-match>

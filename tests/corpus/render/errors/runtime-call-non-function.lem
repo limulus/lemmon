@@ -1,1 +1,6 @@
-<lem.page.title()>
+<lem-type Card>
+  title: string
+</lem-type>
+<lem-let card: Card = {title: "not a function"} />
+<lem-let untyped: any = card />
+<lem.untyped.title()>

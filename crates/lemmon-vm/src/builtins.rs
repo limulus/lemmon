@@ -66,7 +66,8 @@ impl Kind {
     /// resolve because the receiver was `any`. A `datetime`, `duration`, `url`, or
     /// `asset` is a [`Value::Str`] at run time, so its methods are not here yet (∆Q6L,
     /// which decides how such a value is represented); until then one reached through
-    /// `any` is looked for on `string` and reported as missing there.
+    /// `any` is looked for on `string` and reported as missing there. A record has no
+    /// methods: it is data, and takes `lem-fn`s (D34).
     #[must_use]
     pub const fn of_value(value: &Value) -> Option<Self> {
         match value {
@@ -77,7 +78,7 @@ impl Kind {
             Value::Html(_) => Some(Self::Html),
             Value::List(_) => Some(Self::List),
             Value::Map(_) => Some(Self::Map),
-            Value::Null | Value::Fn(_) => None,
+            Value::Null | Value::Fn(_) | Value::Record(_) => None,
         }
     }
 }

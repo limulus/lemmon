@@ -1,0 +1,50 @@
+<lem-type Article>
+  title: string
+  hero: Photo?
+</lem-type>
+<lem-type LinkPost extends Article>
+  link: string
+</lem-type>
+<lem-type Til extends Article>
+  topic: string
+</lem-type>
+<lem-type Photo>
+  url: string
+  credit: Article?
+</lem-type>
+<lem-fn card(article: Article)>
+  <lem-match article>
+    <lem-case LinkPost as l><a href="<lem.l.link>"><lem.l.title></a></lem-case>
+    <lem-case Til>a til about <lem.article.topic></lem-case>
+    <lem-default><lem.article.title></lem-default>
+  </lem-match>
+</lem-fn>
+<lem-let post: LinkPost = {title: "A link", link: "/elsewhere"} />
+<lem-let credit: LinkPost = {title: "credit", link: "/c"} />
+<lem-let til: Til = {title: "A TIL", topic: "rust", hero: {url: "/h.jpg", credit: credit}} />
+<lem-let plain: Article = {title: "Plain"} />
+<lem-let posts: [Article] = [post, til, plain] />
+<lem-for a in posts>
+<lem.card(a)>
+</lem-for>
+<lem-match til.hero>
+  <lem-case Photo as p>
+    a member path narrows: <lem.til.hero.url>, and so does the binding: <lem.p.url>
+    <lem-match p.credit>
+      <lem-case LinkPost as by>credited to <lem.by.link></lem-case>
+      <lem-default>uncredited</lem-default>
+    </lem-match>
+    <lem-let f = |suffix| p.url + suffix />
+    read inside a lambda: <lem.f("!")>
+  </lem-case>
+  <lem-default>no hero</lem-default>
+</lem-match>
+<lem-match plain.hero>
+  <lem-case Photo as p><lem.p.url></lem-case>
+  <lem-default>and plain has none</lem-default>
+</lem-match>
+<lem-let unknown: any = post />
+<lem-match unknown>
+  <lem-case LinkPost as l>through any: <lem.l.link></lem-case>
+  <lem-default>never</lem-default>
+</lem-match>

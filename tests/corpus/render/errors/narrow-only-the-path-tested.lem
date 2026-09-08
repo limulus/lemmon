@@ -1,0 +1,10 @@
+<lem-type Photo>
+  caption: string?
+</lem-type>
+<lem-type Article>
+  hero: Photo?
+</lem-type>
+<lem-let a: Article = {hero: {caption: "c"}} />
+<lem-if a.hero?.caption><lem.a.hero?.caption></lem-if>
+<lem-if a.hero><lem.a.hero.caption></lem-if>
+<lem-if a.hero><lem.a.hero.caption ?? "the path itself is narrowed, not its fields"></lem-if>

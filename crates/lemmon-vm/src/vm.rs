@@ -175,22 +175,20 @@ impl<'a> Vm<'a> {
         }
     }
 
-    /// `x.f(…)` where the checker knew nothing about `x`: the field `f` called as the
-    /// value it holds, else the method `f` of whatever the receiver turned out to be.
-    ///
-    /// The field goes first because a record is still a [`Value::Map`] — the runtime tag
-    /// that would tell one from a map is not here yet (∆PCK) — and a record's own field
-    /// is what the checker would have called had it known the type. The cost is a map
-    /// whose key spells a method's name: through `any` the key wins, where a typed
-    /// receiver would have taken the method, since a map's entries are never fields to
-    /// the checker. ∆PCK is what lets the two agree.
+    /// `x.f(…)` where the checker knew nothing about `x`: what the typed path would
+    /// have done for the value that turned up. A record's field `f` is called as the
+    /// value it holds — a record has no methods; anything else takes the method `f` of
+    /// its runtime type — a map's entries are never fields to the checker, so a map
+    /// whose key spells a method's name resolves the same way typed and through `any`.
     fn call_dynamic(&mut self, name: u32, argc: u16) -> Result<(), Fault> {
         let name = self.constant_str(name);
         let at = self.stack.len() - 1 - argc as usize;
         let receiver = &self.stack[at];
-        if let Value::Map(map) = receiver
-            && let Some(callee) = map.get(name).cloned()
-        {
+        if let Value::Record(record) = receiver {
+            let callee =
+                record.fields.get(name).cloned().ok_or_else(|| {
+                    format!("no field `{name}` on {}", receiver.type_name())
+                })?;
             self.stack.remove(at);
             return Ok(self.call_value(callee, argc)?);
         }
@@ -283,16 +281,30 @@ impl<'a> Vm<'a> {
                 self.stack.push(Value::list(items));
             }
             Op::MakeMap { len } => {
-                let pairs = self.stack.split_off(self.stack.len() - 2 * len as usize);
-                let mut entries = pairs.into_iter();
-                let mut map = Vec::with_capacity(len as usize);
-                while let (Some(key), Some(value)) = (entries.next(), entries.next()) {
-                    match key {
-                        Value::Str(key) => map.push((key, value)),
-                        other => unreachable!("the compiler interns keys, not {other:?}"),
+                let map = self.pop_pairs(len);
+                self.stack.push(Value::map(map));
+            }
+            Op::MakeRecord { name, len } => {
+                let fields = self.pop_pairs(len);
+                let ty = self.constant_str(name);
+                self.stack.push(Value::record(ty, fields));
+            }
+            Op::TypeTest { name } => {
+                let name = self.constant_str(name);
+                let value = self.pop();
+                let holds = match &value {
+                    Value::Record(record) => self.module.is_a(&record.ty, name),
+                    Value::Null => false,
+                    other => {
+                        return Err(format!(
+                            "cannot test whether a {} is `{name}`: only a record carries \
+                             its type",
+                            other.type_name()
+                        )
+                        .into());
                     }
-                }
-                self.stack.push(Value::map(map.into_iter().collect()));
+                };
+                self.stack.push(Value::Bool(holds));
             }
             Op::Jump { to } => self.jump(to),
             Op::JumpIfFalse { to } => {
@@ -432,6 +444,20 @@ impl<'a> Vm<'a> {
         Ok(())
     }
 
+    /// Pops `len` key/value pairs, pushed in order, as a map.
+    fn pop_pairs(&mut self, len: u32) -> Map {
+        let pairs = self.stack.split_off(self.stack.len() - 2 * len as usize);
+        let mut entries = pairs.into_iter();
+        let mut map = Vec::with_capacity(len as usize);
+        while let (Some(key), Some(value)) = (entries.next(), entries.next()) {
+            match key {
+                Value::Str(key) => map.push((key, value)),
+                other => unreachable!("the compiler interns keys, not {other:?}"),
+            }
+        }
+        map.into_iter().collect()
+    }
+
     fn field(&self, object: &Value, name: u32) -> Result<Value, String> {
         let name = self.constant_str(name);
         match object {
@@ -439,6 +465,11 @@ impl<'a> Vm<'a> {
                 .get(name)
                 .cloned()
                 .ok_or_else(|| format!("no field `{name}`")),
+            Value::Record(record) => record
+                .fields
+                .get(name)
+                .cloned()
+                .ok_or_else(|| format!("no field `{name}` on {}", object.type_name())),
             Value::Null => Err(format!("cannot read field `{name}` of null")),
             other => Err(format!(
                 "cannot read field `{name}` of a {}",
@@ -618,6 +649,13 @@ mod tests {
             entries: vec![0],
             constants,
             functions,
+            types: vec![
+                (Rc::from("Article"), vec![Rc::from("Article")]),
+                (
+                    Rc::from("LinkPost"),
+                    vec![Rc::from("LinkPost"), Rc::from("Article")],
+                ),
+            ],
         }
     }
 
@@ -633,6 +671,15 @@ mod tests {
                 Op::GetField { name } => Op::GetField { name: name + 1 },
                 Op::OptField { name } => Op::OptField { name: name + 1 },
                 Op::Ambient { name } => Op::Ambient { name: name + 1 },
+                Op::CallDynamic { name, argc } => Op::CallDynamic {
+                    name: name + 1,
+                    argc,
+                },
+                Op::MakeRecord { name, len } => Op::MakeRecord {
+                    name: name + 1,
+                    len,
+                },
+                Op::TypeTest { name } => Op::TypeTest { name: name + 1 },
                 other => other,
             })
             .collect();
@@ -1518,6 +1565,121 @@ mod tests {
         )
         .unwrap();
         assert_eq!(out, "12");
+    }
+
+    /// `Const "title"; Const "T"; MakeRecord LinkPost` — a link post on the stack.
+    fn link_post() -> Vec<Op> {
+        vec![k(1), k(2), Op::MakeRecord { name: 2, len: 1 }]
+    }
+
+    /// The constants `link_post` reads: `constants[1]` is `"title"`, `[2]` `"T"`, and
+    /// the 0-based name index 2 shifts to `[3]`, `"LinkPost"`.
+    fn record_constants() -> Vec<Value> {
+        vec![Value::str("title"), Value::str("T"), Value::str("LinkPost")]
+    }
+
+    #[test]
+    fn builds_a_record_from_the_stack_and_reads_its_fields_by_name() {
+        let mut code = link_post();
+        code.extend([Op::GetField { name: 0 }, Op::Emit]);
+        assert_eq!(run(record_constants(), code).unwrap(), "T");
+        let mut code = link_post();
+        code.extend([Op::GetField { name: 1 }, Op::Emit]);
+        let (_, message) = error(run(record_constants(), code));
+        assert_eq!(message, "no field `T` on `LinkPost` record");
+    }
+
+    /// The constants a type-test case reads past `record_constants`: names to test
+    /// against at 0-based 3 and 4, and the words the bool is printed as.
+    fn type_test_constants() -> Vec<Value> {
+        let mut constants = record_constants();
+        constants.extend([
+            Value::str("Article"),
+            Value::str("Photo"),
+            Value::str("true"),
+            Value::str("false"),
+        ]);
+        constants
+    }
+
+    /// Prints the bool on top of the stack as `true` or `false`, from pc 4.
+    fn print_bool() -> [Op; 5] {
+        [
+            Op::JumpIfFalse { to: 7 },
+            k(6),
+            Op::Jump { to: 8 },
+            k(7),
+            Op::Emit,
+        ]
+    }
+
+    #[test]
+    fn tests_a_records_type_through_the_ancestry_table() {
+        for (name, expected) in [(2, "true"), (3, "true"), (4, "false")] {
+            let mut code = link_post();
+            code.push(Op::TypeTest { name });
+            code.extend(print_bool());
+            assert_eq!(
+                run(type_test_constants(), code).unwrap(),
+                expected,
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn finds_a_null_to_be_no_record_and_refuses_to_ask_a_map() {
+        let mut code = vec![k(0), Op::TypeTest { name: 2 }, k(0), k(0)];
+        code.extend(print_bool());
+        assert_eq!(run(type_test_constants(), code).unwrap(), "false");
+        let mut constants = type_test_constants();
+        constants.push(Value::map(Map::default()));
+        let (pc, message) = error(run(
+            constants,
+            vec![k(8), Op::TypeTest { name: 2 }, Op::Emit],
+        ));
+        assert_eq!(pc, 1);
+        assert_eq!(
+            message,
+            "cannot test whether a map is `LinkPost`: only a record carries its type"
+        );
+    }
+
+    #[test]
+    fn calls_a_records_field_through_any_where_a_map_takes_the_method() {
+        // The `any` receiver path agrees with the typed one: a record's field holds
+        // the callee — here an int, so the call fails as a call — while a map takes the
+        // method of its runtime type even when a key spells the method's name.
+        let constants = vec![
+            Value::str("keys"),
+            Value::Int(1),
+            Value::str("LinkPost"),
+            Value::Int(0),
+        ];
+        let (pc, message) = error(run(
+            constants.clone(),
+            vec![
+                k(1),
+                k(2),
+                Op::MakeRecord { name: 2, len: 1 },
+                Op::CallDynamic { name: 0, argc: 0 },
+            ],
+        ));
+        assert_eq!((pc, message.as_str()), (3, "cannot call a int"));
+        let out = run(
+            constants,
+            vec![
+                k(1),
+                k(2),
+                Op::MakeMap { len: 1 },
+                Op::CallDynamic { name: 0, argc: 0 },
+                k(4),
+                Op::Index,
+                Op::Emit,
+            ],
+        )
+        .unwrap();
+        assert_eq!(out, "keys");
     }
 
     #[test]

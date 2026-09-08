@@ -12,7 +12,8 @@
 ## Context
 
 ∆C8d landed the checker with every non-builtin type name an error, because nothing could
-produce a record value before the loader (∆iCW) and runtime type tags (∆PCK). ∆cea had to
+produce a record value before the loader (∆iCW) and runtime type tags (∆PCK, landed as
+D35). ∆cea had to
 give `lem-type` and `lem-enum` a meaning the checker could use with `any` as the only
 producer, and settle four things the docs had left open: how a declared type is
 represented, what a subtype may do to an inherited field (D30's `layout` question), how a
@@ -53,7 +54,7 @@ therefore never a variant, which is what retires the original reading below.
 
 **An enum is its variant's name at run time**, a string: it compares structurally, prints
 as the name, and a front-matter string needs no conversion at load. A record value stays
-a map until ∆PCK's `Value::Record`.
+a map until ∆PCK's `Value::Record` (landed: D35).
 
 **A consumed declaration is a compile-time fact** (D25): a unit records, span-free, the
 declaration of every foreign type its checking reached — transitively through bases and
@@ -115,7 +116,7 @@ shape.
   would be. A qualified variant is not a receiver: `Placement.hero(…)` calls the
   variant, which is an error (∆EN6).
 - Member-path narrowing (`<lem-if article.hero>` narrowing `article.hero`) is ∆PCK's;
-  until then a plain `lem-let` of the field narrows.
+  until then a plain `lem-let` of the field narrows. (Landed: D35.)
 - The dotted form needs an expectation, so it is refused where none reaches: printing,
   a `lem-if` or `lem-match` subject, the left of `==`/`in`/`??`, an unannotated
   `lem-let`, an argument of a builtin or of an `any`, and every element of a literal
@@ -125,7 +126,7 @@ shape.
 - A `lem-case` pattern takes the dotted form only: the bare slot stays `Type as name`,
   whose binding is optional, and the parser resolves no name that could tell them
   apart. `<lem-case hero>` is therefore a type pattern, and ∆PCK reports it as the
-  unknown type it is.
+  unknown type it is (landed: D35).
 - A declared type used as a value reports what it is (`` `Placement` is an enum, not a
   value ``) rather than an undefined name — the author who wrote a bare variant is the
   one who most often lands there (∆EN6).

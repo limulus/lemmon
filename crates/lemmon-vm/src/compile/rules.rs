@@ -12,12 +12,13 @@
 //! — [`assignable`], [`join`] — live with [`Type`] itself.
 //!
 //! What stays in the walk needs more than types and names: `??`, whose right side is
-//! lowered under an expectation the left side decides; the `is` placeholder; and the
-//! checks on a call's or a literal's shape — named arguments passed to something with
-//! no parameter names, a key given twice in a map literal.
+//! lowered under an expectation the left side decides; and the checks on a call's or a
+//! literal's shape — named arguments passed to something with no parameter names, a key
+//! given twice in a map literal, a `lem-case` pattern spelled twice.
 
 use std::rc::Rc;
 
+use lemmon_syntax::Span;
 use lemmon_syntax::ast::{BinaryOp, UnaryOp};
 
 use crate::builtins::{self, Builtin};
@@ -277,6 +278,191 @@ pub(super) fn expected_enum<'a>(
     match expectation(expected) {
         Some(Type::Named(name)) if decls.kind(name) == Some(Kind::Enum) => Some(name),
         _ => None,
+    }
+}
+
+/// The record `expected` asks for, if it asks for one: a `T?` wanted is a `T` written,
+/// as it is for a literal. What makes a `{…}` a record literal (D35).
+pub(super) fn expected_record<'a>(
+    expected: Option<&'a Type>,
+    decls: &dyn Decls,
+) -> Option<&'a str> {
+    match expectation(expected) {
+        Some(Type::Named(name)) if decls.kind(name) == Some(Kind::Record) => Some(name),
+        _ => None,
+    }
+}
+
+/// The type a record literal's entry `key` is checked against: the field of that name
+/// the record or an ancestor declares. A key that names no field is refused — a record
+/// has exactly its declared fields (D35).
+pub(super) fn record_entry(record: &str, key: &str, decls: &dyn Decls) -> Rule {
+    decls
+        .field(record, key)
+        .ok_or_else(|| format!("`{record}` has no field `{key}`"))
+}
+
+/// What a record literal that gave the fields `given` leaves out: the optional fields
+/// it may omit, which the literal fills with null so the record is complete — or the
+/// refusal naming the non-optional ones it must give. A field's default is not
+/// consulted: defaults are the loader's, evaluated where `body` and `site` exist (D35).
+pub(super) fn record_omissions(
+    record: &str,
+    given: &[String],
+    decls: &dyn Decls,
+) -> Rule<Vec<Rc<str>>> {
+    let mut optional = Vec::new();
+    let mut missing = Vec::new();
+    for (name, ty) in decls.fields(record) {
+        if given.iter().any(|key| **key == *name) {
+            continue;
+        }
+        if matches!(ty, Type::Optional(_)) {
+            optional.push(name);
+        } else {
+            missing.push(format!("`{name}`"));
+        }
+    }
+    match missing.len() {
+        0 => Ok(optional),
+        1 => Err(format!("missing field {} of `{record}`", missing[0])),
+        _ => Err(format!(
+            "missing fields {} of `{record}`",
+            missing.join(", ")
+        )),
+    }
+}
+
+/// Which construct is testing a type, which decides only what an enum's name is told
+/// instead: `is` compares an enum, a `lem-case` matches its variants (D32).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum TestForm {
+    Is,
+    Case,
+}
+
+/// What a type test may name (D35): a declared record. An enum is compared or matched,
+/// not tested; a builtin type's name (or a spelling the hints answer for) is no record;
+/// an unknown name is the unknown type it is.
+pub(super) fn tested_type(name: &str, form: TestForm, decls: &dyn Decls) -> Rule<()> {
+    match decls.kind(name) {
+        Some(Kind::Record) => Ok(()),
+        Some(Kind::Enum) if form == TestForm::Case => {
+            let hint = decls
+                .variants(name)
+                .and_then(<[(Rc<str>, Span)]>::first)
+                .map_or(String::new(), |(variant, _)| format!(" as `.{variant}`"));
+            Err(format!("`{name}` is an enum: match its variants{hint}"))
+        }
+        Some(Kind::Enum) => Err(format!("`{name}` is an enum: compare it with `==`")),
+        None if super::annotations::reserved(name).is_some() => {
+            Err(format!("a type test names a record type, got `{name}`"))
+        }
+        None => Err(format!("unknown type `{name}`")),
+    }
+}
+
+/// The `null` pattern of a `lem-match` (D35): its subject must be able to be null —
+/// an optional, or `any`.
+pub(super) fn null_pattern(subject: &Type) -> Rule<()> {
+    match subject {
+        Type::Optional(_) | Type::Any | Type::Null => Ok(()),
+        other => Err(format!("a `{other}` is never null")),
+    }
+}
+
+/// The `.hero` pattern of a `lem-match`: a variant of the subject's enum, which a `T?`
+/// subject still names. Nothing else has variants, and the qualified spelling is not a
+/// pattern, so the refusal names the subject rather than a respelling.
+pub(super) fn variant_pattern(subject: &Type, name: &str, decls: &dyn Decls) -> Rule<()> {
+    match expected_enum(Some(subject), decls) {
+        Some(enum_name) => qualified_variant(enum_name, name, decls).map(|_| ()),
+        None => Err(format!(
+            "a `.{name}` pattern needs an enum subject, got `{subject}`"
+        )),
+    }
+}
+
+/// The exhaustiveness rule, on the provisional reading (`docs/language.md` §Checking;
+/// the exact rules are a deferred question): a `lem-match` with no `lem-default` must
+/// cover its subject, and only an enum can be covered — every variant, and `null` when
+/// the subject is optional. A record is matched by its subtypes, and that set is open:
+/// another file may declare one. `covered` is the variants the cases name.
+pub(super) fn exhaustive(
+    subject: &Type,
+    covered: &[Rc<str>],
+    null_covered: bool,
+    has_default: bool,
+    decls: &dyn Decls,
+) -> Rule<()> {
+    if has_default {
+        return Ok(());
+    }
+    let optional = matches!(subject, Type::Optional(_));
+    match subject.strip_optional() {
+        Type::Named(name) if decls.kind(name) == Some(Kind::Enum) => {
+            let variants = decls.variants(name).expect("an enum has variants");
+            let mut missing: Vec<String> = variants
+                .iter()
+                .filter(|(variant, _)| !covered.contains(variant))
+                .map(|(variant, _)| format!("`.{variant}`"))
+                .collect();
+            if optional && !null_covered {
+                missing.push("`null`".to_owned());
+            }
+            if missing.is_empty() {
+                Ok(())
+            } else {
+                Err(format!(
+                    "`lem-match` over `{subject}` misses {}",
+                    missing.join(", ")
+                ))
+            }
+        }
+        Type::Named(name) if decls.kind(name) == Some(Kind::Record) => Err(format!(
+            "`lem-match` over `{subject}` needs a `lem-default`: a record is matched by \
+             its subtypes, and that set is open"
+        )),
+        _ => Err(format!(
+            "`lem-match` over `{subject}` needs a `lem-default`: only an enum is matched \
+             exhaustively"
+        )),
+    }
+}
+
+/// The type test rule (D35): what `subject is Name` narrows its subject to, for a
+/// `name` [`tested_type`] admitted. An `any` may be anything; a record may be a
+/// subtype of itself, or — when it is optional — itself, since that is a null test.
+/// A test that could not fail, or could not hold, is a mistake and is refused: the
+/// subject's own type, an ancestor of it, or a record unrelated to it. Nothing but a
+/// record carries a type to test.
+pub(super) fn type_test(subject: &Type, name: &str, decls: &dyn Decls) -> Rule {
+    let narrowed = Type::Named(Rc::from(name));
+    let optional = matches!(subject, Type::Optional(_));
+    match subject.strip_optional() {
+        Type::Any => Ok(narrowed),
+        Type::Named(record) if decls.kind(record) == Some(Kind::Record) => {
+            if **record == *name {
+                if optional {
+                    Ok(narrowed)
+                } else {
+                    Err(format!(
+                        "`{name}` is `{name}` already: the test always holds"
+                    ))
+                }
+            } else if decls.extends(name, record) {
+                Ok(narrowed)
+            } else if decls.extends(record, name) {
+                Err(format!(
+                    "`{record}` extends `{name}`: the test always holds"
+                ))
+            } else {
+                Err(format!(
+                    "`{record}` and `{name}` are unrelated: the test never holds"
+                ))
+            }
+        }
+        other => Err(format!("a type test needs a record, got `{other}`")),
     }
 }
 
@@ -944,6 +1130,249 @@ mod tests {
         assert_eq!(
             builtin(&BUILTINS[1], 2),
             Err("`.slugify` takes 0 arguments, got 1".to_owned())
+        );
+    }
+
+    #[test]
+    fn reads_a_record_literal_only_under_an_expected_record() {
+        let table = table();
+        assert_eq!(
+            expected_record(Some(&named("Article")), &table),
+            Some("Article")
+        );
+        assert_eq!(
+            expected_record(Some(&opt(named("Article"))), &table),
+            Some("Article")
+        );
+        assert_eq!(expected_record(Some(&named("Placement")), &table), None);
+        assert_eq!(expected_record(Some(&Type::map(Type::Any)), &table), None);
+        assert_eq!(expected_record(Some(&Type::Any), &table), None);
+        assert_eq!(expected_record(None, &table), None);
+    }
+
+    #[test]
+    fn checks_a_record_literals_entries_against_the_declared_fields() {
+        let table = table();
+        assert_eq!(record_entry("Article", "title", &table), Ok(Type::String));
+        assert_eq!(record_entry("Article", "url", &table), Ok(Type::Url));
+        assert_eq!(
+            record_entry("Article", "body", &table),
+            Err("`Article` has no field `body`".to_owned())
+        );
+    }
+
+    #[test]
+    fn fills_omitted_optionals_and_refuses_omitted_required_fields() {
+        let table = Table(vec![
+            record(
+                "Page",
+                None,
+                &[("url", Type::Url), ("draft", opt(Type::Bool))],
+            ),
+            record(
+                "Article",
+                Some("Page"),
+                &[
+                    ("title", Type::String),
+                    ("subhead", opt(Type::String)),
+                    ("date", Type::Datetime),
+                ],
+            ),
+        ]);
+        let given = |keys: &[&str]| -> Vec<String> {
+            keys.iter().map(|k| (*k).to_owned()).collect()
+        };
+        assert_eq!(
+            record_omissions("Article", &given(&["title", "date", "url"]), &table),
+            Ok(vec![Rc::from("subhead"), Rc::from("draft")])
+        );
+        assert_eq!(
+            record_omissions(
+                "Article",
+                &given(&["title", "date", "url", "subhead", "draft"]),
+                &table
+            ),
+            Ok(vec![])
+        );
+        assert_eq!(
+            record_omissions("Article", &given(&["date", "url"]), &table),
+            Err("missing field `title` of `Article`".to_owned())
+        );
+        assert_eq!(
+            record_omissions("Article", &given(&["subhead"]), &table),
+            Err("missing fields `title`, `date`, `url` of `Article`".to_owned())
+        );
+    }
+
+    #[test]
+    fn lets_a_type_test_name_only_a_declared_record() {
+        let table = table();
+        assert_eq!(tested_type("Article", TestForm::Is, &table), Ok(()));
+        assert_eq!(
+            tested_type("Placement", TestForm::Is, &table),
+            Err("`Placement` is an enum: compare it with `==`".to_owned())
+        );
+        assert_eq!(
+            tested_type("string", TestForm::Is, &table),
+            Err("a type test names a record type, got `string`".to_owned())
+        );
+        assert_eq!(
+            tested_type("map", TestForm::Is, &table),
+            Err("a type test names a record type, got `map`".to_owned())
+        );
+        assert_eq!(
+            tested_type("Nope", TestForm::Is, &table),
+            Err("unknown type `Nope`".to_owned())
+        );
+    }
+
+    #[test]
+    fn tells_a_case_pattern_to_match_an_enums_variants_rather_than_compare_it() {
+        let table = table();
+        assert_eq!(
+            tested_type("Placement", TestForm::Case, &table),
+            Err("`Placement` is an enum: match its variants as `.hero`".to_owned())
+        );
+        // Every other verdict is the same whichever construct asked.
+        assert_eq!(tested_type("Article", TestForm::Case, &table), Ok(()));
+        assert_eq!(
+            tested_type("Nope", TestForm::Case, &table),
+            Err("unknown type `Nope`".to_owned())
+        );
+    }
+
+    #[test]
+    fn narrows_a_type_test_to_a_subtype_and_refuses_one_that_cannot_fail_or_hold() {
+        let table = Table(vec![
+            record("Page", None, &[]),
+            record("Article", Some("Page"), &[]),
+            record("LinkPost", Some("Article"), &[]),
+            record("Photo", None, &[]),
+            enumeration("Placement", &["hero"]),
+        ]);
+        assert_eq!(
+            type_test(&named("Article"), "LinkPost", &table),
+            Ok(named("LinkPost"))
+        );
+        assert_eq!(
+            type_test(&opt(named("Article")), "LinkPost", &table),
+            Ok(named("LinkPost"))
+        );
+        assert_eq!(
+            type_test(&Type::Any, "Article", &table),
+            Ok(named("Article"))
+        );
+        assert_eq!(
+            type_test(&opt(named("Article")), "Article", &table),
+            Ok(named("Article"))
+        );
+        assert_eq!(
+            type_test(&named("Article"), "Article", &table),
+            Err("`Article` is `Article` already: the test always holds".to_owned())
+        );
+        assert_eq!(
+            type_test(&named("LinkPost"), "Page", &table),
+            Err("`LinkPost` extends `Page`: the test always holds".to_owned())
+        );
+        assert_eq!(
+            type_test(&named("Article"), "Photo", &table),
+            Err("`Article` and `Photo` are unrelated: the test never holds".to_owned())
+        );
+        assert_eq!(
+            type_test(&opt(Type::list(Type::Int)), "Photo", &table),
+            Err("a type test needs a record, got `[int]`".to_owned())
+        );
+        assert_eq!(
+            type_test(&named("Placement"), "Photo", &table),
+            Err("a type test needs a record, got `Placement`".to_owned())
+        );
+    }
+
+    #[test]
+    fn matches_null_only_against_a_subject_that_may_be_null() {
+        assert_eq!(null_pattern(&opt(Type::Int)), Ok(()));
+        assert_eq!(null_pattern(&Type::Any), Ok(()));
+        assert_eq!(null_pattern(&Type::Null), Ok(()));
+        assert_eq!(
+            null_pattern(&named("Article")),
+            Err("a `Article` is never null".to_owned())
+        );
+    }
+
+    #[test]
+    fn matches_a_variant_pattern_against_the_subjects_enum() {
+        let table = table();
+        assert_eq!(variant_pattern(&named("Placement"), "hero", &table), Ok(()));
+        assert_eq!(
+            variant_pattern(&opt(named("Placement")), "left", &table),
+            Ok(())
+        );
+        assert_eq!(
+            variant_pattern(&named("Placement"), "top", &table),
+            Err("`Placement` has no variant `top`".to_owned())
+        );
+        assert_eq!(
+            variant_pattern(&Type::Any, "hero", &table),
+            Err("a `.hero` pattern needs an enum subject, got `any`".to_owned())
+        );
+        assert_eq!(
+            variant_pattern(&named("Article"), "hero", &table),
+            Err("a `.hero` pattern needs an enum subject, got `Article`".to_owned())
+        );
+    }
+
+    #[test]
+    fn requires_every_variant_or_a_default_and_a_default_for_anything_else() {
+        let table = table();
+        let hero = [Rc::from("hero")];
+        let both = [Rc::from("hero"), Rc::from("left")];
+        assert_eq!(
+            exhaustive(&named("Placement"), &both, false, false, &table),
+            Ok(())
+        );
+        assert_eq!(
+            exhaustive(&named("Placement"), &hero, false, true, &table),
+            Ok(())
+        );
+        assert_eq!(
+            exhaustive(&named("Placement"), &hero, false, false, &table),
+            Err("`lem-match` over `Placement` misses `.left`".to_owned())
+        );
+        assert_eq!(
+            exhaustive(&opt(named("Placement")), &both, true, false, &table),
+            Ok(())
+        );
+        assert_eq!(
+            exhaustive(&opt(named("Placement")), &hero, false, false, &table),
+            Err("`lem-match` over `Placement?` misses `.left`, `null`".to_owned())
+        );
+        assert_eq!(
+            exhaustive(&named("Article"), &[], false, false, &table),
+            Err(
+                "`lem-match` over `Article` needs a `lem-default`: a record is matched \
+                 by its subtypes, and that set is open"
+                    .to_owned()
+            )
+        );
+        assert_eq!(
+            exhaustive(&named("Article"), &[], false, true, &table),
+            Ok(())
+        );
+        assert_eq!(
+            exhaustive(&opt(Type::String), &[], true, false, &table),
+            Err(
+                "`lem-match` over `string?` needs a `lem-default`: only an enum is \
+                 matched exhaustively"
+                    .to_owned()
+            )
+        );
+        assert_eq!(
+            exhaustive(&Type::Any, &[], false, false, &table),
+            Err(
+                "`lem-match` over `any` needs a `lem-default`: only an enum is matched \
+                 exhaustively"
+                    .to_owned()
+            )
         );
     }
 

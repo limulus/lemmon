@@ -1,0 +1,25 @@
+<lem-type Photo>
+  url: string
+  alt: string?
+</lem-type>
+<lem-type Article>
+  title: string
+  hero: Photo?
+  tags: [string]
+</lem-type>
+<lem-type LinkPost extends Article>
+  link: string
+</lem-type>
+<lem-fn card(a: Article): string = a.title />
+<lem-fn caption(p: Photo): string = p.alt ?? "no alt" />
+<lem.card({title: "As an argument", hero: {url: "/p.jpg"}, tags: []})>
+<lem-let a: Article = {title: "Bound", hero: null, tags: ["x"]} />
+<lem.a.title> <lem.a.tags[0]>
+<lem-let maybe: Article? = {title: "Under an optional", tags: []} />
+<lem-if maybe><lem.maybe.title></lem-if>
+<lem-let post: LinkPost = {title: "A subtype's literal", tags: [], hero: null, link: "/"} />
+<lem-let hero = post.hero />
+<lem-if hero>has a hero<lem-else />an omitted optional is null</lem-if>
+<lem.caption({url: "/q.jpg"})>
+<lem-let m: any = {title: 1} />
+<lem.m.title>

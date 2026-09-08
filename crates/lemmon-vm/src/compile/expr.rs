@@ -15,7 +15,8 @@ use std::rc::Rc;
 
 use lemmon_syntax::ast::{
     ArgList, BinaryExpr, BinaryOp, CallExpr, Expr, IndexExpr, Lambda, ListLit, Literal,
-    LiteralKind, MapLit, MemberExpr, NamedArg, Spanned, TernaryExpr, UnaryExpr, UnaryOp,
+    LiteralKind, MapEntry, MapLit, MemberExpr, NamedArg, Spanned, TernaryExpr, TypeTest,
+    UnaryExpr, UnaryOp,
 };
 use lemmon_syntax::{Span, SyntaxKind, SyntaxToken};
 
@@ -27,6 +28,26 @@ use crate::builtins::{BUILTINS, Expected};
 use crate::bytecode::Op;
 use crate::decls::Kind;
 use crate::types::{Type, join};
+
+/// What a narrowing is keyed on: a local binding, by the span of its name token — one
+/// binding, one span, so an inner shadow is a different path — and the fields read off
+/// it in order, none for the binding itself. Only a plain `.` extends a path: `?.`
+/// yields an optional by construction, and nothing else reads a stable place.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct Path {
+    binder: Span,
+    fields: Vec<Rc<str>>,
+}
+
+impl Path {
+    /// The path of the binding itself.
+    pub(super) const fn local(binder: Span) -> Self {
+        Self {
+            binder,
+            fields: Vec::new(),
+        }
+    }
+}
 
 impl Compiler<'_> {
     /// Lowers `expr`, leaving its value on the stack, and returns its type.
@@ -106,15 +127,56 @@ impl Compiler<'_> {
             Expr::Map(map) => self.map(map, expected),
             Expr::Call(call) => self.call(call),
             Expr::Lambda(lambda) => self.lambda(lambda, expected),
-            Expr::TypeTest(test) => {
-                self.expr(&required(test.expr()));
-                self.error(span, "`is` needs narrowing, which is not here yet (∆PCK)");
-                Type::Any
-            }
+            // `x is T` read as a value — a `bool`. As a condition it comes through
+            // `lower_condition` instead, which keeps the narrowing the rule granted.
+            Expr::TypeTest(test) => self.type_test_expr(test, span).0,
         }
     }
 
-    fn literal(&mut self, literal: &Literal) -> Type {
+    /// Checks a type test of `subject` against `name` — the name first, then the pair
+    /// — reporting what is refused, records the declaration consulted, and emits the
+    /// test over the subject on the stack. What the test narrows the subject to, when
+    /// it was admitted. `form` decides only what an enum's name is told instead.
+    pub(super) fn type_test(
+        &mut self,
+        subject: &Type,
+        name: &SyntaxToken,
+        span: Span,
+        form: rules::TestForm,
+    ) -> Option<Type> {
+        let refused = self.require(
+            name.span(),
+            rules::tested_type(name.text(), form, self.decls()),
+        );
+        let narrowed = if refused {
+            None
+        } else {
+            self.note_type(name.text(), name.span());
+            let verdict = rules::type_test(subject, name.text(), self.decls());
+            self.rule_or(span, verdict.map(Some), None)
+        };
+        let index = self.intern(name.text());
+        self.emit(Op::TypeTest { name: index }, span);
+        narrowed
+    }
+
+    /// Lowers `x is T`, returning its type and what it narrows: the subject's path, to
+    /// the type the rule granted. One walk, one verdict — a caller that wants only the
+    /// type drops the second half.
+    fn type_test_expr(
+        &mut self,
+        test: &TypeTest,
+        span: Span,
+    ) -> (Type, Option<(Path, Type)>) {
+        let subject_expr = required(test.expr());
+        let path = self.path_of(&subject_expr).map(|(path, _)| path);
+        let subject = self.expr(&subject_expr);
+        let name = required(test.type_name());
+        let narrowed = self.type_test(&subject, &name, span, rules::TestForm::Is);
+        (Type::Bool, path.zip(narrowed))
+    }
+
+    pub(super) fn literal(&mut self, literal: &Literal) -> Type {
         let token = required(literal.token());
         let span = token.span();
         let (value, ty) = match required(literal.kind()) {
@@ -156,7 +218,7 @@ impl Compiler<'_> {
         match self.resolve(token.text()) {
             Some(Resolved::Local { slot, ty, binder }) => {
                 self.emit(Op::Local { slot }, span);
-                self.narrowed(binder).unwrap_or(ty)
+                self.narrowed(&Path::local(binder)).unwrap_or(ty)
             }
             Some(Resolved::Function) => {
                 let export = self.export(token.text());
@@ -199,7 +261,7 @@ impl Compiler<'_> {
 
     /// Emits a variant: an enum is its variant's name at run time (D32), so the value
     /// on the stack is that name as a string constant.
-    fn emit_variant(&mut self, name: &str, span: Span) {
+    pub(super) fn emit_variant(&mut self, name: &str, span: Span) {
         let index = self.intern(name);
         self.emit(Op::Const { index }, span);
     }
@@ -264,7 +326,37 @@ impl Compiler<'_> {
             span,
             rules::member(&object_ty, name.text(), optional, self.decls()),
         );
-        self.known(ty)
+        let ty = self.known(ty);
+        // A condition on this very path may have narrowed it for the arm being lowered.
+        match self.path_of(&Expr::Member(member.clone())) {
+            Some((path, _)) => self.narrowed(&path).unwrap_or(ty),
+            None => ty,
+        }
+    }
+
+    /// The path `expr` reads, if it reads one — a local, or fields read off one with
+    /// plain `.`s, parenthesised or not — with the type its last step was declared
+    /// with, whatever a condition has narrowed that step to: the binding's, or the
+    /// field's as the declaration of what it is read off says, that being narrowed or
+    /// not, an optional read through. Peeked, never resolved: asking is not reading.
+    pub(super) fn path_of(&self, expr: &Expr) -> Option<(Path, Type)> {
+        match unparen(expr.clone()) {
+            Expr::Name(name) => match self.names.peek(required(name.name()).text()) {
+                Some(Resolved::Local { binder, ty, .. }) => Some((Path::local(binder), ty)),
+                _ => None,
+            },
+            Expr::Member(member) if !member.is_optional() => {
+                let (mut path, declared) = self.path_of(&required(member.object()))?;
+                let object = self.narrowed(&path).unwrap_or(declared);
+                let field = required(member.name());
+                let ty = self
+                    .decls()
+                    .field(object.strip_optional().named()?, field.text())?;
+                path.fields.push(Rc::from(field.text()));
+                Some((path, ty))
+            }
+            _ => None,
+        }
     }
 
     fn index(&mut self, index: &IndexExpr) -> Type {
@@ -380,8 +472,7 @@ impl Compiler<'_> {
     fn ternary(&mut self, ternary: &TernaryExpr, expected: Option<&Type>) -> Type {
         let span = ternary.span();
         let condition = required(ternary.condition());
-        let condition_ty = self.expr(&condition);
-        let narrowing = self.condition(&condition, &condition_ty);
+        let (_, narrowing) = self.lower_condition(&condition);
         let otherwise = self.emit_jump(Op::JumpIfFalse { to: 0 }, span);
         let depth = self.narrowings.len();
         self.narrowings.extend(narrowing);
@@ -397,52 +488,42 @@ impl Compiler<'_> {
         }
     }
 
-    /// Applies the condition rule to a `lem-if` or `?:` condition: an optional that is
-    /// a plain local name — parenthesised or not — narrows that binding to its inner
-    /// type wherever the condition holds, returned for the caller to open. A binding an
-    /// enclosing condition already narrowed passes as the optional it was declared.
-    pub(super) fn condition(&mut self, expr: &Expr, ty: &Type) -> Option<(Span, Type)> {
-        let expr = unparen(expr.clone());
-        match rules::condition(ty) {
+    /// Lowers a `lem-if` or `?:` condition: its type, and what it narrows wherever it
+    /// holds. An optional path — a local, or fields read off one, parenthesised or not
+    /// — narrows to its inner type; `path is T` narrows to what the type test granted,
+    /// which is the one verdict the rules gave. A path an enclosing condition already
+    /// narrowed passes as the optional it was declared.
+    pub(super) fn lower_condition(&mut self, expr: &Expr) -> (Type, Option<(Path, Type)>) {
+        let peeled = unparen(expr.clone());
+        if let Expr::TypeTest(test) = &peeled {
+            return self.type_test_expr(test, peeled.span());
+        }
+        let ty = self.expr(expr);
+        let narrowing = match rules::condition(&ty) {
             Ok(None) => None,
-            Ok(Some(inner)) => {
-                let Expr::Name(name) = &expr else {
-                    return None;
-                };
-                match self.names.peek(required(name.name()).text()) {
-                    Some(Resolved::Local { binder, .. }) => Some((binder, inner)),
-                    _ => None,
-                }
-            }
-            Err(_) if self.declared_optional(&expr) => None,
+            Ok(Some(inner)) => self.path_of(&peeled).map(|(path, _)| (path, inner)),
+            Err(_) if self.declared_optional(&peeled) => None,
             Err(message) => {
-                self.error(expr.span(), message);
+                self.error(peeled.span(), message);
                 None
             }
-        }
-    }
-
-    /// Whether `expr` is a plain local name bound as an optional, whatever a `lem-if`
-    /// around it has narrowed it to.
-    fn declared_optional(&self, expr: &Expr) -> bool {
-        let Expr::Name(name) = unparen(expr.clone()) else {
-            return false;
         };
-        matches!(
-            self.names.peek(required(name.name()).text()),
-            Some(Resolved::Local {
-                ty: Type::Optional(_),
-                ..
-            })
-        )
+        (ty, narrowing)
     }
 
-    /// The type a `lem-if` on the binding at `binder` has narrowed it to, if one is open.
-    fn narrowed(&self, binder: Span) -> Option<Type> {
+    /// Whether `expr` is a path declared optional, whatever a `lem-if` around it has
+    /// narrowed it to.
+    fn declared_optional(&self, expr: &Expr) -> bool {
+        self.path_of(expr)
+            .is_some_and(|(_, ty)| matches!(ty, Type::Optional(_)))
+    }
+
+    /// The type an open condition has narrowed `path` to, if one has.
+    fn narrowed(&self, path: &Path) -> Option<Type> {
         self.narrowings
             .iter()
             .rev()
-            .find(|(b, _)| *b == binder)
+            .find(|(p, _)| p == path)
             .map(|(_, ty)| ty.clone())
     }
 
@@ -461,7 +542,13 @@ impl Compiler<'_> {
         Type::list(element.unwrap_or(Type::Any))
     }
 
+    /// Lowers `{…}`: a record literal where a record is expected (D35), a map literal
+    /// everywhere else.
     fn map(&mut self, map: &MapLit, expected: Option<&Type>) -> Type {
+        if let Some(record) = rules::expected_record(expected, self.decls()) {
+            let record = Rc::<str>::from(record);
+            return self.record_literal(map, &record);
+        }
         let want = rules::literal_expectation(expected, |ty| match ty {
             Type::Map(value) => Some(value),
             _ => None,
@@ -470,19 +557,9 @@ impl Compiler<'_> {
         let mut len = 0;
         let mut seen: Vec<String> = Vec::new();
         for entry in map.entries() {
-            let key = required(entry.key());
-            let text = if key.kind() == SyntaxKind::StringLit {
-                decode_string(key.text())
-            } else {
-                key.text().to_owned()
-            };
-            // A repeated key in a *literal* is a mistake, not a merge: `Map` keeps the
-            // last value written, so saying nothing would silently drop the first.
-            if seen.contains(&text) {
-                self.error(key.span(), format!("`{text}` is already given"));
+            let Some((key, text)) = self.map_key(&entry, &mut seen) else {
                 continue;
-            }
-            seen.push(text.clone());
+            };
             let index = self.intern(&text);
             self.emit(Op::Const { index }, key.span());
             let item = required(entry.value());
@@ -491,6 +568,67 @@ impl Compiler<'_> {
         }
         self.emit(Op::MakeMap { len }, map.span());
         Type::map(value.unwrap_or(Type::Any))
+    }
+
+    /// The key of a map or record literal's entry, decoded, unless it repeats one in
+    /// `seen`: a repeated key in a *literal* is a mistake, not a merge — `Map` keeps the
+    /// last value written, so saying nothing would silently drop the first.
+    fn map_key(
+        &mut self,
+        entry: &MapEntry,
+        seen: &mut Vec<String>,
+    ) -> Option<(SyntaxToken, String)> {
+        let key = required(entry.key());
+        let text = if key.kind() == SyntaxKind::StringLit {
+            decode_string(key.text())
+        } else {
+            key.text().to_owned()
+        };
+        if seen.contains(&text) {
+            self.error(key.span(), format!("`{text}` is already given"));
+            return None;
+        }
+        seen.push(text.clone());
+        Some((key, text))
+    }
+
+    /// Lowers `{…}` as a value of the declared record `record`: each entry is checked
+    /// against the field it names, an omitted optional field is filled with null, and
+    /// an omitted required one is refused — the value is complete, so a field read
+    /// never misses on a record (D35). An entry naming no field is still lowered, for
+    /// its diagnostics.
+    fn record_literal(&mut self, map: &MapLit, record: &Rc<str>) -> Type {
+        self.note_type(record, map.span());
+        let mut len = 0;
+        let mut seen: Vec<String> = Vec::new();
+        for entry in map.entries() {
+            let Some((key, text)) = self.map_key(&entry, &mut seen) else {
+                continue;
+            };
+            let index = self.intern(&text);
+            self.emit(Op::Const { index }, key.span());
+            let item = required(entry.value());
+            let field =
+                self.rule(key.span(), rules::record_entry(record, &text, self.decls()));
+            let field = self.known(field);
+            self.check(&item, &field);
+            len += 1;
+        }
+        let omitted = self.rule_or(
+            map.span(),
+            rules::record_omissions(record, &seen, self.decls()),
+            Vec::new(),
+        );
+        for name in omitted {
+            let index = self.intern(&name);
+            self.emit(Op::Const { index }, map.span());
+            let null = self.constant(Value::Null);
+            self.emit(Op::Const { index: null }, map.span());
+            len += 1;
+        }
+        let name = self.intern(record);
+        self.emit(Op::MakeRecord { name, len }, map.span());
+        Type::Named(record.clone())
     }
 
     /// Lowers one element of a list or map literal: checked against the element type
@@ -931,7 +1069,7 @@ fn unparen(mut expr: Expr) -> Expr {
 /// The text of a string literal token: the quotes dropped and every `\c` replaced by
 /// `c`, the scanner's rule. Interpolation is left as written — its delimiter is a
 /// deferred question (docs/decisions/README.md).
-fn decode_string(token: &str) -> String {
+pub(super) fn decode_string(token: &str) -> String {
     let inner = token
         .strip_prefix('"')
         .expect("a string literal opens with a quote");

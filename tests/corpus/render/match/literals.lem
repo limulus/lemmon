@@ -1,0 +1,30 @@
+<lem-type Article>
+  subhead: string?
+  count: int
+  featured: bool
+</lem-type>
+<lem-let articles: [Article] = [
+  {subhead: null, count: 0, featured: true},
+  {subhead: "", count: 1, featured: false},
+  {subhead: "A subhead", count: 2, featured: false},
+] />
+<lem-for a in articles>
+<lem-match a.subhead>
+  <lem-case null>no subhead</lem-case>
+  <lem-case "">an empty one</lem-case>
+  <lem-default><lem.a.subhead ?? "a literal case narrows nothing"></lem-default>
+</lem-match>
+<lem-match a.count>
+  <lem-case 0>none</lem-case>
+  <lem-case 1>one</lem-case>
+  <lem-default>many</lem-default>
+</lem-match>
+<lem-match a.featured>
+  <lem-case true>featured</lem-case>
+  <lem-default>not featured</lem-default>
+</lem-match>
+</lem-for>
+<lem-match 1.5>
+  <lem-case 1>an int beside a float compares numerically</lem-case>
+  <lem-default>and does not match</lem-default>
+</lem-match>

@@ -13,8 +13,10 @@ be written, the compiler already walked every item and head in evaluation order 
 resolver (∆e4d) and one export index (∆e5i), and the only consumer a separate checker's
 output would have had was codegen — which, for this item, needed nothing from it: no
 instruction changes when a type is known, and typed lowering (record fields by index, the
-`TypeTest` op) is ∆PCK's. A separate pass would have re-walked the tree with a second
-scoping that had to agree with codegen's, and produced a per-node type table nothing read.
+`TypeTest` op) is ∆PCK's (landed: D35, which took `TypeTest` and left the field index
+as an optimisation nothing needs). A separate pass would have re-walked the tree with a
+second scoping that had to agree with codegen's, and produced a per-node type table
+nothing read.
 
 ## Decision
 
@@ -31,7 +33,8 @@ reported, because an expression that failed types as `any` and lowering goes on.
 
 - **A separate checker pass over the AST, before codegen.** Rejected: a second walk with
   its own scoping — the two-views shape ∆e4d and ∆e5i had just removed — and a
-  `SyntaxNodePtr → Type` side table with no reader until ∆PCK. The repo's rule that a
+  `SyntaxNodePtr → Type` side table with no reader until ∆PCK (which, landed, read
+  none: D35). The repo's rule that a
   recorded fact needs a consumer applied to the table as a whole.
 - **A checker over compiled units.** Rejected: bytecode has lost the shape the rules are
   about (an expression's expectation, a literal's elements), and the program is small
@@ -40,7 +43,8 @@ reported, because an expression that failed types as `any` and lowering goes on.
 ## Consequences
 
 - Typed lowering falls out: when ∆PCK needs a record's field index or a `TypeTest`
-  operand, the type is in hand at the emit site.
+  operand, the type is in hand at the emit site. (∆PCK took the `TypeTest` operand from
+  there; fields are still read by name — D35.)
 - The LSP's hover (∆5MM) will want a per-node type table; it is added as a recording
   flag on the same walk, with its reader, not before.
 - The rules are applied where the lowering they guard happens, but they are not

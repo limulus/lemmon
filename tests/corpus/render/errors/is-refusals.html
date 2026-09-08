@@ -1,0 +1,11 @@
+
+--- diagnostics
+render/errors/is-refusals.lem:16:9..16:19: `Article` and `Photo` are unrelated: the test never holds
+render/errors/is-refusals.lem:17:9..17:21: `Article` is `Article` already: the test always holds
+render/errors/is-refusals.lem:18:9..18:24: `LinkPost` extends `Article`: the test always holds
+render/errors/is-refusals.lem:19:14..19:23: `Placement` is an enum: compare it with `==`
+render/errors/is-refusals.lem:20:14..20:18: unknown type `Nope`
+render/errors/is-refusals.lem:21:14..21:20: a type test names a record type, got `string`
+render/errors/is-refusals.lem:22:9..22:21: a type test needs a record, got `int`
+render/errors/is-refusals.lem:23:9..23:23: `Article` and `Photo` are unrelated: the test never holds
+render/errors/is-refusals.lem:24:9..24:21: a type test needs a record, got `Placement`

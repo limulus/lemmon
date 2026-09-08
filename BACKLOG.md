@@ -26,10 +26,6 @@ absorbs the item and the item is removed.
 Seed items for the next phase (architecture doc 3, phase 1); expect these to be split
 further at claim time.
 
-- ∆PCK Narrowing and typed lowering — `is` and `lem-match` narrowing, a `TypeTest` op over
-  record values that carry their type (`Value::Record`), record literals as map literals
-  under an expected record type, enum exhaustiveness on the provisional reading. Split
-  from ∆C8d because it needs runtime type tags, which nothing produces before it; needs: ∆cea
 - ∆Iau Host-declared ambient types — `compile(files, host)` taking the host's `ambient.lem`
   and a per-document `record` (D30, docs/architecture.md §WASM API): `page`/`build` typed
   from the declaration, `site` from `site.lem`'s top-level bindings, the record as a
@@ -39,7 +35,7 @@ further at claim time.
   collection's element type, narrowed by `type:`) type the content model; `loadData`
   validates records (the host's envelope too) at their YAML positions, runs computed
   defaults in dependency order, resolves `by` references and strings by expected type, and
-  rejects extra keys, so limulus.net's build throws become load errors; needs: ∆PCK, ∆Iau
+  rejects extra keys, so limulus.net's build throws become load errors; needs: ∆Iau
 - ∆Q6L Stdlib — strings/lists/maps, `datetime("…")` (compile-time checked on a literal
   argument; there is no datetime literal) + rfc3339/rfc822 formatting, `slugify`,
   `readingTime`, `url()`, `asset()`, `raw()`, `uniqueId()`, with typed signatures the

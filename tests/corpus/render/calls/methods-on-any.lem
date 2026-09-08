@@ -1,6 +1,12 @@
 <lem-fn shout(s: string): string = s + "!" />
+<lem-type Shouter>
+  keys: (string): string
+</lem-type>
 <lem-let m = {keys: shout} />
-<lem-let untyped: any = m />
+<lem-let r: Shouter = {keys: shout} />
 <lem.m.keys().first() ?? "none">
-<lem.untyped.keys("shadow")>
+<lem-let untypedMap: any = m />
+<lem.untypedMap.keys().first() ?? "none">
+<lem-let untypedRecord: any = r />
+<lem.untypedRecord.keys("shadow")>
 <lem.page.title.slugify()>

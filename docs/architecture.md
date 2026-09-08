@@ -175,8 +175,10 @@ form (`exportModule`) first-class.
 
 Stack machine; serializable `Module { constants, functions, types, pages, spans }`, linked
 from per-file units (above). Values are immutable and Rc'd:
-`Null | Bool | Int | Float | Str | Html | DateTime | Duration | Url | Asset | List | Map | Record | Fn`.
-Records store fields in declaration order (GetField is an index). Ops sketch:
+`Null | Bool | Int | Float | Str | Html | DateTime | Duration | Url | Asset | List | Map | Fn | Record`.
+Records carry their declared name, and the module each record's closed ancestry, which
+`TypeTest` answers from in one lookup;
+fields are read by name (by index is an optimisation nothing needs, D35). Ops sketch:
 `Const/Local/Global/Ambient`, `GetField/OptField/ Index`, `Call/CallBuiltin/CallValue`
 (named args reordered at compile time; lambdas are closures over copied captures),
 `Jump/JumpIfFalse` plus the short-circuit `JumpUnlessNull/JumpIfFalseKeep/JumpIfTrueKeep`,
@@ -188,13 +190,15 @@ re-entrant invoke inside its `CallBuiltin` step — the VM pushes the frame and 
 again until that frame returns — so an error inside the closure keeps the closure's own
 span, and the frame cap bounds the native recursion (∆987).
 
-What ∆c8h built is the untyped subset of that: `Value` without the stdlib types, maps in
-place of records with `GetField` by name, and no `TypeTest`/`Channel`/`Track` — those
-arrive with narrowing (∆PCK), the stdlib (∆Q6L), and side channels (∆RGQ). Records are
-checked by declaration since ∆cea, but a record value is still a map and an enum value its
-variant's name as a string: the checker, not the VM, is what knows the type. The VM is
-the runtime for `any` (∆C8d): its type checks fire only on values the checker let through
-as `any`, and stay for that reason.
+What ∆c8h built is the untyped subset of that: `Value` without the stdlib types, and no
+`Channel`/`Track` — those arrive with the stdlib (∆Q6L) and side channels (∆RGQ).
+Records are checked by declaration since ∆cea, and since ∆PCK a record value is tagged
+with its declared name (`Value::Record`, made by a map literal where a record is expected
+and, later, by the loader at the boundary), which `TypeTest` reads; an enum value is its
+variant's name as a string. Data that arrives untagged — every ambient value until
+∆Iau — is `any`, and a type test over it is a render error (D35). The VM is the runtime
+for `any` (∆C8d): its type checks fire only on values the checker let through as `any`,
+and stay for that reason.
 
 Calibration, not promise: whole site tens of ms inside WASM; single page well under 1 ms of
 VM time (that number is the Phase 0 exit criterion).

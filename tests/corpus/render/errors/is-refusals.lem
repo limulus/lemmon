@@ -1,0 +1,25 @@
+<lem-type Article>
+  title: string
+</lem-type>
+<lem-type LinkPost extends Article>
+  link: string
+</lem-type>
+<lem-type Photo>
+  url: string
+</lem-type>
+<lem-enum Placement = hero | left />
+<lem-let a: Article = {title: "T"} />
+<lem-let post: LinkPost = {title: "T", link: "/"} />
+<lem-let p: Placement = .hero />
+<lem-let n = 1 />
+<lem-let maybe: Article? = a />
+<lem-if a is Photo>unrelated</lem-if>
+<lem-if a is Article>its own type</lem-if>
+<lem-if post is Article>an ancestor</lem-if>
+<lem-if a is Placement>an enum</lem-if>
+<lem-if a is Nope>an unknown type</lem-if>
+<lem-if a is string>a builtin type</lem-if>
+<lem-if n is Article>a scalar subject</lem-if>
+<lem-if maybe is Photo>unrelated through an optional</lem-if>
+<lem-if p is Article>an enum subject</lem-if>
+<lem-if a is LinkPost>a good one beside them: <lem.a.link></lem-if>

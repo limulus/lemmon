@@ -1,0 +1,44 @@
+<lem-type Article>
+  title: string
+  hero: Photo?
+</lem-type>
+<lem-type LinkPost extends Article>
+  link: string
+</lem-type>
+<lem-type Til extends Article>
+  topic: string
+</lem-type>
+<lem-type Photo>
+  credit: Article?
+</lem-type>
+<lem-fn chip(article: Article): string = article is LinkPost ? article.link : article.title />
+<lem-let post: LinkPost = {title: "A link", link: "/elsewhere"} />
+<lem-let credit: LinkPost = {title: "credit", link: "/c"} />
+<lem-let til: Til = {title: "A TIL", topic: "rust", hero: {credit: credit}} />
+<lem-let plain: Article = {title: "Plain"} />
+<lem-let posts: [Article] = [post, til, plain] />
+<lem-for a in posts>
+<lem-if a is LinkPost>
+  a link post: <lem.a.link>
+  <lem-let f = |suffix| a.link + suffix />
+  read inside a lambda: <lem.f("!")>
+<lem-else-if a is Til />
+  a til: <lem.a.topic>
+  <lem-if a.hero>
+    <lem-if a.hero.credit is LinkPost>a member path narrows too: <lem.a.hero.credit.link></lem-if>
+  </lem-if>
+<lem-else />
+  neither: <lem.a.title>
+</lem-if>
+in a ternary: <lem.chip(a)>
+</lem-for>
+<lem-let maybe: Article? = post />
+<lem-let missing: Article? = null />
+<lem-if maybe is Article>an optional tested for its own type is a null test: <lem.maybe.title></lem-if>
+<lem-if missing is Article>never<lem-else />null is no record</lem-if>
+<lem-if maybe is LinkPost>and a subtype test narrows past the optional: <lem.maybe.link></lem-if>
+<lem-let unknown: any = til />
+<lem-if unknown is Til>through any: <lem.unknown.topic></lem-if>
+<lem-let stillUnknown: any = post />
+<lem-if stillUnknown is Til>never<lem-else />not a til</lem-if>
+<lem-if (plain is LinkPost)>never<lem-else />parenthesised: <lem.plain.title></lem-if>

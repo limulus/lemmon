@@ -10,7 +10,12 @@
 //! none of them can fire. The escaping rule is type-directed by variant either way:
 //! [`Value::Str`] is untrusted text and is escaped on emit; [`Value::Html`] is trusted
 //! markup and is emitted verbatim (invariant 7).
+//!
+//! A [`Value::Record`] carries the name of its declared type (D35): that tag is what a
+//! type test reads at run time, and the one thing that tells a record from a map, whose
+//! entries are never fields to the checker. A record has no printed form.
 
+use std::borrow::Cow;
 use std::fmt::Write as _;
 use std::rc::Rc;
 
@@ -83,6 +88,17 @@ pub struct Closure {
     pub captures: Vec<Value>,
 }
 
+/// A record value: its declared type's name and its fields, by name. Fields are read
+/// by name rather than by declaration index — the index is an optimisation nothing
+/// reads yet (D35).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Record {
+    /// The declared type — the most specific one the value was made as.
+    pub ty: Rc<str>,
+    /// Every field the declaration and its ancestors have, an omitted optional as null.
+    pub fields: Map,
+}
+
 /// A runtime value. See the module docs for the `Str`/`Html` distinction.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Value {
@@ -104,6 +120,8 @@ pub enum Value {
     Map(Rc<Map>),
     /// A function value — a `lem-fn` named without parentheses, or a lambda.
     Fn(Rc<Closure>),
+    /// A record, tagged with its declared type.
+    Record(Rc<Record>),
 }
 
 impl Value {
@@ -129,10 +147,20 @@ impl Value {
         Self::Map(Rc::new(map))
     }
 
-    /// The name the language uses for this value's type, for messages.
+    /// A record of the declared type `ty`.
     #[must_use]
-    pub const fn type_name(&self) -> &'static str {
-        match self {
+    pub fn record(ty: impl AsRef<str>, fields: Map) -> Self {
+        Self::Record(Rc::new(Record {
+            ty: Rc::from(ty.as_ref()),
+            fields,
+        }))
+    }
+
+    /// The name the language uses for this value's type, for messages: a record names
+    /// its declared type.
+    #[must_use]
+    pub fn type_name(&self) -> Cow<'static, str> {
+        Cow::Borrowed(match self {
             Self::Null => "null",
             Self::Bool(_) => "bool",
             Self::Int(_) => "int",
@@ -142,7 +170,8 @@ impl Value {
             Self::List(_) => "list",
             Self::Map(_) => "map",
             Self::Fn(_) => "function",
-        }
+            Self::Record(record) => return Cow::Owned(format!("`{}` record", record.ty)),
+        })
     }
 
     /// How a `lem-if` reads this value: a `bool` is itself; an optional is its
@@ -179,7 +208,9 @@ impl Value {
         Ok(())
     }
 
-    /// Structural equality as `==` sees it.
+    /// Structural equality as `==` sees it. Two records are equal when they are of one
+    /// declared type and their fields are; a record beside a map is never equal, as
+    /// the checker would never let the two be compared.
     ///
     /// # Errors
     ///
@@ -200,17 +231,12 @@ impl Value {
                 }
                 Ok(true)
             }
-            (Self::Map(a), Self::Map(b)) => {
-                if a.len() != b.len() {
+            (Self::Map(a), Self::Map(b)) => maps_equal(a, b),
+            (Self::Record(a), Self::Record(b)) => {
+                if a.ty != b.ty {
                     return Ok(false);
                 }
-                for (key, x) in a.iter() {
-                    match b.get(key) {
-                        Some(y) if x.equals(y)? => {}
-                        _ => return Ok(false),
-                    }
-                }
-                Ok(true)
+                maps_equal(&a.fields, &b.fields)
             }
             (Self::Int(a), Self::Float(b)) | (Self::Float(b), Self::Int(a)) =>
             {
@@ -220,6 +246,20 @@ impl Value {
             _ => Ok(self == other),
         }
     }
+}
+
+/// Whether two maps hold the same keys with equal values, as [`Value::equals`] sees it.
+fn maps_equal(a: &Map, b: &Map) -> Result<bool, String> {
+    if a.len() != b.len() {
+        return Ok(false);
+    }
+    for (key, x) in a.iter() {
+        match b.get(key) {
+            Some(y) if x.equals(y)? => {}
+            _ => return Ok(false),
+        }
+    }
+    Ok(true)
 }
 
 /// Appends `text` to `out` with `& < > " '` replaced by entities — safe in text content
@@ -276,10 +316,39 @@ mod tests {
                 func: 0,
                 captures: vec![],
             })),
+            Value::record("Article", Map::default()),
         ] {
             let message = emitted(&value).unwrap_err();
             assert_eq!(message, format!("cannot print a {}", value.type_name()));
         }
+        assert_eq!(
+            emitted(&Value::record("Article", Map::default())).unwrap_err(),
+            "cannot print a `Article` record"
+        );
+    }
+
+    fn article(title: &str) -> Value {
+        Value::record(
+            "Article",
+            [(Rc::from("title"), Value::str(title))]
+                .into_iter()
+                .collect(),
+        )
+    }
+
+    #[test]
+    fn compares_records_by_type_and_fields() {
+        assert!(article("a").equals(&article("a")).unwrap());
+        assert!(!article("a").equals(&article("b")).unwrap());
+        let link_post = Value::record(
+            "LinkPost",
+            [(Rc::from("title"), Value::str("a"))].into_iter().collect(),
+        );
+        assert!(!article("a").equals(&link_post).unwrap());
+        let map = Value::map([(Rc::from("title"), Value::str("a"))].into_iter().collect());
+        assert!(!article("a").equals(&map).unwrap());
+        assert!(!map.equals(&article("a")).unwrap());
+        assert!(article("a").as_condition());
     }
 
     #[test]
@@ -311,7 +380,7 @@ mod tests {
 
     #[test]
     fn names_every_type_the_way_the_language_does() {
-        let names: Vec<&str> = [
+        let names: Vec<String> = [
             Value::Null,
             Value::Bool(true),
             Value::Int(1),
@@ -324,14 +393,24 @@ mod tests {
                 func: 0,
                 captures: vec![],
             })),
+            Value::record("Photo", Map::default()),
         ]
         .iter()
-        .map(Value::type_name)
+        .map(|value| value.type_name().into_owned())
         .collect();
         assert_eq!(
             names,
             [
-                "null", "bool", "int", "float", "string", "html", "list", "map", "function"
+                "null",
+                "bool",
+                "int",
+                "float",
+                "string",
+                "html",
+                "list",
+                "map",
+                "function",
+                "`Photo` record"
             ]
         );
     }

@@ -1,0 +1,14 @@
+
+--- diagnostics
+render/errors/case-refusals.lem:16:13..16:17: unknown type `hero`
+render/errors/case-refusals.lem:17:13..17:22: `Placement` is an enum: match its variants as `.hero`
+render/errors/case-refusals.lem:18:13..18:17: `Placement` has no variant `top`
+render/errors/case-refusals.lem:19:13..19:17: a `Placement` is never null
+render/errors/case-refusals.lem:20:13..20:19: cannot compare `Placement` with `string`
+render/errors/case-refusals.lem:24:13..24:20: `Article` is `Article` already: the test always holds
+render/errors/case-refusals.lem:25:13..25:18: `Article` and `Photo` are unrelated: the test never holds
+render/errors/case-refusals.lem:26:13..26:18: a `.hero` pattern needs an enum subject, got `Article`
+render/errors/case-refusals.lem:27:13..27:14: cannot compare `Article` with `int`
+render/errors/case-refusals.lem:31:13..31:20: `LinkPost` extends `Article`: the test always holds
+render/errors/case-refusals.lem:35:13..35:18: cannot compare `int` with `string`
+render/errors/case-refusals.lem:36:13..36:20: a type test needs a record, got `int`

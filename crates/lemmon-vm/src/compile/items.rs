@@ -3,12 +3,17 @@
 //! What the literal text between them *is* — the line rule and the body rule — belongs
 //! to [`whitespace`](super::whitespace), which has run by the time a [`Body`] gets here.
 
-use lemmon_syntax::Span;
-use lemmon_syntax::ast::{ForTag, Item, LetBlock, LetVoid, Spanned};
+use std::rc::Rc;
 
+use lemmon_syntax::Span;
+use lemmon_syntax::ast::{
+    BinaryOp, ForTag, Item, LetBlock, LetVoid, LiteralKind, MatchTag, Pattern, Spanned,
+};
+
+use super::expr::decode_string;
 use super::names::BindingKind;
-use super::whitespace::{Arm, Body, Kind, Piece};
-use super::{Compiler, TokenSpan, required, rules};
+use super::whitespace::{Arm, Body, Case, Kind, Piece};
+use super::{Compiler, Diagnostic, TokenSpan, required, rules};
 use crate::bytecode::Op;
 use crate::types::Type;
 
@@ -107,13 +112,18 @@ impl Compiler<'_> {
                 body,
                 otherwise,
             } => self.lower_for(&tag, body, otherwise),
+            Piece::Match {
+                tag,
+                cases,
+                default,
+            } => self.lower_match(&tag, cases, default),
         }
     }
 
     /// Lowers one item that is not a text run or a flow construct.
     fn lower_item(&mut self, item: &Item, level: Level) {
         match item {
-            Item::Text(_) | Item::If(_) | Item::For(_) => {
+            Item::Text(_) | Item::If(_) | Item::For(_) | Item::Match(_) => {
                 unreachable!("these are pieces of their own")
             }
             Item::Access(tag) => {
@@ -154,15 +164,6 @@ impl Compiler<'_> {
             Item::EnumDecl(_) => {
                 self.error(item.span(), "`lem-enum` must be at the top level of a file");
             }
-            Item::Match(tag) => {
-                // The subject is lowered for its diagnostics: the names it reads count
-                // as read, and what is wrong inside it is still reported.
-                self.expr(&required(tag.subject()));
-                self.error(
-                    item.span(),
-                    "`lem-match` needs narrowing, which is not here yet (∆PCK)",
-                );
-            }
             Item::Unsupported(_) | Item::Unknown(_) => {
                 unreachable!(
                     "the parser reports these, and a parse with diagnostics is never compiled"
@@ -177,8 +178,7 @@ impl Compiler<'_> {
             // A condition on an optional local narrows it for the arm it guards.
             let depth = self.narrowings.len();
             let next = arm.condition.as_ref().map(|condition| {
-                let ty = self.expr(condition);
-                let narrowing = self.condition(condition, &ty);
+                let (_, narrowing) = self.lower_condition(condition);
                 self.narrowings.extend(narrowing);
                 self.emit_jump(Op::JumpIfFalse { to: 0 }, condition.span())
             });
@@ -198,6 +198,134 @@ impl Compiler<'_> {
         for end in ends {
             self.patch(end);
         }
+    }
+
+    /// Lowers a `lem-match` (D35): the subject once, into a slot no name reaches, then
+    /// each case as a test over it and a jump past its body; the `lem-default` last.
+    /// A case's body sees the subject narrowed to a type pattern's type — where the
+    /// subject is a path — and the `as` binding, if the pattern has one. The rules
+    /// after the cases: a pattern spelled twice is refused at the repeat, and a match
+    /// with no default must cover its subject (the provisional exhaustiveness reading).
+    fn lower_match(&mut self, tag: &MatchTag, cases: Vec<Case>, default: Option<Body>) {
+        let subject = required(tag.subject());
+        let subject_ty = self.expr(&subject);
+        let subject_path = self.path_of(&subject).map(|(path, _)| path);
+        let tmp = self.names.temp();
+        self.emit(Op::StoreLocal { slot: tmp }, subject.span());
+        let head = Span::new(
+            tag.span().start,
+            tag.block()
+                .map_or(tag.span().end, |block| block.span().start),
+        );
+        let mut ends = Vec::new();
+        let mut seen: Vec<(String, Span)> = Vec::new();
+        let mut covered: Vec<Rc<str>> = Vec::new();
+        let mut null_covered = false;
+        for case in cases {
+            let pattern = required(case.tag.pattern());
+            let span = pattern.span();
+            self.emit(Op::Local { slot: tmp }, span);
+            let (spelling, narrow) =
+                self.pattern(&pattern, &subject_ty, &mut covered, &mut null_covered);
+            match seen.iter().find(|(seen, _)| *seen == spelling) {
+                Some((_, first)) => self.diagnostics.push(
+                    Diagnostic::error(
+                        self.path,
+                        span,
+                        format!("`{spelling}` is already matched"),
+                    )
+                    .with_label(
+                        self.path,
+                        *first,
+                        "first matched here",
+                    ),
+                ),
+                None => seen.push((spelling, span)),
+            }
+            let next = self.emit_jump(Op::JumpIfFalse { to: 0 }, span);
+            self.push_scope();
+            let depth = self.narrowings.len();
+            if let (Some(path), Some(narrow)) = (&subject_path, &narrow) {
+                self.narrowings.push((path.clone(), narrow.clone()));
+            }
+            if let Some(name) = pattern.binding() {
+                self.emit(Op::Local { slot: tmp }, name.span());
+                let ty = narrow.unwrap_or(Type::Any);
+                let slot = self.bind(&name, BindingKind::Definition, ty);
+                self.emit(Op::StoreLocal { slot }, name.span());
+            }
+            self.lower_body(case.body);
+            self.narrowings.truncate(depth);
+            self.pop_scope();
+            ends.push(self.emit_jump(Op::Jump { to: 0 }, case.tag.span()));
+            self.patch(next);
+        }
+        self.require(
+            head,
+            rules::exhaustive(
+                &subject_ty,
+                &covered,
+                null_covered,
+                default.is_some(),
+                self.decls(),
+            ),
+        );
+        if let Some(default) = default {
+            self.push_scope();
+            self.lower_body(default);
+            self.pop_scope();
+        }
+        for end in ends {
+            self.patch(end);
+        }
+    }
+
+    /// Lowers one case's test over the subject on the stack, leaving a bool, and
+    /// reports what the pattern rules refuse. Returns the pattern as spelled, for the
+    /// repeat rule, and what a type pattern narrows the subject to. A variant or a
+    /// `null` is noted in `covered`/`null_covered` for the exhaustiveness rule.
+    fn pattern(
+        &mut self,
+        pattern: &Pattern,
+        subject: &Type,
+        covered: &mut Vec<Rc<str>>,
+        null_covered: &mut bool,
+    ) -> (String, Option<Type>) {
+        let span = pattern.span();
+        if let Some(literal) = pattern.literal() {
+            // Keyed on the value, not the spelling: `"x"` and `"\x"` are one string,
+            // so the second is a dead case and not a second pattern.
+            let token = required(literal.token());
+            let spelling = if required(literal.kind()) == LiteralKind::String {
+                format!("\"{}\"", decode_string(token.text()))
+            } else {
+                token.text().to_owned()
+            };
+            let ty = self.literal(&literal);
+            if ty == Type::Null {
+                *null_covered = true;
+                self.require(span, rules::null_pattern(subject));
+            } else {
+                let verdict =
+                    rules::operator(BinaryOp::Eq, "==", subject, &ty, self.decls());
+                self.require(span, verdict.map(|_| ()));
+            }
+            self.emit(Op::Eq, span);
+            return (spelling, None);
+        }
+        if let Some(variant) = pattern.variant() {
+            let name = variant.text();
+            self.require(span, rules::variant_pattern(subject, name, self.decls()));
+            covered.push(Rc::from(name));
+            self.emit_variant(name, span);
+            self.emit(Op::Eq, span);
+            return (format!(".{name}"), None);
+        }
+        // A type pattern. The rule knows what a `lem-case` may name — an enum's name
+        // here is an author reaching for its variants, and is told so (D32).
+        let name = required(pattern.name());
+        let narrow = self.type_test(subject, &name, span, rules::TestForm::Case);
+        (name.text().to_owned(), narrow)
     }
 
     fn lower_for(&mut self, tag: &ForTag, body: Body, otherwise: Option<Body>) {

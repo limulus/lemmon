@@ -28,7 +28,7 @@
 //! shared margin goes; relative indentation survives.
 
 use lemmon_syntax::Span;
-use lemmon_syntax::ast::{Expr, ForTag, Item, Spanned};
+use lemmon_syntax::ast::{CaseTag, Expr, ForTag, Item, MatchTag, Spanned};
 
 use super::required;
 
@@ -69,6 +69,13 @@ pub(super) enum Piece {
         body: Body,
         otherwise: Option<Body>,
     },
+    /// `<lem-match …>`, with one body per case and one for its `lem-default`. The
+    /// whitespace between the cases belongs to no body and is never emitted.
+    Match {
+        tag: MatchTag,
+        cases: Vec<Case>,
+        default: Option<Body>,
+    },
 }
 
 /// One arm of a `lem-if`: what it is conditional on, and what it renders.
@@ -77,6 +84,12 @@ pub(super) struct Arm {
     pub(super) condition: Option<Expr>,
     /// From the arm's opener to the end of its last item.
     pub(super) span: Span,
+    pub(super) body: Body,
+}
+
+/// One `lem-case` of a `lem-match`: its tag, for the pattern, and what it renders.
+pub(super) struct Case {
+    pub(super) tag: CaseTag,
     pub(super) body: Body,
 }
 
@@ -188,6 +201,24 @@ impl Piece {
                     otherwise,
                 }
             }
+            // A case body runs from its opener to its close tag, so no statement line
+            // straddles two of them: nothing to trim between cases.
+            Item::Match(ref tag) => Self::Match {
+                tag: tag.clone(),
+                cases: tag
+                    .cases()
+                    .map(|case| Case {
+                        body: Body::new(
+                            required(case.body()).items().collect(),
+                            Kind::Flow,
+                        ),
+                        tag: case,
+                    })
+                    .collect(),
+                default: tag.default().map(|default| {
+                    Body::new(required(default.body()).items().collect(), Kind::Flow)
+                }),
+            },
             _ => Self::Tag {
                 item,
                 took_its_line: false,
@@ -360,6 +391,16 @@ impl Measure {
                     }
                     self.renders();
                 }
+                Piece::Match { cases, default, .. } => {
+                    self.renders();
+                    for case in cases {
+                        self.body(&case.body);
+                    }
+                    if let Some(default) = default {
+                        self.body(default);
+                    }
+                    self.renders();
+                }
             }
         }
     }
@@ -453,6 +494,16 @@ impl<'a> Strip<'a> {
                     }
                     self.owing = 0;
                 }
+                Piece::Match { cases, default, .. } => {
+                    self.owing = 0;
+                    for case in cases {
+                        self.body(&mut case.body);
+                    }
+                    if let Some(default) = default {
+                        self.body(default);
+                    }
+                    self.owing = 0;
+                }
             }
         }
     }
@@ -534,8 +585,40 @@ mod tests {
                     }
                     out.push_str("{/for}");
                 }
+                Piece::Match { cases, default, .. } => {
+                    out.push_str("{match}");
+                    for case in cases {
+                        out.push_str("{case}");
+                        write(out, &case.body);
+                    }
+                    if let Some(default) = default {
+                        out.push_str("{default}");
+                        write(out, default);
+                    }
+                    out.push_str("{/match}");
+                }
             }
         }
+    }
+
+    #[test]
+    fn dedents_a_match_with_the_definition_around_it_and_drops_what_is_between_cases() {
+        assert_eq!(
+            body_of(concat!(
+                "<lem-fn f(p: any)>\n",
+                "  <lem-match p>\n",
+                "    <lem-case .hero>\n",
+                "      <p>hero</p>\n",
+                "    </lem-case>\n",
+                "\n",
+                "    <lem-default>\n",
+                "      <p>other</p>\n",
+                "    </lem-default>\n",
+                "  </lem-match>\n",
+                "</lem-fn>",
+            )),
+            "{match}{case}\n    <p>hero</p>\n  {default}\n    <p>other</p>\n  {/match}"
+        );
     }
 
     #[test]

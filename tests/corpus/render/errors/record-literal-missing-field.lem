@@ -1,0 +1,8 @@
+<lem-type Article>
+  title: string
+  date: string
+  subhead: string?
+</lem-type>
+<lem-fn card(a: Article): string = a.title />
+<lem.card({subhead: "no title, no date"})>
+<lem.card({title: "T", date: "2026-09-07"})>

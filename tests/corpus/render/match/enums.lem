@@ -1,0 +1,25 @@
+<lem-enum Placement = hero | left | right />
+<lem-fn place(p: Placement): string = p == .hero ? "wide" : "narrow" />
+<lem-let placements: [Placement] = [.hero, .left, .right] />
+<lem-for p in placements>
+<lem-match p>
+  <lem-case .hero>a hero</lem-case>
+  <lem-case .left>on the left</lem-case>
+  <lem-case .right>on the right</lem-case>
+</lem-match> (<lem.place(p)>)
+</lem-for>
+<lem-match placements[1]>
+  <lem-case .hero>hero</lem-case>
+  <lem-default>a default stands in for the rest</lem-default>
+</lem-match>
+<lem-let maybe: Placement? = null />
+<lem-match maybe>
+  <lem-case null>an optional enum is covered with null</lem-case>
+  <lem-case .hero>hero</lem-case>
+  <lem-case .left>left</lem-case>
+  <lem-case .right>right</lem-case>
+</lem-match>
+<lem-match maybe>
+  <lem-case .hero>hero</lem-case>
+  <lem-default>or with a default</lem-default>
+</lem-match>

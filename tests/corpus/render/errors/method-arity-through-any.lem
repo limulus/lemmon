@@ -1,0 +1,5 @@
+<lem-fn shout(s: string): string = s + "!" />
+<lem-let m = {keys: shout} />
+<lem-let untypedMap: any = m />
+<lem.untypedMap.keys().first() ?? "a map takes the method">
+<lem.untypedMap.keys("shadow")>

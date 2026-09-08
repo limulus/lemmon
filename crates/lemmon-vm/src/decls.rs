@@ -186,6 +186,23 @@ pub trait Decls {
             })
     }
 
+    /// Every field of the record `record`, its own and its ancestors', each once with
+    /// the type of the nearest declaration (a redeclaration carries the same type, D32),
+    /// own fields first.
+    fn fields(&self, record: &str) -> Vec<(Rc<str>, Type)> {
+        let mut fields: Vec<(Rc<str>, Type)> = Vec::new();
+        for decl in self.chain(record) {
+            if let Shape::Record { fields: own, .. } = &decl.shape {
+                for field in own {
+                    if !fields.iter().any(|(name, _)| *name == field.name) {
+                        fields.push((field.name.clone(), field.ty.clone()));
+                    }
+                }
+            }
+        }
+        fields
+    }
+
     /// The variants of the enum `name`, if it is one.
     fn variants(&self, name: &str) -> Option<&[(Rc<str>, Span)]> {
         match &self.declaration(name)?.shape {
@@ -286,6 +303,27 @@ pub(crate) mod tests {
         assert_eq!(table.field("LinkPost", "url"), Some(Type::Url));
         assert_eq!(table.field("LinkPost", "nope"), None);
         assert_eq!(table.field("Placement", "hero"), None);
+    }
+
+    #[test]
+    fn lists_every_field_of_a_record_once_own_fields_first() {
+        let table = Table(vec![
+            record("Page", None, &[("url", Type::Url), ("title", Type::String)]),
+            record(
+                "Article",
+                Some("Page"),
+                &[("title", Type::String), ("date", Type::Datetime)],
+            ),
+            enumeration("Placement", &["hero"]),
+        ]);
+        let names: Vec<String> = table
+            .fields("Article")
+            .iter()
+            .map(|(name, ty)| format!("{name}: {ty}"))
+            .collect();
+        assert_eq!(names, ["title: string", "date: datetime", "url: url"]);
+        assert!(table.fields("Placement").is_empty());
+        assert!(table.fields("Nope").is_empty());
     }
 
     #[test]

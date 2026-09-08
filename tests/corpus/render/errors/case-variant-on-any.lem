@@ -1,0 +1,10 @@
+<lem-let size: any = "small" />
+<lem-match size>
+  <lem-case .small>s</lem-case>
+  <lem-default>other</lem-default>
+</lem-match>
+<lem-let n = 1 />
+<lem-match n>
+  <lem-case .one>1</lem-case>
+  <lem-default>other</lem-default>
+</lem-match>

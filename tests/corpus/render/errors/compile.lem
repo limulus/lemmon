@@ -14,7 +14,7 @@
 <lem-let g = |x| x />
 <lem.g(x: 1)>
 <lem.page(x: 1)>
-<lem.1 is Article>
+<lem-if 1 is Article>x</lem-if>
 <lem-let n = 1 />
 <lem-let n = 2 />
 <lem-let big = 99999999999999999999 />

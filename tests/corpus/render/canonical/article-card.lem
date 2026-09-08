@@ -35,11 +35,10 @@
   <article class="article-card">
     <a href="<lem.article.url>">
       <lem-let preview = article.image ?? article.hero />
-      <lem-let vod = article.vod />
       <lem-if preview>
         <lem.picture(preview, ["md"], class: "preview")>
-      <lem-else-if vod />
-        <img src="<lem.vod.poster>" alt="<lem.vod.alt>" class="preview">
+      <lem-else-if article.vod />
+        <img src="<lem.article.vod.poster>" alt="<lem.article.vod.alt>" class="preview">
       </lem-if>
       <div class="text-content">
         <header>

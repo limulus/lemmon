@@ -1,0 +1,15 @@
+<lem-type Photo>
+  url: string
+  caption: string?
+</lem-type>
+<lem-type Article>
+  title: string
+  hero: Photo?
+</lem-type>
+<lem-let a: Article = {title: "T", hero: {url: "/h.jpg", caption: "c"}} />
+<lem-if a.title>a non-optional field path is no condition</lem-if>
+<lem.a.title ?? "and needs no default">
+<lem-if a.hero>
+  <lem-if a.hero.url>narrowed, but this field is not optional either</lem-if>
+  the optional one is accepted: <lem-if a.hero.caption><lem.a.hero.caption></lem-if>
+</lem-if>

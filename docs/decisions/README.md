@@ -52,6 +52,7 @@ docs, the journal, and the code.
 | [D31](D31-check-while-lowering.md) | Check while lowering | The type checker is not a pass: the compiler's one walk types each expression as it lowers it (`expr(&Expr, expected) -> Type`), bindings carry their types in the one resolver, and narrowing is a scoped entry. No side table until something reads one (the LSP's hover, ∆5MM). |
 | [D32](D32-records-and-enums.md) | Records and enums | Declared types are nominal, by name: one `Type::Named`, with the kind and shape in the index's type namespace, and the rules that need them take the declaration table as an argument. A subtype redeclares a field only with the same type (to change its default), which answers D30's `layout` question with no special rule. A variant carries a dot: `.hero` where the enum is expected, `Placement.hero` where nothing says which — so a bare name is only ever a name, and `Name.x` is the one place the type namespace answers first. An enum is its variant's name at run time and prints as it (provisional). A consumed declaration is a unit's compile-time fact (D25). |
 | [D33](D33-diagnostic-positions.md) | Diagnostic positions | A span crosses the boundary as byte offsets *and* `range`, its two ends as LSP `Position`s — zero-based, `character` in UTF-16 code units — computed in the core, against the text that produced the unit the span belongs to. An offset past the end of a file or inside a character is a panic, not a rounded-off position. Byte spans stay in the `.cst` tree and all of `.tags`; the corpus trailers render `line:col` counting from one. |
+| [D35](D35-runtime-type-tags.md) | Runtime type tags and narrowing | A record value carries its declared name, and the linked module its ancestry; a map literal where a record is expected is that record, defaults not filled; a type test reads the tag, is `false` on `null`, and is a render error on anything else; narrowing is by path (a local or fields off one), ending at a shadow, an operator, or `?.`; `lem-match` covers an enum (plus `null` for `T?`) or needs a default, on the provisional reading. |
 | [D34](D34-builtin-methods.md) | Builtin methods | Every builtin type carries its own functions, reached as `xs.filter(…)` and resolved against the receiver's type, so `.` asks the receiver and never the enclosing scope. UFCS is retired; a record is data and takes `lem-fn`s. A stdlib entry whose first parameter is the value it works on is a method, one that constructs or casts is an ambient function (`raw()`, `asset()`, `url()`, `datetime()`, `uniqueId()`); method names occupy no namespace (revising D23). A builtin rule may shape the arguments after it, which is what types a lambda from the receiver's element type. |
 
 ## Deliberately deferred
@@ -79,7 +80,8 @@ revised the same day from well-known types to host-declared ambient types (revis
 D23 and D29 with it), its `from` clause parsed 2026-09-04 (∆1vS); D31 2026-09-06 (∆C8d);
 D32 2026-09-06 (∆cea), its variant spelling revised 2026-09-07 (∆EN6); D33
 2026-09-07 (∆cE6); D34 2026-09-07 (∆495), retiring the pipe operator from the
-deferred list with it, its higher-order half the same day (∆987). From D25 on, a record's
+deferred list with it, its higher-order half the same day (∆987); D35 2026-09-07 (∆PCK).
+From D25 on, a record's
 Status line carries the history its row used to.
 
 ## Record template

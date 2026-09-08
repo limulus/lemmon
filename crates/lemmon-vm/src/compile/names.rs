@@ -251,6 +251,12 @@ impl<'a> Names<'a> {
         self.frame().scopes.push(Scope::default());
     }
 
+    /// A slot of the innermost frame that no name reaches — where `lem-match` keeps
+    /// its subject while the cases test it. Unnamed, so nothing captures or reads it.
+    pub(crate) fn temp(&mut self) -> u16 {
+        self.frame().alloc()
+    }
+
     /// Closes the innermost scope, warning for each definition it never read.
     pub(crate) fn pop_scope(&mut self) {
         let scope = self.frame().scopes.pop().expect("a scope");
@@ -900,6 +906,17 @@ mod tests {
         let inner = names.pop_frame();
         assert!(inner.captures().is_empty());
         assert_eq!(inner.n_locals(), 0);
+    }
+
+    #[test]
+    fn hands_out_a_temp_slot_that_no_name_reaches() {
+        let mut names = in_frame(None);
+        bind(&mut names, "n", at(0), BindingKind::Definition);
+        let temp = names.temp();
+        assert_eq!(temp, 1);
+        bind(&mut names, "m", at(1), BindingKind::Definition);
+        assert_eq!(slot_of(names.peek("m")), Some(2));
+        assert_eq!(names.pop_frame().n_locals(), 3);
     }
 
     #[test]

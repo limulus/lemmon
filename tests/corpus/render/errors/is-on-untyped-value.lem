@@ -1,0 +1,5 @@
+<lem-type Article>
+  title: string
+</lem-type>
+<lem-let untyped: any = {title: "a map, not a record"} />
+before <lem-if untyped is Article>a record<lem-else />not one</lem-if> after

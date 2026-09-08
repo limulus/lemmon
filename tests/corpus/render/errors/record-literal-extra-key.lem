@@ -1,0 +1,6 @@
+<lem-type Article>
+  title: string
+</lem-type>
+<lem-fn card(a: Article): string = a.title />
+<lem.card({title: "T", body: "records have exactly their declared fields"})>
+<lem.card({title: 1})>

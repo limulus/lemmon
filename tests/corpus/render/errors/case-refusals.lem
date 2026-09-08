@@ -1,0 +1,39 @@
+<lem-enum Placement = hero | left />
+<lem-type Article>
+  title: string
+</lem-type>
+<lem-type LinkPost extends Article>
+  link: string
+</lem-type>
+<lem-type Photo>
+  url: string
+</lem-type>
+<lem-let p: Placement = .hero />
+<lem-let a: Article = {title: "T"} />
+<lem-let post: LinkPost = {title: "T", link: "/"} />
+<lem-let n = 1 />
+<lem-match p>
+  <lem-case hero>a bare name is a type pattern</lem-case>
+  <lem-case Placement>the enum itself</lem-case>
+  <lem-case .top>no such variant</lem-case>
+  <lem-case null>never null</lem-case>
+  <lem-case "hero">a string is not a variant</lem-case>
+  <lem-default>other</lem-default>
+</lem-match>
+<lem-match a>
+  <lem-case Article>its own type</lem-case>
+  <lem-case Photo>unrelated</lem-case>
+  <lem-case .hero>a variant on a record</lem-case>
+  <lem-case 1>a literal on a record</lem-case>
+  <lem-default>other</lem-default>
+</lem-match>
+<lem-match post>
+  <lem-case Article>an ancestor</lem-case>
+  <lem-default>other</lem-default>
+</lem-match>
+<lem-match n>
+  <lem-case "one">a string on an int</lem-case>
+  <lem-case Article>a type on a scalar</lem-case>
+  <lem-case 1>a good one beside them</lem-case>
+  <lem-default>other</lem-default>
+</lem-match>

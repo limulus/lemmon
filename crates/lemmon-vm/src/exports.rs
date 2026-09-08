@@ -121,6 +121,11 @@ impl ExportIndex {
     pub fn lookup_type(&self, name: &str) -> Option<&TypeExport> {
         self.types.get(name)
     }
+
+    /// Every type the project knows, by name.
+    pub fn types(&self) -> impl Iterator<Item = &TypeExport> {
+        self.types.values()
+    }
 }
 
 impl Decls for ExportIndex {
@@ -200,6 +205,8 @@ mod tests {
         assert_eq!(index.kind("Article"), Some(crate::decls::Kind::Record));
         assert!(!index.extends("Article", "Page"));
         assert_eq!(index.lookup_type("Nope"), None);
+        let names: Vec<&str> = index.types().map(|t| &*t.decl.name).collect();
+        assert_eq!(names, ["Article"]);
     }
 
     #[test]

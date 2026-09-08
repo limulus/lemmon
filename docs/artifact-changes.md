@@ -30,7 +30,8 @@ moved it. Newest last. An entry is removed when its change has been applied.
   render time). Replace the Checking paragraph with `docs/language.md` §Checking as it
   now reads: assignability (no `int → float`, provisional), the literal join rule (first
   element sets the type, `null` makes it optional, a mismatch is an error), the
-  condition rule with narrowing of a plain optional local in `lem-if`/`lem-else-if`/`?:`,
+  condition rule with narrowing in `lem-if`/`lem-else-if`/`?:` (of an optional path — a
+  local, or fields read off one — and of `x is T`; the Narrowing entry below has it),
   the print rule, the operator rules, the call rules (a lambda with no expected type has
   `any` parameters, provisional), and the unused rule (`lem-let` and parameters warn,
   loop bindings do not). `{K: V}` keys are always `string`. An expression-bodied `lem-fn`
@@ -70,6 +71,21 @@ moved it. Newest last. An entry is removed when its change has been applied.
   typed from the receiver's element type without annotation, and an expected `any`
   keeps its opt-out meaning everywhere. `map` and `filter` are the first two list
   methods; the rest arrive with the stdlib (D34, ∆987).
+- **Narrowing, type tests, matching, record literals** — wherever the text describes
+  narrowing, `is`, or `lem-match`, replace it with `docs/language.md` §Checking's
+  Narrowing, Type tests, and Matching bullets and the record-literal clause of Literals:
+  a condition narrows a *path* (a local, or fields read off one with plain `.`s) — an
+  optional to its inner type, `path is T` to `T` — for the arm it guards, a lambda inside
+  included, ending at `lem-else`, an operator, a `?.` step, or a shadowing binding; `x is
+  T` names a declared record and must be able to go either way (the subject's own type on
+  a non-optional, an ancestor, or an unrelated record is an error; its own type on an
+  optional is a null test); a `lem-match` tries its cases in order, a type case narrowing
+  the subject path and binding its `as` name, and without a default must cover an enum
+  (every variant, plus `null` for `T?`) — a record or anything else needs a default, on
+  the provisional reading; a `{…}` where a record is expected is that record, every key a
+  declared field, omitted optionals null, an omitted required field an error whether or
+  not it has a default (D35, ∆PCK). The `lem-if`, `lem-match`, and Type tests rows of the
+  tag and expression tables say the same in brief.
 
 ## Shell & Core
 
@@ -96,9 +112,9 @@ moved it. Newest last. An entry is removed when its change has been applied.
   kind of fact — the declaration of every foreign type its checking reached, span-free,
   at the use that reached it — and that a declaration whose shape changed under a
   consumer is a link diagnostic naming the consumer, while a default edit leaves it
-  byte-identical. The VM section's "maps in place of records" stands: records are
-  checked by declaration but a record value is a map and an enum value a string until
-  ∆PCK's `Value::Record` (D32, ∆cea). The boundary is unchanged.
+  byte-identical. Records are checked by declaration, and a record value is tagged with
+  its declared name (D35, ∆PCK — the VM entry below); an enum value is a string (D32,
+  ∆cea). The boundary is unchanged.
 - **WASM API, `Diagnostic`** — where the text gives a diagnostic's span as `{start, end}`,
   say it is `{start, end, range}`: byte offsets *and* the same two points as LSP
   `Position`s, zero-based with `character` in UTF-16 code units. The core computes them
@@ -112,6 +128,17 @@ moved it. Newest last. An entry is removed when its change has been applied.
   again until that frame returns, inside the one instruction — and a failure inside the
   invoked function is placed at its own instruction, not the builtin's. The frame cap
   bounds the native recursion this adds (∆987).
+- **VM, records and type tests** — where the text lists the value set, say a `Record`
+  carries its declared type's name and its fields, read by name (`GetField` by index is
+  an optimisation not taken); where it lists the ops, add `MakeRecord` (a map literal
+  under an expected record) beside `MakeMap`, and say `TypeTest` reads the tag — by name
+  and through the module's name → base table for a subtype — is `false` on `null`, and
+  is a render error on any other value, since only a record carries a type. Say `Module`
+  carries that table (`types`), built at link from the index. Where the text describes
+  the `any` receiver of `x.f(…)`, say a record reads its field and everything else takes
+  its runtime type's method — the agreement with the checker. Loaded data stays untagged
+  `any` until the loader (∆iCW) and the ambient types (∆Iau) tag at the boundary (D35,
+  ∆PCK).
 
 ## From Eleventy to Lemmon
 

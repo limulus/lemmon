@@ -1,0 +1,12 @@
+<lem-type Photo>
+  url: string
+</lem-type>
+<lem-type Article>
+  hero: Photo?
+</lem-type>
+<lem-let a: Article = {hero: {url: "/h.jpg"}} />
+<lem-if a.hero>
+  <lem.a.hero.url>
+<lem-else />
+  <lem.a.hero.url>
+</lem-if>

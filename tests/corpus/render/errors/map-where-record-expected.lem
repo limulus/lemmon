@@ -1,0 +1,7 @@
+<lem-type Photo>
+  url: string
+</lem-type>
+<lem-fn show(p: Photo): string = p.url />
+<lem-let m = {url: "/x.jpg"} />
+<lem.show(m)>
+<lem.show({url: "/y.jpg"})>

@@ -1,9 +1,10 @@
 //! The bytecode a module is compiled to and the VM runs.
 //!
-//! A [`Module`] is plain data — constants, functions, and a file table — so that it can
-//! be serialised for `exportModule` later (`∆TNT`) without the VM changing. Every
-//! instruction in a function has a [`Span`] beside it at the same index: that parallel
-//! table is how a runtime error points at source (invariant 8).
+//! A [`Module`] is plain data — constants, functions, a file table, and the record
+//! types' ancestry — so that it can be serialised for `exportModule` later (`∆TNT`)
+//! without the VM changing. Every instruction in a function has a [`Span`] beside it at
+//! the same index: that parallel table is how a runtime error points at source
+//! (invariant 8).
 
 use std::rc::Rc;
 
@@ -69,6 +70,13 @@ ops! {
     MakeList { len: u32 },
     /// Pop `len` key/value pairs; push them as a map.
     MakeMap { len: u32 },
+    /// Pop `len` key/value pairs; push them as a record of the declared type named by
+    /// `constants[name]`.
+    MakeRecord { name: u32, len: u32 },
+    /// Pop a value; push whether it is a record of the type named by `constants[name]`
+    /// or of one that extends it. `null` is not; a value that is no record cannot be
+    /// asked, and is an error.
+    TypeTest { name: u32 },
     /// Continue at `to`.
     Jump { to: u32 },
     /// Pop a condition (read as a `lem-if` does); continue at `to` when it is false.
@@ -153,9 +161,24 @@ pub struct Module {
     pub constants: Vec<Value>,
     /// Every function; indices are what `Call`, `Global`, and `MakeClosure` name.
     pub functions: Vec<Function>,
+    /// Every declared record with the types it is: itself, then the records it extends,
+    /// nearest first. Closed at link, so `TypeTest` answers with one lookup and no walk
+    /// — and neither a cycle nor a base the project lost can be spelled here.
+    pub types: Vec<(Rc<str>, Vec<Rc<str>>)>,
 }
 
 impl Module {
+    /// Whether a record of the declared type `ty` is a `name`: itself, or a record it
+    /// extends. The table is the whole answer — every record a module can build has a
+    /// row — so a tag with no row is no type at all rather than a type that is itself.
+    #[must_use]
+    pub fn is_a(&self, ty: &str, name: &str) -> bool {
+        self.types
+            .iter()
+            .find(|(declared, _)| &**declared == ty)
+            .is_some_and(|(_, chain)| chain.iter().any(|ancestor| &**ancestor == name))
+    }
+
     /// The entry function of the file at `path`, if the module has that file.
     #[must_use]
     pub fn entry(&self, path: &str) -> Option<u32> {
@@ -175,7 +198,33 @@ mod tests {
         assert_eq!(Op::Emit.name(), "Emit");
         assert_eq!(Op::Const { index: 3 }.name(), "Const");
         assert!(Op::NAMES.contains(&"IterNext"));
-        assert_eq!(Op::NAMES.len(), 41);
+        assert_eq!(Op::NAMES.len(), 43);
+    }
+
+    #[test]
+    fn answers_a_type_test_from_the_closed_ancestry_table() {
+        let module = Module {
+            types: vec![
+                (Rc::from("Page"), vec![Rc::from("Page")]),
+                (
+                    Rc::from("Article"),
+                    vec![Rc::from("Article"), Rc::from("Page")],
+                ),
+                (
+                    Rc::from("LinkPost"),
+                    vec![Rc::from("LinkPost"), Rc::from("Article"), Rc::from("Page")],
+                ),
+            ],
+            ..Module::default()
+        };
+        assert!(module.is_a("LinkPost", "LinkPost"));
+        assert!(module.is_a("LinkPost", "Article"));
+        assert!(module.is_a("LinkPost", "Page"));
+        assert!(!module.is_a("Page", "Article"));
+        // A tag the table does not cover is no type: answering "itself" would let a
+        // module whose constant pool went wrong pass a test against its own bad tag.
+        assert!(!module.is_a("Unknown", "Page"));
+        assert!(!module.is_a("Unknown", "Unknown"));
     }
 
     #[test]

@@ -732,9 +732,10 @@ struct Compiler<'a> {
     diagnostics: Vec<Diagnostic>,
     /// The function being compiled, then every lambda open inside it, innermost last.
     ctxs: Vec<FnCtx>,
-    /// The bindings a `lem-if` or `?:` has narrowed, innermost last, each by its
-    /// binder's span and the type it holds while the condition is known to hold.
-    narrowings: Vec<(Span, Type)>,
+    /// The paths a `lem-if`, `?:`, or `lem-match` has narrowed, innermost last, each
+    /// with the type it holds while the condition is known to hold: a binding, or a
+    /// field path from one (`article.hero`), which immutability keeps true (D35).
+    narrowings: Vec<(expr::Path, Type)>,
 }
 
 impl<'a> Compiler<'a> {

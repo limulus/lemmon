@@ -1,0 +1,34 @@
+<lem-enum Placement = hero | left | right />
+<lem-type Article>
+  title: string
+</lem-type>
+<lem-type LinkPost extends Article>
+  link: string
+</lem-type>
+<lem-let p: Placement = .hero />
+<lem-let maybe: Placement? = .left />
+<lem-let a: Article = {title: "T"} />
+<lem-let s = "text" />
+<lem-let unknown: any = 1 />
+<lem-match p>
+  <lem-case .hero>hero</lem-case>
+</lem-match>
+<lem-match maybe>
+  <lem-case .hero>hero</lem-case>
+  <lem-case .left>left</lem-case>
+  <lem-case .right>right</lem-case>
+</lem-match>
+<lem-match a>
+  <lem-case LinkPost as l>a subtype case could still miss another: <lem.l.link></lem-case>
+</lem-match>
+<lem-match s>
+  <lem-case "text">a string</lem-case>
+</lem-match>
+<lem-match unknown>
+  <lem-case 1>an any</lem-case>
+</lem-match>
+<lem-match p>
+  <lem-case .hero>hero</lem-case>
+  <lem-case .left>left</lem-case>
+  <lem-case .right>covered, so no default is needed</lem-case>
+</lem-match>
