@@ -84,7 +84,7 @@ impl Case {
     /// # Panics
     ///
     /// If the input's extension is not UTF-8, which [`cases`] cannot produce — it only
-    /// collects paths whose extension it matched against [`INPUTS`].
+    /// collects paths whose extension it matched against `INPUTS`.
     #[must_use]
     pub fn path(&self) -> String {
         let ext = self
