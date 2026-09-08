@@ -104,10 +104,22 @@ impl Case {
 /// no cases at all — an empty group means a test that silently checks nothing.
 #[must_use]
 pub fn cases(group: &str) -> Vec<Case> {
-    let dir = root().join(group);
+    cases_in(&root().join(group))
+}
+
+/// The discovery behind [`cases`], over any directory.
+///
+/// Taking a `dir` is what lets the duplicate-name refusal below be tested against a tree
+/// built to break it. The alternative — planting a twin in the real corpus and removing
+/// it again — makes every other test that walks the corpus race against this one, and it
+/// has failed CI.
+fn cases_in(dir: &Path) -> Vec<Case> {
+    // `relative` strips the corpus root, so this is the group name for a real group and
+    // an absolute path for the temporary trees the tests build.
+    let group = relative(dir).display().to_string();
     assert!(dir.is_dir(), "no corpus group at {group}");
     let mut cases = Vec::new();
-    walk(&dir, &mut |path| {
+    walk(dir, &mut |path| {
         if path
             .extension()
             .and_then(|e| e.to_str())
@@ -423,17 +435,25 @@ mod tests {
         assert_eq!(case.expectation("cst"), case.input.with_extension("cst"));
     }
 
+    /// A template and a document of the same stem: both would derive `twin.cst`, and the
+    /// second walked would bless over the first's expectations unnoticed.
     #[test]
     #[should_panic(expected = "they would share expectations")]
     fn refuses_two_inputs_that_would_share_one_set_of_expectations() {
-        let dir = root().join("document/prose");
-        let twin = dir.join("no-front-matter.lem");
-        fs::write(&twin, "").expect("write");
-        let result = std::panic::catch_unwind(|| cases("document"));
-        fs::remove_file(&twin).expect("remove");
-        if let Err(panic) = result {
-            std::panic::resume_unwind(panic);
+        let dir = tempfile::tempdir().expect("temp dir");
+        for name in ["twin.lem", "twin.md"] {
+            fs::write(dir.path().join(name), "").expect("write");
         }
+        let _ = cases_in(dir.path());
+    }
+
+    /// A group with no inputs is a stage checking nothing while reporting success, so
+    /// discovery refuses it rather than returning an empty run.
+    #[test]
+    #[should_panic(expected = "no corpus cases under")]
+    fn refuses_a_group_that_holds_no_cases() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let _ = cases_in(dir.path());
     }
 
     #[test]
