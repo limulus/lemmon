@@ -16,6 +16,7 @@ tests/corpus/
   syntax/<feature>/<name>.lem     a template, parsed by lemmon-syntax
   render/<feature>/<name>.lem     a template, compiled and rendered by lemmon-vm
   document/<feature>/<name>.md    a document, segmented by lemmon-syntax and rendered by lemmon-vm
+  host/<feature>/<name>.{lem,md}  compiled against a declared host, rendered by lemmon-vm
 ```
 
 The top level groups by **what a case is for**. `syntax/` is parse-only; `render/` runs the
@@ -24,6 +25,15 @@ bound to small fixed records by the test); `document/` is `.md` in document mode
 both crates — its `.cst` shows the segmentation and its `.html` the spliced output. Below
 that, directories group by **language feature**, and names are descriptive — no numeric
 prefixes, because a corpus that only grows makes them meaningless.
+
+`host/` is where the host's declaration is the subject (D30, D36). Those cases compile
+against the two files in `host/environment/` — an `ambient.lem` declaring `Page` and
+`Build`, and a `site.lem` declaring the site's schemas and bindings — with `page`, `build`,
+and `site` typed from them, and a document's record read from its own `type:` key, the one
+raw key a shell reads before a document has a type. The two environment files are cases
+themselves, so nothing about them is hidden. `render/` and `document/` deliberately keep an
+untyped host, which names the same three values and types none: that is a host a site
+really has (the Phase 0 spike's), and what any document no collection matched sees.
 
 There is no `ok/` versus `broken/` split. Whether a case parses clean is _data_: its
 diagnostics section is empty. That keeps a case in the directory that says what it tests

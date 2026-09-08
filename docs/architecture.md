@@ -34,7 +34,8 @@ class Core {
   analyze(path, offset): { diagnostics, completions, hover, definition }  // LSP
   format(path): string
 }
-// HostDecl = {ambient: {[name]: TypeName | {bindingsOf: path}}, entry: FieldName}
+// HostDecl = {ambient: {[name]: TypeName | {bindingsOf: path} | null},
+//              document?: AmbientName, entry?: FieldName}   (D36)
 // reserved optional host import (D08): renderMarkdown?(text: string): string
 ```
 
@@ -43,16 +44,22 @@ crosses as one UTF-8 JSON buffer (rmp-serde if profiling demands); one instance 
 thread, nothing shared. Whole-site data ≪ 10 MB. comrak + syntect adds ~1 MB to the .wasm —
 lazy-load in the playground, irrelevant in Node.
 
-Ambient declarations (D30): the core knows no type or value by name. The host passes its
-environment with `compile` — the declarations as Lemmon source (the shell ships
+Ambient declarations (D30, D36): the core knows no type or value by name. The host passes
+its environment with `compile` — the declarations as Lemmon source (the shell ships
 `ambient.lem`, declaring `Page` and `Build`) and `host`, which binds each ambient value
-name to a declared type or to the top-level bindings of a file (`site` → `site.lem`) and
-names the field a page is rendered through (`layout`). Each document carries its
-`record`: the element type of the `from` binding whose glob matched it, or the type a
-`type:` key names, which the checker requires to extend that element type. The unit
-depends on that type
-as a compile-time fact (D25). A document without one compiles with `page` unknown-typed,
-which is how the spike renders today.
+name to a declared type, to the top-level bindings of a file (`site` → `site.lem`), or to
+nothing at all, which names the value without typing it; `document` says which of them a
+file's `record` retypes and `entry` names the field a page is rendered through
+(`layout`). The declaration is resident like the units, so a call that changes nothing
+about the environment omits it, and what each unit was compiled against is one of its
+facts: a host that rebinds a name leaves the units that read it stale, named for
+recompiling, as a changed signature does (D25). A core given no declaration has no
+ambient values, and `page` in a template is an undefined name.
+
+Each document carries its `record`: the element type of the `from` binding whose glob
+matched it, or the type a `type:` key names, which the checker requires to extend that
+element type. The unit depends on that type as a compile-time fact (D25). A document
+without one compiles with `page` unknown-typed, which is how the spike renders today.
 
 ∆TNT built the `compile`/`loadData`/`render` subset of that class (plus `version`), and
 settled the spike shapes the sketch left open — each chosen so the full form is additive,
@@ -195,8 +202,8 @@ What ∆c8h built is the untyped subset of that: `Value` without the stdlib type
 Records are checked by declaration since ∆cea, and since ∆PCK a record value is tagged
 with its declared name (`Value::Record`, made by a map literal where a record is expected
 and, later, by the loader at the boundary), which `TypeTest` reads; an enum value is its
-variant's name as a string. Data that arrives untagged — every ambient value until
-∆Iau — is `any`, and a type test over it is a render error (D35). The VM is the runtime
+variant's name as a string. Data that arrives untagged — everything a host loads until ∆iCW, ambient values
+included — is `any`, and a type test over it is a render error (D35). The VM is the runtime
 for `any` (∆C8d): its type checks fire only on values the checker let through as `any`,
 and stay for that reason.
 

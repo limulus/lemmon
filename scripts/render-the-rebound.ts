@@ -245,9 +245,13 @@ const files = sourceFiles()
 const ambient = ambientData(files[0].text)
 const core = await loadCore()
 
+// The spike's host names the three ambient values and types none of them, which is
+// what leaves its ad hoc fields unknown-typed and renders them unannotated (D30).
+const host = { ambient: { site: null, page: null, build: null } }
+
 const compile = record(`compile (${files.length} files, 1 call)`)
 compile(() => {
-  expectClean(core.compile(files), 'compiling the spike')
+  expectClean(core.compile(files, host), 'compiling the spike')
 })
 
 const loadAmbient = record('loadData (full ambient)')

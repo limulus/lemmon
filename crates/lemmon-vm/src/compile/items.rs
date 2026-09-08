@@ -131,8 +131,8 @@ impl Compiler<'_> {
                 self.require(tag.span(), rules::printable(&ty, self.decls()));
                 self.emit(Op::Emit, tag.span());
             }
-            Item::LetVoid(tag) => self.lower_let_void(tag),
-            Item::LetBlock(tag) => self.lower_let_block(tag),
+            Item::LetVoid(tag) => self.lower_let_void(tag, level),
+            Item::LetBlock(tag) => self.lower_let_block(tag, level),
             // Parsed by `lemmon-syntax` (∆1vS); the loader (∆iCW) fulfils it, and
             // requiring the file to be the host's site file is the host's to check —
             // the compiler cannot tell. It can tell a nested binding and a document
@@ -369,7 +369,7 @@ impl Compiler<'_> {
         self.patch(next);
     }
 
-    fn lower_let_void(&mut self, tag: &LetVoid) {
+    fn lower_let_void(&mut self, tag: &LetVoid, level: Level) {
         let name = required(tag.name());
         let value = required(tag.value());
         // The value is compiled before the name is bound, so `x = x + 1` reads the
@@ -384,17 +384,30 @@ impl Compiler<'_> {
             }
             None => self.expr(&value),
         };
-        let slot = self.bind(&name, BindingKind::Definition, ty);
+        let slot = self.bind(&name, self.definition(level), ty);
         self.emit(Op::StoreLocal { slot }, name.span());
     }
 
-    fn lower_let_block(&mut self, tag: &LetBlock) {
+    fn lower_let_block(&mut self, tag: &LetBlock, level: Level) {
         let name = required(tag.name());
         let body = required(tag.body());
         self.emit(Op::Capture, tag.span());
         self.lower_block(body.items().collect(), Kind::Value);
         self.emit(Op::EndCapture, tag.span());
-        let slot = self.bind(&name, BindingKind::Definition, Type::Html);
+        let slot = self.bind(&name, self.definition(level), Type::Html);
         self.emit(Op::StoreLocal { slot }, name.span());
+    }
+
+    /// What a `lem-let` at `level` is: a definition, or — at the top level of the file
+    /// an ambient value takes its bindings from — a field of that value's record, which
+    /// every other file may read and this one cannot tell whether any does (D30).
+    ///
+    /// Both top levels, since which file a host reads its bindings from is the host's
+    /// to say and the collection that makes the record reads either the same way.
+    const fn definition(&self, level: Level) -> BindingKind {
+        match level {
+            Level::File | Level::Document if self.exports_bindings => BindingKind::Exported,
+            _ => BindingKind::Definition,
+        }
     }
 }

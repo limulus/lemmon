@@ -30,9 +30,10 @@ use crate::bytecode::{Function, Module, Op};
 use crate::decls::{Declaration, Decls, FieldDecl, Kind, Shape};
 use crate::document;
 use crate::exports::{Export, ExportIndex};
+use crate::host::Host;
 use crate::types::Type;
 use crate::unit::{
-    ExportedSignature, ImportRef, ImportedSignature, Param, TypeRef, Unit, link,
+    AmbientRef, ExportedSignature, ImportRef, ImportedSignature, Param, TypeRef, Unit, link,
 };
 use crate::{SourceFile, Value};
 
@@ -219,14 +220,14 @@ impl<T> Compiled<T> {
 ///
 /// If two of `files` share a path — a caller bug with no source span to point at
 /// ([`repeated_path`]).
-pub fn compile(files: &[SourceFile]) -> Compiled<Module> {
+pub fn compile(files: &[SourceFile], host: &Host) -> Compiled<Module> {
     if let Some(path) = repeated_path(files.iter().map(|file| file.path.as_str())) {
         panic!("`compile` was given `{path}` twice");
     }
     let mut diagnostics = Vec::new();
     let mut prepared = Vec::new();
     for file in files {
-        match prepare(file) {
+        match prepare(file, host) {
             Ok(p) => prepared.push(p),
             Err(errs) => diagnostics.extend(errs),
         }
@@ -240,7 +241,7 @@ pub fn compile(files: &[SourceFile]) -> Compiled<Module> {
     }
     let mut units = Vec::new();
     for p in &prepared {
-        let compiled = compile_unit(p, &index);
+        let compiled = compile_unit(p, &index, host);
         diagnostics.extend(compiled.diagnostics);
         units.extend(compiled.output);
     }
@@ -249,7 +250,7 @@ pub fn compile(files: &[SourceFile]) -> Compiled<Module> {
     } else {
         // Every unit was compiled against this same index, so nothing can be
         // unresolved at link time.
-        let linked = link(&units, &index);
+        let linked = link(&units, &index, host);
         diagnostics.extend(linked.diagnostics);
         linked.output
     };
@@ -279,6 +280,8 @@ pub fn repeated_path<'a>(paths: impl IntoIterator<Item = &'a str>) -> Option<&'a
 /// everything [`compile_unit`] needs that comes from this file alone.
 pub struct PreparedFile {
     path: String,
+    /// The record this file's content is, as the host named it (D30).
+    record: Option<String>,
     source: Source,
     /// A document's prose, rendered by comrak here so markdown never runs later.
     chunks: Option<Vec<String>>,
@@ -313,6 +316,17 @@ impl PreparedFile {
     pub fn types(&self) -> &[Declaration] {
         &self.types
     }
+
+    /// Where a diagnostic about the record this file was compiled as points: the front
+    /// matter, which is where the `type:` key that may have named it stands, and the
+    /// start of the file for a template, which has none. ∆iCW's YAML positions are what
+    /// narrow this to the key itself.
+    fn record_span(&self) -> Span {
+        match &self.source {
+            Source::Document(doc) => doc.front_matter.unwrap_or_else(|| Span::new(0, 0)),
+            Source::Template(_) => Span::new(0, 0),
+        }
+    }
 }
 
 /// Parses `file`, renders a document's prose, and collects its exported signatures and
@@ -323,7 +337,7 @@ impl PreparedFile {
 /// The file's parse or prose diagnostics — a file that does not parse clean yields
 /// nothing to compile. Parser warnings are kept in the prepared file and reported with
 /// the unit's.
-pub fn prepare(file: &SourceFile) -> Result<PreparedFile, Vec<Diagnostic>> {
+pub fn prepare(file: &SourceFile, host: &Host) -> Result<PreparedFile, Vec<Diagnostic>> {
     let source = Source::of(file);
     let mut diagnostics: Vec<Diagnostic> = source
         .parse()
@@ -351,13 +365,23 @@ pub fn prepare(file: &SourceFile) -> Result<PreparedFile, Vec<Diagnostic>> {
     };
     let mut type_uses = Vec::new();
     let (exports, export_diagnostics) =
-        collect_exports(&file.path, source.parse(), &mut type_uses);
+        collect_exports(&file.path, source.parse(), &mut type_uses, host);
     diagnostics.extend(export_diagnostics);
-    let (types, type_diagnostics) =
+    let (mut types, type_diagnostics) =
         collect_declarations(&file.path, source.parse(), &mut type_uses);
     diagnostics.extend(type_diagnostics);
+    // The bindings of the file an ambient value reads are that value's fields, so they
+    // are declared like any other cross-file surface and collected here, from the heads
+    // alone, with everything else the index is offered (D36).
+    if host.binds_from(&file.path) {
+        let (bindings, binding_diagnostics) =
+            collect_bindings(&file.path, source.parse(), &mut type_uses);
+        types.push(bindings);
+        diagnostics.extend(binding_diagnostics);
+    }
     Ok(PreparedFile {
         path: file.path.clone(),
+        record: file.record.clone(),
         source,
         chunks,
         exports,
@@ -377,8 +401,9 @@ fn collect_exports(
     path: &str,
     parse: &Parse,
     uses: &mut Vec<ImportRef>,
+    host: &Host,
 ) -> (Vec<ExportedSignature>, Vec<Diagnostic>) {
-    let mut names = Names::new(path, None);
+    let mut names = Names::new(path, None, host);
     let mut diagnostics = Vec::new();
     let mut exports: Vec<ExportedSignature> = Vec::new();
     for item in parse.root().items() {
@@ -513,6 +538,80 @@ fn collect_declarations(
     (declared, diagnostics)
 }
 
+/// Collects the top-level bindings of the file an ambient value reads into the record
+/// that value has: one field per `lem-let`, in binding order (D30, D36).
+///
+/// Read from the heads alone, like every other cross-file surface: a void binding
+/// declares its type, a `from` binding already had to (∆1vS), and a capture body is
+/// `html` by its shape. The record is named by the file's own path, which no `lem-type`
+/// can collide with, so it needs no rule to keep it out of the type namespace.
+fn collect_bindings(
+    path: &str,
+    parse: &Parse,
+    uses: &mut Vec<ImportRef>,
+) -> (Declaration, Vec<Diagnostic>) {
+    let mut diagnostics = Vec::new();
+    let mut fields: Vec<FieldDecl> = Vec::new();
+    for item in parse.root().items() {
+        let (name, ty) = match &item {
+            Item::LetVoid(tag) => {
+                let name = required(tag.name());
+                let Some(annotation) = tag.type_annotation() else {
+                    diagnostics.push(Diagnostic::error(
+                        path,
+                        name.span(),
+                        format!(
+                            "a binding the host reads declares its type: \
+                             `<lem-let {}: T = … />`",
+                            name.text()
+                        ),
+                    ));
+                    continue;
+                };
+                let ty = annotations::resolve(
+                    path,
+                    &required(annotation.ty()),
+                    &mut diagnostics,
+                    uses,
+                );
+                (name, ty)
+            }
+            Item::LetFrom(tag) => {
+                let annotation = required(tag.type_annotation());
+                let ty = annotations::resolve(
+                    path,
+                    &required(annotation.ty()),
+                    &mut diagnostics,
+                    uses,
+                );
+                (required(tag.name()), ty)
+            }
+            Item::LetBlock(tag) => (required(tag.name()), Type::Html),
+            _ => continue,
+        };
+        // A name bound twice is reported where the second binding is lowered; the
+        // record keeps the first, as the scope does.
+        if fields.iter().any(|field| &*field.name == name.text()) {
+            continue;
+        }
+        fields.push(FieldDecl {
+            name: Rc::from(name.text()),
+            ty,
+            span: name.span(),
+        });
+    }
+    (
+        Declaration {
+            name: Rc::from(path),
+            // Nothing can spell this name, so no diagnostic ever points at where it
+            // was declared — the file itself is the honest answer.
+            name_span: Span::new(0, 0),
+            shape: Shape::Record { base: None, fields },
+        },
+        diagnostics,
+    )
+}
+
 /// A `lem-type`'s shape. A base that is a reserved name is refused here and dropped —
 /// a declared one is a use, judged with the rest; a field repeated within the
 /// declaration is a duplicate, its type still resolved so what it names is reported.
@@ -602,7 +701,12 @@ fn enum_shape(path: &str, decl: &EnumDecl, diagnostics: &mut Vec<Diagnostic>) ->
 ///
 /// Every problem in the file comes back in source order; the unit only when none of them
 /// is an error.
-pub fn compile_unit(prepared: &PreparedFile, index: &ExportIndex) -> Compiled<Unit> {
+pub fn compile_unit(
+    prepared: &PreparedFile,
+    index: &ExportIndex,
+    host: &Host,
+) -> Compiled<Unit> {
+    let seen = host.for_file(&prepared.path, prepared.record.as_deref());
     let mut compiler = Compiler {
         path: &prepared.path,
         unit: Unit {
@@ -614,10 +718,14 @@ pub fn compile_unit(prepared: &PreparedFile, index: &ExportIndex) -> Compiled<Un
             types: prepared.types.clone(),
             facts: Vec::new(),
             type_refs: Vec::new(),
+            ambient_refs: Vec::new(),
+            record: prepared.record.clone(),
         },
         strings: HashMap::new(),
         index,
-        names: Names::new(&prepared.path, Some(index)),
+        host,
+        exports_bindings: host.binds_from(&prepared.path),
+        names: Names::new(&prepared.path, Some(index), &seen),
         diagnostics: prepared.diagnostics.clone(),
         ctxs: Vec::new(),
         narrowings: Vec::new(),
@@ -625,6 +733,7 @@ pub fn compile_unit(prepared: &PreparedFile, index: &ExportIndex) -> Compiled<Un
     let entry = compiler.reserve(&prepared.path);
     debug_assert_eq!(entry, 0, "the entry is a unit's first function");
     compiler.check_type_uses(&prepared.type_uses);
+    compiler.check_record(prepared);
     compiler.check_declarations(&prepared.types);
     for export in &prepared.exports {
         let func = compiler.reserve(&export.name);
@@ -672,7 +781,7 @@ enum Source {
 
 impl Source {
     fn of(file: &SourceFile) -> Self {
-        if file.path.ends_with(".md") {
+        if crate::is_document(&file.path) {
             Self::Document(parse_document(&file.text))
         } else {
             Self::Template(lemmon_syntax::parse(&file.text))
@@ -726,6 +835,13 @@ struct Compiler<'a> {
     /// Every file's signatures — what a call to another file's function resolves
     /// against, and where its consumed signature comes from.
     index: &'a ExportIndex,
+    /// What the host declared, as the host declared it. Name resolution reads the
+    /// file's own view of it instead ([`Host::for_file`]), since a file compiled as a
+    /// record reads the host's document value as that record.
+    host: &'a Host,
+    /// Whether this file's top-level bindings are an ambient value's fields (D30) —
+    /// which makes each of them a surface the project reads, not a local.
+    exports_bindings: bool,
     /// Every name the file binds and everything a name may mean; its frames mirror
     /// `ctxs`.
     names: Names<'a>,
@@ -903,6 +1019,166 @@ impl<'a> Compiler<'a> {
         }
     }
 
+    /// The type an ambient value has here, recorded as a fact of this unit the first
+    /// time the file reads one (D25) — what the host bound the name to, which is not
+    /// what the declaration behind it says and so is not covered by a [`TypeRef`].
+    ///
+    /// A type the host names that no file declares is reported once, at that first
+    /// read, and the value is `any` from there: the mistake is the host's, and one
+    /// mistake is one diagnostic.
+    fn ambient_type(&mut self, name: &str, ty: Type, span: Span) -> Type {
+        let recorded = self
+            .unit
+            .ambient_refs
+            .iter()
+            .find(|reference| &*reference.name == name)
+            .map(|reference| reference.ty.clone());
+        if let Some(ty) = recorded {
+            return self.known(ty);
+        }
+        self.unit.ambient_refs.push(AmbientRef {
+            name: Rc::from(name),
+            span,
+            ty: ty.clone(),
+        });
+        let Type::Named(declared) = &ty else {
+            return ty;
+        };
+        if self.index.lookup_type(declared).is_none() {
+            self.error(
+                span,
+                format!("the host binds `{name}` to `{declared}`, which no file declares"),
+            );
+            return Type::Any;
+        }
+        self.note_type(declared, span);
+        ty
+    }
+
+    /// The entry field on a page schema (D30): a record that extends the type the
+    /// host's document value has renders through a field the host names, declared
+    /// `(Self, html): html`.
+    ///
+    /// Asked only of a record whose *base* is that type, because a field may be
+    /// redeclared only with the same type (D32): the entry is declared once, where its
+    /// self type is, and everything below inherits it. So one missing declaration is
+    /// one diagnostic, however deep the schemas go.
+    ///
+    /// Where it is declared is the host's business as much as the site's: a host whose
+    /// document type carries the field itself has already answered for every schema
+    /// below it, so the field is looked up through the chain and only a declaration
+    /// this file makes is judged for its shape — the file that declares one is the file
+    /// that hears about it.
+    fn check_entry_field(&mut self, decl: &Declaration, base: &str, fields: &[FieldDecl]) {
+        let (Some(entry), Some(document)) = (
+            self.host.entry().map(str::to_owned),
+            self.host.document_type(),
+        ) else {
+            return;
+        };
+        if *base != *document {
+            return;
+        }
+        let shape = |name: &str| format!("`{entry}: ({name}, html): html`");
+        let Some(ty) = self.index.field(&decl.name, &entry) else {
+            self.error(
+                decl.name_span,
+                format!(
+                    "`{}` extends `{document}`, so it declares how a page renders: {}",
+                    decl.name,
+                    shape(&decl.name)
+                ),
+            );
+            return;
+        };
+        // The page passed is this record or one it extends: a layout free to take the
+        // base and narrow inside is what makes one layout serve a family of schemas.
+        let takes_a_page = match &ty {
+            Type::Fn(params, ret) => matches!(
+                (params.first(), params.get(1), &**ret),
+                (Some(Type::Named(page)), Some(Type::Html), Type::Html)
+                    if **page == *decl.name || self.index.extends(&decl.name, page)
+            ),
+            _ => false,
+        };
+        if let Some(field) = fields.iter().find(|field| *field.name == *entry)
+            && !takes_a_page
+        {
+            self.error(
+                field.span,
+                format!(
+                    "`{entry}` renders a `{}`: declare it {}",
+                    decl.name,
+                    shape(&decl.name)
+                ),
+            );
+        }
+    }
+
+    /// The record the host compiled this file as, against what the project declares
+    /// (D30). The binding it makes is recorded here, where the record is, so that the
+    /// first read of the document value finds the fact already made and says nothing
+    /// this has not.
+    fn check_record(&mut self, prepared: &PreparedFile) {
+        let Some(record) = prepared.record.as_deref() else {
+            return;
+        };
+        let span = prepared.record_span();
+        // Named *and* bound: a host that names a document value it never bound has no
+        // value for the record to type, and recording the fact anyway would leave the
+        // unit looking as though the host had dropped a binding it never made.
+        let document = self
+            .host
+            .document()
+            .filter(|name| self.host.binding(name).is_some())
+            .map(str::to_owned);
+        let Some(document) = document else {
+            self.error(
+                span,
+                format!(
+                    "this file is compiled as `{record}`, and the host binds no \
+                     document value to be one"
+                ),
+            );
+            return;
+        };
+        let ty = self.record_type(record, &document, span);
+        self.unit.ambient_refs.push(AmbientRef {
+            name: Rc::from(&*document),
+            span,
+            ty,
+        });
+    }
+
+    /// The type a file compiled as `record` reads its document value as: that record,
+    /// or `any` once what is wrong with the name has been reported — a name no file
+    /// declares, or one that is an enum. A record that is simply not a page schema is
+    /// reported and still read as itself: its fields are declared, whatever the host
+    /// should have matched it to.
+    fn record_type(&mut self, record: &str, document: &str, span: Span) -> Type {
+        let Some(export) = self.index.lookup_type(record) else {
+            self.error(span, format!("unknown type `{record}`"));
+            return Type::Any;
+        };
+        if export.decl.kind() == Kind::Enum {
+            self.error(span, format!("`{record}` is an enum, not a record"));
+            return Type::Any;
+        }
+        self.note_type(record, span);
+        if let Some(base) = self.host.document_type()
+            && !self.index.extends(record, &base)
+        {
+            self.error(
+                span,
+                format!(
+                    "`{record}` does not extend `{base}`, which is what `{document}` \
+                     is declared as"
+                ),
+            );
+        }
+        Type::Named(Rc::from(record))
+    }
+
     /// The rules on this file's own declarations that need every file's declarations
     /// in: the project kept another file's declaration of the name; the base is an enum
     /// (an unknown base was reported as an unknown type); the chain of bases returns to
@@ -951,6 +1227,7 @@ impl<'a> Compiler<'a> {
                 );
                 continue;
             }
+            self.check_entry_field(decl, base, fields);
             for field in fields {
                 let redeclared = chain.iter().find_map(|ancestor| match &ancestor.shape {
                     Shape::Record { fields, .. } => fields
@@ -1185,12 +1462,18 @@ mod tests {
     use super::*;
     use crate::render;
 
+    /// The host every test below compiles against unless it needs another: the three
+    /// names the standard shell binds, none of them typed.
+    fn untyped_host() -> Host {
+        Host::untyped(["site", "page", "build"])
+    }
+
     fn run(src: &str) -> Result<String, String> {
         run_files(&[SourceFile::new("t.lem", src)], "t.lem")
     }
 
     fn run_files(files: &[SourceFile], entry: &str) -> Result<String, String> {
-        let compiled = compile(files);
+        let compiled = compile(files, &untyped_host());
         let Some(module) = compiled.output else {
             return Err(shown(&compiled.diagnostics).join("\n"));
         };
@@ -1203,7 +1486,7 @@ mod tests {
 
     /// Compiles `files`, asserting there is no module and returning what was reported.
     fn compile_errors(files: &[SourceFile]) -> Vec<Diagnostic> {
-        let compiled = compile(files);
+        let compiled = compile(files, &untyped_host());
         assert!(
             compiled.output.is_none(),
             "compiled despite {:?}",
@@ -1260,15 +1543,19 @@ mod tests {
         // Invariant 11: an edit to the callee's body leaves the caller's unit
         // byte-identical, because all it consumed is the signature — its one fact.
         let unit_against = |lib_body: &str| {
-            let lib = prepare(&SourceFile::new("lib.lem", lib_body)).unwrap();
-            let page =
-                prepare(&SourceFile::new("page.lem", "<lem.greet(\"you\")>")).unwrap();
+            let lib =
+                prepare(&SourceFile::new("lib.lem", lib_body), &untyped_host()).unwrap();
+            let page = prepare(
+                &SourceFile::new("page.lem", "<lem.greet(\"you\")>"),
+                &untyped_host(),
+            )
+            .unwrap();
             let mut index = ExportIndex::new();
             index.offer("lib.lem", lib.exports());
             index.offer_types("lib.lem", lib.types());
             index.offer("page.lem", page.exports());
             index.offer_types("page.lem", page.types());
-            compile_unit(&page, &index).expect_output()
+            compile_unit(&page, &index, &untyped_host()).expect_output()
         };
         let unit = unit_against("<lem-fn greet(who: string): string = \"hi \" + who />");
         let edited = unit_against("<lem-fn greet(who: string): string = \"HI \" + who />");
@@ -1298,14 +1585,16 @@ mod tests {
         let page = "<lem-let xs = f({}, |p| null) />";
         let prepared: Vec<_> = [("types.lem", types), ("lib.lem", lib), ("page.lem", page)]
             .iter()
-            .map(|(path, text)| prepare(&SourceFile::new(*path, *text)).unwrap())
+            .map(|(path, text)| {
+                prepare(&SourceFile::new(*path, *text), &untyped_host()).unwrap()
+            })
             .collect();
         let mut index = ExportIndex::new();
         for p in &prepared {
             index.offer(p.path(), p.exports());
             index.offer_types(p.path(), p.types());
         }
-        let unit = compile_unit(&prepared[2], &index).expect_output();
+        let unit = compile_unit(&prepared[2], &index, &untyped_host()).expect_output();
         let names: Vec<&str> = unit.type_refs.iter().map(|r| &*r.name).collect();
         assert_eq!(names, ["Article", "Photo", "Vod"]);
         let call = unit.imports[0].span;
@@ -1334,7 +1623,7 @@ mod tests {
             [
                 "types.lem:27..34: unknown type `Article`",
                 "page.lem:13..21: `LinkPost` extends `Article`, which is not declared",
-                "page.lem:42..49: a `LinkPost` has no field `title`",
+                "page.lem:42..49: `LinkPost` has no field `title`",
             ]
         );
     }
@@ -1358,10 +1647,13 @@ mod tests {
         // Two texts for one path have no single answer for what `a.lem` exports: the
         // second offer withdraws the first's names, and the first file then compiles
         // against an index that has lost them.
-        compile(&[
-            SourceFile::new("a.lem", "<lem-fn f(): int = 1 />"),
-            SourceFile::new("a.lem", "<lem-fn g(): int = 2 />"),
-        ]);
+        compile(
+            &[
+                SourceFile::new("a.lem", "<lem-fn f(): int = 1 />"),
+                SourceFile::new("a.lem", "<lem-fn g(): int = 2 />"),
+            ],
+            &untyped_host(),
+        );
     }
 
     #[test]
@@ -1436,8 +1728,11 @@ mod tests {
 
     #[test]
     fn interns_a_string_used_twice_as_one_constant() {
-        let module =
-            compile(&[SourceFile::new("t.lem", "<lem.\"a\" + \"a\">")]).expect_output();
+        let module = compile(
+            &[SourceFile::new("t.lem", "<lem.\"a\" + \"a\">")],
+            &untyped_host(),
+        )
+        .expect_output();
         let strings = module
             .constants
             .iter()
@@ -1448,8 +1743,11 @@ mod tests {
 
     #[test]
     fn compiles_a_lambda_to_a_function_named_for_what_it_is() {
-        let module =
-            compile(&[SourceFile::new("t.lem", "<lem-let f = |x| x />")]).expect_output();
+        let module = compile(
+            &[SourceFile::new("t.lem", "<lem-let f = |x| x />")],
+            &untyped_host(),
+        )
+        .expect_output();
         assert!(module.functions.iter().any(|f| f.name == "<lambda>"));
     }
 
@@ -1501,7 +1799,7 @@ mod tests {
             ),
             ("<lem-let raw = 2 />\n<lem.raw>", "9..12", "2"),
         ] {
-            let compiled = compile(&[SourceFile::new("t.lem", src)]);
+            let compiled = compile(&[SourceFile::new("t.lem", src)], &untyped_host());
             assert_eq!(
                 shown(&compiled.diagnostics),
                 [format!(
@@ -1514,10 +1812,13 @@ mod tests {
         }
         // A name that is not the stdlib's does not warn.
         assert_eq!(
-            compile(&[SourceFile::new(
-                "t.lem",
-                "<lem-let cooked = 2 /><lem.cooked>"
-            )])
+            compile(
+                &[SourceFile::new(
+                    "t.lem",
+                    "<lem-let cooked = 2 /><lem.cooked>"
+                )],
+                &untyped_host(),
+            )
             .diagnostics,
             Vec::new()
         );
@@ -1533,7 +1834,7 @@ mod tests {
             "<lem-for raw in [1]><lem.raw></lem-for>",
             "<lem-for k, raw in {a: 1}><lem.raw></lem-for>",
         ] {
-            let compiled = compile(&[SourceFile::new("t.lem", src)]);
+            let compiled = compile(&[SourceFile::new("t.lem", src)], &untyped_host());
             assert_eq!(compiled.diagnostics, Vec::new(), "{src}");
         }
     }
@@ -1542,13 +1843,16 @@ mod tests {
     fn does_not_blame_the_stdlib_for_a_binding_that_shadows_a_project_function() {
         // The `lem-fn raw` displaced the stdlib and warned for it; the `lem-let raw`
         // displaces that function, which D23 allows silently.
-        let compiled = compile(&[
-            SourceFile::new("lib.lem", "<lem-fn raw(s: string): string = s />"),
-            SourceFile::new(
-                "t.lem",
-                "<lem-fn card(title: string)><lem-let raw = raw(title) /><lem.raw></lem-fn>",
-            ),
-        ]);
+        let compiled = compile(
+            &[
+                SourceFile::new("lib.lem", "<lem-fn raw(s: string): string = s />"),
+                SourceFile::new(
+                    "t.lem",
+                    "<lem-fn card(title: string)><lem-let raw = raw(title) /><lem.raw></lem-fn>",
+                ),
+            ],
+            &untyped_host(),
+        );
         assert_eq!(
             shown(&compiled.diagnostics),
             ["lib.lem:8..11: warning: `raw` shadows the stdlib function of the same name"]
@@ -1615,7 +1919,11 @@ mod tests {
     #[test]
     fn panics_with_every_diagnostic_when_output_is_expected_of_a_failed_compile() {
         let result = std::panic::catch_unwind(|| {
-            compile(&[SourceFile::new("t.lem", "<lem.a><lem.b>")]).expect_output()
+            compile(
+                &[SourceFile::new("t.lem", "<lem.a><lem.b>")],
+                &untyped_host(),
+            )
+            .expect_output()
         });
         let message = *result.unwrap_err().downcast::<String>().unwrap();
         assert!(message.contains("undefined name `a`"), "{message}");
@@ -1649,6 +1957,232 @@ mod tests {
         assert_eq!(
             run("<lem.\"Hello There\".slugify()>").unwrap(),
             "hello-there"
+        );
+    }
+
+    /// A host shaped like the standard shell's: `page` a declared `Page`, `site` the
+    /// record of `site.lem`'s own bindings, every page rendered through `layout`.
+    fn shell_host() -> Host {
+        Host::new()
+            .bind("page", crate::host::Ambient::named("Page"))
+            .bind("site", crate::host::Ambient::bindings("site.lem"))
+            .documents("page")
+            .rendered_through("layout")
+    }
+
+    /// The declaration the tests below compile against, as a host really passes it: an
+    /// ordinary file, compiled with the program.
+    const AMBIENT: &str = "<lem-type Page>\n  url: url\n</lem-type>";
+
+    /// Compiles `files` against `host` and shows every diagnostic.
+    fn diagnostics_with(host: &Host, files: &[SourceFile]) -> Vec<String> {
+        shown(&compile(files, host).diagnostics)
+    }
+
+    #[test]
+    fn types_an_ambient_value_from_the_hosts_declaration() {
+        let files = [
+            SourceFile::new("ambient.lem", AMBIENT),
+            SourceFile::new("t.lem", "<lem.page.url>"),
+        ];
+        assert!(diagnostics_with(&shell_host(), &files).is_empty());
+    }
+
+    #[test]
+    fn refuses_a_field_the_ambient_values_type_does_not_declare() {
+        let files = [
+            SourceFile::new("ambient.lem", AMBIENT),
+            SourceFile::new("t.lem", "<lem.page.nope>"),
+        ];
+        assert_eq!(
+            diagnostics_with(&shell_host(), &files),
+            ["t.lem:5..14: `Page` has no field `nope`"]
+        );
+    }
+
+    #[test]
+    fn reports_a_type_the_host_names_that_no_file_declares() {
+        // The mistake is the host's, so it is reported where the file first reads the
+        // value, once, and the value is `any` from there.
+        let files = [SourceFile::new("t.lem", "<lem.page.a><lem.page.b>")];
+        assert_eq!(
+            diagnostics_with(&shell_host(), &files),
+            ["t.lem:5..9: the host binds `page` to `Page`, which no file declares"]
+        );
+    }
+
+    #[test]
+    fn reads_the_site_files_bindings_as_the_record_that_value_has() {
+        let files = [
+            SourceFile::new("site.lem", "<lem-let name: string = \"limulus.net\" />"),
+            SourceFile::new("t.lem", "<lem.site.name>"),
+        ];
+        assert!(diagnostics_with(&shell_host(), &files).is_empty());
+    }
+
+    #[test]
+    fn refuses_a_binding_the_site_file_does_not_make() {
+        let files = [
+            SourceFile::new("site.lem", "<lem-let name: string = \"limulus.net\" />"),
+            SourceFile::new("t.lem", "<lem.site.nope>"),
+        ];
+        assert_eq!(
+            diagnostics_with(&shell_host(), &files),
+            ["t.lem:5..14: `site.lem` has no field `nope`"]
+        );
+    }
+
+    #[test]
+    fn requires_a_type_on_a_top_level_binding_of_the_site_file() {
+        let files = [SourceFile::new(
+            "site.lem",
+            "<lem-let name = \"limulus.net\" />",
+        )];
+        assert_eq!(
+            diagnostics_with(&shell_host(), &files),
+            [concat!(
+                "site.lem:9..13: a binding the host reads declares its type: ",
+                "`<lem-let name: T = … />`"
+            )]
+        );
+    }
+
+    #[test]
+    fn asks_no_type_of_a_binding_in_a_file_the_host_reads_nothing_from() {
+        // The other half of the rule: a `lem-let` is a local everywhere else, and
+        // infers as it always has.
+        let files = [SourceFile::new(
+            "t.lem",
+            "<lem-let name = \"limulus.net\" /><lem.name>",
+        )];
+        assert!(diagnostics_with(&shell_host(), &files).is_empty());
+    }
+
+    #[test]
+    fn takes_a_capture_body_in_the_site_file_as_an_html_binding() {
+        let files = [
+            SourceFile::new("site.lem", "<lem-let intro><p>hi</p></lem-let>"),
+            SourceFile::new("t.lem", "<lem.site.intro>"),
+        ];
+        assert!(diagnostics_with(&shell_host(), &files).is_empty());
+    }
+
+    #[test]
+    fn types_a_from_binding_before_the_loader_can_fulfil_it() {
+        // The binding's type is what tells the host what to load, and it is read from
+        // the head — so `site` is typed by it even while the file it is in cannot
+        // compile (∆iCW).
+        let files = [
+            SourceFile::new("site.lem", "<lem-let posts: [string] from \"f/*.md\" />"),
+            SourceFile::new("t.lem", "<lem-for p in site.posts><lem.p></lem-for>"),
+        ];
+        assert_eq!(
+            diagnostics_with(&shell_host(), &files),
+            [
+                "site.lem:0..41: `from` bindings need the loader, which is not here yet (∆iCW)"
+            ]
+        );
+    }
+
+    #[test]
+    fn does_not_warn_that_a_binding_the_host_reads_is_unused() {
+        let files = [SourceFile::new(
+            "site.lem",
+            "<lem-let name: string = \"limulus.net\" />",
+        )];
+        assert!(diagnostics_with(&shell_host(), &files).is_empty());
+    }
+
+    #[test]
+    fn still_warns_for_an_unread_binding_inside_the_site_file() {
+        // The exemption is the top level's, where a binding is a field of the record
+        // every other file reads — not every `lem-let` in the file.
+        let files = [SourceFile::new(
+            "site.lem",
+            "<lem-fn f(): html><lem-let unread = 1 /><p>x</p></lem-fn>",
+        )];
+        assert_eq!(
+            diagnostics_with(&shell_host(), &files),
+            ["site.lem:27..33: warning: `unread` is never used"]
+        );
+    }
+
+    #[test]
+    fn compiles_a_document_as_the_record_the_host_named() {
+        let files = [
+            SourceFile::new("ambient.lem", AMBIENT),
+            SourceFile::new(
+                "schema.lem",
+                "<lem-type Post extends Page>\n  title: string\n  \
+                 layout: (Post, html): html\n</lem-type>",
+            ),
+            SourceFile::new("post.md", "<lem.page.title>").with_record("Post"),
+        ];
+        assert!(diagnostics_with(&shell_host(), &files).is_empty());
+    }
+
+    #[test]
+    fn compiles_a_document_the_host_gave_no_record_unknown_typed() {
+        let files = [
+            SourceFile::new("ambient.lem", AMBIENT),
+            SourceFile::new("post.md", "<lem.page.whatever>"),
+        ];
+        assert!(diagnostics_with(&shell_host(), &files).is_empty());
+    }
+
+    #[test]
+    fn refuses_a_record_where_the_host_renders_no_documents() {
+        let host = Host::untyped(["page"]);
+        let files = [SourceFile::new("post.md", "hi").with_record("Post")];
+        assert_eq!(
+            diagnostics_with(&host, &files),
+            [concat!(
+                "post.md:0..0: this file is compiled as `Post`, and the host binds no ",
+                "document value to be one"
+            )]
+        );
+    }
+
+    #[test]
+    fn takes_an_entry_field_a_page_schema_inherits_from_the_document_type() {
+        // A host is free to declare the entry field on the type it renders documents
+        // as; everything below inherits it, and a subtype that redeclared it could only
+        // repeat the same type (D32).
+        let files = [
+            SourceFile::new(
+                "ambient.lem",
+                "<lem-type Page>\n  url: url\n  layout: (Page, html): html\n</lem-type>",
+            ),
+            SourceFile::new(
+                "schema.lem",
+                "<lem-type Post extends Page>\n  title: string\n</lem-type>",
+            ),
+        ];
+        assert!(diagnostics_with(&shell_host(), &files).is_empty());
+    }
+
+    #[test]
+    fn refuses_a_record_where_the_host_names_a_document_value_it_never_bound() {
+        // Named is not bound: there is no value for the record to type, so this is the
+        // same mistake as naming no document value at all — and recording the binding
+        // anyway would leave the unit looking as though the host had dropped one.
+        let host = Host::untyped(["site"])
+            .documents("page")
+            .rendered_through("layout");
+        let files = [
+            SourceFile::new(
+                "schema.lem",
+                "<lem-type Post>\n  title: string\n</lem-type>",
+            ),
+            SourceFile::new("post.md", "hello").with_record("Post"),
+        ];
+        let compiled = compile(&files, &host);
+        assert_eq!(
+            shown(&compiled.diagnostics),
+            [concat!(
+                "post.md:0..0: this file is compiled as `Post`, and the host binds no ",
+                "document value to be one"
+            )]
         );
     }
 }

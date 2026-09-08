@@ -18,6 +18,7 @@ use crate::bytecode::{Function, Module, Op};
 use crate::compile::{Compiled, Diagnostic, index_u32};
 use crate::decls::{Declaration, Decls, Shape, TypeFact};
 use crate::exports::ExportIndex;
+use crate::host::Host;
 use crate::types::Type;
 
 /// One file's compiled output: self-contained except for the functions it names in
@@ -48,6 +49,14 @@ pub struct Unit {
     /// each with the declaration it was compiled against, at the first use that reached
     /// it — an annotation, an `extends`, or a consumed signature.
     pub type_refs: Vec<TypeRef>,
+    /// The third: what the host bound each ambient value this file read to, where it
+    /// first read it. The declaration behind such a type is a [`TypeRef`] like any
+    /// other; this is the binding itself — that the host called `page` a `Page` (D30).
+    pub ambient_refs: Vec<AmbientRef>,
+    /// The record the host compiled this file as, which types its document value: a
+    /// fact of the unit like the rest, and the reason two documents of different
+    /// schemas cannot share one.
+    pub record: Option<String>,
 }
 
 /// A foreign type a unit was compiled against: where this file first reached it, and
@@ -57,6 +66,15 @@ pub struct TypeRef {
     pub name: Rc<str>,
     pub span: Span,
     pub fact: TypeFact,
+}
+
+/// A host binding a unit was compiled against: the ambient name, where this file first
+/// read it, and the type it had there.
+#[derive(Clone, Debug, PartialEq)]
+pub struct AmbientRef {
+    pub name: Rc<str>,
+    pub span: Span,
+    pub ty: Type,
 }
 
 /// A symbolic reference to a function or type another file defines.
@@ -131,7 +149,7 @@ pub struct ImportedSignature {
 ///
 /// If the index names a file that is not among `units` — the caller is expected to link
 /// every unit the index was offered.
-pub fn link(units: &[Unit], index: &ExportIndex) -> Compiled<Module> {
+pub fn link(units: &[Unit], index: &ExportIndex, host: &Host) -> Compiled<Module> {
     let mut diagnostics = Vec::new();
     let mut constant_offsets = Vec::with_capacity(units.len());
     let mut function_offsets = Vec::with_capacity(units.len());
@@ -152,6 +170,33 @@ pub fn link(units: &[Unit], index: &ExportIndex) -> Compiled<Module> {
     let resolved: Vec<Vec<Option<u32>>> = units
         .iter()
         .map(|unit| {
+            // What the host binds each ambient name to is a fact like a signature: a
+            // unit that read `page` as a `Page` has its field reads and assignability
+            // checks made against that type, so a host that rebinds the name — or drops
+            // it — leaves the unit stale rather than merely relinkable. Compared
+            // against the host as *this file* saw it, since a file compiled as a record
+            // reads the document value as that record.
+            let seen = host.for_file(&unit.path, unit.record.as_deref());
+            for reference in &unit.ambient_refs {
+                let bound = seen.binding(&reference.name).map(|a| a.ty());
+                match bound {
+                    Some(ty) if ty == reference.ty => {}
+                    Some(ty) => diagnostics.push(Diagnostic::error(
+                        &unit.path,
+                        reference.span,
+                        format!(
+                            "the host binds `{}` as a `{ty}` now, and this file was \
+                             compiled against `{}`",
+                            reference.name, reference.ty
+                        ),
+                    )),
+                    None => diagnostics.push(Diagnostic::error(
+                        &unit.path,
+                        reference.span,
+                        format!("the host no longer binds `{}`", reference.name),
+                    )),
+                }
+            }
             for reference in &unit.type_refs {
                 match index.lookup_type(&reference.name) {
                     Some(export) if export.decl.fact() == reference.fact => {}
@@ -371,14 +416,23 @@ fn signature(name: &str, params: &[Param], ret: &Type) -> String {
 mod tests {
     use super::*;
     use crate::compile::{compile_unit, prepare};
+    use crate::host::Ambient;
     use crate::{SourceFile, Value, render};
+
+    /// The host every test below compiles against unless it needs another: the three
+    /// names the standard shell binds, none of them typed.
+    fn untyped_host() -> Host {
+        Host::untyped(["site", "page", "build"])
+    }
 
     /// Compiles the file at `path` into a unit against an index of every given file's
     /// exports.
     fn unit_of(path: &str, index_of: &[(&str, &str)]) -> Unit {
         let prepared: Vec<_> = index_of
             .iter()
-            .map(|(path, text)| prepare(&SourceFile::new(*path, *text)).unwrap())
+            .map(|(path, text)| {
+                prepare(&SourceFile::new(*path, *text), &untyped_host()).unwrap()
+            })
             .collect();
         let mut index = ExportIndex::new();
         for p in &prepared {
@@ -389,13 +443,32 @@ mod tests {
             .iter()
             .find(|p| p.path() == path)
             .expect("the file compiles against an index that includes it");
-        compile_unit(this, &index).expect_output()
+        compile_unit(this, &index, &untyped_host()).expect_output()
+    }
+
+    /// Compiles the file at `path` against `host`, and against an index of every given
+    /// file's exports.
+    fn unit_against(host: &Host, path: &str, files: &[(&str, &str)]) -> Unit {
+        let prepared: Vec<_> = files
+            .iter()
+            .map(|(path, text)| prepare(&SourceFile::new(*path, *text), host).unwrap())
+            .collect();
+        let mut index = ExportIndex::new();
+        for p in &prepared {
+            index.offer(p.path(), p.exports());
+            index.offer_types(p.path(), p.types());
+        }
+        let this = prepared
+            .iter()
+            .find(|p| p.path() == path)
+            .expect("the file compiles against an index that includes it");
+        compile_unit(this, &index, host).expect_output()
     }
 
     /// Links `units` against the index they make, asserting there is no module and
     /// returning what was reported.
     fn link_errors(units: &[Unit]) -> Vec<Diagnostic> {
-        let linked = link(units, &ExportIndex::of(units));
+        let linked = link(units, &ExportIndex::of(units), &untyped_host());
         assert!(
             linked.output.is_none(),
             "linked despite {:?}",
@@ -531,7 +604,8 @@ mod tests {
             )],
         );
         let units = [lib, page];
-        let module = link(&units, &ExportIndex::of(&units)).expect_output();
+        let module =
+            link(&units, &ExportIndex::of(&units), &untyped_host()).expect_output();
         assert_eq!(
             render(&module, "page.lem", &[("page", Value::Null)]).unwrap(),
             "HELLO you"
@@ -553,7 +627,8 @@ mod tests {
         let lib = unit_of("lib.lem", &files);
         let page = unit_of("page.lem", &files);
         let units = [lib, page];
-        let module = link(&units, &ExportIndex::of(&units)).expect_output();
+        let module =
+            link(&units, &ExportIndex::of(&units), &untyped_host()).expect_output();
         assert_eq!(
             render(&module, "page.lem", &[("page", Value::Null)]).unwrap(),
             "hello-there firstsecond"
@@ -583,7 +658,8 @@ mod tests {
             ),
         ];
         let units = [unit_of("types.lem", &files), unit_of("page.lem", &files)];
-        let module = link(&units, &ExportIndex::of(&units)).expect_output();
+        let module =
+            link(&units, &ExportIndex::of(&units), &untyped_host()).expect_output();
         assert_eq!(
             render(&module, "page.lem", &[("page", Value::Null)]).unwrap(),
             "oak"
@@ -637,7 +713,8 @@ mod tests {
             ),
         ];
         let units = [unit_of("types.lem", &files), unit_of("page.lem", &files)];
-        let module = link(&units, &ExportIndex::of(&units)).expect_output();
+        let module =
+            link(&units, &ExportIndex::of(&units), &untyped_host()).expect_output();
         let mut types: Vec<String> = module
             .types
             .iter()
@@ -670,8 +747,11 @@ mod tests {
         let page = unit_of("page.lem", &files);
         let units = [lib, page];
         let index = ExportIndex::of(&units);
-        let module = link(&units, &index).expect_output();
-        assert_eq!(module, link(&units, &index).expect_output());
+        let module = link(&units, &index, &untyped_host()).expect_output();
+        assert_eq!(
+            module,
+            link(&units, &index, &untyped_host()).expect_output()
+        );
         assert_eq!(
             render(&module, "page.lem", &[("page", Value::Null)]).unwrap(),
             "a42b"
@@ -732,7 +812,11 @@ mod tests {
         assert_eq!(page, edited);
         let types = unit_of("types.lem", &[("types.lem", defaulted)]);
         let units = [types, page];
-        assert!(link(&units, &ExportIndex::of(&units)).output.is_some());
+        assert!(
+            link(&units, &ExportIndex::of(&units), &untyped_host())
+                .output
+                .is_some()
+        );
     }
 
     #[test]
@@ -827,5 +911,81 @@ mod tests {
         let errors = link_errors(&[lib, page]);
         let starts: Vec<u32> = errors.iter().map(|e| e.span.start).collect();
         assert_eq!(starts, [16, 35]);
+    }
+
+    #[test]
+    fn refuses_to_link_a_unit_the_host_rebound_an_ambient_name_under() {
+        // page.lem read `page.url` as a `Page`'s field; a host that now calls `page`
+        // something else checked that read against a declaration this unit never saw.
+        let files = [
+            ("ambient.lem", "<lem-type Page>\n  url: url\n</lem-type>"),
+            ("page.lem", "<lem.page.url>"),
+        ];
+        let host = Host::new().bind("page", Ambient::named("Page"));
+        let unit = unit_against(&host, "page.lem", &files);
+        let ambient = unit_against(&host, "ambient.lem", &files);
+        for (rebound, expect) in [
+            (
+                Host::new().bind("page", Ambient::named("Photo")),
+                "page.lem:5..9: the host binds `page` as a `Photo` now, and this file \
+                 was compiled against `Page`",
+            ),
+            (
+                Host::new(),
+                "page.lem:5..9: the host no longer binds `page`",
+            ),
+        ] {
+            let units = [ambient.clone(), unit.clone()];
+            let linked = link(&units, &ExportIndex::of(&units), &rebound);
+            assert_eq!(
+                linked
+                    .diagnostics
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>(),
+                [expect]
+            );
+            assert!(linked.output.is_none());
+        }
+    }
+
+    #[test]
+    fn links_a_document_against_the_host_as_that_document_saw_it() {
+        // The document value is typed by the file's own record, so the binding the host
+        // declares for it is not what this unit was compiled against — and comparing
+        // the two would call every document stale.
+        let files = [
+            ("ambient.lem", "<lem-type Page>\n  url: url\n</lem-type>"),
+            (
+                "schema.lem",
+                "<lem-type Post extends Page>\n  title: string\n  \
+                 layout: (Post, html): html\n</lem-type>",
+            ),
+            ("post.md", "<lem.page.title>"),
+        ];
+        let host = Host::new()
+            .bind("page", Ambient::named("Page"))
+            .documents("page")
+            .rendered_through("layout");
+        let prepared: Vec<_> = files
+            .iter()
+            .map(|(path, text)| {
+                let mut file = SourceFile::new(*path, *text);
+                if *path == "post.md" {
+                    file.record = Some("Post".to_owned());
+                }
+                prepare(&file, &host).unwrap()
+            })
+            .collect();
+        let mut index = ExportIndex::new();
+        for p in &prepared {
+            index.offer(p.path(), p.exports());
+            index.offer_types(p.path(), p.types());
+        }
+        let units: Vec<Unit> = prepared
+            .iter()
+            .map(|p| compile_unit(p, &index, &host).expect_output())
+            .collect();
+        assert!(link(&units, &index, &host).output.is_some());
     }
 }

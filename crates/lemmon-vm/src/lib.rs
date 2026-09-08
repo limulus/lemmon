@@ -11,6 +11,7 @@ mod compile;
 mod decls;
 mod document;
 mod exports;
+mod host;
 mod types;
 mod unit;
 mod value;
@@ -29,10 +30,20 @@ pub use compile::{
 };
 pub use decls::{Declaration, Decls, FieldDecl, Kind, Shape, ShapeFact, TypeFact};
 pub use exports::{Export, ExportIndex, TypeExport};
+pub use host::{Ambient, Host};
 pub use types::Type;
 pub use unit::{ExportedSignature, ImportRef, ImportedSignature, Param, Unit, link};
 pub use value::{Closure, Map, Value};
 pub use vm::render;
+
+/// Whether the file at `path` holds a document rather than a template: `.md` is a
+/// document, anything else a template. The rule a site runs on, read from the path
+/// alone — by the compiler deciding how to parse a file, and by a host deciding what an
+/// ambient value is where nothing typed it.
+#[must_use]
+pub fn is_document(path: &str) -> bool {
+    path.ends_with(".md")
+}
 
 /// One source file handed to [`compile`].
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -41,15 +52,27 @@ pub struct SourceFile {
     pub path: String,
     /// Its contents.
     pub text: String,
+    /// The record this file's content is: the element type of the collection whose glob
+    /// matched it, or the type its own `type:` key named — the host's to decide (D30).
+    /// A document without one is unknown-typed and renders.
+    pub record: Option<String>,
 }
 
 impl SourceFile {
-    /// Creates a source file.
+    /// Creates a source file the host said nothing about.
     pub fn new(path: impl Into<String>, text: impl Into<String>) -> Self {
         Self {
             path: path.into(),
             text: text.into(),
+            record: None,
         }
+    }
+
+    /// The same file, compiled as the record `name`.
+    #[must_use]
+    pub fn with_record(mut self, name: impl Into<String>) -> Self {
+        self.record = Some(name.into());
+        self
     }
 }
 

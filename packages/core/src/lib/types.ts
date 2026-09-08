@@ -8,6 +8,40 @@ export interface SourceFileInput {
   path: string
   /** Its contents. */
   text: string
+  /**
+   * The record this file's content is: the element type of the collection whose glob
+   * matched it, or the type its own `type:` key named (D30). It types the host's
+   * document value inside this file, and is one of the unit's compile-time facts. A
+   * document without one is unknown-typed and renders.
+   */
+  record?: string
+}
+
+/**
+ * What one ambient name is bound to: a type the program declares, or the record of the
+ * top-level bindings of one of its files. `null` names the value without typing it,
+ * which gives it the checker's unknown type.
+ */
+export type AmbientBinding = string | { bindingsOf: string } | null
+
+/**
+ * The environment a host declares (D30): the core knows no type or value by name, so
+ * every ambient value a program may read is named here, and the types themselves are
+ * ordinary declarations in files the host compiles with the program.
+ */
+export interface HostDecl {
+  /** Every ambient value, by the name templates read it as. */
+  ambient: Record<string, AmbientBinding>
+  /**
+   * Which ambient value a file's {@link SourceFileInput.record} retypes — `page` in the
+   * standard shell. A host that renders no documents names none.
+   */
+  document?: string
+  /**
+   * The field a page is rendered through — `layout` in the standard shell — required on
+   * every record that extends the document value's type.
+   */
+  entry?: string
 }
 
 /**

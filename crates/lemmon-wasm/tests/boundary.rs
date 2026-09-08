@@ -11,6 +11,11 @@
 use lemmon_wasm::{Core, version};
 use wasm_bindgen_test::wasm_bindgen_test;
 
+/// The host most of these compile against: the three names the standard shell binds,
+/// none of them typed. A program compiled with no declaration at all has no ambient
+/// values, so every test that reads one says so here (D30).
+const UNTYPED: &str = r#"{"ambient": {"site": null, "page": null, "build": null}}"#;
+
 #[wasm_bindgen_test]
 fn reports_a_version_through_the_abi() {
     assert!(!version().is_empty());
@@ -20,7 +25,10 @@ fn reports_a_version_through_the_abi() {
 fn compiles_loads_and_renders_through_the_abi() {
     let mut core = Core::new();
     let diagnostics = core
-        .compile(r#"[{"path": "page.lem", "text": "hi <lem.site.name>"}]"#)
+        .compile(
+            r#"[{"path": "page.lem", "text": "hi <lem.site.name>"}]"#,
+            Some(UNTYPED.to_owned()),
+        )
         .expect("a well-formed compile payload");
     assert_eq!(diagnostics, "[]");
     core.load_data(r#"{"ambient": {"site": {"name": "limulus.net"}}}"#)
@@ -29,6 +37,28 @@ fn compiles_loads_and_renders_through_the_abi() {
         .render(r#"{"path": "page.lem"}"#)
         .expect("a compiled page renders");
     assert!(result.contains("hi limulus.net"), "{result}");
+}
+
+/// The declaration crosses as its own JSON string, and what it says reaches the
+/// checker: `page` is an `Article` here, so a field the schema does not declare is a
+/// compile error rather than something the VM finds at render (D30).
+#[wasm_bindgen_test]
+fn compiles_against_a_typed_host_through_the_abi() {
+    let mut core = Core::new();
+    let files = serde_json::json!([
+        {"path": "ambient.lem", "text": "<lem-type Page>\n  url: url\n</lem-type>"},
+        {
+            "path": "schema.lem",
+            "text": "<lem-type Article extends Page>\n  title: string\n                       layout: (Article, html): html\n</lem-type>",
+        },
+        {"path": "post.md", "text": "<lem.page.nope>", "record": "Article"},
+    ])
+    .to_string();
+    let host = r#"{"ambient": {"page": "Page"}, "document": "page", "entry": "layout"}"#;
+    let diagnostics = core
+        .compile(&files, Some(host.to_owned()))
+        .expect("a well-formed compile payload");
+    assert!(diagnostics.contains("has no field `nope`"), "{diagnostics}");
 }
 
 #[wasm_bindgen_test]
@@ -46,7 +76,9 @@ fn reaches_the_depth_cap_through_nested_invokes_without_trapping() {
     let mut core = Core::new();
     let text = "<lem-fn dive(n: int): int = [n].map(dive).first() ?? 0 /><lem.dive(0)>";
     let files = serde_json::json!([{"path": "deep.lem", "text": text}]).to_string();
-    let diagnostics = core.compile(&files).expect("a well-formed compile payload");
+    let diagnostics = core
+        .compile(&files, Some(UNTYPED.to_owned()))
+        .expect("a well-formed compile payload");
     assert_eq!(diagnostics, "[]");
     let result = core
         .render(r#"{"path": "deep.lem"}"#)

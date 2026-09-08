@@ -1,0 +1,10 @@
+<lem-type Page>
+  url: url
+  inputPath: string
+  draft: bool = false
+</lem-type>
+
+<lem-type Build>
+  time: datetime
+  generator: string
+</lem-type>

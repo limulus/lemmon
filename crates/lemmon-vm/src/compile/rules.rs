@@ -195,7 +195,7 @@ fn field(ty: &Type, name: &str, decls: &dyn Decls) -> Rule {
         Type::Named(record) => match decls.kind(record) {
             Some(Kind::Record) => decls
                 .field(record, name)
-                .ok_or_else(|| format!("a `{ty}` has no field `{name}`")),
+                .ok_or_else(|| format!("`{ty}` has no field `{name}`")),
             Some(Kind::Enum) => Err(format!("a `{ty}` is an enum and has no fields")),
             None => unreachable!("an undeclared name is read as `any` before any rule"),
         },
@@ -1042,7 +1042,7 @@ mod tests {
         );
         assert_eq!(
             member(&named("Article"), "nope", false, &table),
-            Err("a `Article` has no field `nope`".to_owned())
+            Err("`Article` has no field `nope`".to_owned())
         );
         assert_eq!(
             member(&named("Placement"), "hero", false, &table),

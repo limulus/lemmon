@@ -1,0 +1,11 @@
+<lem-type Note extends Page>
+  title: string
+  layout: (Note, html): html
+</lem-type>
+
+<lem-type Aside extends Note>
+  pull: string
+</lem-type>
+
+A schema declares how a page renders where its own type is; everything below it
+inherits that field and declares nothing.

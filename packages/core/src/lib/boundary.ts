@@ -17,7 +17,7 @@ export interface WasmBoundary {
  * (few large calls), and a throw is a caller bug, never a template problem.
  */
 export interface BoundaryCore {
-  compile(files: string): string
+  compile(files: string, host?: string): string
   loadData(input: string): string
   render(page: string): string
   /** Releases the instance's memory on the wasm side. */

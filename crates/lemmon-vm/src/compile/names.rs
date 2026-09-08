@@ -22,12 +22,8 @@ use lemmon_syntax::Span;
 use super::Diagnostic;
 use crate::builtins;
 use crate::exports::ExportIndex;
+use crate::host::Host;
 use crate::types::Type;
-
-/// The ambient record names every template may read. Bound at render time and never
-/// redefinable — a binding or definition that takes one of these names is an error, not
-/// a shadow (D23). They are the standard shell's until the host declares them (∆Iau).
-const AMBIENT: &[&str] = &["site", "page", "build"];
 
 /// What a local binding is, which decides whether the stdlib-shadowing rule and the
 /// unused rule apply.
@@ -35,6 +31,10 @@ const AMBIENT: &[&str] = &["site", "page", "build"];
 pub(crate) enum BindingKind {
     /// A `lem-let`.
     Definition,
+    /// A `lem-let` at the top level of the file an ambient value reads its bindings
+    /// from: a field of that record (D30), so it is read wherever the project reads
+    /// that value and never unused here.
+    Exported,
     /// A `lem-fn`'s or lambda's parameter.
     Parameter,
     /// A `lem-for`'s value, key, or index — an unused index or key is the common case,
@@ -57,7 +57,9 @@ pub(crate) enum Resolved {
     /// answers which, by the same name that resolved here.
     Function,
     Builtin(u32),
-    Ambient,
+    /// A value the host binds at render, with the type the host gave it — `any` where
+    /// the host named it without typing it (D30).
+    Ambient(Type),
 }
 
 /// A local bound to a slot of its frame, with its name's own bytes — where a repeat's
@@ -211,6 +213,9 @@ pub(crate) struct Names<'a> {
     /// Every file's signatures; `None` while this file's exports are being collected,
     /// before the index exists.
     index: Option<&'a ExportIndex>,
+    /// The names the host binds at render, and their types. Never redefinable — a
+    /// binding or definition that takes one of them is an error, not a shadow (D23).
+    host: &'a Host,
     /// This file's top-level `lem-fn`s, in order — the list a repeated one is checked
     /// against. Never consulted by lookup: the index covers them once it exists.
     file: Vec<Export>,
@@ -220,10 +225,15 @@ pub(crate) struct Names<'a> {
 }
 
 impl<'a> Names<'a> {
-    pub(crate) fn new(path: &'a str, index: Option<&'a ExportIndex>) -> Self {
+    pub(crate) fn new(
+        path: &'a str,
+        index: Option<&'a ExportIndex>,
+        host: &'a Host,
+    ) -> Self {
         Self {
             path,
             index,
+            host,
             file: Vec::new(),
             frames: Vec::new(),
             diagnostics: Vec::new(),
@@ -268,7 +278,9 @@ impl<'a> Names<'a> {
     /// exempt, and a refused binding was never recorded.
     fn warn_unused(&mut self, scope: &Scope) {
         for binding in &scope.0 {
-            if binding.used || binding.kind == BindingKind::Loop {
+            if binding.used
+                || matches!(binding.kind, BindingKind::Loop | BindingKind::Exported)
+            {
                 continue;
             }
             self.diagnostics.push(Diagnostic::warning(
@@ -345,7 +357,9 @@ impl<'a> Names<'a> {
             self.diagnostics.push(refusal);
             return slot;
         }
-        if kind == BindingKind::Definition && self.local_shadows_builtin(name) {
+        if matches!(kind, BindingKind::Definition | BindingKind::Exported)
+            && self.local_shadows_builtin(name)
+        {
             self.diagnostics.push(self.shadow_warning(name, span));
         }
         self.frame()
@@ -372,11 +386,11 @@ impl<'a> Names<'a> {
         span: Span,
         repeat: Option<Diagnostic>,
     ) -> Option<Diagnostic> {
-        if AMBIENT.contains(&name) {
+        if self.host.binding(name).is_some() {
             return Some(Diagnostic::error(
                 self.path,
                 span,
-                format!("`{name}` is provided by the shell and cannot be redefined"),
+                format!("`{name}` is bound by the host and cannot be redefined"),
             ));
         }
         repeat
@@ -460,7 +474,9 @@ impl<'a> Names<'a> {
         if let Some(id) = builtins::lookup(name) {
             return Some(Resolved::Builtin(id));
         }
-        AMBIENT.contains(&name).then_some(Resolved::Ambient)
+        self.host
+            .binding(name)
+            .map(|ambient| Resolved::Ambient(ambient.ty()))
     }
 }
 
@@ -512,9 +528,15 @@ mod tests {
         Span::new(start, start + 1)
     }
 
-    /// Names for `t.lem` with one frame open, resolving against `index`.
-    fn in_frame(index: Option<&ExportIndex>) -> Names<'_> {
-        let mut names = Names::new("t.lem", index);
+    /// A host shaped like the standard shell's, with nothing typed — the three names
+    /// every test below expects to be reserved.
+    fn untyped_host() -> Host {
+        Host::untyped(["site", "page", "build"])
+    }
+
+    /// Names for `t.lem` with one frame open, resolving against `index` and `host`.
+    fn in_frame<'a>(host: &'a Host, index: Option<&'a ExportIndex>) -> Names<'a> {
+        let mut names = Names::new("t.lem", index, host);
         names.push_frame();
         names
     }
@@ -553,7 +575,8 @@ mod tests {
 
     #[test]
     fn binds_parameters_to_consecutive_slots_in_declaration_order() {
-        let mut names = in_frame(None);
+        let host = untyped_host();
+        let mut names = in_frame(&host, None);
         assert_eq!(bind(&mut names, "a", at(0), BindingKind::Parameter), 0);
         assert_eq!(bind(&mut names, "b", at(2), BindingKind::Parameter), 1);
         assert_eq!(bind(&mut names, "c", at(4), BindingKind::Parameter), 2);
@@ -564,14 +587,16 @@ mod tests {
     fn keeps_a_refused_parameters_slot_so_later_parameters_stay_aligned() {
         // The VM lays a call's arguments out at consecutive slots, so the parameter after
         // a refused one must still be the second slot.
-        let mut names = in_frame(None);
+        let host = untyped_host();
+        let mut names = in_frame(&host, None);
         assert_eq!(bind(&mut names, "page", at(0), BindingKind::Parameter), 0);
         assert_eq!(bind(&mut names, "x", at(6), BindingKind::Parameter), 1);
     }
 
     #[test]
     fn binds_a_loop_pair_to_two_distinct_slots() {
-        let mut names = in_frame(None);
+        let host = untyped_host();
+        let mut names = in_frame(&host, None);
         names.push_scope();
         let key = names.bind_local("k", at(0), BindingKind::Loop, Type::String);
         let value = names.bind_local("v", at(3), BindingKind::Loop, Type::Int);
@@ -596,7 +621,8 @@ mod tests {
 
     #[test]
     fn binds_a_definition_in_the_innermost_scope_only_until_it_closes() {
-        let mut names = in_frame(None);
+        let host = untyped_host();
+        let mut names = in_frame(&host, None);
         names.push_scope();
         let slot = bind(&mut names, "x", at(0), BindingKind::Definition);
         assert_eq!(slot_of(names.resolve("x")), Some(slot));
@@ -606,7 +632,8 @@ mod tests {
 
     #[test]
     fn admits_a_function_once_per_file() {
-        let mut names = Names::new("t.lem", None);
+        let host = untyped_host();
+        let mut names = Names::new("t.lem", None, &host);
         assert!(names.bind_function("f", at(0)));
         assert!(names.bind_function("g", at(2)));
         assert!(!names.bind_function("f", at(4)));
@@ -616,9 +643,10 @@ mod tests {
 
     #[test]
     fn does_not_let_a_reference_reach_a_refused_binding() {
-        let mut names = in_frame(None);
+        let host = untyped_host();
+        let mut names = in_frame(&host, None);
         names.bind_local("page", at(0), BindingKind::Definition, Type::Int);
-        assert_eq!(names.resolve("page"), Some(Resolved::Ambient));
+        assert_eq!(names.resolve("page"), Some(Resolved::Ambient(Type::Any)));
         let first = bind(&mut names, "a", at(6), BindingKind::Definition);
         names.bind_local("a", at(8), BindingKind::Definition, Type::Int);
         assert_eq!(slot_of(names.resolve("a")), Some(first));
@@ -627,16 +655,17 @@ mod tests {
     #[test]
     fn refuses_an_ambient_name_whatever_the_kind() {
         let expected = [
-            "t.lem:0..1: `site` is provided by the shell and cannot be redefined",
-            "t.lem:1..2: `page` is provided by the shell and cannot be redefined",
-            "t.lem:2..3: `build` is provided by the shell and cannot be redefined",
+            "t.lem:0..1: `site` is bound by the host and cannot be redefined",
+            "t.lem:1..2: `page` is bound by the host and cannot be redefined",
+            "t.lem:2..3: `build` is bound by the host and cannot be redefined",
         ];
         for kind in [
             BindingKind::Definition,
             BindingKind::Parameter,
             BindingKind::Loop,
         ] {
-            let mut names = in_frame(None);
+            let host = untyped_host();
+            let mut names = in_frame(&host, None);
             for (i, name) in ["site", "page", "build"].iter().enumerate() {
                 names.bind_local(name, at(index_u32(i)), kind, Type::Any);
             }
@@ -648,7 +677,8 @@ mod tests {
                     .all(|d| d.severity == Severity::Error)
             );
         }
-        let mut names = Names::new("t.lem", None);
+        let host = untyped_host();
+        let mut names = Names::new("t.lem", None, &host);
         for (i, name) in ["site", "page", "build"].iter().enumerate() {
             assert!(
                 !names.bind_function(name, at(index_u32(i))),
@@ -660,7 +690,8 @@ mod tests {
 
     #[test]
     fn refuses_a_name_bound_twice_in_one_scope() {
-        let mut names = in_frame(None);
+        let host = untyped_host();
+        let mut names = in_frame(&host, None);
         assert_eq!(bind(&mut names, "a", at(0), BindingKind::Parameter), 0);
         assert_eq!(bind(&mut names, "a", at(3), BindingKind::Parameter), 1);
         assert_eq!(
@@ -671,7 +702,8 @@ mod tests {
 
     #[test]
     fn allows_a_name_rebound_in_an_inner_scope() {
-        let mut names = in_frame(None);
+        let host = untyped_host();
+        let mut names = in_frame(&host, None);
         let outer = bind(&mut names, "x", at(0), BindingKind::Definition);
         names.push_scope();
         let inner = bind(&mut names, "x", at(4), BindingKind::Definition);
@@ -688,7 +720,8 @@ mod tests {
 
     #[test]
     fn allows_a_parameter_rebound_by_a_definition_in_the_body_scope() {
-        let mut names = in_frame(None);
+        let host = untyped_host();
+        let mut names = in_frame(&host, None);
         bind(&mut names, "a", at(0), BindingKind::Parameter);
         names.push_scope();
         assert_eq!(bind(&mut names, "a", at(4), BindingKind::Definition), 1);
@@ -701,7 +734,8 @@ mod tests {
 
     #[test]
     fn refuses_a_function_defined_twice_citing_the_first() {
-        let mut names = Names::new("t.lem", None);
+        let host = untyped_host();
+        let mut names = Names::new("t.lem", None, &host);
         names.bind_function("f", at(1));
         assert!(!names.bind_function("f", at(5)));
         assert_eq!(
@@ -714,7 +748,8 @@ mod tests {
     fn reports_only_the_first_rule_a_binding_breaks() {
         // An ambient name bound twice is two ambient errors, never also a repeat; a
         // stdlib name bound twice warns once and then errors, never warns again.
-        let mut names = in_frame(None);
+        let host = untyped_host();
+        let mut names = in_frame(&host, None);
         bind(&mut names, "page", at(0), BindingKind::Parameter);
         bind(&mut names, "page", at(2), BindingKind::Parameter);
         bind(&mut names, "raw", at(4), BindingKind::Definition);
@@ -722,8 +757,8 @@ mod tests {
         assert_eq!(
             shown(&names.diagnostics),
             [
-                "t.lem:0..1: `page` is provided by the shell and cannot be redefined",
-                "t.lem:2..3: `page` is provided by the shell and cannot be redefined",
+                "t.lem:0..1: `page` is bound by the host and cannot be redefined",
+                "t.lem:2..3: `page` is bound by the host and cannot be redefined",
                 "t.lem:4..5: warning: `raw` shadows the stdlib function of the same name",
                 "t.lem:6..7: `raw` is already bound here\n  t.lem:4..5: first bound here",
             ]
@@ -732,7 +767,8 @@ mod tests {
 
     #[test]
     fn warns_when_a_definition_displaces_the_stdlib() {
-        let mut names = in_frame(None);
+        let host = untyped_host();
+        let mut names = in_frame(&host, None);
         assert_eq!(bind(&mut names, "raw", at(0), BindingKind::Definition), 0);
         assert_eq!(shown(&names.diagnostics), [SHADOWS]);
         assert!(
@@ -746,7 +782,8 @@ mod tests {
     #[test]
     fn warns_for_a_function_the_project_kept_that_displaces_the_stdlib() {
         let index = index(&["raw"]);
-        let mut names = Names::new("lib.lem", Some(&index));
+        let host = untyped_host();
+        let mut names = Names::new("lib.lem", Some(&index), &host);
         assert!(names.bind_function("raw", at(0)));
         assert_eq!(
             shown(&names.diagnostics),
@@ -759,7 +796,8 @@ mod tests {
         // The repeat is an error where the index was built; this file's copy displaces
         // nothing.
         let index = index(&["raw"]);
-        let mut names = Names::new("t.lem", Some(&index));
+        let host = untyped_host();
+        let mut names = Names::new("t.lem", Some(&index), &host);
         assert!(names.bind_function("raw", at(0)));
         assert!(
             names.diagnostics.is_empty(),
@@ -770,7 +808,8 @@ mod tests {
 
     #[test]
     fn does_not_warn_for_a_function_before_the_index_exists() {
-        let mut names = Names::new("t.lem", None);
+        let host = untyped_host();
+        let mut names = Names::new("t.lem", None, &host);
         assert!(names.bind_function("raw", at(0)));
         assert!(
             names.diagnostics.is_empty(),
@@ -782,7 +821,8 @@ mod tests {
     #[test]
     fn does_not_warn_when_a_definition_displaces_a_project_function() {
         let index = index(&["raw"]);
-        let mut names = in_frame(Some(&index));
+        let host = untyped_host();
+        let mut names = in_frame(&host, Some(&index));
         assert_eq!(bind(&mut names, "raw", at(0), BindingKind::Definition), 0);
         assert!(
             names.diagnostics.is_empty(),
@@ -793,7 +833,8 @@ mod tests {
 
     #[test]
     fn does_not_warn_when_a_definition_displaces_an_outer_local() {
-        let mut names = in_frame(None);
+        let host = untyped_host();
+        let mut names = in_frame(&host, None);
         bind(&mut names, "raw", at(0), BindingKind::Parameter);
         names.push_scope();
         bind(&mut names, "raw", at(4), BindingKind::Definition);
@@ -804,7 +845,8 @@ mod tests {
         );
 
         // Only the outer definition warns, whatever it displaced itself.
-        let mut names = in_frame(None);
+        let host = untyped_host();
+        let mut names = in_frame(&host, None);
         bind(&mut names, "raw", at(0), BindingKind::Definition);
         names.push_scope();
         bind(&mut names, "raw", at(4), BindingKind::Definition);
@@ -813,7 +855,8 @@ mod tests {
 
     #[test]
     fn does_not_warn_for_a_parameter_or_loop_name_from_the_stdlib() {
-        let mut names = in_frame(None);
+        let host = untyped_host();
+        let mut names = in_frame(&host, None);
         bind(&mut names, "raw", at(0), BindingKind::Parameter);
         names.push_scope();
         bind(&mut names, "raw", at(4), BindingKind::Loop);
@@ -827,7 +870,8 @@ mod tests {
     #[test]
     fn resolves_a_local_before_a_project_function_before_the_stdlib_before_ambient() {
         let index = index(&["raw", "f"]);
-        let mut names = in_frame(Some(&index));
+        let host = untyped_host();
+        let mut names = in_frame(&host, Some(&index));
         names.push_scope();
         let slot = bind(&mut names, "raw", at(0), BindingKind::Definition);
         assert_eq!(slot_of(names.resolve("raw")), Some(slot));
@@ -835,15 +879,17 @@ mod tests {
         assert_eq!(names.resolve("raw"), Some(Resolved::Function));
         assert_eq!(names.resolve("f"), Some(Resolved::Function));
 
-        let mut names = in_frame(None);
+        let host = untyped_host();
+        let mut names = in_frame(&host, None);
         assert_eq!(names.resolve("raw"), Some(Resolved::Builtin(0)));
-        assert_eq!(names.resolve("site"), Some(Resolved::Ambient));
+        assert_eq!(names.resolve("site"), Some(Resolved::Ambient(Type::Any)));
         assert_eq!(names.resolve("zzz"), None);
     }
 
     #[test]
     fn resolves_the_innermost_scope_first() {
-        let mut names = in_frame(None);
+        let host = untyped_host();
+        let mut names = in_frame(&host, None);
         bind(&mut names, "x", at(0), BindingKind::Definition);
         names.push_scope();
         names.push_scope();
@@ -853,7 +899,8 @@ mod tests {
 
     #[test]
     fn records_a_capture_when_a_name_comes_from_an_enclosing_frame() {
-        let mut names = in_frame(None);
+        let host = untyped_host();
+        let mut names = in_frame(&host, None);
         bind(&mut names, "m", at(0), BindingKind::Definition);
         let parent = names.bind_local("n", at(2), BindingKind::Definition, Type::Int);
         names.push_frame();
@@ -874,7 +921,8 @@ mod tests {
 
     #[test]
     fn records_a_capture_in_every_frame_crossed() {
-        let mut names = in_frame(None);
+        let host = untyped_host();
+        let mut names = in_frame(&host, None);
         bind(&mut names, "outer", at(0), BindingKind::Definition);
         names.push_frame();
         bind(&mut names, "a", at(2), BindingKind::Parameter);
@@ -889,7 +937,8 @@ mod tests {
 
     #[test]
     fn reuses_a_capture_already_recorded() {
-        let mut names = in_frame(None);
+        let host = untyped_host();
+        let mut names = in_frame(&host, None);
         bind(&mut names, "n", at(0), BindingKind::Definition);
         names.push_frame();
         assert_eq!(slot_of(names.resolve("n")), Some(0));
@@ -899,7 +948,8 @@ mod tests {
 
     #[test]
     fn peeks_without_recording_a_capture() {
-        let mut names = in_frame(None);
+        let host = untyped_host();
+        let mut names = in_frame(&host, None);
         bind(&mut names, "n", at(0), BindingKind::Definition);
         names.push_frame();
         assert_eq!(slot_of(names.peek("n")), Some(0));
@@ -910,7 +960,8 @@ mod tests {
 
     #[test]
     fn hands_out_a_temp_slot_that_no_name_reaches() {
-        let mut names = in_frame(None);
+        let host = untyped_host();
+        let mut names = in_frame(&host, None);
         bind(&mut names, "n", at(0), BindingKind::Definition);
         let temp = names.temp();
         assert_eq!(temp, 1);
@@ -921,7 +972,8 @@ mod tests {
 
     #[test]
     fn forgets_a_frames_names_when_it_pops() {
-        let mut names = in_frame(None);
+        let host = untyped_host();
+        let mut names = in_frame(&host, None);
         names.push_frame();
         bind(&mut names, "inner", at(0), BindingKind::Parameter);
         names.pop_frame();
@@ -930,21 +982,23 @@ mod tests {
 
     #[test]
     fn hands_its_diagnostics_back_in_the_order_the_rules_raised_them() {
-        let mut names = in_frame(None);
+        let host = untyped_host();
+        let mut names = in_frame(&host, None);
         bind(&mut names, "raw", at(0), BindingKind::Definition);
         bind(&mut names, "page", at(2), BindingKind::Definition);
         assert_eq!(
             shown(&names.into_diagnostics()),
             [
                 SHADOWS,
-                "t.lem:2..3: `page` is provided by the shell and cannot be redefined",
+                "t.lem:2..3: `page` is bound by the host and cannot be redefined",
             ]
         );
     }
 
     #[test]
     fn warns_for_a_definition_or_parameter_nothing_read_when_its_scope_closes() {
-        let mut names = in_frame(None);
+        let host = untyped_host();
+        let mut names = in_frame(&host, None);
         names.bind_local("p", at(0), BindingKind::Parameter, Type::Int);
         names.push_scope();
         names.bind_local("d", at(2), BindingKind::Definition, Type::Int);
@@ -971,7 +1025,8 @@ mod tests {
 
     #[test]
     fn does_not_warn_for_a_loop_binding_a_probe_does_not_count_as_a_read() {
-        let mut names = in_frame(None);
+        let host = untyped_host();
+        let mut names = in_frame(&host, None);
         names.push_scope();
         names.bind_local("i", at(0), BindingKind::Loop, Type::Int);
         names.bind_local("probed", at(2), BindingKind::Definition, Type::Int);
@@ -985,7 +1040,8 @@ mod tests {
 
     #[test]
     fn counts_a_read_through_a_capture_as_a_read_of_the_binding() {
-        let mut names = in_frame(None);
+        let host = untyped_host();
+        let mut names = in_frame(&host, None);
         names.bind_local("n", at(0), BindingKind::Definition, Type::Int);
         names.push_frame();
         names.resolve("n");
@@ -1000,7 +1056,8 @@ mod tests {
 
     #[test]
     fn never_warns_for_a_refused_binding() {
-        let mut names = in_frame(None);
+        let host = untyped_host();
+        let mut names = in_frame(&host, None);
         names.bind_local("page", at(0), BindingKind::Definition, Type::Int);
         names.bind_local("a", at(2), BindingKind::Definition, Type::Int);
         names.bind_local("a", at(4), BindingKind::Definition, Type::Int);

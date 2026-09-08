@@ -1,0 +1,3 @@
+<lem-type Til extends Page>
+  topic: string
+</lem-type>

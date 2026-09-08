@@ -121,7 +121,8 @@ shape.
   a `lem-if` or `lem-match` subject, the left of `==`/`in`/`??`, an unannotated
   `lem-let`, an argument of a builtin or of an `any`, and every element of a literal
   that is not itself expected, the first included.
-  Comparing against an ambient value — `any` until ∆Iau types it — is the common one.
+  Comparing against an ambient value its host named without typing — `any` — is
+  the common one.
   The qualified form covers every such place, and the refusal names it (∆EN6).
 - A `lem-case` pattern takes the dotted form only: the bare slot stays `Type as name`,
   whose binding is optional, and the parser resolves no name that could tell them

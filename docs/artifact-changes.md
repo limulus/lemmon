@@ -86,9 +86,30 @@ moved it. Newest last. An entry is removed when its change has been applied.
   declared field, omitted optionals null, an omitted required field an error whether or
   not it has a default (D35, ∆PCK). The `lem-if`, `lem-match`, and Type tests rows of the
   tag and expression tables say the same in brief.
+- **Ambient types, `site`** — say the top-level bindings of the file an ambient value
+  reads declare their types, `= expr` bindings included, and give the rule its name:
+  every surface one file offers another is read from heads alone, never inferred from a
+  body — a `lem-fn`'s signature, a `lem-type`'s fields, and these. That is what invariant
+  11 rests on, and it is why such a binding never warns as unused. Where the text says a
+  path narrows from a local, add that it may be rooted at an ambient value too, by its
+  name (D36, D35 as revised, ∆Iau).
+- **Ambient types, the entry field** — say the checker asks for `layout` where a record's
+  base *is* the type the host declared its document value to be, since a field may be
+  redeclared only with the same type (D32): the entry is declared once, where its self
+  type is, and inherited below. Its own base may stand in for `T` — `(Page, html): html`
+  on a schema extending `Page` is a layout a family of schemas shares (D36, ∆Iau).
 
 ## Shell & Core
 
+- **WASM API, `compile`** — give the declaration its shape:
+  `{ambient: {[name]: TypeName | {bindingsOf: path} | null}, document?, entry?}`, where
+  `null` names a value without typing it (the Phase 0 spike's host), `document` says
+  which ambient value a file's `record` retypes, and `entry` names the field a page
+  renders through. Say it is resident like the units — a call that changes nothing about
+  the environment omits it — and that what each unit was compiled against is one of its
+  facts, so a host that rebinds a name leaves those units stale and named for recompiling
+  (D25). A core given no declaration has no ambient values at all, and `page` in a
+  template is an undefined name. Files carry `record` (D30, D36, ∆Iau).
 - **WASM API, `Diagnostic`** — the boundary diagnostic is `{path, span, severity, message,
   labels}`: `severity` is `error` or `warning`, a program is still produced when the only
   diagnostics are warnings, and `labels` are path-qualified secondary spans. Wherever the
@@ -115,6 +136,15 @@ moved it. Newest last. An entry is removed when its change has been applied.
   byte-identical. Records are checked by declaration, and a record value is tagged with
   its declared name (D35, ∆PCK — the VM entry below); an enum value is a string (D32,
   ∆cea). The boundary is unchanged.
+- **WASM API, `compile`** — give the declaration its shape:
+  `{ambient: {[name]: TypeName | {bindingsOf: path} | null}, document?, entry?}`, where
+  `null` names a value without typing it (the Phase 0 spike's host), `document` says
+  which ambient value a file's `record` retypes, and `entry` names the field a page
+  renders through. Say it is resident like the units — a call that changes nothing about
+  the environment omits it — and that what each unit was compiled against is one of its
+  facts, so a host that rebinds a name leaves those units stale and named for recompiling
+  (D25). A core given no declaration has no ambient values at all, and `page` in a
+  template is an undefined name. Files carry `record` (D30, D36, ∆Iau).
 - **WASM API, `Diagnostic`** — where the text gives a diagnostic's span as `{start, end}`,
   say it is `{start, end, range}`: byte offsets *and* the same two points as LSP
   `Position`s, zero-based with `character` in UTF-16 code units. The core computes them
@@ -137,8 +167,8 @@ moved it. Newest last. An entry is removed when its change has been applied.
   carries that table (`types`), built at link from the index. Where the text describes
   the `any` receiver of `x.f(…)`, say a record reads its field and everything else takes
   its runtime type's method — the agreement with the checker. Loaded data stays untagged
-  `any` until the loader (∆iCW) and the ambient types (∆Iau) tag at the boundary (D35,
-  ∆PCK).
+  `any` until the loader tags it at the boundary (∆iCW) — ambient values included, since
+  which record a page carries is the record store's to know (D35 as revised, D36, ∆Iau).
 
 ## From Eleventy to Lemmon
 

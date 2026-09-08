@@ -29,21 +29,40 @@ use crate::bytecode::Op;
 use crate::decls::Kind;
 use crate::types::{Type, join};
 
-/// What a narrowing is keyed on: a local binding, by the span of its name token — one
-/// binding, one span, so an inner shadow is a different path — and the fields read off
-/// it in order, none for the binding itself. Only a plain `.` extends a path: `?.`
-/// yields an optional by construction, and nothing else reads a stable place.
+/// What a narrowing is keyed on: a root and the fields read off it in order, none for
+/// the root itself. Only a plain `.` extends a path: `?.` yields an optional by
+/// construction, and nothing else reads a stable place.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct Path {
-    binder: Span,
+    root: Root,
     fields: Vec<Rc<str>>,
+}
+
+/// Where a path starts. Both are immutable for the whole render, which is what lets a
+/// narrowing hold for the arm it guards (D35).
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum Root {
+    /// A local binding, by the span of its name token: one binding, one span, so an
+    /// inner shadow is a different path.
+    Local(Span),
+    /// A value the host binds, by its name — which no binding may take (D23), so it
+    /// needs no span to tell one from another.
+    Ambient(Rc<str>),
 }
 
 impl Path {
     /// The path of the binding itself.
     pub(super) const fn local(binder: Span) -> Self {
         Self {
-            binder,
+            root: Root::Local(binder),
+            fields: Vec::new(),
+        }
+    }
+
+    /// The path of the ambient value itself.
+    fn ambient(name: &str) -> Self {
+        Self {
+            root: Root::Ambient(Rc::from(name)),
             fields: Vec::new(),
         }
     }
@@ -211,8 +230,8 @@ impl Compiler<'_> {
     }
 
     /// Lowers a reference to `token` and returns what it has: a local's type — narrowed,
-    /// where a `lem-if` on it is open — a function's signature, `any` for an ambient
-    /// value.
+    /// where a `lem-if` on it is open — a function's signature, or what the host gave an
+    /// ambient value.
     pub(super) fn name(&mut self, token: &SyntaxToken) -> Type {
         let span = token.span();
         match self.resolve(token.text()) {
@@ -236,10 +255,11 @@ impl Compiler<'_> {
                 );
                 Type::Any
             }
-            Some(Resolved::Ambient) => {
+            Some(Resolved::Ambient(ty)) => {
                 let name = self.intern(token.text());
                 self.emit(Op::Ambient { name }, span);
-                Type::Any
+                let ty = self.ambient_type(token.text(), ty, span);
+                self.narrowed(&Path::ambient(token.text())).unwrap_or(ty)
             }
             None => {
                 self.error(span, self.undefined(token.text()));
@@ -341,10 +361,18 @@ impl Compiler<'_> {
     /// not, an optional read through. Peeked, never resolved: asking is not reading.
     pub(super) fn path_of(&self, expr: &Expr) -> Option<(Path, Type)> {
         match unparen(expr.clone()) {
-            Expr::Name(name) => match self.names.peek(required(name.name()).text()) {
-                Some(Resolved::Local { binder, ty, .. }) => Some((Path::local(binder), ty)),
-                _ => None,
-            },
+            Expr::Name(name) => {
+                let name = required(name.name());
+                match self.names.peek(name.text()) {
+                    Some(Resolved::Local { binder, ty, .. }) => {
+                        Some((Path::local(binder), ty))
+                    }
+                    Some(Resolved::Ambient(ty)) => {
+                        Some((Path::ambient(name.text()), self.known(ty)))
+                    }
+                    _ => None,
+                }
+            }
             Expr::Member(member) if !member.is_optional() => {
                 let (mut path, declared) = self.path_of(&required(member.object()))?;
                 let object = self.narrowed(&path).unwrap_or(declared);
@@ -766,7 +794,7 @@ impl Compiler<'_> {
                 }
                 self.call_builtin(id, None, &positional, span)
             }
-            Some(Resolved::Local { .. } | Resolved::Ambient) => {
+            Some(Resolved::Local { .. } | Resolved::Ambient(_)) => {
                 let name = name.expect("a resolved name");
                 if self.reject_named(&named, &name) {
                     self.discard(&positional, &named);

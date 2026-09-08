@@ -26,16 +26,12 @@ absorbs the item and the item is removed.
 Seed items for the next phase (architecture doc 3, phase 1); expect these to be split
 further at claim time.
 
-- ∆Iau Host-declared ambient types — `compile(files, host)` taking the host's `ambient.lem`
-  and a per-document `record` (D30, docs/architecture.md §WASM API): `page`/`build` typed
-  from the declaration, `site` from `site.lem`'s top-level bindings, the record as a
-  compile-time fact, the entry field checked on page schemas. Until then every ambient
-  value is `any`; needs: ∆cea
-- ∆iCW Schemas at load — `site.lem`'s `from` bindings and each document's record (its
-  collection's element type, narrowed by `type:`) type the content model; `loadData`
-  validates records (the host's envelope too) at their YAML positions, runs computed
-  defaults in dependency order, resolves `by` references and strings by expected type, and
-  rejects extra keys, so limulus.net's build throws become load errors; needs: ∆Iau
+- ∆iCW Schemas at load — the content model is typed (∆Iau); `loadData` now fulfils it:
+  validating records (the host's envelope and ambient values too) at their YAML positions,
+  tagging each with its declared type so `is` and `lem-match` reach loaded data (D35),
+  running computed defaults in dependency order, resolving `by` references and strings by
+  expected type, and rejecting extra keys, so limulus.net's build throws become load
+  errors
 - ∆Q6L Stdlib — strings/lists/maps, `datetime("…")` (compile-time checked on a literal
   argument; there is no datetime literal) + rfc3339/rfc822 formatting, `slugify`,
   `readingTime`, `url()`, `asset()`, `raw()`, `uniqueId()`, with typed signatures the
@@ -52,7 +48,7 @@ further at claim time.
   collection and dedup, `lem-page` generators (prev/next), `plan()` filling each page's
   entry from the host-named field (D30), serializable modules, render-reported deps, and
   compile-reported facts (signatures, reference ids, manifest entries, a document's record)
-  keying the unit cache so a content edit never recompiles its layouts (D25); needs: ∆Iau
+  keying the unit cache so a content edit never recompiles its layouts (D25)
 - ∆5MM tree-sitter-lemmon + LSP skeleton — embedded-template grammar with HTML/markdown
   injections, corpus agreement test wired into CI, `@limulus/lemmon-lsp` serving diagnostics
   and schema completions from `core.analyze()`; editor tooling is a day-one commitment

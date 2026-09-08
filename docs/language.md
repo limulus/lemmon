@@ -126,7 +126,7 @@ follows:
 | `lem.` | expression | Print/call. Strings HTML-escaped; `html` verbatim; other types formatted by type (datetime → ISO, asset → hashed URL…). Formatter parenthesizes non-path heads: `<lem.(a ?? b)>`. |
 | `lem-if` / `lem-else-if` / `lem-else` | `bool` or optional | No truthiness: condition must be `bool`, or an optional (non-null test — narrows a `T?` path such as `article.hero` to `T` in the branch, as `x is T` narrows `x` to `T`; § Checking, Narrowing). Separators are void. |
 | `lem-for` | `x in list` · `x, i in list` · `k, v in map` | Iteration; `<lem-else />` inside gives the empty case. Bodies cannot mutate → parallelizable later. |
-| `lem-let` | `name = expr` / `name: T = expr` / `name: T from source` → void · bare `name` → block | Immutable binding, scoped to the enclosing block. Block form binds the rendered body as `html` (the capture form; in documents the body is a document). The `from` form binds what the host loads from a glob, a data file, `plugin("…")`, or `env("…")`; it is allowed only at the top level of `site.lem` (D30). Unused bindings warn. |
+| `lem-let` | `name = expr` / `name: T = expr` / `name: T from source` → void · bare `name` → block | Immutable binding, scoped to the enclosing block. Block form binds the rendered body as `html` (the capture form; in documents the body is a document). The `from` form binds what the host loads from a glob, a data file, `plugin("…")`, or `env("…")`; it is allowed only at the top level of `site.lem` (D30). Unused bindings warn — except at the top level of the file an ambient value reads, where every binding is a field of that value's record and declares its type (§ Ambient types). |
 | `lem-match` / `lem-case` / `lem-default` | subject; patterns | Patterns: a record type (`Til`, or `Til as t` to bind it), a literal, an enum variant (dotted, `.hero`), `null`. Cases are blocks, tried in order, the optional `lem-default` last. A type case narrows the subject in its body and binds `t` to it. Exhaustive over enums (every variant, and `null` for a `T?`), else `lem-default` required — a record is matched by its subtypes, and that set is open (D35; the exact rules are a deferred question). |
 | `lem-fn` | signature | **Definition only** (calls go through `lem.`). Block body returns `html`, closes `</lem-fn>`; a `: html` on it is allowed and nothing else is. Expression body `(…): T = expr` is void and returns the declared `T` — the annotation is required, since a signature is read from the head alone (invariant 11). |
 | `lem-type` | `Name` / `Name extends Base` | Record schema (block); fields in the body, one per line, lexed in fields mode (D29). See § Schemas. |
@@ -180,7 +180,7 @@ both: the enum question is deferred).
 
 `any` is the spelled unknown: assignable to and from everything, and every operation on
 it is `any` again, checked at render time by the VM with a span. It is what an ambient
-value has until its host types it (∆Iau), and what an author writes to opt a value out
+value the host named without typing has, and what an author writes to opt a value out
 of checking. Nothing else is implicit: an `int` is not a `float` (provisional; the number
 model is deferred), and a `T` is not a `T?` until the checker sees that it is.
 
@@ -276,7 +276,8 @@ D19's flag — a draft is skipped and left out of collections unless `--drafts`.
   plugin's data hook, `env("…")` an environment value the shell passes as data, the
   only way one reaches a program (invariant 1) — and the shell resolves the string the
   environment holds by the binding's type, as it resolves any string in data. `= expr`
-  bindings are computed at load, in dependency order.
+  bindings are computed at load, in dependency order, and declare their type as a
+  `from` binding does — see **Declared, not inferred** below.
 
 ```
 <lem-let posts:    [Article]        from "feed/*/index.md" />
@@ -290,14 +291,22 @@ D19's flag — a draft is skipped and left out of collections unless `--drafts`.
   fields, flat: `page.title` beside `page.url`. A `from` glob's element type must extend
   `Page`. A document's type is the element type of the collection whose glob matched it;
   a front-matter `type:` key may name a subtype instead, and the checker reports at that
-  key if the named type does not extend the element type. A document no glob matches has
-  no schema: `page` is unknown-typed, and it renders.
+  key if the named type does not extend the element type. The host names that type per
+  file, and the file's unit depends on it as a compile-time fact (D25); the core checks
+  what it can see — that the name is a declared record, and that it extends the type the
+  document value has — and reports at the front matter, which is where the key that may
+  have named it stands. A document no glob matches has no schema: `page` is
+  unknown-typed, and it renders.
 - **`layout`** is a field every page schema declares, `(T, html): html` for its own `T`,
   usually with a default. At load its string value resolves to a project function of that
   type, as any string does where a function type is expected; the shell renders a page by
   calling that function with the page and its rendered body. That is why `body` is the
   layout's parameter and not a `Page` field: nothing has produced it before render. There
-  is no `Layout` type and no `layout` builtin.
+  is no `Layout` type and no `layout` builtin. The checker asks for it where a record's
+  base *is* the document value's type: a field may be redeclared only with the same type
+  (D32), so the entry is declared once, where its self type is, and everything below
+  inherits it. Its own type may stand in for `T` — `(Page, html): html` on a schema that
+  extends `Page` is a layout the whole family can share.
 - **`url`** is the one `Page` field a source may provide — `<lem-page url = "/feed.xml" />`,
   or `url:` in front matter; the shell derives it otherwise. There is no `permalink`.
 - A string in data resolves **by its expected type** — record → its `by` index, enum → a
@@ -309,8 +318,19 @@ document has a type, and `layout`, a field it requires on every page schema. Eve
 else it knows about a page is a field declared with a span, in `ambient.lem` or
 `site.lem`.
 
-_Not yet (∆Iau, ∆iCW): the boundary takes neither a host declaration nor a document's
-record, and a `from` binding compiles to a diagnostic until the loader exists._
+**Declared, not inferred.** Every surface one file offers another is read from heads
+alone, never from a body: a `lem-fn`'s parameters and return, a `lem-type`'s fields, and
+the top-level bindings of the file an ambient value reads. That is the rule behind the
+annotation an expression-bodied `lem-fn` needs, and the one a top-level `lem-let` in
+`site.lem` needs with it. It is what lets a file's unit be a function of its own text
+plus the facts it consumed (invariant 11, D25): a type error in one file's body cannot
+change how another file is checked, and nothing has to be compiled in dependency order
+for a name to have a type. Everywhere else a `lem-let` is a local and infers as usual.
+
+_Not yet (∆iCW): a `from` binding's type is read and `site` typed by it, but nothing
+fulfils one — the file it stands in compiles to a diagnostic until the loader exists.
+Data a host loads is untagged until then, so a type test over an ambient value is a
+render error (D35)._
 
 ### Checking
 
@@ -354,8 +374,9 @@ hierarchies and `T?`. Diagnostics carry a primary span plus secondary spans wher
   neither `lem-else` nor anything built with an operator — `x is T && c`, `!(x is T)`
   — nor a `?.` step, which is optional by construction; an inner binding of the same
   name ends it. Inside such an arm the path is still accepted as a condition and on the
-  left of `??`, since it was declared optional. A path rooted at an ambient value is
-  not narrowed until ∆Iau types them; today they are `any`, which needs none.
+  left of `??`, since it was declared optional. A path may be rooted at an ambient value
+  as well as at a binding — no binding may take an ambient name (D23), so the name alone
+  tells one root from another, and nothing can shadow one.
 - **Type tests.** `x is T` is a `bool`. `T` must be a declared record (an enum is
   compared with `==`; a builtin type is no record), and `x` a record — or an optional
   one, or `any`. The test must be able to go either way: `T` is a subtype of `x`'s type,
@@ -402,7 +423,7 @@ hierarchies and `T?`. Diagnostics carry a primary span plus secondary spans wher
   whose rule does not shape it (none shapes one to an enum today), and
   every element of a list or map literal that is not itself expected — the first
   included, since what the first element infers is not an expectation for the rest.
-  A comparison against an `any` — an ambient value, until its host types it (∆Iau) — is
+  A comparison against an `any` — an ambient value its host named without typing — is
   the common one. The qualified form works in all of them.
 - **Operators.** `+ - * / %` on numbers (`int∘int` is `int`, any `float` makes `float`),
   `+` also on two strings; `lt lte gt gte` on numbers, strings, datetimes; `==`/`!=` on

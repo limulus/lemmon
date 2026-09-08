@@ -15,7 +15,9 @@ function types with `any` as the spelled unknown; `.md` goes through document mo
 checker is not a separate pass but the compiler's own walk, which types each expression
 as it lowers it (D31), and records and enums are declared project-flat and checked by
 declaration (D32); record values carry their type at run time, and `is`/`lem-match`
-narrow by path (D35). Host-declared ambient types (∆Iau) are next. Compilation is
+narrow by path (D35); a host declares the ambient environment it compiles a program in,
+and the checker types `page`, `build`, and `site` from it (D30, D36). Schemas at load
+(∆iCW) are next. Compilation is
 per-file: each file becomes a `Unit`, and a link step joins units into the `Module` the
 VM runs (D25, invariant 11).
 `crates/lemmon-wasm` exposes the resident `Core` (`compile`/`loadData`/`render`), and

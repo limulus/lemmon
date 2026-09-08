@@ -20,8 +20,8 @@ use std::collections::BTreeMap;
 use std::rc::Rc;
 
 use lemmon_vm::{
-    ExportIndex, LineIndex, Map, Module, Position, RuntimeError, Severity, SourceFile,
-    Unit, Value, compile_unit, link, prepare, render, repeated_path,
+    Ambient, ExportIndex, Host, LineIndex, Map, Module, Position, RuntimeError, Severity,
+    SourceFile, Unit, Value, compile_unit, link, prepare, render, repeated_path,
 };
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::JsError;
@@ -40,6 +40,61 @@ pub fn version() -> String {
 struct FileInput {
     path: String,
     text: String,
+    /// The record this file's content is, which types the host's document value in it
+    /// (D30). Absent from a template, and from a document no collection matched.
+    #[serde(default)]
+    record: Option<String>,
+}
+
+/// The host's declaration as `compile` receives it: `{ambient, document?, entry?}`,
+/// where each ambient name is bound to a declared type, to the top-level bindings of a
+/// file, or to nothing at all — a name without a type (D30).
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct HostInput {
+    ambient: BTreeMap<String, Option<AmbientBinding>>,
+    #[serde(default)]
+    document: Option<String>,
+    #[serde(default)]
+    entry: Option<String>,
+}
+
+/// What one ambient name is bound to: a declared type by name, or the top-level
+/// bindings of a file. `null` — a name the host does not type — is the `None` this sits
+/// inside.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum AmbientBinding {
+    Named(String),
+    Bindings {
+        #[serde(rename = "bindingsOf")]
+        bindings_of: String,
+    },
+}
+
+impl From<HostInput> for Host {
+    fn from(input: HostInput) -> Self {
+        let mut host = Self::new();
+        for (name, ambient) in input.ambient {
+            host = host.bind(
+                &name,
+                match ambient {
+                    None => Ambient::Untyped,
+                    Some(AmbientBinding::Named(ty)) => Ambient::named(&ty),
+                    Some(AmbientBinding::Bindings { bindings_of }) => {
+                        Ambient::bindings(&bindings_of)
+                    }
+                },
+            );
+        }
+        if let Some(document) = input.document {
+            host = host.documents(&document);
+        }
+        if let Some(entry) = input.entry {
+            host = host.rendered_through(&entry);
+        }
+        host
+    }
 }
 
 /// What `loadData` receives — the spike's `DataInput`: the ambient records only. The
@@ -240,6 +295,10 @@ pub struct Core {
     module: Option<Module>,
     /// The ambient records `loadData` stored, bound at every render.
     ambient: Vec<(String, Value)>,
+    /// What the host declared about the ambient environment: resident like the units,
+    /// since a `compile` of one changed file is compiled in the same environment as the
+    /// files already held. Replaced whenever a call carries a declaration.
+    host: Host,
     /// For each resident unit, an index over the text *that unit* was compiled from —
     /// which is not always the latest text at that path, since a file whose recompile
     /// failed keeps its previous unit. Updated in lockstep with `units`, so it grows
@@ -259,23 +318,35 @@ impl Core {
             index: ExportIndex::new(),
             module: None,
             ambient: Vec::new(),
+            host: Host::new(),
             unit_indexes: BTreeMap::new(),
         }
     }
 
     /// Compiles the given files — only the changed ones — into resident units and
-    /// relinks the program. `files` is JSON `[{path, text}]`; the result is the JSON
-    /// array of diagnostics about those files (and about any resident unit the relink
-    /// found stale) — none of them an error on success, since a program is still
-    /// produced when the only diagnostics are warnings. A resident file's warnings are
-    /// reported by the call that compiled it, not again by later calls.
+    /// relinks the program. `files` is JSON `[{path, text, record?}]`, where `record`
+    /// names the schema a document's content is (D30); the result is the JSON array of
+    /// diagnostics about those files (and about any resident unit the relink found
+    /// stale) — none of them an error on success, since a program is still produced
+    /// when the only diagnostics are warnings. A resident file's warnings are reported
+    /// by the call that compiled it, not again by later calls.
+    ///
+    /// `host` is the ambient declaration, JSON `{ambient, document?, entry?}`: it is
+    /// resident too, so a call that changes nothing about the environment omits it, and
+    /// one that carries it replaces what the core holds. A core given none has no
+    /// ambient values at all.
     ///
     /// # Errors
     ///
-    /// A malformed `files` payload, or one naming the same file twice — caller bugs;
-    /// template problems are diagnostics.
-    pub fn compile(&mut self, files: &str) -> Result<String, JsError> {
-        self.compile_json(files).map_err(|m| JsError::new(&m))
+    /// A malformed `files` or `host` payload, or files naming the same path twice —
+    /// caller bugs; template problems are diagnostics.
+    pub fn compile(
+        &mut self,
+        files: &str,
+        host: Option<String>,
+    ) -> Result<String, JsError> {
+        self.compile_json(files, host.as_deref())
+            .map_err(|m| JsError::new(&m))
     }
 
     /// Stores the data every render binds. `input` is JSON
@@ -312,13 +383,28 @@ impl Core {
     // The logic behind each shim, in plain Rust types so host-target tests never touch
     // a `JsError`.
 
-    fn compile_json(&mut self, files_json: &str) -> Result<String, String> {
+    fn compile_json(
+        &mut self,
+        files_json: &str,
+        host_json: Option<&str>,
+    ) -> Result<String, String> {
         let files: Vec<FileInput> = serde_json::from_str(files_json)
             .map_err(|e| format!("malformed `compile` input: {e}"))?;
+        let host = host_json
+            .map(|json| {
+                serde_json::from_str::<HostInput>(json)
+                    .map_err(|e| format!("malformed `compile` host: {e}"))
+            })
+            .transpose()?;
         // Rejected before anything is offered: the second offer of a path withdraws the
         // first's names, leaving the resident index describing neither file.
         if let Some(path) = repeated_path(files.iter().map(|file| file.path.as_str())) {
             return Err(format!("malformed `compile` input: `{path}` given twice"));
+        }
+        // Installed once the call is past everything that would refuse it: a rejected
+        // call is a caller bug, and leaves the resident core exactly as it was.
+        if let Some(host) = host {
+            self.host = host.into();
         }
         // Indexed up front, before `prepare`, so that a file which fails to even parse
         // can still have its own diagnostics placed.
@@ -329,7 +415,12 @@ impl Core {
         let mut diagnostics: Vec<lemmon_vm::Diagnostic> = Vec::new();
         let mut prepared = Vec::new();
         for file in &files {
-            match prepare(&SourceFile::new(&file.path, &file.text)) {
+            let source = SourceFile {
+                path: file.path.clone(),
+                text: file.text.clone(),
+                record: file.record.clone(),
+            };
+            match prepare(&source, &self.host) {
                 Ok(p) => prepared.push(p),
                 Err(errors) => diagnostics.extend(errors),
             }
@@ -348,7 +439,7 @@ impl Core {
             self.index.offer_types(p.path(), p.types());
         }
         for p in &prepared {
-            let compiled = compile_unit(p, &self.index);
+            let compiled = compile_unit(p, &self.index, &self.host);
             diagnostics.extend(compiled.diagnostics);
             if let Some(unit) = compiled.output {
                 // In lockstep: the index kept for a unit is the one over the text that
@@ -369,7 +460,7 @@ impl Core {
             self.index = ExportIndex::of(self.units.values());
         } else {
             let units: Vec<Unit> = self.units.values().cloned().collect();
-            let linked = link(&units, &self.index);
+            let linked = link(&units, &self.index, &self.host);
             diagnostics.extend(linked.diagnostics);
             if let Some(module) = linked.output {
                 self.module = Some(module);
@@ -475,10 +566,25 @@ mod tests {
         serde_json::from_str(json).expect("diagnostics are JSON")
     }
 
+    /// The host most tests compile against: the three names the standard shell binds,
+    /// none of them typed. A core given no declaration at all has no ambient values, so
+    /// a test that reads one says so (D30).
+    const UNTYPED: &str = r#"{"ambient": {"site": null, "page": null, "build": null}}"#;
+
     fn compile_clean(core: &mut Core, files: &str) {
-        let result = core.compile_json(files).unwrap();
+        let result = core.compile_json(files, Some(UNTYPED)).unwrap();
         assert_eq!(result, "[]", "expected a clean compile");
     }
+
+    /// The declaration a typed host makes: `Page` is declared in a file it compiles
+    /// with the program, and a document says which record its content is.
+    const TYPED: &str =
+        r#"{"ambient": {"page": "Page"}, "document": "page", "entry": "layout"}"#;
+
+    const SCHEMA: &str = r#"[
+        {"path": "ambient.lem", "text": "<lem-type Page>\n  url: url\n</lem-type>"},
+        {"path": "schema.lem", "text": "<lem-type Article extends Page>\n  title: string\n  layout: (Article, html): html\n</lem-type>"}
+    ]"#;
 
     fn html_of(core: &Core, path: &str) -> String {
         let result = core
@@ -556,7 +662,7 @@ mod tests {
         compile_clean(&mut core, r#"[{"path": "page.lem", "text": "ok"}]"#);
         core.load_data_json(r#"{"ambient": {}}"#).unwrap();
         let result = core
-            .compile_json(r#"[{"path": "page.lem", "text": "<lem-if x>"}]"#)
+            .compile_json(r#"[{"path": "page.lem", "text": "<lem-if x>"}]"#, None)
             .unwrap();
         let reported = diagnostics(&result);
         assert_eq!(reported[0]["path"], "page.lem");
@@ -575,6 +681,7 @@ mod tests {
         let result = core
             .compile_json(
                 r#"[{"path": "page.lem", "text": "<lem-let raw = 1 />new<lem.raw>"}]"#,
+                None,
             )
             .unwrap();
         let reported = diagnostics(&result);
@@ -598,7 +705,10 @@ mod tests {
         // lib.lem drops `n`: its own compile is clean, but page.lem's resident unit
         // still imports it, so the relink reports where page.lem uses the name.
         let result = core
-            .compile_json(r#"[{"path": "lib.lem", "text": "no functions here"}]"#)
+            .compile_json(
+                r#"[{"path": "lib.lem", "text": "no functions here"}]"#,
+                None,
+            )
             .unwrap();
         let reported = diagnostics(&result);
         assert_eq!(reported[0]["path"], "page.lem");
@@ -630,7 +740,7 @@ mod tests {
         let result = core
             .compile_json(
                 r#"[{"path": "lib.lem", "text": "<lem-fn pair(b: string, a: string): string = a + \"-\" + b />"}]"#,
-            )
+             None)
             .unwrap();
         let reported = diagnostics(&result);
         assert_eq!(reported[0]["path"], "page.lem");
@@ -661,7 +771,10 @@ mod tests {
         // `a.lem` sorts before the resident `z.lem`; the error still belongs to the
         // file that just introduced the name.
         let result = core
-            .compile_json(r#"[{"path": "a.lem", "text": "<lem-fn f(): int = 2 />"}]"#)
+            .compile_json(
+                r#"[{"path": "a.lem", "text": "<lem-fn f(): int = 2 />"}]"#,
+                None,
+            )
             .unwrap();
         let reported = diagnostics(&result);
         assert_eq!(reported[0]["path"], "a.lem");
@@ -676,7 +789,10 @@ mod tests {
             r#"[{"path": "a.lem", "text": "<lem-fn f(): int = 1 />"}]"#,
         );
         let result = core
-            .compile_json(r#"[{"path": "b.lem", "text": "<lem-fn f(): int = 2 />"}]"#)
+            .compile_json(
+                r#"[{"path": "b.lem", "text": "<lem-fn f(): int = 2 />"}]"#,
+                None,
+            )
             .unwrap();
         let reported = diagnostics(&result);
         assert_eq!(reported[0]["path"], "b.lem");
@@ -694,7 +810,10 @@ mod tests {
     fn places_a_diagnostic_at_its_line_and_column_not_its_byte_offset() {
         let mut core = Core::new();
         let result = core
-            .compile_json(r#"[{"path": "page.lem", "text": "<p>ok</p>\nI’m <lem.nope>"}]"#)
+            .compile_json(
+                r#"[{"path": "page.lem", "text": "<p>ok</p>\nI’m <lem.nope>"}]"#,
+                None,
+            )
             .unwrap();
         let reported = diagnostics(&result);
         assert_eq!(reported[0]["path"], "page.lem");
@@ -715,7 +834,10 @@ mod tests {
             r#"[{"path": "a.lem", "text": "<p>x</p>\n<lem-fn f(): int = 1 />"}]"#,
         );
         let result = core
-            .compile_json(r#"[{"path": "b.lem", "text": "<lem-fn f(): int = 2 />"}]"#)
+            .compile_json(
+                r#"[{"path": "b.lem", "text": "<lem-fn f(): int = 2 />"}]"#,
+                None,
+            )
             .unwrap();
         let reported = diagnostics(&result);
         assert_eq!(reported[0]["span"]["range"]["start"]["line"], 0);
@@ -744,7 +866,10 @@ mod tests {
             ]"#,
         );
         let result = core
-            .compile_json(r#"[{"path": "lib.lem", "text": "no functions here"}]"#)
+            .compile_json(
+                r#"[{"path": "lib.lem", "text": "no functions here"}]"#,
+                None,
+            )
             .unwrap();
         let reported = diagnostics(&result);
         assert_eq!(reported[0]["path"], "page.lem");
@@ -768,12 +893,15 @@ mod tests {
         // page.lem now fails to compile, so it keeps the unit above — but its text at
         // this path is henceforth this much shorter one.
         let failed = core
-            .compile_json(r#"[{"path": "page.lem", "text": "<lem.nope>"}]"#)
+            .compile_json(r#"[{"path": "page.lem", "text": "<lem.nope>"}]"#, None)
             .unwrap();
         assert!(!diagnostics(&failed).as_array().unwrap().is_empty());
         // Now a clean compile relinks, and the stale unit still imports `n`.
         let result = core
-            .compile_json(r#"[{"path": "lib.lem", "text": "no functions here"}]"#)
+            .compile_json(
+                r#"[{"path": "lib.lem", "text": "no functions here"}]"#,
+                None,
+            )
             .unwrap();
         let reported = diagnostics(&result);
         assert_eq!(reported[0]["path"], "page.lem");
@@ -791,6 +919,7 @@ mod tests {
         let result = core
             .compile_json(
                 r#"[{"path": "b.lem", "text": "<lem-fn f(): string = \"b\" />"}]"#,
+                None,
             )
             .unwrap();
         let reported = diagnostics(&result);
@@ -822,7 +951,7 @@ mod tests {
         let result = core
             .compile_json(
                 r#"[{"path": "lib.lem", "text": "<lem-fn g(): string = \"g\" /><lem-fn f(): string = \"two\" /><lem.nope()>"}]"#,
-            )
+             None)
             .unwrap();
         let reported = diagnostics(&result);
         assert_eq!(reported[0]["path"], "lib.lem", "{reported:?}");
@@ -844,6 +973,7 @@ mod tests {
         let refused = core.compile_json(
             r#"[{"path": "a.lem", "text": "<lem-fn g(): int = 1 />"},
                 {"path": "a.lem", "text": "<lem-fn h(): int = 2 />"}]"#,
+            None,
         );
         assert_eq!(
             refused.unwrap_err(),
@@ -913,7 +1043,7 @@ mod tests {
     fn refuses_malformed_envelopes_with_a_throwable_message() {
         let mut core = Core::new();
         assert!(
-            core.compile_json("not json")
+            core.compile_json("not json", None)
                 .unwrap_err()
                 .starts_with("malformed `compile` input:")
         );
@@ -927,5 +1057,70 @@ mod tests {
                 .unwrap_err()
                 .starts_with("malformed `render` input:")
         );
+    }
+
+    #[test]
+    fn keeps_the_host_declaration_across_calls() {
+        // The shell declares its environment once and then compiles changed files, so
+        // a call that carries no declaration compiles against the resident one.
+        let mut core = Core::new();
+        compile_clean(&mut core, SCHEMA);
+        let result = core
+            .compile_json(
+                r##"[{"path": "post.md", "text": "<lem.page.title>", "record": "Article"}]"##,
+                Some(TYPED),
+            )
+            .unwrap();
+        assert_eq!(result, "[]", "{result}");
+        let later = core
+            .compile_json(
+                r##"[{"path": "other.md", "text": "<lem.page.nope>", "record": "Article"}]"##,
+                None,
+            )
+            .unwrap();
+        assert!(later.contains("has no field `nope`"), "{later}");
+    }
+
+    #[test]
+    fn reads_a_document_no_record_named_as_unknown_typed() {
+        let mut core = Core::new();
+        compile_clean(&mut core, SCHEMA);
+        let result = core
+            .compile_json(
+                r##"[{"path": "loose.md", "text": "<lem.page.whatever>"}]"##,
+                Some(TYPED),
+            )
+            .unwrap();
+        assert_eq!(result, "[]", "{result}");
+    }
+
+    #[test]
+    fn refuses_a_malformed_host_declaration() {
+        let mut core = Core::new();
+        let refused = core.compile_json("[]", Some(r#"{"ambient": 3}"#));
+        assert!(
+            refused
+                .as_ref()
+                .is_err_and(|message| message.starts_with("malformed `compile` host")),
+            "{refused:?}"
+        );
+    }
+
+    #[test]
+    fn keeps_the_resident_declaration_when_a_call_is_refused() {
+        // A refused call is a caller bug: it compiles nothing, and it installs nothing
+        // either, so the next call still compiles in the environment that was actually
+        // accepted.
+        let mut core = Core::new();
+        compile_clean(&mut core, "[]");
+        let refused = core.compile_json(
+            r#"[{"path": "a.lem", "text": "x"}, {"path": "a.lem", "text": "y"}]"#,
+            Some(TYPED),
+        );
+        assert!(refused.is_err(), "{refused:?}");
+        let result = core
+            .compile_json(r#"[{"path": "page.lem", "text": "<lem.site.name>"}]"#, None)
+            .unwrap();
+        assert_eq!(result, "[]", "{result}");
     }
 }

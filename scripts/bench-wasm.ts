@@ -113,6 +113,9 @@ function site(): SourceFileInput[] {
   return [lib, ...pages]
 }
 
+/** The host these fixtures compile against: the ambient names, none of them typed. */
+const HOST = { ambient: { site: null, page: null, build: null } }
+
 // --- Scenarios --------------------------------------------------------------------
 
 async function corpusScenarios(): Promise<void> {
@@ -123,7 +126,7 @@ async function corpusScenarios(): Promise<void> {
     const core = await loadCore()
     let diagnostics: Diagnostic[] = []
     compileOne(() => {
-      diagnostics = core.compile([input])
+      diagnostics = core.compile([input], HOST)
       return { in: [input], out: diagnostics }
     })
     expectClean(diagnostics, `compiling ${input.path}`)
@@ -143,7 +146,7 @@ async function siteScenarios(): Promise<void> {
   const bigCall = record(`site compile (${files.length} files, 1 call)`)
   const bigCore = await loadCore()
   bigCall(() => {
-    const diagnostics = bigCore.compile(files)
+    const diagnostics = bigCore.compile(files, HOST)
     expectClean(diagnostics, 'compiling the site in one call')
     return { in: files, out: diagnostics }
   })
@@ -152,7 +155,7 @@ async function siteScenarios(): Promise<void> {
   const smallCore = await loadCore()
   for (const file of files) {
     perFile(() => {
-      const diagnostics = smallCore.compile([file])
+      const diagnostics = smallCore.compile([file], HOST)
       expectClean(diagnostics, `compiling ${file.path} incrementally`)
       return { in: [file], out: diagnostics }
     })
@@ -163,7 +166,7 @@ async function siteScenarios(): Promise<void> {
   if (!edited) throw new Error('the site has pages')
   for (let i = 0; i < INCREMENTAL_RUNS; i += 1) {
     incremental(() => {
-      const diagnostics = bigCore.compile([edited])
+      const diagnostics = bigCore.compile([edited], HOST)
       expectClean(diagnostics, 'recompiling one page')
       return { in: [edited], out: diagnostics }
     })

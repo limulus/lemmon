@@ -2,6 +2,7 @@ import type { BoundaryCore } from './boundary.ts'
 import type {
   DataInput,
   Diagnostic,
+  HostDecl,
   PageRef,
   RenderResult,
   SourceFileInput,
@@ -30,9 +31,17 @@ export class Core {
    * relink found stale), not the whole program: a resident file's warnings were
    * reported by the call that compiled it. A caller that shows warnings keeps them per
    * path and replaces a path's entry when it recompiles that path.
+   *
+   * `host` is the ambient declaration (D30), and is resident like the units: a call
+   * that changes nothing about the environment omits it, and one that carries it
+   * replaces what the core holds. A core given none has no ambient values at all, so
+   * `page` in a template is an undefined name like any other.
    */
-  compile(files: SourceFileInput[]): Diagnostic[] {
-    return JSON.parse(this.#core.compile(JSON.stringify(files))) as Diagnostic[]
+  compile(files: SourceFileInput[], host?: HostDecl): Diagnostic[] {
+    const declaration = host === undefined ? undefined : JSON.stringify(host)
+    return JSON.parse(
+      this.#core.compile(JSON.stringify(files), declaration)
+    ) as Diagnostic[]
   }
 
   /**

@@ -1,0 +1,16 @@
+<lem-enum Placement = hero | left | right />
+
+<lem-type Photo>
+  caption: string
+  placement: Placement
+</lem-type>
+
+<lem-type Article extends Page>
+  title: string
+  subhead: string?
+  hero: Photo?
+  layout: (Article, html): html
+</lem-type>
+
+<lem-let name: string = "limulus.net" />
+<lem-let tagline: string = "Notes from " + name />
