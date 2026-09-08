@@ -10,63 +10,28 @@
 //! whatever type keeps the rest of the file checkable — the type that was expected
 //! where one was, `any` where there is nothing better — so that one mistake costs one
 //! diagnostic.
+//!
+//! Two arms of the walk are large enough to have modules of their own, and reach back
+//! into this one for the sub-expressions they lower: [`calls`](super::calls) binds an
+//! argument list to what it calls, and [`narrowing`](super::narrowing) reads the path a
+//! condition narrows.
 
 use std::rc::Rc;
 
 use lemmon_syntax::ast::{
-    ArgList, BinaryExpr, BinaryOp, CallExpr, Expr, IndexExpr, Lambda, ListLit, Literal,
-    LiteralKind, MapEntry, MapLit, MemberExpr, NamedArg, Spanned, TernaryExpr, TypeTest,
-    UnaryExpr, UnaryOp,
+    BinaryExpr, BinaryOp, Expr, IndexExpr, Lambda, ListLit, Literal, LiteralKind, MapEntry,
+    MapLit, MemberExpr, Spanned, TernaryExpr, UnaryExpr, UnaryOp,
 };
 use lemmon_syntax::{Span, SyntaxKind, SyntaxToken};
 
 use super::names::{BindingKind, Resolved};
-use super::rules::{self, Arg, LambdaShape, Rule};
+use super::narrowing::Path;
+use super::rules::{self, LambdaShape, Rule};
 use super::{Compiler, TokenSpan, required};
 use crate::Value;
-use crate::builtins::{BUILTINS, Expected};
 use crate::bytecode::Op;
 use crate::decls::Kind;
 use crate::types::{Type, join};
-
-/// What a narrowing is keyed on: a root and the fields read off it in order, none for
-/// the root itself. Only a plain `.` extends a path: `?.` yields an optional by
-/// construction, and nothing else reads a stable place.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(super) struct Path {
-    root: Root,
-    fields: Vec<Rc<str>>,
-}
-
-/// Where a path starts. Both are immutable for the whole render, which is what lets a
-/// narrowing hold for the arm it guards (D35).
-#[derive(Clone, Debug, PartialEq, Eq)]
-enum Root {
-    /// A local binding, by the span of its name token: one binding, one span, so an
-    /// inner shadow is a different path.
-    Local(Span),
-    /// A value the host binds, by its name — which no binding may take (D23), so it
-    /// needs no span to tell one from another.
-    Ambient(Rc<str>),
-}
-
-impl Path {
-    /// The path of the binding itself.
-    pub(super) const fn local(binder: Span) -> Self {
-        Self {
-            root: Root::Local(binder),
-            fields: Vec::new(),
-        }
-    }
-
-    /// The path of the ambient value itself.
-    fn ambient(name: &str) -> Self {
-        Self {
-            root: Root::Ambient(Rc::from(name)),
-            fields: Vec::new(),
-        }
-    }
-}
 
 impl Compiler<'_> {
     /// Lowers `expr`, leaving its value on the stack, and returns its type.
@@ -152,49 +117,6 @@ impl Compiler<'_> {
         }
     }
 
-    /// Checks a type test of `subject` against `name` — the name first, then the pair
-    /// — reporting what is refused, records the declaration consulted, and emits the
-    /// test over the subject on the stack. What the test narrows the subject to, when
-    /// it was admitted. `form` decides only what an enum's name is told instead.
-    pub(super) fn type_test(
-        &mut self,
-        subject: &Type,
-        name: &SyntaxToken,
-        span: Span,
-        form: rules::TestForm,
-    ) -> Option<Type> {
-        let refused = self.require(
-            name.span(),
-            rules::tested_type(name.text(), form, self.decls()),
-        );
-        let narrowed = if refused {
-            None
-        } else {
-            self.note_type(name.text(), name.span());
-            let verdict = rules::type_test(subject, name.text(), self.decls());
-            self.rule_or(span, verdict.map(Some), None)
-        };
-        let index = self.intern(name.text());
-        self.emit(Op::TypeTest { name: index }, span);
-        narrowed
-    }
-
-    /// Lowers `x is T`, returning its type and what it narrows: the subject's path, to
-    /// the type the rule granted. One walk, one verdict — a caller that wants only the
-    /// type drops the second half.
-    fn type_test_expr(
-        &mut self,
-        test: &TypeTest,
-        span: Span,
-    ) -> (Type, Option<(Path, Type)>) {
-        let subject_expr = required(test.expr());
-        let path = self.path_of(&subject_expr).map(|(path, _)| path);
-        let subject = self.expr(&subject_expr);
-        let name = required(test.type_name());
-        let narrowed = self.type_test(&subject, &name, span, rules::TestForm::Is);
-        (Type::Bool, path.zip(narrowed))
-    }
-
     pub(super) fn literal(&mut self, literal: &Literal) -> Type {
         let token = required(literal.token());
         let span = token.span();
@@ -271,7 +193,7 @@ impl Compiler<'_> {
     /// Why a name resolves to nothing: a name the project declares as a type is not a
     /// value, and saying so beats "undefined name" for the author who wrote `Placement`
     /// where its variant belonged.
-    fn undefined(&self, name: &str) -> String {
+    pub(super) fn undefined(&self, name: &str) -> String {
         match self.decls().kind(name) {
             Some(Kind::Enum) => format!("`{name}` is an enum, not a value"),
             Some(Kind::Record) => format!("`{name}` is a record, not a value"),
@@ -290,7 +212,7 @@ impl Compiler<'_> {
     /// project declares as one. The type namespace answers `Name.x` before the value
     /// namespace does, so `Placement.hero` means the same thing wherever it stands,
     /// whatever a local of that spelling holds (∆EN6).
-    fn enum_object(&self, object: &Expr) -> Option<Rc<str>> {
+    pub(super) fn enum_object(&self, object: &Expr) -> Option<Rc<str>> {
         let Expr::Name(name) = object else {
             return None;
         };
@@ -351,39 +273,6 @@ impl Compiler<'_> {
         match self.path_of(&Expr::Member(member.clone())) {
             Some((path, _)) => self.narrowed(&path).unwrap_or(ty),
             None => ty,
-        }
-    }
-
-    /// The path `expr` reads, if it reads one — a local, or fields read off one with
-    /// plain `.`s, parenthesised or not — with the type its last step was declared
-    /// with, whatever a condition has narrowed that step to: the binding's, or the
-    /// field's as the declaration of what it is read off says, that being narrowed or
-    /// not, an optional read through. Peeked, never resolved: asking is not reading.
-    pub(super) fn path_of(&self, expr: &Expr) -> Option<(Path, Type)> {
-        match unparen(expr.clone()) {
-            Expr::Name(name) => {
-                let name = required(name.name());
-                match self.names.peek(name.text()) {
-                    Some(Resolved::Local { binder, ty, .. }) => {
-                        Some((Path::local(binder), ty))
-                    }
-                    Some(Resolved::Ambient(ty)) => {
-                        Some((Path::ambient(name.text()), self.known(ty)))
-                    }
-                    _ => None,
-                }
-            }
-            Expr::Member(member) if !member.is_optional() => {
-                let (mut path, declared) = self.path_of(&required(member.object()))?;
-                let object = self.narrowed(&path).unwrap_or(declared);
-                let field = required(member.name());
-                let ty = self
-                    .decls()
-                    .field(object.strip_optional().named()?, field.text())?;
-                path.fields.push(Rc::from(field.text()));
-                Some((path, ty))
-            }
-            _ => None,
         }
     }
 
@@ -514,45 +403,6 @@ impl Compiler<'_> {
             Some(expected) => expected.clone(),
             None => self.rule(span, rules::branches(&then_ty, &else_ty, self.decls())),
         }
-    }
-
-    /// Lowers a `lem-if` or `?:` condition: its type, and what it narrows wherever it
-    /// holds. An optional path — a local, or fields read off one, parenthesised or not
-    /// — narrows to its inner type; `path is T` narrows to what the type test granted,
-    /// which is the one verdict the rules gave. A path an enclosing condition already
-    /// narrowed passes as the optional it was declared.
-    pub(super) fn lower_condition(&mut self, expr: &Expr) -> (Type, Option<(Path, Type)>) {
-        let peeled = unparen(expr.clone());
-        if let Expr::TypeTest(test) = &peeled {
-            return self.type_test_expr(test, peeled.span());
-        }
-        let ty = self.expr(expr);
-        let narrowing = match rules::condition(&ty) {
-            Ok(None) => None,
-            Ok(Some(inner)) => self.path_of(&peeled).map(|(path, _)| (path, inner)),
-            Err(_) if self.declared_optional(&peeled) => None,
-            Err(message) => {
-                self.error(peeled.span(), message);
-                None
-            }
-        };
-        (ty, narrowing)
-    }
-
-    /// Whether `expr` is a path declared optional, whatever a `lem-if` around it has
-    /// narrowed it to.
-    fn declared_optional(&self, expr: &Expr) -> bool {
-        self.path_of(expr)
-            .is_some_and(|(_, ty)| matches!(ty, Type::Optional(_)))
-    }
-
-    /// The type an open condition has narrowed `path` to, if one has.
-    fn narrowed(&self, path: &Path) -> Option<Type> {
-        self.narrowings
-            .iter()
-            .rev()
-            .find(|(p, _)| p == path)
-            .map(|(_, ty)| ty.clone())
     }
 
     fn list(&mut self, list: &ListLit, expected: Option<&Type>) -> Type {
@@ -698,7 +548,7 @@ impl Compiler<'_> {
     /// checked against when the shape names one — with none the body is inferred and
     /// its type is the lambda's return. `mismatched` says the shape was refused, so the
     /// lambda's own type is `any`.
-    fn lambda_under(
+    pub(super) fn lambda_under(
         &mut self,
         lambda: &Lambda,
         want: Option<LambdaShape>,
@@ -746,340 +596,10 @@ impl Compiler<'_> {
             Type::Fn(param_tys, Rc::new(ret))
         }
     }
-
-    fn call(&mut self, call: &CallExpr) -> Type {
-        let span = call.span();
-        let callee = required(call.callee());
-        let args = call.args();
-        let positional: Vec<Expr> = args.iter().flat_map(ArgList::positional).collect();
-        let named: Vec<NamedArg> = args.iter().flat_map(ArgList::named).collect();
-
-        // `.` asks the receiver's type and nothing else (D34): `x.f(…)` calls a builtin
-        // type's method `f`, or a record's field `f` as the value it holds. What the
-        // enclosing scope names `f` never enters into it.
-        let (resolved, name) = match &callee {
-            // A qualified variant is not a receiver: the enum claims `Name.x` before
-            // anything else (∆EN6), so `Placement.hero(…)` falls through to the last arm
-            // below, which lowers it as the variant it is and reports the call of a
-            // `Placement`.
-            Expr::Member(member)
-                if self.enum_object(&required(member.object())).is_none() =>
-            {
-                return self.call_member(member, &positional, &named, span);
-            }
-            Expr::Name(name) => {
-                let name = required(name.name());
-                match self.resolve(name.text()) {
-                    Some(resolved) => (Some(resolved), Some(name)),
-                    None => {
-                        self.error(name.span(), self.undefined(name.text()));
-                        self.discard(&positional, &named);
-                        return Type::Any;
-                    }
-                }
-            }
-            _ => (None, None),
-        };
-
-        match resolved {
-            Some(Resolved::Function) => {
-                let name = name.expect("a project function has a name");
-                self.call_function(name.text(), &positional, &named, span)
-            }
-            Some(Resolved::Builtin(id)) => {
-                let name = name.expect("a builtin has a name");
-                if self.reject_named(&named, &name) {
-                    self.discard(&positional, &named);
-                    return Type::Any;
-                }
-                self.call_builtin(id, None, &positional, span)
-            }
-            Some(Resolved::Local { .. } | Resolved::Ambient(_)) => {
-                let name = name.expect("a resolved name");
-                if self.reject_named(&named, &name) {
-                    self.discard(&positional, &named);
-                    return Type::Any;
-                }
-                let ty = self.name(&name);
-                self.call_value(&ty, &positional, span, Some(name.text()))
-            }
-            None => {
-                if let Some(first) = named.first() {
-                    self.error(
-                        first.span(),
-                        "named arguments need a callee that is a `lem-fn` by name",
-                    );
-                    self.expr(&callee);
-                    self.discard(&positional, &named);
-                    return Type::Any;
-                }
-                let ty = self.expr(&callee);
-                self.call_value(&ty, &positional, span, None)
-            }
-        }
-    }
-
-    /// Lowers `object.name(…)`, the one call form that reads the dot (D34). The receiver
-    /// is lowered first and its type decides everything after: a builtin type's method,
-    /// a record's field called as the value it holds, or — on `any` — a name the VM
-    /// resolves against the value it finds there.
-    ///
-    /// Through `?.` the receiver stays on the stack and the whole call is jumped around
-    /// when it is null, so neither the field nor the method is reached and the result is
-    /// the call's made optional.
-    fn call_member(
-        &mut self,
-        member: &MemberExpr,
-        positional: &[Expr],
-        named: &[NamedArg],
-        span: Span,
-    ) -> Type {
-        let object = required(member.object());
-        let name = required(member.name());
-        let member_span = member.span();
-        let optional = member.is_optional();
-        let object_ty = self.expr(&object);
-        let verdict =
-            rules::callable_member(&object_ty, name.text(), optional, self.decls());
-        let callable = match verdict {
-            Ok(callable) => callable,
-            Err(message) => {
-                self.error(member_span, message);
-                self.discard(positional, named);
-                return Type::Any;
-            }
-        };
-        if let Some(first) = named.first() {
-            // A method is a builtin, and no builtin names its parameters — saying so
-            // beats sending the author to look for a `lem-fn` that could not help.
-            let message = match &callable {
-                rules::Callable::Method(_) => {
-                    format!("`.{}()` does not take named arguments", name.text())
-                }
-                _ => "named arguments need a callee that is a `lem-fn` by name".to_owned(),
-            };
-            self.error(first.span(), message);
-            self.discard(positional, named);
-            return Type::Any;
-        }
-        let skip = optional.then(|| self.skip_when_null(member_span));
-        // What carries the method or the field is the receiver's own type, which is what
-        // `?.` has an optional around.
-        let receiver = object_ty.strip_optional().clone();
-        let ty = match callable {
-            rules::Callable::Method(id) => {
-                self.call_builtin(id, Some(receiver), positional, span)
-            }
-            rules::Callable::Field(field) => {
-                let index = self.intern(name.text());
-                self.emit(Op::GetField { name: index }, member_span);
-                let field = self.known(field);
-                self.call_value(&field, positional, span, Some(name.text()))
-            }
-            rules::Callable::Dynamic => {
-                for arg in positional {
-                    self.expr(arg);
-                }
-                let index = self.intern(name.text());
-                let argc =
-                    u16::try_from(positional.len()).expect("fewer than 65536 arguments");
-                self.emit(Op::CallDynamic { name: index, argc }, span);
-                Type::Any
-            }
-        };
-        match skip {
-            Some(end) => {
-                self.patch(end);
-                Type::optional(ty)
-            }
-            None => ty,
-        }
-    }
-
-    /// Emits the jump that leaves a null receiver where it stands and steps over the
-    /// call about to be emitted; returns the jump to patch once that call is in.
-    fn skip_when_null(&mut self, span: Span) -> usize {
-        let call = self.emit_jump(Op::JumpUnlessNull { to: 0 }, span);
-        let index = self.constant(Value::Null);
-        self.emit(Op::Const { index }, span);
-        let end = self.emit_jump(Op::Jump { to: 0 }, span);
-        self.patch(call);
-        end
-    }
-
-    /// Lowers a call of `BUILTINS[id]`, reached by its bare name or — with `receiver` —
-    /// as a method, whose value is already the first on the stack.
-    fn call_builtin(
-        &mut self,
-        id: u32,
-        receiver: Option<Type>,
-        positional: &[Expr],
-        span: Span,
-    ) -> Type {
-        let builtin = &BUILTINS[id as usize];
-        let arity = positional.len() + usize::from(receiver.is_some());
-        if self.require(span, rules::builtin(builtin, arity)) {
-            self.discard(positional, &[]);
-            return Type::Any;
-        }
-        // Arguments lower left to right, each under what the builtin's rule expects of
-        // it given the types so far (D34) — how `xs.map(|a| …)` types `a` from `xs`.
-        let mut types = Vec::with_capacity(arity);
-        types.extend(receiver);
-        for arg in positional {
-            let ty = match (builtin.expect)(&types) {
-                None => self.expr(arg),
-                Some(Expected::Type(want)) => self.check(arg, &want),
-                Some(Expected::Function(params)) => {
-                    self.function_argument(arg, &builtin.written(), params)
-                }
-            };
-            types.push(ty);
-        }
-        let argc = u16::try_from(arity).expect("fewer than 65536 arguments");
-        self.emit(Op::CallBuiltin { id, argc }, span);
-        self.rule(span, (BUILTINS[id as usize].ty)(&types))
-    }
-
-    /// Lowers an argument that `written` expects a function of `params` from, its return
-    /// the argument's own (D34): a lambda takes them as its parameter types and its body
-    /// is inferred; anything else is lowered and held to a function that accepts them.
-    fn function_argument(&mut self, arg: &Expr, written: &str, params: Vec<Type>) -> Type {
-        match unparen(arg.clone()) {
-            Expr::Lambda(lambda) => {
-                let shape = rules::lambda_of(written, params, lambda_params(&lambda).len());
-                let mismatched = shape.is_err();
-                let want = self.rule_or(lambda.span(), shape.map(Some), None);
-                self.lambda_under(&lambda, want, mismatched)
-            }
-            other => {
-                let actual = self.expr(&other);
-                let verdict = rules::function_of(written, &params, &actual, self.decls());
-                self.rule(arg.span(), verdict)
-            }
-        }
-    }
-
-    /// Lowers a call of a value already on the stack: a local, an ambient value, or any
-    /// other expression. A function value's type checks the arguments; `any` leaves them
-    /// to the VM.
-    fn call_value(
-        &mut self,
-        callee: &Type,
-        positional: &[Expr],
-        span: Span,
-        name: Option<&str>,
-    ) -> Type {
-        let (params, ret) = match rules::callee(callee, name, positional.len()) {
-            Ok(granted) => granted,
-            Err(message) => {
-                self.error(span, message);
-                self.discard(positional, &[]);
-                return Type::Any;
-            }
-        };
-        match params {
-            Some(params) => {
-                for (arg, param) in positional.iter().zip(params.iter()) {
-                    self.check(arg, param);
-                }
-            }
-            None => {
-                for arg in positional {
-                    self.expr(arg);
-                }
-            }
-        }
-        let argc = u16::try_from(positional.len()).expect("fewer than 65536 arguments");
-        self.emit(Op::CallValue { argc }, span);
-        ret
-    }
-
-    /// Reports named arguments passed to something that has no parameter names.
-    fn reject_named(&mut self, named: &[NamedArg], callee: &SyntaxToken) -> bool {
-        match named.first() {
-            Some(first) => {
-                self.error(
-                    first.span(),
-                    format!("`{}` does not take named arguments", callee.text()),
-                );
-                true
-            }
-            None => false,
-        }
-    }
-
-    /// Lowers a call's arguments after an error that stops the call from compiling: the
-    /// names they read still count as read, and the mistakes inside them are still
-    /// reported. A receiver was lowered before the call was decided, so it is never
-    /// among them. The code emitted is unbalanced, and never runs — an error yields no
-    /// unit.
-    fn discard(&mut self, positional: &[Expr], named: &[NamedArg]) {
-        for expr in positional.iter().chain(
-            named
-                .iter()
-                .map(|arg| required(arg.value()))
-                .collect::<Vec<_>>()
-                .iter(),
-        ) {
-            self.expr(expr);
-        }
-    }
-
-    /// Lowers a call to a project function, reordering named arguments into parameter
-    /// order at compile time so the VM only ever sees positional calls, and checking
-    /// each against its parameter's type.
-    fn call_function(
-        &mut self,
-        fn_name: &str,
-        positional: &[Expr],
-        named: &[NamedArg],
-        span: Span,
-    ) -> Type {
-        let export = self.export(fn_name);
-        let names: Vec<SyntaxToken> =
-            named.iter().map(|arg| required(arg.name())).collect();
-        let name_texts: Vec<&str> = names.iter().map(SyntaxToken::text).collect();
-        let order = rules::arguments(
-            fn_name,
-            &export.signature.params,
-            positional.len(),
-            &name_texts,
-        );
-        let order = match order {
-            Ok(order) => order,
-            Err((blame, message)) => {
-                let at = match blame {
-                    Some(Arg::Positional(i)) => positional[i].span(),
-                    Some(Arg::Named(n)) => names[n].span(),
-                    None => span,
-                };
-                self.error(at, message);
-                self.discard(positional, named);
-                return Type::Any;
-            }
-        };
-        for (param, arg) in export.signature.params.iter().zip(order) {
-            let param_ty = self.known(param.ty.clone());
-            match arg {
-                Arg::Positional(i) => {
-                    self.check(&positional[i], &param_ty);
-                }
-                Arg::Named(n) => {
-                    self.check(&required(named[n].value()), &param_ty);
-                }
-            }
-        }
-        let argc = u16::try_from(export.signature.params.len())
-            .expect("fewer than 65536 parameters");
-        let func = self.func_operand(export, span);
-        self.emit(Op::Call { func, argc }, span);
-        self.known(export.signature.ret.clone())
-    }
 }
 
 /// The parameter names a lambda declares, in order.
-fn lambda_params(lambda: &Lambda) -> Vec<SyntaxToken> {
+pub(super) fn lambda_params(lambda: &Lambda) -> Vec<SyntaxToken> {
     lambda
         .params()
         .map(|p| p.names().collect())
@@ -1087,7 +607,7 @@ fn lambda_params(lambda: &Lambda) -> Vec<SyntaxToken> {
 }
 
 /// `expr` without the parentheses around it.
-fn unparen(mut expr: Expr) -> Expr {
+pub(super) fn unparen(mut expr: Expr) -> Expr {
     while let Expr::Paren(paren) = &expr {
         expr = required(paren.inner());
     }

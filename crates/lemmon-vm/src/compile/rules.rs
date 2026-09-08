@@ -271,10 +271,7 @@ fn no_method(ty: &Type, kind: builtins::Kind, name: &str) -> String {
 
 /// The enum `expected` asks for, if it asks for one: a `T?` wanted is a `T` written,
 /// as it is for a literal.
-pub(super) fn expected_enum<'a>(
-    expected: Option<&'a Type>,
-    decls: &dyn Decls,
-) -> Option<&'a str> {
+fn expected_enum<'a>(expected: Option<&'a Type>, decls: &dyn Decls) -> Option<&'a str> {
     match expectation(expected) {
         Some(Type::Named(name)) if decls.kind(name) == Some(Kind::Enum) => Some(name),
         _ => None,

@@ -50,7 +50,7 @@ pub struct Unit {
     /// it — an annotation, an `extends`, or a consumed signature.
     pub type_refs: Vec<TypeRef>,
     /// The third: what the host bound each ambient value this file read to, where it
-    /// first read it. The declaration behind such a type is a [`TypeRef`] like any
+    /// first read it. The declaration behind such a type is a `TypeRef` like any
     /// other; this is the binding itself — that the host called `page` a `Page` (D30).
     pub ambient_refs: Vec<AmbientRef>,
     /// The record the host compiled this file as, which types its document value: a

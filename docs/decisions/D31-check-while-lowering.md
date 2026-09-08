@@ -1,6 +1,7 @@
 # D31 — Check while lowering
 
-- **Status:** Accepted 2026-09-06 (∆C8d)
+- **Status:** Accepted 2026-09-06 (∆C8d); the layout consequence below restated
+  2026-09-07 (∆FQw) as the walk was split across more modules
 - **Backlog item:** ∆C8d
 - **Normative text:** `docs/language.md` § Types › Checking; `docs/architecture.md`
   § Build pipeline (step 3)
@@ -48,13 +49,18 @@ reported, because an expression that failed types as `any` and lowering goes on.
 - The LSP's hover (∆5MM) will want a per-node type table; it is added as a recording
   flag on the same walk, with its reader, not before.
 - The rules are applied where the lowering they guard happens, but they are not
-  written there: the walk (`compile/expr.rs`, `compile/items.rs`) emits, asks, and
-  reports, and the rules it asks — operator, member, index, condition, print,
-  iteration, arity — are pure functions from types to a type or a message in
-  `compile/rules.rs`, testable without compiling a template (∆2c6). The relations they
-  are built on — `Type`, `assignable`, `join` — are a module of their own
-  (`crates/lemmon-vm/src/types.rs`), and annotations resolve in another. A rule that
+  written there: the walk emits, asks, and reports, and the rules it asks — operator,
+  member, index, condition, print, iteration, arity — are pure functions from types to a
+  type or a message in `compile/rules.rs`, testable without compiling a template (∆2c6).
+  The relations they are built on — `Type`, `assignable`, `join` — are a module of their
+  own (`crates/lemmon-vm/src/types.rs`), and annotations resolve in another. A rule that
   needs a declaration table (∆cea's field and variant rules) takes it as an argument.
+- The walk is one `Compiler` across several modules, each an `impl` block of its own
+  (∆FQw): `compile/items.rs` lowers what stands in a body, `compile/expr.rs` the heads,
+  `compile/calls.rs` the argument lists among them, and `compile/narrowing.rs` what a
+  condition proves for the arm it guards. What a file offers other files is read from
+  its heads before any of that, in `compile/surfaces.rs`, and checked against the index
+  and the host's declaration in `compile/schema.rs`.
 - Signatures are read from heads alone, so an expression-bodied `lem-fn` must declare its
   return type: inferring it from the body would make a caller's unit depend on that body
   (invariant 11).
