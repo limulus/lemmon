@@ -17,267 +17,26 @@
 //! the program does not have — which have no source span to point at.
 
 use std::collections::BTreeMap;
-use std::rc::Rc;
 
 use lemmon_vm::{
-    Ambient, ExportIndex, Host, LineIndex, Map, Module, Position, RuntimeError, Severity,
-    SourceFile, Unit, Value, compile_unit, link, prepare, render, repeated_path,
+    ExportIndex, Host, LineIndex, Module, SourceFile, Unit, Value, compile_unit, link,
+    prepare, render, repeated_path,
 };
-use serde::{Deserialize, Serialize};
 use wasm_bindgen::JsError;
 use wasm_bindgen::prelude::wasm_bindgen;
+
+mod wire;
+
+use wire::{
+    DataInput, Diagnostic, FileInput, HostInput, LineIndexes, PageRef, RenderResult,
+    value_from_json,
+};
 
 /// The version of the core this `.wasm` was built from.
 #[wasm_bindgen]
 #[must_use]
 pub fn version() -> String {
     env!("CARGO_PKG_VERSION").to_owned()
-}
-
-/// A source file as `compile` receives it.
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct FileInput {
-    path: String,
-    text: String,
-    /// The record this file's content is, which types the host's document value in it
-    /// (D30). Absent from a template, and from a document no collection matched.
-    #[serde(default)]
-    record: Option<String>,
-}
-
-/// The host's declaration as `compile` receives it: `{ambient, document?, entry?}`,
-/// where each ambient name is bound to a declared type, to the top-level bindings of a
-/// file, or to nothing at all — a name without a type (D30).
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct HostInput {
-    ambient: BTreeMap<String, Option<AmbientBinding>>,
-    #[serde(default)]
-    document: Option<String>,
-    #[serde(default)]
-    entry: Option<String>,
-}
-
-/// What one ambient name is bound to: a declared type by name, or the top-level
-/// bindings of a file. `null` — a name the host does not type — is the `None` this sits
-/// inside.
-#[derive(Deserialize)]
-#[serde(untagged)]
-enum AmbientBinding {
-    Named(String),
-    Bindings {
-        #[serde(rename = "bindingsOf")]
-        bindings_of: String,
-    },
-}
-
-impl From<HostInput> for Host {
-    fn from(input: HostInput) -> Self {
-        let mut host = Self::new();
-        for (name, ambient) in input.ambient {
-            host = host.bind(
-                &name,
-                match ambient {
-                    None => Ambient::Untyped,
-                    Some(AmbientBinding::Named(ty)) => Ambient::named(&ty),
-                    Some(AmbientBinding::Bindings { bindings_of }) => {
-                        Ambient::bindings(&bindings_of)
-                    }
-                },
-            );
-        }
-        if let Some(document) = input.document {
-            host = host.documents(&document);
-        }
-        if let Some(entry) = input.entry {
-            host = host.rendered_through(&entry);
-        }
-        host
-    }
-}
-
-/// What `loadData` receives — the spike's `DataInput`: the ambient records only. The
-/// envelope is an object so `records`, data files, and the asset manifest are additive
-/// fields later.
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct DataInput {
-    ambient: AmbientInput,
-}
-
-/// The three ambient records and nothing else — an unknown name here is a caller bug,
-/// not data to carry silently (invariant 10).
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct AmbientInput {
-    site: Option<serde_json::Value>,
-    page: Option<serde_json::Value>,
-    build: Option<serde_json::Value>,
-}
-
-/// What `render` receives — the spike's `PageRef`: a path names the page until `plan()`
-/// exists to mint richer references. An object, so those stay additive.
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct PageRef {
-    path: String,
-}
-
-/// The boundary form of every diagnostic. A `code` would be an additive field; nothing
-/// consumes one yet.
-#[derive(Serialize)]
-struct Diagnostic {
-    path: String,
-    span: SpanOut,
-    severity: SeverityOut,
-    message: String,
-    labels: Vec<LabelOut>,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "lowercase")]
-enum SeverityOut {
-    Error,
-    Warning,
-}
-
-impl From<Severity> for SeverityOut {
-    fn from(severity: Severity) -> Self {
-        match severity {
-            Severity::Error => Self::Error,
-            Severity::Warning => Self::Warning,
-        }
-    }
-}
-
-#[derive(Serialize)]
-struct LabelOut {
-    path: String,
-    span: SpanOut,
-    message: String,
-}
-
-/// A span as both of the things a consumer needs: the byte offsets the core works in,
-/// and the two LSP positions an editor or a printed diagnostic wants.
-#[derive(Serialize)]
-struct SpanOut {
-    start: u32,
-    end: u32,
-    range: RangeOut,
-}
-
-/// Zero-based line and UTF-16 `character`, exactly as the LSP defines a position — so a
-/// language server can pass one straight through.
-#[derive(Serialize)]
-struct PositionOut {
-    line: u32,
-    character: u32,
-}
-
-#[derive(Serialize)]
-struct RangeOut {
-    start: PositionOut,
-    end: PositionOut,
-}
-
-impl From<Position> for PositionOut {
-    fn from(position: Position) -> Self {
-        Self {
-            line: position.line,
-            character: position.character,
-        }
-    }
-}
-
-impl SpanOut {
-    /// Places `span` in the file `index` describes.
-    fn placed(span: lemmon_vm::Span, index: &LineIndex) -> Self {
-        let range = index.range(span);
-        Self {
-            start: span.start,
-            end: span.end,
-            range: RangeOut {
-                start: range.start.into(),
-                end: range.end.into(),
-            },
-        }
-    }
-}
-
-/// Every resident file's line index, by path — what places a span at the boundary.
-type LineIndexes = BTreeMap<String, LineIndex>;
-
-/// The index that places a span in `path`: the text of the call in progress if that call
-/// carried the file, otherwise the text the resident unit at that path was compiled from.
-///
-/// The two differ exactly when a recompile failed. That file keeps its previous unit, and
-/// the unit's spans are offsets into the text that produced it — so a diagnostic the
-/// relink raises about it has to be placed against *that* text, not the newer one at the
-/// same path, which may be shorter than the span it is asked to place.
-///
-/// # Panics
-///
-/// If neither has the path. Every diagnostic names a file the core was handed and still
-/// holds, so a miss is a bug in the core rather than anything a caller can provoke.
-fn index_for<'a>(
-    path: &str,
-    incoming: Option<&'a LineIndexes>,
-    resident: &'a LineIndexes,
-) -> &'a LineIndex {
-    incoming
-        .and_then(|indexes| indexes.get(path))
-        .or_else(|| resident.get(path))
-        .unwrap_or_else(|| panic!("no line index for `{path}`, which a diagnostic names"))
-}
-
-impl Diagnostic {
-    /// Places a compile diagnostic and each of its labels — a label by *its own* path,
-    /// since it may point into a different file than the diagnostic does.
-    fn placed(
-        diagnostic: lemmon_vm::Diagnostic,
-        incoming: &LineIndexes,
-        resident: &LineIndexes,
-    ) -> Self {
-        let index = index_for(&diagnostic.path, Some(incoming), resident);
-        Self {
-            span: SpanOut::placed(diagnostic.span, index),
-            path: diagnostic.path,
-            severity: diagnostic.severity.into(),
-            message: diagnostic.message,
-            labels: diagnostic
-                .labels
-                .into_iter()
-                .map(|label| LabelOut {
-                    span: SpanOut::placed(
-                        label.span,
-                        index_for(&label.path, Some(incoming), resident),
-                    ),
-                    path: label.path,
-                    message: label.message,
-                })
-                .collect(),
-        }
-    }
-
-    /// A runtime failure is always an error, and the VM has one span to point at.
-    fn placed_runtime(error: RuntimeError, resident: &LineIndexes) -> Self {
-        Self {
-            span: SpanOut::placed(error.span, index_for(&error.path, None, resident)),
-            path: error.path,
-            severity: SeverityOut::Error,
-            message: error.message,
-            labels: Vec::new(),
-        }
-    }
-}
-
-/// What `render` returns: the page's HTML, or the runtime diagnostic instead.
-/// `channels` and `deps` are additive fields that arrive with `∆RGQ`.
-#[derive(Serialize)]
-struct RenderResult {
-    html: Option<String>,
-    diagnostics: Vec<Diagnostic>,
 }
 
 /// The resident core — one per worker, nothing shared. Units persist across `compile`
@@ -530,31 +289,6 @@ impl Core {
         };
         serde_json::to_string(&result)
             .map_err(|e| format!("serialising the render result failed: {e}"))
-    }
-}
-
-/// A JSON value as the VM's: integral numbers become `Int` and the rest `Float`;
-/// objects become insertion-ordered `Map`s in the key order the shell sent (which is
-/// what a `lem-for` over a map walks). Every string arrives untrusted (`Str`) —
-/// `raw()` is the only way to `html` (invariant 7).
-fn value_from_json(json: &serde_json::Value) -> Value {
-    match json {
-        serde_json::Value::Null => Value::Null,
-        serde_json::Value::Bool(b) => Value::Bool(*b),
-        serde_json::Value::Number(n) => match n.as_i64() {
-            Some(i) => Value::Int(i),
-            None => Value::Float(n.as_f64().expect("a JSON number reads as i64 or f64")),
-        },
-        serde_json::Value::String(s) => Value::str(s),
-        serde_json::Value::Array(items) => {
-            Value::list(items.iter().map(value_from_json).collect())
-        }
-        serde_json::Value::Object(entries) => Value::map(
-            entries
-                .iter()
-                .map(|(key, value)| (Rc::from(key.as_str()), value_from_json(value)))
-                .collect::<Map>(),
-        ),
     }
 }
 
