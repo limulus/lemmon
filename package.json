@@ -16,7 +16,7 @@
     "clean": "npm run clean:js && del-cli target artifacts",
     "clean:js": "del-cli \"*.tsbuildinfo\" \"packages/*/*.tsbuildinfo\" coverage \"packages/*/dist\"",
     "corpus:bless": "UPDATE_CORPUS=1 cargo test --workspace",
-    "lint": "eslint .",
+    "lint": "eslint . --max-warnings 0",
     "lint:fix": "npm run lint -- --fix",
     "prepare": "is-ci || husky",
     "rust": "cargo fmt --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace",
