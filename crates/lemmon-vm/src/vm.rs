@@ -656,6 +656,7 @@ mod tests {
                     vec![Rc::from("LinkPost"), Rc::from("Article")],
                 ),
             ],
+            ..Module::default()
         }
     }
 

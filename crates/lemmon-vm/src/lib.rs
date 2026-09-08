@@ -12,6 +12,7 @@ mod decls;
 mod document;
 mod exports;
 mod host;
+mod plan;
 mod types;
 mod unit;
 mod value;
@@ -31,8 +32,14 @@ pub use compile::{
 pub use decls::{Declaration, Decls, FieldDecl, Kind, Shape, ShapeFact, TypeFact};
 pub use exports::{Export, ExportIndex, TypeExport};
 pub use host::{Ambient, Host};
+pub use plan::{
+    BindingStep, Bindings, Fulfilled, Read, RecordPlan, SourceKind, Step, StepKind,
+};
 pub use types::Type;
-pub use unit::{ExportedSignature, ImportRef, ImportedSignature, Param, Unit, link};
+pub use unit::{
+    BindingFn, DefaultFn, ExportedSignature, ImportRef, ImportedSignature, Param, Unit,
+    link,
+};
 pub use value::{Closure, Map, Value};
 pub use vm::render;
 
@@ -56,6 +63,10 @@ pub struct SourceFile {
     /// matched it, or the type its own `type:` key named — the host's to decide (D30).
     /// A document without one is unknown-typed and renders.
     pub record: Option<String>,
+    /// Where in the file the record was named, when a `type:` key named it — what a
+    /// diagnostic about the record points at. Without one it points at the front
+    /// matter as a whole.
+    pub record_span: Option<Span>,
 }
 
 impl SourceFile {
@@ -65,6 +76,7 @@ impl SourceFile {
             path: path.into(),
             text: text.into(),
             record: None,
+            record_span: None,
         }
     }
 
@@ -72,6 +84,13 @@ impl SourceFile {
     #[must_use]
     pub fn with_record(mut self, name: impl Into<String>) -> Self {
         self.record = Some(name.into());
+        self
+    }
+
+    /// The same file, with the record named at `span` — the `type:` key's value.
+    #[must_use]
+    pub const fn named_at(mut self, span: Span) -> Self {
+        self.record_span = Some(span);
         self
     }
 }

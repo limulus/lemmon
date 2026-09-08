@@ -1,0 +1,4 @@
+<lem-type Gallery extends Page>
+  hero: Photo? by site.name
+  layout: (Gallery, html): html
+</lem-type>

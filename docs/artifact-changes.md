@@ -99,7 +99,35 @@ moved it. Newest last. An entry is removed when its change has been applied.
   type is, and inherited below. Its own base may stand in for `T` — `(Page, html): html`
   on a schema extending `Page` is a layout a family of schemas shares (D36, ∆Iau).
 
+- **Schemas, defaults and references** — replace the two bullets on reference fields and
+  computed defaults with `docs/language.md` §Schemas as it now reads: a `by` index is an
+  expression of type `{string: R}` checked where the field is declared; a default is
+  checked against its field and runs at load in dependency order, seeing `self` as the
+  declaring type, `path` and `body` on a page-backed record, and the ambient values but
+  never the host's document value; its reads are recorded and a cycle is a link error;
+  `layout`'s default names a function. Drop the bullet that checks a plain string key
+  against a like-named site map by convention, and the `extra: {string: any}` opt-out
+  from the extra-key rule — both were names the core would have to know (D37, ∆iCW).
+- **Ambient types, `from` and computed bindings** — say a `from` binding stands only at
+  the top level of the bindings file and its source is a string literal, `plugin("…")`,
+  or `env("…")` with one string-literal argument; that a computed binding compiles to a
+  function the loader runs in dependency order; and that at that file's top level a
+  sibling is read by its bare name, the same read as `site.x` (D37, ∆iCW).
+
 ## Shell & Core
+
+- **WASM API, `compile` and `loadData`** — a file may carry `recordSpan`, the byte
+  offsets of its `type:` key's value, which a diagnostic about the record then points
+  at. Say what `loadData` grows into: `ambient` as bare JSON by any host-bound name,
+  and `sources` fulfilling each `from` binding by name (`{path, value, spans}` per
+  document of a glob, one for a data file, `{value}` for a plugin or env source), with
+  `spans` a field-path → boundary-span table the host computes from the YAML it
+  parsed, and the `type:` key stripped by the shell (D37, ∆iCW).
+- **VM, the module** — where the text gives `Module`'s shape, add the loader's plans:
+  `records` (each record's default and `by` functions in dependency order), `bindings`
+  (one plan per bindings file, its bindings in load order), and `exports` (function
+  name → index). A default, `by` index, or computed binding is an ordinary function of
+  its unit that the loader invokes; `Op` gained nothing (D37, ∆iCW).
 
 - **WASM API, `compile`** — give the declaration its shape:
   `{ambient: {[name]: TypeName | {bindingsOf: path} | null}, document?, entry?}`, where

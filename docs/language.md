@@ -220,20 +220,38 @@ the checker's question, not the parser's.
 
 - **Fields** are one per line, in the order `name: Type`, then `by <index>`, then
   `= <default>`; a default may span lines inside its brackets (D29).
-- **Reference fields** (`by <index>`): the loader resolves the front-matter value
-  (id or alias) against the named index; a miss is a load error at the YAML position.
-- **Computed defaults** evaluate once at load, in dependency order.
-  The default expression sees `body`, `path`, `self`, and `site`.
-- Plain string keys that name another record (`author: string` → `site.authors`) are
-  checked at load; a miss is a load error at the YAML position.
-- **Extra front-matter keys are errors** (opt out per type with `extra: {string: any}`).
+- **Reference fields** (`by <index>`): the field's type is a record `R` (or `R?`), and
+  the index is an expression of type `{string: R}` — a map on `site`, as a rule —
+  checked where the field is declared. The loader resolves the front-matter string
+  through it; a miss is a load error at the YAML position.
+- **Computed defaults** are checked against their field where they are declared and run
+  once at load, when the loaded data omits the field, in dependency order (D37). A
+  default sees `self`, the record being built, as the declaring type — a subtype that
+  redeclares a field to change its default sees the subtype. On a record that extends
+  the host's document type it also sees `path`, the document's path, and `body`, its
+  rendered prose as `html`; on any other record those names are undefined. It sees the
+  ambient values as any expression does, except the host's document value, which is
+  bound to the record only once it is built — read `self`. What a default reads through
+  `self` and off an ambient value is recorded with it: a field whose default reads
+  itself through others is refused at link, and the loader has an order before it runs
+  anything. Only reads written in the default itself count — a field a called function
+  reads, or one reached through `self` handed to a function whole, is not part of the
+  order, and a default that reaches a field the loader has not computed yet is a load
+  error at the read, never a guess. A `layout` default names a function:
+  `layout: (Article, html): html = article`.
+- **Extra front-matter keys are errors.** A record has exactly its declared fields.
 - **`extends`** names a record — never an enum, a builtin type, or the type itself
   through any chain — and a field an ancestor declares may be redeclared only with the
-  same type, to give it a default (D32). So `layout: (Article, html): html` is declared
-  once, on `Article`, and a `LinkPost extends Article` inherits it: a layout that only a
-  link post needs takes an `Article` and narrows inside.
-- _Not yet (∆iCW): defaults and `by` indexes are parsed and kept, not checked — their
-  scope (`body`, `path`, `self`, `site`) is the loader's._
+  same type, to give it a default (D32); a redeclaration that gives none leaves the
+  ancestor's default in force. So `layout: (Article, html): html` is declared once, on
+  `Article`, and a `LinkPost extends Article` inherits it: a layout that only a link
+  post needs takes an `Article` and narrows inside.
+- _Not yet (∆iCW): the loader that runs defaults and resolves `by` indexes is not here
+  yet. Until it is, loaded data is neither validated nor tagged, and a field with a
+  default is still absent from a record the host loaded without it._
+- _Not yet (∆Q6L): `datetime`, `duration`, `url`, and `asset` have no run-time values;
+  a loaded field of one of those types keeps its string until the stdlib gives them
+  one._
 - Schemas are the source of truth; JSON Schema is derived output (`lem schema export`),
   never authored (rationale: the same types statically check template expressions —
   subtyping, function types, `html`/`asset` semantics, reference fields).
@@ -275,9 +293,16 @@ D19's flag — a draft is skipped and left out of collections unless `--drafts`.
   the file as data. A call names a host source instead of a file — `plugin("…")` is a
   plugin's data hook, `env("…")` an environment value the shell passes as data, the
   only way one reaches a program (invariant 1) — and the shell resolves the string the
-  environment holds by the binding's type, as it resolves any string in data. `= expr`
-  bindings are computed at load, in dependency order, and declare their type as a
-  `from` binding does — see **Declared, not inferred** below.
+  environment holds by the binding's type, as it resolves any string in data. A `from`
+  binding stands only at the top level of this file, and its source is a string
+  literal, `plugin("…")`, or `env("…")` with one string-literal argument; any other
+  form is an error at the source. `= expr` bindings are computed at load, in dependency
+  order, and declare their type as a `from` binding does — see **Declared, not
+  inferred** below. At this file's top level a sibling binding is read by its bare name
+  — `concat(posts, links, tils)` below — and that is the same read as `site.posts`,
+  recorded for the loader's order; a `lem-fn` or a default in the file reads
+  `site.posts` as every other file does. A binding here may not read the host's
+  document value: it is computed once, before any page is bound.
 
 ```
 <lem-let posts:    [Article]        from "feed/*/index.md" />
@@ -327,10 +352,11 @@ plus the facts it consumed (invariant 11, D25): a type error in one file's body 
 change how another file is checked, and nothing has to be compiled in dependency order
 for a name to have a type. Everywhere else a `lem-let` is a local and infers as usual.
 
-_Not yet (∆iCW): a `from` binding's type is read and `site` typed by it, but nothing
-fulfils one — the file it stands in compiles to a diagnostic until the loader exists.
-Data a host loads is untagged until then, so a type test over an ambient value is a
-render error (D35)._
+_Not yet (∆iCW): a `from` binding compiles, and its source is recorded for the host to
+fulfil; a computed binding compiles to a function the loader runs. Nothing fulfils or
+runs them yet — the loader is what this item builds — so data a host loads is untagged
+and unvalidated until then, and a type test over an ambient value is a render error
+(D35)._
 
 ### Checking
 
@@ -361,7 +387,7 @@ hierarchies and `T?`. Diagnostics carry a primary span plus secondary spans wher
   never a subtype: every key must name a field the record or an ancestor declares, each
   value is checked against its field, an omitted optional field is null, and an omitted
   non-optional field is an error, whether or not the field has a default — defaults are
-  the loader's, evaluated where `body` and `site` exist (D35). A map that is not a
+  the loader's, run once the record and the site are in hand (D35, D37). A map that is not a
   literal never stands for a record.
 - **Conditions.** `lem-if`, `lem-else-if`, and `?:` test a `bool` or an optional — no
   truthiness. `&&`, `||`, and `!` take `bool` only. What a condition narrows is below.

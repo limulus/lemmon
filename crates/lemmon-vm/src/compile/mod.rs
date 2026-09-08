@@ -42,11 +42,12 @@ use lemmon_syntax::ast::{Item, Spanned};
 use lemmon_syntax::{Parse, Span, SyntaxToken};
 
 use crate::bytecode::{Function, Module, Op};
-use crate::decls::Decls;
+use crate::decls::{Decls, Kind, Shape};
 use crate::exports::{Export, ExportIndex};
 use crate::host::Host;
+use crate::plan::{Read, StepKind};
 use crate::types::Type;
-use crate::unit::{ImportRef, ImportedSignature, Unit, link};
+use crate::unit::{DefaultFn, ImportRef, ImportedSignature, Unit, link};
 use crate::{SourceFile, Value};
 
 pub use diagnostics::{Compiled, Diagnostic, Label};
@@ -155,6 +156,8 @@ pub fn compile_unit(
             type_refs: Vec::new(),
             ambient_refs: Vec::new(),
             record: prepared.record.clone(),
+            defaults: Vec::new(),
+            bindings: Vec::new(),
         },
         strings: HashMap::new(),
         index,
@@ -164,6 +167,8 @@ pub fn compile_unit(
         diagnostics: prepared.diagnostics.clone(),
         ctxs: Vec::new(),
         narrowings: Vec::new(),
+        reads: None,
+        top_bindings: Vec::new(),
     };
     let entry = compiler.reserve(&prepared.path);
     debug_assert_eq!(entry, 0, "the entry is a unit's first function");
@@ -194,7 +199,12 @@ pub fn compile_unit(
         }
     }
     compiler.compile_functions(prepared.source.parse());
-    compiler.compile_entry(&prepared.source, prepared.chunks.as_deref());
+    compiler.compile_defaults(prepared.source.parse());
+    compiler.compile_entry(
+        &prepared.source,
+        prepared.chunks.as_deref(),
+        host.bindings_value(&prepared.path).map(Rc::from),
+    );
     compiler.resolve_import_operands();
     let Compiler {
         unit,
@@ -261,6 +271,21 @@ struct Compiler<'a> {
     /// with the type it holds while the condition is known to hold: a binding, or a
     /// field path from one (`article.hero`), which immutability keeps true (D35).
     narrowings: Vec<(narrowing::Path, Type)>,
+    /// What the function being compiled reads that the loader must have ready before
+    /// running it — open while a default, a `by` index, or a computed binding is being
+    /// lowered, and through every lambda inside one (∆iCW).
+    reads: Option<Reads>,
+    /// The top-level bindings of the bindings file lowered so far, by name — the list a
+    /// repeat is checked against, since they are fields and not locals in any scope.
+    top_bindings: Vec<(Rc<str>, Span)>,
+}
+
+/// The reads a loader-run function makes, being collected.
+struct Reads {
+    /// The `self` parameter of a default or `by` index, by its binder — what tells a
+    /// read of the record being built from any other. `None` in a computed binding.
+    self_binder: Option<Span>,
+    items: Vec<Read>,
 }
 
 impl<'a> Compiler<'a> {
@@ -340,7 +365,229 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    fn compile_entry(&mut self, source: &Source, chunks: Option<&[String]>) {
+    /// Compiles the loader's function for every field default and `by` index the
+    /// records this file declares carry (∆iCW). A default is checked against its
+    /// field's type; an index must be a map from string to the field's record. Each
+    /// runs with `self` — the record being built, as the declaring type — and, on a
+    /// record that extends the host's document type, `path` and `body` as well.
+    fn compile_defaults(&mut self, parse: &Parse) {
+        for item in parse.root().items() {
+            let Item::TypeDecl(decl) = &item else {
+                continue;
+            };
+            let name = required(decl.name());
+            // Only a declaration this file kept: a refused one (reserved, repeated, or
+            // another file's) was reported where it was collected.
+            let Some(declared) = self
+                .unit
+                .types
+                .iter()
+                .find(|d| &*d.name == name.text() && d.name_span == name.span())
+                .cloned()
+            else {
+                continue;
+            };
+            if self
+                .index
+                .lookup_type(&declared.name)
+                .is_some_and(|owner| owner.path != self.path)
+            {
+                continue;
+            }
+            let Shape::Record {
+                fields: declared_fields,
+                ..
+            } = &declared.shape
+            else {
+                unreachable!("a `lem-type` declares a record");
+            };
+            let page_backed = self.host.document_type().is_some_and(|document| {
+                *document == *declared.name || self.index.extends(&declared.name, &document)
+            });
+            for field in decl.fields() {
+                let field_name = required(field.name());
+                // A repeated field was refused with the declaration's own diagnostic;
+                // whatever default it carries belongs to nothing.
+                let Some(field_decl) =
+                    declared_fields.iter().find(|f| f.span == field_name.span())
+                else {
+                    continue;
+                };
+                let ty = self.known(field_decl.ty.clone());
+                let span = field_name.span();
+                let name = format!("{}.{}", declared.name, field_decl.name);
+                let row = |compiler: &mut Self, kind: StepKind, func: u32, reads| {
+                    compiler.unit.defaults.push(DefaultFn {
+                        record: declared.name.clone(),
+                        field: field_decl.name.clone(),
+                        kind,
+                        func,
+                        reads,
+                        span,
+                    });
+                };
+                if let Some(default) = field.default() {
+                    let (func, reads) =
+                        self.compile_step(&name, &declared.name, page_backed, span, |c| {
+                            c.check(&default, &ty);
+                        });
+                    row(self, StepKind::Default, func, reads);
+                }
+                if let Some(index) = field.index() {
+                    let record = match ty.strip_optional() {
+                        Type::Named(record)
+                            if self.decls().kind(record) == Some(Kind::Record) =>
+                        {
+                            Some(record.clone())
+                        }
+                        _ => None,
+                    };
+                    let (func, reads) = self.compile_step(
+                        &format!("{name}.by"),
+                        &declared.name,
+                        page_backed,
+                        span,
+                        |c| {
+                            match &record {
+                                Some(record) => {
+                                    c.check(
+                                        &index,
+                                        &Type::map(Type::Named(record.clone())),
+                                    );
+                                }
+                                // An unknown type was reported at the annotation; anything
+                                // else declared is the mistake here.
+                                None => {
+                                    if ty != Type::Any {
+                                        c.error(
+                                            index.span(),
+                                            format!(
+                                                "`by` resolves a record: `{}` is a `{ty}`",
+                                                field_decl.name
+                                            ),
+                                        );
+                                    }
+                                    c.expr(&index);
+                                }
+                            }
+                        },
+                    );
+                    row(self, StepKind::Index, func, reads);
+                }
+            }
+        }
+    }
+
+    /// Compiles one function the loader runs for the record `record`: `self` bound
+    /// as that record, and `path`/`body` too when `page_backed`, then whatever `lower`
+    /// emits as its return value. Collects what the body reads while it runs, lambdas
+    /// inside included. The three implicit names are the language's, so they take
+    /// [`BindingKind::Implicit`], and they are told apart by binder at three distinct
+    /// spans inside the field's name — nothing is ever reported at one.
+    fn compile_step(
+        &mut self,
+        name: &str,
+        record: &Rc<str>,
+        page_backed: bool,
+        span: Span,
+        lower: impl FnOnce(&mut Self),
+    ) -> (u32, Vec<Read>) {
+        let mut params: Vec<(&str, Type, Span)> =
+            vec![("self", Type::Named(record.clone()), span)];
+        if page_backed {
+            params.push(("path", Type::String, Span::new(span.start, span.start)));
+            params.push(("body", Type::Html, Span::new(span.end, span.end)));
+        }
+        self.function_for_loader(name, &params, Some(span), span, lower)
+    }
+
+    /// Compiles a function of `params` the loader calls, returning what `lower` leaves
+    /// on the stack, and the reads it made — `self_binder` being the binder of the
+    /// `self` among the parameters, if one is.
+    fn function_for_loader(
+        &mut self,
+        name: &str,
+        params: &[(&str, Type, Span)],
+        self_binder: Option<Span>,
+        span: Span,
+        lower: impl FnOnce(&mut Self),
+    ) -> (u32, Vec<Read>) {
+        self.push_frame();
+        for (param, ty, binder) in params {
+            self.names
+                .bind_local(param, *binder, BindingKind::Implicit, ty.clone());
+        }
+        let outer = self.reads.replace(Reads {
+            self_binder,
+            items: Vec::new(),
+        });
+        lower(self);
+        self.emit(Op::Return, span);
+        let reads = self.reads.take().expect("the reads opened above").items;
+        self.reads = outer;
+        let (ctx, frame) = self.pop_frame();
+        let func = self.reserve(name);
+        self.finish(
+            func,
+            ctx,
+            &frame,
+            params
+                .iter()
+                .map(|(param, _, _)| Rc::from(*param))
+                .collect(),
+        );
+        (func, reads)
+    }
+
+    /// Records `read` as one the function being compiled for the loader makes, once.
+    fn note_read(&mut self, read: Read) {
+        if let Some(reads) = &mut self.reads
+            && !reads.items.contains(&read)
+        {
+            reads.items.push(read);
+        }
+    }
+
+    /// Records the read `object.field` makes, when a loader-run function is being
+    /// compiled and the object is one whose fields decide order: the record being
+    /// built, through `self`, or an ambient value, by name.
+    fn note_member_read(&mut self, object: &lemmon_syntax::ast::Expr, field: &str) {
+        let Some(reads) = &self.reads else {
+            return;
+        };
+        let Some((path, _)) = self.path_of(object) else {
+            return;
+        };
+        if !path.fields().is_empty() {
+            return;
+        }
+        let read = match path.root() {
+            narrowing::Root::Local(binder) if Some(*binder) == reads.self_binder => {
+                Read::Own(Rc::from(field))
+            }
+            narrowing::Root::Local(_) => return,
+            narrowing::Root::Ambient(value) => Read::Ambient {
+                value: value.clone(),
+                field: Rc::from(field),
+            },
+        };
+        self.note_read(read);
+    }
+
+    /// Compiles the file's top level into its entry function. `fields_of` is the
+    /// ambient value this file's top-level bindings are the fields of, when it is the
+    /// bindings file: only here do those bindings answer to their bare names — a
+    /// `lem-fn` or a default in the file, compiled before this, reads them as `site.x`
+    /// like every other file.
+    fn compile_entry(
+        &mut self,
+        source: &Source,
+        chunks: Option<&[String]>,
+        fields_of: Option<Rc<str>>,
+    ) {
+        if let Some(value) = fields_of {
+            self.names.expose(value);
+        }
         self.push_frame();
         let parse = source.parse();
         let items = parse.root().items().collect();
@@ -552,6 +799,7 @@ mod tests {
     use lemmon_syntax::Severity;
 
     use super::*;
+    use crate::host::Ambient;
     use crate::render;
     use crate::unit::Param;
 
@@ -586,6 +834,263 @@ mod tests {
             compiled.diagnostics
         );
         compiled.diagnostics
+    }
+
+    // --- Defaults and `by` indexes, compiled for the loader (∆iCW) ----------------
+
+    /// A host shaped like the standard shell's, so a record extending `Page` is
+    /// page-backed.
+    fn shell_host() -> Host {
+        Host::new()
+            .bind("page", Ambient::named("Page"))
+            .bind("site", Ambient::bindings("site.lem"))
+            .documents("page")
+            .rendered_through("layout")
+    }
+
+    const PAGE: &str = "<lem-type Page>\n  url: url\n</lem-type>";
+
+    fn shown_with(host: &Host, files: &[SourceFile]) -> Vec<String> {
+        shown(&compile(files, host).diagnostics)
+    }
+
+    /// The unit of `path` compiled against `host` and the other files.
+    fn unit_with(host: &Host, path: &str, files: &[SourceFile]) -> Unit {
+        let prepared: Vec<_> = files
+            .iter()
+            .map(|file| prepare(file, host).expect("the fixture parses"))
+            .collect();
+        let mut index = ExportIndex::new();
+        for p in &prepared {
+            index.offer(p.path(), p.exports());
+            index.offer_types(p.path(), p.types());
+        }
+        let this = prepared
+            .iter()
+            .find(|p| p.path() == path)
+            .expect("the file is given");
+        compile_unit(this, &index, host).expect_output()
+    }
+
+    #[test]
+    fn checks_a_fields_default_against_the_fields_type() {
+        let files = [SourceFile::new(
+            "types.lem",
+            "<lem-type A>\n  title: string = \"T\"\n  n: int = \"no\"\n</lem-type>",
+        )];
+        assert_eq!(
+            shown_with(&untyped_host(), &files),
+            ["types.lem:46..50: expected `int`, got `string`"]
+        );
+    }
+
+    #[test]
+    fn gives_a_default_self_and_records_the_fields_it_reads() {
+        let unit = unit_with(
+            &untyped_host(),
+            "types.lem",
+            &[SourceFile::new(
+                "types.lem",
+                "<lem-type A>\n  first: string\n  words: [string]\n  \
+                 full: string = self.first + words(self)\n  \
+                 tags: [string] = self.words.filter(|w| w != self.first)\n</lem-type>\n\
+                 <lem-fn words(a: A): string = a.first />",
+            )],
+        );
+        let rows: Vec<(String, StepKind, Vec<Read>)> = unit
+            .defaults
+            .iter()
+            .map(|d| (format!("{}.{}", d.record, d.field), d.kind, d.reads.clone()))
+            .collect();
+        let own = |f: &str| Read::Own(Rc::from(f));
+        assert_eq!(
+            rows,
+            [
+                ("A.full".to_owned(), StepKind::Default, vec![own("first")]),
+                // Read inside a lambda, and through `self` captured into it.
+                (
+                    "A.tags".to_owned(),
+                    StepKind::Default,
+                    vec![own("words"), own("first")]
+                ),
+            ]
+        );
+        let full = &unit.functions[unit.defaults[0].func as usize];
+        assert_eq!(full.name, "A.full");
+        assert_eq!(full.params, [Rc::from("self")]);
+        // `words(self)` passes the record to a function: no field read, no fact.
+        assert_eq!(unit.facts.len(), 0);
+    }
+
+    #[test]
+    fn gives_a_page_backed_default_path_and_body() {
+        let post = SourceFile::new(
+            "schema.lem",
+            "<lem-type Post extends Page>\n  slug: string = path\n  \
+             excerpt: html = body\n  layout: (Post, html): html\n</lem-type>",
+        );
+        let files = [SourceFile::new("ambient.lem", PAGE), post];
+        assert_eq!(shown_with(&shell_host(), &files), Vec::<String>::new());
+        let unit = unit_with(&shell_host(), "schema.lem", &files);
+        let slug = &unit.functions[unit.defaults[0].func as usize];
+        assert_eq!(
+            slug.params,
+            [Rc::from("self"), Rc::from("path"), Rc::from("body")]
+        );
+    }
+
+    #[test]
+    fn gives_a_data_records_default_neither_path_nor_body() {
+        // A record loaded from data has no document behind it.
+        let author = SourceFile::new(
+            "author.lem",
+            "<lem-type Author>\n  bio: html = body\n</lem-type>",
+        );
+        assert_eq!(
+            shown_with(
+                &shell_host(),
+                &[SourceFile::new("ambient.lem", PAGE), author]
+            ),
+            ["author.lem:32..36: undefined name `body`"]
+        );
+    }
+
+    #[test]
+    fn records_a_field_read_by_calling_it() {
+        // `self.fmt(…)` reads the field before calling what it holds, and the loader
+        // must have it computed first like any other read.
+        let unit = unit_with(
+            &untyped_host(),
+            "types.lem",
+            &[SourceFile::new(
+                "types.lem",
+                "<lem-type A>\n  fmt: (string): string\n  \
+                 full: string = self.fmt(\"x\")\n</lem-type>",
+            )],
+        );
+        assert_eq!(unit.defaults[0].reads, [Read::Own(Rc::from("fmt"))]);
+    }
+
+    #[test]
+    fn refuses_the_document_value_inside_a_default() {
+        let files = [
+            SourceFile::new("ambient.lem", PAGE),
+            SourceFile::new(
+                "schema.lem",
+                "<lem-type Post extends Page>\n  title: string = page.url\n  \
+                 layout: (Post, html): html\n</lem-type>",
+            ),
+        ];
+        assert_eq!(
+            shown_with(&shell_host(), &files),
+            [
+                "schema.lem:47..51: `page` is not bound while a record loads: the record so far is `self`"
+            ]
+        );
+    }
+
+    #[test]
+    fn compiles_a_by_index_as_a_map_from_string_to_the_fields_record() {
+        let site = SourceFile::new(
+            "site.lem",
+            "<lem-let photos: {string: Photo} from \"p.json\" />\n\
+             <lem-let name: string = \"n\" />",
+        );
+        let photo = "<lem-type Photo>\n  alt: string\n</lem-type>\n";
+        let files = [
+            site.clone(),
+            SourceFile::new(
+                "schema.lem",
+                format!(
+                    "{photo}<lem-type Post>\n  hero: Photo? by site.photos\n</lem-type>"
+                ),
+            ),
+        ];
+        assert!(shown_with(&shell_host(), &files).is_empty());
+        let unit = unit_with(&shell_host(), "schema.lem", &files);
+        assert_eq!(unit.defaults.len(), 1);
+        assert_eq!(unit.defaults[0].kind, StepKind::Index);
+        assert_eq!(
+            unit.defaults[0].reads,
+            [Read::Ambient {
+                value: Rc::from("site"),
+                field: Rc::from("photos")
+            }]
+        );
+        assert_eq!(
+            unit.functions[unit.defaults[0].func as usize].name,
+            "Post.hero.by"
+        );
+        for (field, message) in [
+            (
+                "hero: Photo? by site.name",
+                "expected `{string: Photo}`, got `string`",
+            ),
+            (
+                "title: string by site.photos",
+                "`by` resolves a record: `title` is a `string`",
+            ),
+            // The unknown type was reported at the annotation; nothing more is said.
+            ("x: Nope by site.photos", "unknown type `Nope`"),
+        ] {
+            let files = [
+                site.clone(),
+                SourceFile::new(
+                    "schema.lem",
+                    format!("{photo}<lem-type Post>\n  {field}\n</lem-type>"),
+                ),
+            ];
+            let reported = shown_with(&shell_host(), &files);
+            assert_eq!(reported.len(), 1, "{field}: {reported:?}");
+            assert!(reported[0].ends_with(message), "{field}: {reported:?}");
+        }
+    }
+
+    #[test]
+    fn resolves_a_default_that_names_a_project_function() {
+        let files = [
+            SourceFile::new("ambient.lem", PAGE),
+            SourceFile::new(
+                "schema.lem",
+                "<lem-type Post extends Page>\n  layout: (Post, html): html = post\n\
+                 </lem-type>\n<lem-fn post(p: Post, body: html)><lem.p.url><lem.body></lem-fn>",
+            ),
+        ];
+        assert_eq!(shown_with(&shell_host(), &files), Vec::<String>::new());
+        let files = [
+            SourceFile::new("ambient.lem", PAGE),
+            SourceFile::new(
+                "schema.lem",
+                "<lem-type Post extends Page>\n  layout: (Post, html): html = other\n\
+                 </lem-type>\n<lem-fn other(s: string): html><lem.s></lem-fn>",
+            ),
+        ];
+        assert_eq!(
+            shown_with(&shell_host(), &files),
+            ["schema.lem:60..65: expected `(Post, html): html`, got `(string): html`"]
+        );
+    }
+
+    #[test]
+    fn compiles_no_default_for_a_declaration_or_field_the_file_did_not_keep() {
+        // `b.lem`'s `A` lost to `a.lem`'s, and `B`'s second `t` is a repeat: neither
+        // default belongs to anything, so neither is compiled — were they, each would
+        // add a diagnostic of its own to the duplicate's, since `nope` is no field.
+        let files = [
+            SourceFile::new("a.lem", "<lem-type A>\n  t: string = \"a\"\n</lem-type>"),
+            SourceFile::new(
+                "b.lem",
+                "<lem-type A>\n  t: string = self.nope\n</lem-type>\n\
+                 <lem-type B>\n  t: string = \"1\"\n  t: string = self.nope\n</lem-type>",
+            ),
+        ];
+        assert_eq!(
+            shown_with(&untyped_host(), &files),
+            [
+                "b.lem:10..11: `A` is already defined\n  a.lem:10..11: first defined here",
+                "b.lem:82..83: `t` is already defined\n  b.lem:64..65: first defined here",
+            ]
+        );
     }
 
     #[test]

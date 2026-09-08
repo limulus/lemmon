@@ -1,0 +1,17 @@
+<lem-type Til extends Page>
+  topic: string
+  title: string = "TIL: " + self.topic
+  slug: string = path
+  hero: Photo? by site.photos
+  layout: (Til, html): html = til
+</lem-type>
+
+<lem-fn til(t: Til, body: html)>
+  <h1><lem.t.title></h1>
+  <lem.body>
+</lem-fn>
+
+A default is checked against its field and sees the record being built as `self`, and
+a page's `path` and `body` besides; a `by` index resolves a string in front matter
+through a map on `site`; `layout` defaults to a function of the schema's own type. All
+of it runs at load, none of it at render.

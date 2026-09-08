@@ -174,11 +174,9 @@ impl Core {
         let mut diagnostics: Vec<lemmon_vm::Diagnostic> = Vec::new();
         let mut prepared = Vec::new();
         for file in &files {
-            let source = SourceFile {
-                path: file.path.clone(),
-                text: file.text.clone(),
-                record: file.record.clone(),
-            };
+            let mut source = SourceFile::new(file.path.clone(), file.text.clone());
+            source.record = file.record.clone();
+            source.record_span = file.record_span.map(Into::into);
             match prepare(&source, &self.host) {
                 Ok(p) => prepared.push(p),
                 Err(errors) => diagnostics.extend(errors),
@@ -813,6 +811,24 @@ mod tests {
             )
             .unwrap();
         assert!(later.contains("has no field `nope`"), "{later}");
+    }
+
+    #[test]
+    fn points_a_record_diagnostic_at_the_key_the_host_named_it_at() {
+        let mut core = Core::new();
+        compile_clean(&mut core, SCHEMA);
+        let result = core
+            .compile_json(
+                r##"[{"path": "post.md", "text": "---\ntype: Missive\n---\nhi", "record": "Missive", "recordSpan": {"start": 10, "end": 17}}]"##,
+                Some(TYPED),
+            )
+            .unwrap();
+        let reported = diagnostics(&result);
+        assert_eq!(reported[0]["message"], "unknown type `Missive`");
+        assert_eq!(reported[0]["span"]["start"], 10);
+        assert_eq!(reported[0]["span"]["end"], 17);
+        assert_eq!(reported[0]["span"]["range"]["start"]["line"], 1);
+        assert_eq!(reported[0]["span"]["range"]["start"]["character"], 6);
     }
 
     #[test]

@@ -16,9 +16,12 @@ use lemmon_syntax::Span;
 use crate::Value;
 use crate::bytecode::{Function, Module, Op};
 use crate::compile::{Compiled, Diagnostic, index_u32};
-use crate::decls::{Declaration, Decls, Shape, TypeFact};
+use crate::decls::{Declaration, Decls, Kind, Shape, TypeFact};
 use crate::exports::ExportIndex;
 use crate::host::Host;
+use crate::plan::{
+    BindingStep, Bindings, Fulfilled, Read, RecordPlan, Step, StepKind, order,
+};
 use crate::types::Type;
 
 /// One file's compiled output: self-contained except for the functions it names in
@@ -57,6 +60,36 @@ pub struct Unit {
     /// fact of the unit like the rest, and the reason two documents of different
     /// schemas cannot share one.
     pub record: Option<String>,
+    /// The functions the loader runs for the records this file declares: each field's
+    /// default and `by` index, with what it reads (∆iCW). Part of this unit and no
+    /// consumer's: a default is not part of a type's shape fact.
+    pub defaults: Vec<DefaultFn>,
+    /// The top-level bindings of this file when it is the one the host reads an
+    /// ambient value from — what fulfils each, in binding order. Empty elsewhere.
+    pub bindings: Vec<BindingFn>,
+}
+
+/// One loader-run function a unit compiled for a field of a record it declares.
+#[derive(Clone, Debug, PartialEq)]
+pub struct DefaultFn {
+    pub record: Rc<str>,
+    pub field: Rc<str>,
+    pub kind: StepKind,
+    /// The function's index in its unit.
+    pub func: u32,
+    pub reads: Vec<Read>,
+    /// The field's name in the declaration.
+    pub span: Span,
+}
+
+/// One top-level binding of the bindings file, as compiled: a computed one's `func`
+/// is an index in its unit.
+#[derive(Clone, Debug, PartialEq)]
+pub struct BindingFn {
+    pub name: Rc<str>,
+    pub fulfilled: Fulfilled,
+    /// The binding's name in the file.
+    pub span: Span,
 }
 
 /// A foreign type a unit was compiled against: where this file first reached it, and
@@ -293,8 +326,34 @@ pub fn link(units: &[Unit], index: &ExportIndex, host: &Host) -> Compiled<Module
             (export.decl.name.clone(), chain)
         })
         .collect();
+    let places = Places {
+        units,
+        index,
+        positions: &positions,
+        function_offsets: &function_offsets,
+    };
+    let records = places.record_plans(&mut diagnostics);
+    let bindings = places.bindings_plans(host, &records, &mut diagnostics);
+    // A cycle among what the loader runs is as fatal as an unresolved import: the
+    // program could never load.
+    if diagnostics.iter().any(Diagnostic::is_error) {
+        return Compiled::new(None, diagnostics);
+    }
+    let exports = index
+        .exports()
+        .map(|export| {
+            let owner = positions[export.path.as_str()];
+            (
+                export.signature.name.clone(),
+                add_u32(function_offsets[owner], export.signature.func),
+            )
+        })
+        .collect();
     let mut module = Module {
         types,
+        exports,
+        records,
+        bindings,
         ..Module::default()
     };
     for (position, unit) in units.iter().enumerate() {
@@ -376,6 +435,255 @@ pub fn link(units: &[Unit], index: &ExportIndex, host: &Host) -> Compiled<Module
 
 fn add_u32(a: u32, b: u32) -> u32 {
     a.checked_add(b).expect("fewer than 2^32 items")
+}
+
+/// Where each unit's functions land in the module — what turns a unit's loader-run
+/// functions into the module's plans.
+struct Places<'a> {
+    units: &'a [Unit],
+    index: &'a ExportIndex,
+    positions: &'a BTreeMap<&'a str, usize>,
+    function_offsets: &'a [u32],
+}
+
+impl Places<'_> {
+    /// A unit-local function index, in the module.
+    fn func(&self, position: usize, func: u32) -> u32 {
+        add_u32(self.function_offsets[position], func)
+    }
+
+    /// The loader's plan for every declared record — the bindings record included,
+    /// whose plan is empty since its fields are bindings. Each field's steps come from
+    /// the nearest declaration in the chain that gives it any: a redeclaration changes
+    /// the default (D32), and one that gives none leaves the ancestor's in force. The
+    /// steps are relocated into the module and ordered by what each reads through
+    /// `self`; a field that reads itself through others is a link error at the field,
+    /// since no order could run it.
+    fn record_plans(&self, diagnostics: &mut Vec<Diagnostic>) -> Vec<RecordPlan> {
+        let mut plans = Vec::new();
+        for export in self.index.types() {
+            let name = &export.decl.name;
+            if export.decl.kind() != Kind::Record {
+                continue;
+            }
+            let mut steps: Vec<Step> = Vec::new();
+            let mut seen: Vec<Rc<str>> = Vec::new();
+            for decl in self.index.chain(name) {
+                let Shape::Record { fields, .. } = &decl.shape else {
+                    continue;
+                };
+                let owner = self
+                    .index
+                    .lookup_type(&decl.name)
+                    .expect("a chain walks declared types");
+                let position = self.positions[owner.path.as_str()];
+                let unit = &self.units[position];
+                for field in fields {
+                    if seen.contains(&field.name) {
+                        continue;
+                    }
+                    let rows: Vec<&DefaultFn> = unit
+                        .defaults
+                        .iter()
+                        .filter(|row| row.record == decl.name && row.field == field.name)
+                        .collect();
+                    if rows.is_empty() {
+                        continue;
+                    }
+                    seen.push(field.name.clone());
+                    for row in rows {
+                        steps.push(Step {
+                            field: row.field.clone(),
+                            kind: row.kind,
+                            func: self.func(position, row.func),
+                            reads: row.reads.clone(),
+                            file: index_u32(position),
+                            span: row.span,
+                        });
+                    }
+                }
+            }
+            let deps = |i: usize| -> Vec<usize> {
+                steps[i]
+                    .reads
+                    .iter()
+                    .flat_map(|read| {
+                        let Read::Own(field) = read else {
+                            return Vec::new();
+                        };
+                        steps
+                            .iter()
+                            .enumerate()
+                            .filter(|(_, step)| step.field == *field)
+                            .map(|(j, _)| j)
+                            .collect()
+                    })
+                    .collect()
+            };
+            let steps = ordered(&steps, deps, |cycle| {
+                let first = &steps[cycle[0]];
+                diagnostics.push(Diagnostic::error(
+                    &self.units[first.file as usize].path,
+                    first.span,
+                    format!(
+                        "`{}` depends on itself: {}",
+                        first.field,
+                        chain(cycle, |i| steps[i].field.clone(), "reads")
+                    ),
+                ));
+            });
+            plans.push(RecordPlan {
+                name: name.clone(),
+                steps,
+            });
+        }
+        plans
+    }
+
+    /// A plan per ambient value the host reads from a file the program has, in the
+    /// host's order.
+    fn bindings_plans(
+        &self,
+        host: &Host,
+        records: &[RecordPlan],
+        diagnostics: &mut Vec<Diagnostic>,
+    ) -> Vec<Bindings> {
+        host.bindings_files()
+            .filter_map(|(value, file)| {
+                self.bindings_plan(value, file, records, diagnostics)
+            })
+            .collect()
+    }
+
+    /// The plan for the bindings file `file`, read as `value`: its bindings in load
+    /// order. A computed binding follows the siblings it reads; a `from` binding
+    /// follows every sibling the records its value may hold read while they load —
+    /// through `extends` and through field types, since a subtype's or a nested
+    /// record's default runs too. A binding that needs itself is a link error at the
+    /// binding. `None` when the file is not in the program.
+    fn bindings_plan(
+        &self,
+        value: &str,
+        file: &str,
+        records: &[RecordPlan],
+        diagnostics: &mut Vec<Diagnostic>,
+    ) -> Option<Bindings> {
+        let &position = self.positions.get(file)?;
+        let unit = &self.units[position];
+        let steps: Vec<BindingStep> = unit
+            .bindings
+            .iter()
+            .map(|binding| BindingStep {
+                name: binding.name.clone(),
+                fulfilled: match &binding.fulfilled {
+                    Fulfilled::Computed { func, reads } => Fulfilled::Computed {
+                        func: self.func(position, *func),
+                        reads: reads.clone(),
+                    },
+                    by_host @ Fulfilled::ByHost(_) => by_host.clone(),
+                },
+                span: binding.span,
+            })
+            .collect();
+        let sibling = |field: &str| steps.iter().position(|step| &*step.name == field);
+        // Only a read of this value's own field orders its bindings. A record step's
+        // `Own` read names a field of that record, which a binding's name may happen
+        // to match and has nothing to do with.
+        let of_value = |read: &Read| match read {
+            Read::Ambient { value: read, field } if **read == *value => sibling(field),
+            Read::Own(_) | Read::Ambient { .. } => None,
+        };
+        let deps = |i: usize| -> Vec<usize> {
+            match &steps[i].fulfilled {
+                Fulfilled::Computed { reads, .. } => {
+                    reads.iter().filter_map(of_value).collect()
+                }
+                Fulfilled::ByHost(_) => {
+                    let Some(ty) = self.index.field(file, &steps[i].name) else {
+                        return Vec::new();
+                    };
+                    self.records_reachable(&ty)
+                        .iter()
+                        .filter_map(|record| {
+                            records.iter().find(|plan| plan.name == *record)
+                        })
+                        .flat_map(|plan| plan.steps.iter().flat_map(|step| &step.reads))
+                        .filter_map(of_value)
+                        .collect()
+                }
+            }
+        };
+        let steps = ordered(&steps, deps, |cycle| {
+            let first = &steps[cycle[0]];
+            diagnostics.push(Diagnostic::error(
+                &unit.path,
+                first.span,
+                format!(
+                    "`{}` cannot be loaded before itself: {}",
+                    first.name,
+                    chain(cycle, |i| steps[i].name.clone(), "needs")
+                ),
+            ));
+        });
+        Some(Bindings {
+            value: Rc::from(value),
+            record: Rc::from(file),
+            file: index_u32(position),
+            steps,
+        })
+    }
+
+    /// Every declared record a value of type `ty` may hold: the records it names, the
+    /// records extending those (a document may be any subtype of its collection's
+    /// element type), and the records their fields name, however deep.
+    fn records_reachable(&self, ty: &Type) -> Vec<Rc<str>> {
+        let mut pending = Vec::new();
+        ty.named_types(&mut pending);
+        let mut seen: Vec<Rc<str>> = Vec::new();
+        while let Some(name) = pending.pop() {
+            if seen.contains(&name) || self.index.kind(&name) != Some(Kind::Record) {
+                continue;
+            }
+            seen.push(name.clone());
+            for export in self.index.types() {
+                if self.index.extends(&export.decl.name, &name) {
+                    pending.push(export.decl.name.clone());
+                }
+            }
+            for (_, field_ty) in self.index.fields(&name) {
+                field_ty.named_types(&mut pending);
+            }
+        }
+        seen
+    }
+}
+
+/// `items` in the order `deps` admits, or nothing once `report` has been told each
+/// cycle — the diagnostics it pushes are what stop the link.
+fn ordered<T: Clone>(
+    items: &[T],
+    deps: impl Fn(usize) -> Vec<usize>,
+    mut report: impl FnMut(&[usize]),
+) -> Vec<T> {
+    match order(items.len(), deps) {
+        Ok(ordered) => ordered.into_iter().map(|i| items[i].clone()).collect(),
+        Err(cycles) => {
+            for cycle in cycles {
+                report(&cycle);
+            }
+            Vec::new()
+        }
+    }
+}
+
+/// A cycle as a sentence, one link per member: "`a` reads `b`, `b` reads `a`".
+fn chain(cycle: &[usize], name: impl Fn(usize) -> Rc<str>, verb: &str) -> String {
+    let links: Vec<String> = cycle
+        .iter()
+        .zip(cycle.iter().cycle().skip(1))
+        .map(|(&a, &b)| format!("`{}` {verb} `{}`", name(a), name(b)))
+        .collect();
+    links.join(", ")
 }
 
 /// What a caller is told when the function it was compiled against has changed shape
@@ -793,9 +1101,10 @@ mod tests {
 
     #[test]
     fn links_a_unit_whose_type_only_changed_its_defaults() {
-        // A default runs at load, never at compile (∆iCW), so it is not part of the
-        // shape a consumer depends on — the other half of the rule, and invariant 11
-        // for declarations: the consumer's unit is byte-identical either way.
+        // A default runs at load, never at compile, so it is not part of the shape a
+        // consumer depends on — the other half of the rule, and invariant 11 for
+        // declarations: the consumer's unit is byte-identical either way, and only
+        // the declaring unit carries the new function.
         let against = |types: &str| {
             unit_of(
                 "page.lem",
@@ -810,13 +1119,340 @@ mod tests {
             "<lem-type Article>\n  title: string = \"T\"\n  date: datetime\n</lem-type>";
         let edited = against(defaulted);
         assert_eq!(page, edited);
+        let plain = unit_of("types.lem", &[("types.lem", ARTICLE)]);
         let types = unit_of("types.lem", &[("types.lem", defaulted)]);
+        assert!(plain.defaults.is_empty());
+        assert_eq!(types.defaults.len(), 1);
         let units = [types, page];
-        assert!(
-            link(&units, &ExportIndex::of(&units), &untyped_host())
-                .output
-                .is_some()
+        let module =
+            link(&units, &ExportIndex::of(&units), &untyped_host()).expect_output();
+        let article = module
+            .records
+            .iter()
+            .find(|plan| &*plan.name == "Article")
+            .expect("a plan per record");
+        assert_eq!(article.steps.len(), 1);
+        assert_eq!(&*article.steps[0].field, "title");
+        assert_eq!(article.steps[0].kind, StepKind::Default);
+        assert_eq!(
+            module.functions[article.steps[0].func as usize].name,
+            "Article.title"
         );
+        assert_eq!(&module.files[article.steps[0].file as usize], "types.lem");
+    }
+
+    /// A host shaped like the standard shell's, reading `site` from `site.lem`.
+    fn shell_host() -> Host {
+        Host::new()
+            .bind("page", Ambient::named("Page"))
+            .bind("site", Ambient::bindings("site.lem"))
+            .documents("page")
+            .rendered_through("layout")
+    }
+
+    /// Every file compiled against `host` and linked: the module, or what stopped it.
+    fn linked(host: &Host, files: &[(&str, &str)]) -> Compiled<Module> {
+        let units: Vec<Unit> = files
+            .iter()
+            .map(|(path, _)| unit_against(host, path, files))
+            .collect();
+        link(&units, &ExportIndex::of(&units), host)
+    }
+
+    fn steps_of<'m>(module: &'m Module, record: &str) -> Vec<&'m str> {
+        module
+            .records
+            .iter()
+            .find(|plan| &*plan.name == record)
+            .expect("a plan per record")
+            .steps
+            .iter()
+            .map(|step| &*step.field)
+            .collect()
+    }
+
+    #[test]
+    fn plans_a_records_steps_in_the_order_their_reads_dictate() {
+        let module = linked(
+            &untyped_host(),
+            &[(
+                "types.lem",
+                "<lem-type A>\n  a: string = self.b + \"!\"\n  b: string = self.c\n  \
+                 c: string = \"C\"\n  d: string = \"D\"\n</lem-type>",
+            )],
+        )
+        .expect_output();
+        assert_eq!(steps_of(&module, "A"), ["c", "b", "a", "d"]);
+    }
+
+    #[test]
+    fn plans_inherited_steps_from_the_nearest_declaration_of_each_field() {
+        // `LinkPost` redeclares `title` to change its default (D32): its plan runs its
+        // own `title` and `Page`'s `draft`; `Article`'s runs its own `title`.
+        let module = linked(
+            &shell_host(),
+            &[
+                (
+                    "ambient.lem",
+                    "<lem-type Page>\n  url: url\n  draft: bool = false\n</lem-type>",
+                ),
+                (
+                    "schema.lem",
+                    "<lem-type Article extends Page>\n  title: string = \"A\"\n  \
+                     layout: (Article, html): html\n</lem-type>\n\
+                     <lem-type LinkPost extends Article>\n  title: string = \"L\"\n\
+                     </lem-type>",
+                ),
+            ],
+        )
+        .expect_output();
+        assert_eq!(steps_of(&module, "LinkPost"), ["title", "draft"]);
+        assert_eq!(steps_of(&module, "Article"), ["title", "draft"]);
+        assert_eq!(steps_of(&module, "Page"), ["draft"]);
+        let name = |record: &str| {
+            let plan = module.records.iter().find(|p| &*p.name == record).unwrap();
+            module.functions[plan.steps[0].func as usize].name.clone()
+        };
+        assert_eq!(name("LinkPost"), "LinkPost.title");
+        assert_eq!(name("Article"), "Article.title");
+    }
+
+    #[test]
+    fn keeps_an_inherited_default_under_a_redeclaration_that_gives_none() {
+        // A redeclaration changes the default (D32); one that gives none changes
+        // nothing, so `Page`'s step still runs for a `Note`.
+        let module = linked(
+            &shell_host(),
+            &[
+                (
+                    "ambient.lem",
+                    "<lem-type Page>\n  url: url\n  draft: bool = false\n</lem-type>",
+                ),
+                (
+                    "schema.lem",
+                    "<lem-type Note extends Page>\n  draft: bool\n  \
+                     layout: (Note, html): html\n</lem-type>",
+                ),
+            ],
+        )
+        .expect_output();
+        assert_eq!(steps_of(&module, "Note"), ["draft"]);
+        let plan = module.records.iter().find(|p| &*p.name == "Note").unwrap();
+        assert_eq!(
+            module.functions[plan.steps[0].func as usize].name,
+            "Page.draft"
+        );
+    }
+
+    #[test]
+    fn refuses_to_link_a_default_that_reads_itself_through_another() {
+        let linked = linked(
+            &untyped_host(),
+            &[(
+                "types.lem",
+                "<lem-type A>\n  ok: string = \"x\"\n  a: string = self.b\n  \
+                 b: string = self.a\n  c: string = self.c\n</lem-type>",
+            )],
+        );
+        assert!(linked.output.is_none());
+        assert_eq!(
+            shown_all(&linked.diagnostics),
+            [
+                "types.lem:34..35: `a` depends on itself: `a` reads `b`, `b` reads `a`",
+                "types.lem:76..77: `c` depends on itself: `c` reads `c`",
+            ]
+        );
+    }
+
+    fn shown_all(diagnostics: &[Diagnostic]) -> Vec<String> {
+        diagnostics.iter().map(ToString::to_string).collect()
+    }
+
+    fn binding_names(module: &Module) -> Vec<&str> {
+        assert_eq!(module.bindings.len(), 1, "one bindings plan");
+        module.bindings[0]
+            .steps
+            .iter()
+            .map(|step| &*step.name)
+            .collect()
+    }
+
+    #[test]
+    fn plans_computed_bindings_after_the_siblings_they_read() {
+        let module = linked(
+            &shell_host(),
+            &[(
+                "site.lem",
+                "<lem-let tagline: string = \"Notes from \" + name />\n\
+                 <lem-let name: string = \"limulus.net\" />",
+            )],
+        )
+        .expect_output();
+        assert_eq!(binding_names(&module), ["name", "tagline"]);
+        // The bindings record is a record like any other, with nothing to run: its
+        // fields are the bindings planned here.
+        assert_eq!(steps_of(&module, "site.lem"), Vec::<&str>::new());
+        let bindings = &module.bindings[0];
+        assert_eq!(&*bindings.value, "site");
+        assert_eq!(&*bindings.record, "site.lem");
+        assert_eq!(&module.files[bindings.file as usize], "site.lem");
+        let Fulfilled::Computed { func, .. } = &bindings.steps[1].fulfilled else {
+            panic!("computed");
+        };
+        assert_eq!(module.functions[*func as usize].name, "tagline");
+    }
+
+    #[test]
+    fn plans_a_loaded_binding_after_the_fields_its_records_read_while_loading() {
+        // `posts` holds `Article`s and their subtypes, and an `Article` holds a
+        // `Photo`: a default on any of them that reads `site.captions` or
+        // `site.authors` puts `posts` after both, however the file orders them.
+        let module = linked(
+            &shell_host(),
+            &[
+                ("ambient.lem", "<lem-type Page>\n  url: url\n</lem-type>"),
+                (
+                    "site.lem",
+                    "<lem-let posts: [Article] from \"feed/*.md\" />\n\
+                     <lem-let authors: {string: string} from \"authors.json\" />\n\
+                     <lem-let captions: {string: string} from \"captions.json\" />\n\
+                     <lem-let count: int = 1 />",
+                ),
+                (
+                    "schema.lem",
+                    "<lem-type Photo>\n  caption: string = site.captions[\"x\"]\n\
+                     </lem-type>\n\
+                     <lem-type Article extends Page>\n  hero: Photo?\n  \
+                     layout: (Article, html): html\n</lem-type>\n\
+                     <lem-type LinkPost extends Article>\n  \
+                     via: string = site.authors[\"e\"]\n</lem-type>",
+                ),
+            ],
+        )
+        .expect_output();
+        assert_eq!(
+            binding_names(&module),
+            ["authors", "captions", "posts", "count"]
+        );
+    }
+
+    #[test]
+    fn refuses_to_link_a_binding_that_needs_itself() {
+        // A default on `Article` reads `site.posts`, the collection the article is
+        // being loaded into.
+        let linked = linked(
+            &shell_host(),
+            &[
+                ("ambient.lem", "<lem-type Page>\n  url: url\n</lem-type>"),
+                (
+                    "site.lem",
+                    "<lem-let posts: [Article] from \"feed/*.md\" />\n\
+                     <lem-let latest: [Article] = posts.filter(|p| true) />",
+                ),
+                (
+                    "schema.lem",
+                    "<lem-type Article extends Page>\n  \
+                     related: [Article] = site.posts.filter(|p| p != self)\n  \
+                     layout: (Article, html): html\n</lem-type>",
+                ),
+            ],
+        );
+        assert!(linked.output.is_none());
+        assert_eq!(
+            shown_all(&linked.diagnostics),
+            [
+                "site.lem:9..14: `posts` cannot be loaded before itself: `posts` needs `posts`"
+            ]
+        );
+    }
+
+    #[test]
+    fn plans_no_bindings_without_a_bindings_file_in_the_program() {
+        let module = linked(&untyped_host(), &[("a.lem", "x")]).expect_output();
+        assert!(module.bindings.is_empty());
+        // The host reads `site.lem`, which has not been compiled.
+        let module = linked(&shell_host(), &[("a.lem", "x")]).expect_output();
+        assert!(module.bindings.is_empty());
+    }
+
+    #[test]
+    fn plans_every_bindings_file_a_host_reads() {
+        let host = Host::new()
+            .bind("site", Ambient::bindings("site.lem"))
+            .bind("data", Ambient::bindings("data.lem"));
+        let module = linked(
+            &host,
+            &[
+                ("site.lem", "<lem-let name: string = \"n\" />"),
+                (
+                    "data.lem",
+                    "<lem-let n: int = 1 />\n<lem-let m: int = n + 1 />",
+                ),
+            ],
+        )
+        .expect_output();
+        let plans: Vec<(&str, &str, Vec<&str>)> = module
+            .bindings
+            .iter()
+            .map(|b| {
+                (
+                    &*b.value,
+                    &*b.record,
+                    b.steps.iter().map(|s| &*s.name).collect(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            plans,
+            [
+                ("site", "site.lem", vec!["name"]),
+                ("data", "data.lem", vec!["n", "m"]),
+            ]
+        );
+    }
+
+    #[test]
+    fn orders_a_loaded_binding_by_its_records_ambient_reads_alone() {
+        // `Article.slug` reads `self.title`, and the bindings file has a binding named
+        // `title` too: a record's own field is not a sibling, so `posts` does not wait
+        // for `title` — which itself reads `posts`, and would otherwise make a cycle.
+        let module = linked(
+            &shell_host(),
+            &[
+                ("ambient.lem", "<lem-type Page>\n  url: url\n</lem-type>"),
+                (
+                    "site.lem",
+                    "<lem-let posts: [Article] from \"feed/*.md\" />\n\
+                     <lem-let title: string = posts.filter(|p| true)[0].title />",
+                ),
+                (
+                    "schema.lem",
+                    "<lem-type Article extends Page>\n  title: string\n  \
+                     slug: string = self.title\n  layout: (Article, html): html\n\
+                     </lem-type>",
+                ),
+            ],
+        )
+        .expect_output();
+        assert_eq!(binding_names(&module), ["posts", "title"]);
+    }
+
+    #[test]
+    fn tables_every_project_function_by_name() {
+        let module = linked(
+            &untyped_host(),
+            &[
+                ("a.lem", "<lem-fn f(): int = 1 />"),
+                ("b.lem", "<lem-fn g(): int = 2 /><lem-fn h(): int = 3 />"),
+            ],
+        )
+        .expect_output();
+        let names: Vec<(&str, &str)> = module
+            .exports
+            .iter()
+            .map(|(name, func)| (&**name, module.functions[*func as usize].name.as_str()))
+            .collect();
+        assert_eq!(names, [("f", "f"), ("g", "g"), ("h", "h")]);
     }
 
     #[test]

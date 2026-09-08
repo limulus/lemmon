@@ -11,6 +11,7 @@ use std::rc::Rc;
 use lemmon_syntax::Span;
 
 use crate::Value;
+use crate::plan::{Bindings, RecordPlan};
 
 /// Defines [`Op`] and, from the same list, the table of variant names — so that the
 /// corpus gate asserting every op is reached by some case cannot fall out of date.
@@ -165,6 +166,15 @@ pub struct Module {
     /// nearest first. Closed at link, so `TypeTest` answers with one lookup and no walk
     /// — and neither a cycle nor a base the project lost can be spelled here.
     pub types: Vec<(Rc<str>, Vec<Rc<str>>)>,
+    /// Every project-flat function by name — what a string in loaded data resolves
+    /// through where a function type is expected (`layout: article`).
+    pub exports: Vec<(Rc<str>, u32)>,
+    /// What the loader runs for each declared record: its defaults and `by` indexes,
+    /// in dependency order (∆iCW).
+    pub records: Vec<RecordPlan>,
+    /// One plan per ambient value the host reads from a file the program has, in the
+    /// host's declaration order.
+    pub bindings: Vec<Bindings>,
 }
 
 impl Module {

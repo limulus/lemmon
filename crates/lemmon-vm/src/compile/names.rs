@@ -21,6 +21,7 @@ use lemmon_syntax::Span;
 
 use super::Diagnostic;
 use crate::builtins;
+use crate::decls::Decls;
 use crate::exports::ExportIndex;
 use crate::host::Host;
 use crate::types::Type;
@@ -31,12 +32,11 @@ use crate::types::Type;
 pub(crate) enum BindingKind {
     /// A `lem-let`.
     Definition,
-    /// A `lem-let` at the top level of the file an ambient value reads its bindings
-    /// from: a field of that record (D30), so it is read wherever the project reads
-    /// that value and never unused here.
-    Exported,
     /// A `lem-fn`'s or lambda's parameter.
     Parameter,
+    /// A name the language binds rather than the author — `self`, `path`, and `body`
+    /// in a field's default (∆iCW) — which no rule refuses and no rule warns about.
+    Implicit,
     /// A `lem-for`'s value, key, or index — an unused index or key is the common case,
     /// so these never warn.
     Loop,
@@ -60,6 +60,13 @@ pub(crate) enum Resolved {
     /// A value the host binds at render, with the type the host gave it — `any` where
     /// the host named it without typing it (D30).
     Ambient(Type),
+    /// A sibling binding read by its bare name at the top level of the bindings file:
+    /// a field of the ambient value that file's bindings are (D36), read as
+    /// `value.name` is.
+    Field {
+        value: Rc<str>,
+        ty: Type,
+    },
 }
 
 /// A local bound to a slot of its frame, with its name's own bytes — where a repeat's
@@ -219,6 +226,9 @@ pub(crate) struct Names<'a> {
     /// This file's top-level `lem-fn`s, in order — the list a repeated one is checked
     /// against. Never consulted by lookup: the index covers them once it exists.
     file: Vec<Export>,
+    /// The ambient value whose fields this file's top-level bindings are, while that
+    /// top level is what is being compiled — exposing each binding by its bare name.
+    fields_of: Option<Rc<str>>,
     /// The function being compiled, then every lambda open inside it, innermost last.
     frames: Vec<Frame>,
     diagnostics: Vec<Diagnostic>,
@@ -235,9 +245,17 @@ impl<'a> Names<'a> {
             index,
             host,
             file: Vec::new(),
+            fields_of: None,
             frames: Vec::new(),
             diagnostics: Vec::new(),
         }
+    }
+
+    /// Exposes this file's top-level bindings by their bare names, as fields of the
+    /// ambient value `value`, from here on — called as the top level starts compiling,
+    /// after the file's functions and defaults.
+    pub(crate) fn expose(&mut self, value: Rc<str>) {
+        self.fields_of = Some(value);
     }
 
     pub(crate) fn push_frame(&mut self) {
@@ -279,7 +297,7 @@ impl<'a> Names<'a> {
     fn warn_unused(&mut self, scope: &Scope) {
         for binding in &scope.0 {
             if binding.used
-                || matches!(binding.kind, BindingKind::Loop | BindingKind::Exported)
+                || matches!(binding.kind, BindingKind::Loop | BindingKind::Implicit)
             {
                 continue;
             }
@@ -329,6 +347,24 @@ impl<'a> Names<'a> {
         true
     }
 
+    /// Applies the binding rules to a top-level binding of the bindings file without
+    /// binding it — it is a field of the ambient value, not a local — and says whether
+    /// it was admitted: an ambient name cannot be redefined, and a binding that
+    /// displaces a stdlib function warns. Whether it repeats a sibling is the caller's
+    /// to know, since the siblings are not in any scope here.
+    pub(crate) fn check_exported(&mut self, name: &str, span: Span) -> bool {
+        if let Some(refusal) = self.refusal(name, span, None) {
+            self.diagnostics.push(refusal);
+            return false;
+        }
+        if builtins::lookup(name).is_some()
+            && matches!(self.outer(name), Some(Resolved::Builtin(_)))
+        {
+            self.diagnostics.push(self.shadow_warning(name, span));
+        }
+        true
+    }
+
     /// Binds `name`, whose own bytes are `span`, as `kind` with type `ty` in the
     /// innermost scope of the innermost frame, and returns its slot. The rules in order,
     /// the first one broken reported: an ambient name cannot be redefined; a name
@@ -349,17 +385,16 @@ impl<'a> Names<'a> {
     ) -> u16 {
         let first = self.frame().innermost().find(name).map(|b| b.span);
         let slot = self.frame().alloc();
-        let repeat = first.map(|first| {
-            Diagnostic::error(self.path, span, format!("`{name}` is already bound here"))
-                .with_label(self.path, first, "first bound here")
-        });
-        if let Some(refusal) = self.refusal(name, span, repeat) {
+        let repeat = first.map(|first| already_bound(self.path, span, name, first));
+        // An implicit binding is the language's, in a scope of its own: nothing it
+        // could break is the author's mistake to hear about.
+        if kind != BindingKind::Implicit
+            && let Some(refusal) = self.refusal(name, span, repeat)
+        {
             self.diagnostics.push(refusal);
             return slot;
         }
-        if matches!(kind, BindingKind::Definition | BindingKind::Exported)
-            && self.local_shadows_builtin(name)
-        {
+        if kind == BindingKind::Definition && self.local_shadows_builtin(name) {
             self.diagnostics.push(self.shadow_warning(name, span));
         }
         self.frame()
@@ -435,7 +470,21 @@ impl<'a> Names<'a> {
             .iter()
             .rev()
             .find_map(|frame| frame.lookup(name))
+            .or_else(|| self.field(name))
             .or_else(|| self.outer(name))
+    }
+
+    /// The sibling binding `name` reads at the bindings file's top level, where one is
+    /// exposed: a field of the ambient value, typed by the synthesized record. It
+    /// stands where a top-level local would — after the frames, before the project.
+    fn field(&self, name: &str) -> Option<Resolved> {
+        let value = self.fields_of.as_ref()?;
+        // The synthesized record is named by this file's path (D36).
+        let ty = self.index?.field(self.path, name)?;
+        Some(Resolved::Field {
+            value: value.clone(),
+            ty,
+        })
     }
 
     /// What `name` means in the innermost frame: a local's slot usable there, capturing
@@ -457,7 +506,7 @@ impl<'a> Names<'a> {
             },
         )) = local
         else {
-            return self.outer(name);
+            return self.field(name).or_else(|| self.outer(name));
         };
         for level in hit + 1..self.frames.len() {
             slot = self.frames[level].capture(name, slot, ty.clone(), binder);
@@ -478,6 +527,17 @@ impl<'a> Names<'a> {
             .binding(name)
             .map(|ambient| Resolved::Ambient(ambient.ty()))
     }
+}
+
+/// The diagnostic a name bound twice in one scope gets, with the first binding's name
+/// as its label — the same words for a local and for a top-level binding of the
+/// bindings file, which is in no scope.
+pub(crate) fn already_bound(path: &str, span: Span, name: &str, first: Span) -> Diagnostic {
+    Diagnostic::error(path, span, format!("`{name}` is already bound here")).with_label(
+        path,
+        first,
+        "first bound here",
+    )
 }
 
 /// The diagnostic a duplicate definition gets wherever it is found — the same words when

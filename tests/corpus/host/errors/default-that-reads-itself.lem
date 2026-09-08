@@ -1,0 +1,8 @@
+<lem-type Note extends Page>
+  title: string = self.slug
+  slug: string = self.title
+  layout: (Note, html): html
+</lem-type>
+
+Each default reads the other, so no order could run them: the link step refuses the
+program rather than letting the loader find out.

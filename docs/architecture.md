@@ -67,7 +67,14 @@ not a break:
 
 - `DataInput` is `{ambient: {site?, page?, build?}}`: an envelope object, so `records`,
   data files, and the manifest arrive as new fields. `loadData` validates nothing yet
-  (schemas at load are ∆iCW) and always returns `[]`.
+  (schemas at load are ∆iCW) and always returns `[]`. D37 settled what it grows into:
+  `ambient` becomes bare JSON by any name the host bound, and `sources` fulfils each
+  `from` binding by name — a list of `{path, value, spans}` for a glob, one for a data
+  file, `{value}` for a plugin or env source — where `spans` maps a field path to a
+  complete boundary span the host computed from the YAML it parsed; the shell strips the
+  `type:` key it consumed. A file passed to `compile` may carry `recordSpan`, the byte
+  offsets of that key's value, so a diagnostic about the record points at the key.
+  _Not yet (∆iCW): the resident core still takes the spike's envelope._
 - `PageRef` is `{path}` until `plan()` exists to mint richer references.
 - `render` returns `{html, diagnostics}` — `html: null` plus one diagnostic when the page
   fails at runtime. `channels` and `deps` are omitted entirely until ∆RGQ, not stubbed.
@@ -180,8 +187,10 @@ form (`exportModule`) first-class.
 
 ## VM
 
-Stack machine; serializable `Module { constants, functions, types, pages, spans }`, linked
-from per-file units (above). Values are immutable and Rc'd:
+Stack machine; serializable `Module { constants, functions, types, pages, spans }` plus
+the loader's plans — each record's default and `by` functions and the bindings file's
+computed bindings, in the order their recorded reads dictate (D37) — linked from
+per-file units (above). Values are immutable and Rc'd:
 `Null | Bool | Int | Float | Str | Html | DateTime | Duration | Url | Asset | List | Map | Fn | Record`.
 Records carry their declared name, and the module each record's closed ancestry, which
 `TypeTest` answers from in one lookup;

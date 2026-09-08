@@ -465,20 +465,14 @@ mod tests {
     }
 
     #[test]
-    fn types_a_from_binding_before_the_loader_can_fulfil_it() {
+    fn types_site_from_a_from_bindings_head_alone() {
         // The binding's type is what tells the host what to load, and it is read from
-        // the head — so `site` is typed by it even while the file it is in cannot
-        // compile (∆iCW).
+        // the head: `site` is typed by it with nothing loaded yet.
         let files = [
             SourceFile::new("site.lem", "<lem-let posts: [string] from \"f/*.md\" />"),
             SourceFile::new("t.lem", "<lem-for p in site.posts><lem.p></lem-for>"),
         ];
-        assert_eq!(
-            diagnostics_with(&shell_host(), &files),
-            [
-                "site.lem:0..41: `from` bindings need the loader, which is not here yet (∆iCW)"
-            ]
-        );
+        assert!(diagnostics_with(&shell_host(), &files).is_empty());
     }
 
     #[test]
@@ -525,6 +519,26 @@ mod tests {
             SourceFile::new("post.md", "<lem.page.whatever>"),
         ];
         assert!(diagnostics_with(&shell_host(), &files).is_empty());
+    }
+
+    #[test]
+    fn points_a_record_diagnostic_at_the_key_the_host_named_it_at() {
+        // The host parsed the front matter and knows where `type:` stands; without
+        // that, the front matter as a whole is the honest span.
+        let files = |file: SourceFile| [SourceFile::new("ambient.lem", AMBIENT), file];
+        let text = "---\ntype: Nope\n---\nhi";
+        let named = SourceFile::new("post.md", text)
+            .with_record("Nope")
+            .named_at(Span::new(10, 14));
+        assert_eq!(
+            diagnostics_with(&shell_host(), &files(named)),
+            ["post.md:10..14: unknown type `Nope`"]
+        );
+        let unplaced = SourceFile::new("post.md", text).with_record("Nope");
+        assert_eq!(
+            diagnostics_with(&shell_host(), &files(unplaced)),
+            ["post.md:0..19: unknown type `Nope`"]
+        );
     }
 
     #[test]

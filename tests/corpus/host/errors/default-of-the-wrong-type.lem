@@ -1,0 +1,4 @@
+<lem-type Note extends Page>
+  title: string = 42
+  layout: (Note, html): html
+</lem-type>

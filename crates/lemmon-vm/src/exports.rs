@@ -126,6 +126,11 @@ impl ExportIndex {
     pub fn types(&self) -> impl Iterator<Item = &TypeExport> {
         self.types.values()
     }
+
+    /// Every function the project knows, by name.
+    pub fn exports(&self) -> impl Iterator<Item = &Export> {
+        self.entries.values()
+    }
 }
 
 impl Decls for ExportIndex {
@@ -192,6 +197,8 @@ mod tests {
         assert!(index.defined_in("f", "a.lem"));
         assert!(!index.defined_in("f", "b.lem"));
         assert!(!index.defined_in("nope", "a.lem"));
+        let names: Vec<&str> = index.exports().map(|e| &*e.signature.name).collect();
+        assert_eq!(names, ["f"]);
     }
 
     #[test]

@@ -1,0 +1,4 @@
+<lem-type Gallery extends Page>
+  caption: string by site.photos
+  layout: (Gallery, html): html
+</lem-type>

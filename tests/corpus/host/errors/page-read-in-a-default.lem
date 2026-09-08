@@ -1,0 +1,7 @@
+<lem-type Note extends Page>
+  slug: string = page.url
+  layout: (Note, html): html
+</lem-type>
+
+A default runs while the record is being built — before `page` is bound to it. The
+record so far is `self`.

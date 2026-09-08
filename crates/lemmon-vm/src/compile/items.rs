@@ -5,17 +5,21 @@
 
 use std::rc::Rc;
 
-use lemmon_syntax::Span;
 use lemmon_syntax::ast::{
-    BinaryOp, ForTag, Item, LetBlock, LetVoid, LiteralKind, MatchTag, Pattern, Spanned,
+    ArgList, BinaryOp, Expr, ForTag, Item, LetBlock, LetFrom, LetVoid, LiteralKind,
+    MatchTag, Pattern, Spanned,
 };
+use lemmon_syntax::{Span, SyntaxToken};
 
-use super::expr::decode_string;
-use super::names::BindingKind;
+use super::expr::{decode_string, unparen};
+use super::names::{BindingKind, already_bound};
 use super::whitespace::{Arm, Body, Case, Kind, Piece};
 use super::{Compiler, Diagnostic, TokenSpan, required, rules};
 use crate::bytecode::Op;
+use crate::decls::Decls;
+use crate::plan::{Fulfilled, SourceKind};
 use crate::types::Type;
+use crate::unit::BindingFn;
 
 /// A document chunk as emitted: without the line ending a silent tag's sentinel left at
 /// its head, when one stands before it.
@@ -32,8 +36,9 @@ fn chunk(chunk: &str, after_silent: bool) -> &str {
 enum Level {
     /// A template's top level, where definitions and `from` bindings stand.
     File,
-    /// A document's top level: definitions stand there, `from` bindings never do — a
-    /// document is not the site file.
+    /// A document's top level: definitions stand there, and `from` bindings only
+    /// when the host reads its bindings from this document — which file that is being
+    /// the host's to say.
     Document,
     /// Inside a block body.
     Nested,
@@ -131,24 +136,18 @@ impl Compiler<'_> {
                 self.require(tag.span(), rules::printable(&ty, self.decls()));
                 self.emit(Op::Emit, tag.span());
             }
-            Item::LetVoid(tag) => self.lower_let_void(tag, level),
-            Item::LetBlock(tag) => self.lower_let_block(tag, level),
-            // Parsed by `lemmon-syntax` (∆1vS); the loader (∆iCW) fulfils it, and
-            // requiring the file to be the host's site file is the host's to check —
-            // the compiler cannot tell. It can tell a nested binding and a document
-            // from a template's top level, so those two placements are reported here.
-            Item::LetFrom(_) if level == Level::File => {
-                self.error(
-                    item.span(),
-                    "`from` bindings need the loader, which is not here yet (∆iCW)",
-                );
+            // At the top level of the file an ambient value reads its bindings from, a
+            // binding is a field of that value (D36): compiled for the loader, never a
+            // local. Both top levels, since which file that is is the host's to say.
+            Item::LetVoid(tag) if self.exports_bindings && level != Level::Nested => {
+                self.lower_exported_void(tag);
             }
-            Item::LetFrom(_) => {
-                self.error(
-                    item.span(),
-                    "a `from` binding must be at the top level of a template",
-                );
+            Item::LetBlock(tag) if self.exports_bindings && level != Level::Nested => {
+                self.lower_exported_block(tag);
             }
+            Item::LetVoid(tag) => self.lower_let_void(tag),
+            Item::LetBlock(tag) => self.lower_let_block(tag),
+            Item::LetFrom(tag) => self.lower_let_from(tag, level),
             // Top-level definitions were compiled into their own functions already;
             // they stand in the piece list only so the line rule sees them.
             Item::FnBlock(_) | Item::FnVoid(_) if level != Level::Nested => {}
@@ -369,7 +368,7 @@ impl Compiler<'_> {
         self.patch(next);
     }
 
-    fn lower_let_void(&mut self, tag: &LetVoid, level: Level) {
+    fn lower_let_void(&mut self, tag: &LetVoid) {
         let name = required(tag.name());
         let value = required(tag.value());
         // The value is compiled before the name is bound, so `x = x + 1` reads the
@@ -384,30 +383,514 @@ impl Compiler<'_> {
             }
             None => self.expr(&value),
         };
-        let slot = self.bind(&name, self.definition(level), ty);
+        let slot = self.bind(&name, BindingKind::Definition, ty);
         self.emit(Op::StoreLocal { slot }, name.span());
     }
 
-    fn lower_let_block(&mut self, tag: &LetBlock, level: Level) {
+    fn lower_let_block(&mut self, tag: &LetBlock) {
         let name = required(tag.name());
         let body = required(tag.body());
         self.emit(Op::Capture, tag.span());
         self.lower_block(body.items().collect(), Kind::Value);
         self.emit(Op::EndCapture, tag.span());
-        let slot = self.bind(&name, self.definition(level), Type::Html);
+        let slot = self.bind(&name, BindingKind::Definition, Type::Html);
         self.emit(Op::StoreLocal { slot }, name.span());
     }
 
-    /// What a `lem-let` at `level` is: a definition, or — at the top level of the file
-    /// an ambient value takes its bindings from — a field of that value's record, which
-    /// every other file may read and this one cannot tell whether any does (D30).
-    ///
-    /// Both top levels, since which file a host reads its bindings from is the host's
-    /// to say and the collection that makes the record reads either the same way.
-    const fn definition(&self, level: Level) -> BindingKind {
-        match level {
-            Level::File | Level::Document if self.exports_bindings => BindingKind::Exported,
-            _ => BindingKind::Definition,
+    // --- The bindings file's top level (D36, ∆iCW) --------------------------------
+
+    /// Whether `name` may be one of the bindings file's top-level bindings: not a
+    /// repeat of a sibling — they are fields, in no scope, so the repeat rule is kept
+    /// here — and admitted by the rules a binding answers to.
+    fn admit_exported(&mut self, name: &SyntaxToken) -> bool {
+        if let Some(&(_, first)) = self
+            .top_bindings
+            .iter()
+            .find(|(bound, _)| &**bound == name.text())
+        {
+            self.diagnostics.push(already_bound(
+                self.path,
+                name.span(),
+                name.text(),
+                first,
+            ));
+            return false;
         }
+        self.top_bindings.push((Rc::from(name.text()), name.span()));
+        self.names.check_exported(name.text(), name.span())
+    }
+
+    /// The type the synthesized record declares for the binding `name` — read from its
+    /// head when the file was prepared (D36), `any` where it had none.
+    fn exported_type(&self, name: &str) -> Type {
+        self.known(self.index.field(self.path, name).unwrap_or(Type::Any))
+    }
+
+    /// One top-level binding of the bindings file: its value lowered into a function
+    /// of nothing — for its own diagnostics even when the binding is refused, which
+    /// `lower` is told — and recorded as computed when it was admitted.
+    fn lower_exported(
+        &mut self,
+        name: &SyntaxToken,
+        span: Span,
+        lower: impl FnOnce(&mut Self, bool),
+    ) {
+        let admitted = self.admit_exported(name);
+        let (func, reads) =
+            self.function_for_loader(name.text(), &[], None, span, |c| lower(c, admitted));
+        if admitted {
+            self.unit.bindings.push(BindingFn {
+                name: Rc::from(name.text()),
+                fulfilled: Fulfilled::Computed { func, reads },
+                span: name.span(),
+            });
+        }
+    }
+
+    /// A computed binding, checked against the type its head declared. A repeat is
+    /// held to no type — the first binding's is not its.
+    fn lower_exported_void(&mut self, tag: &LetVoid) {
+        let name = required(tag.name());
+        let value = required(tag.value());
+        let ty = self.exported_type(name.text());
+        self.lower_exported(&name, tag.span(), |c, admitted| {
+            if admitted {
+                c.check(&value, &ty);
+            } else {
+                c.expr(&value);
+            }
+        });
+    }
+
+    /// A capture binding at the bindings file's top level: `html`, computed the same
+    /// way.
+    fn lower_exported_block(&mut self, tag: &LetBlock) {
+        let name = required(tag.name());
+        let body = required(tag.body());
+        self.lower_exported(&name, tag.span(), |c, _| {
+            c.emit(Op::Capture, tag.span());
+            c.lower_block(body.items().collect(), Kind::Value);
+            c.emit(Op::EndCapture, tag.span());
+        });
+    }
+
+    /// A `from` binding: the host fulfils it (`docs/language.md` §Ambient types), so
+    /// nothing is emitted — what is recorded is the source, by its form, for the
+    /// loader and the shell to read. It stands only at the top level of a file the
+    /// host reads bindings from; anywhere else nothing would ever load it, and the
+    /// error names where it belongs.
+    fn lower_let_from(&mut self, tag: &LetFrom, level: Level) {
+        if !self.exports_bindings || level == Level::Nested {
+            let files: Vec<String> = self
+                .host
+                .bindings_files()
+                .map(|(_, file)| format!("`{file}`"))
+                .collect();
+            let message = match files.len() {
+                0 => "a `from` binding needs a host that reads bindings from a file, and \
+                      this one reads none"
+                    .to_owned(),
+                1 => format!(
+                    "a `from` binding belongs at the top level of {}, the file the host \
+                     reads bindings from",
+                    files[0]
+                ),
+                _ => format!(
+                    "a `from` binding belongs at the top level of {}, the files the host \
+                     reads bindings from",
+                    files.join(" or ")
+                ),
+            };
+            self.error(tag.span(), message);
+            return;
+        }
+        let name = required(tag.name());
+        let admitted = self.admit_exported(&name);
+        let Some(kind) = self.source_kind(&required(tag.source())) else {
+            return;
+        };
+        if admitted {
+            self.unit.bindings.push(BindingFn {
+                name: Rc::from(name.text()),
+                fulfilled: Fulfilled::ByHost(kind),
+                span: name.span(),
+            });
+        }
+    }
+
+    /// What a `from` source names, by its form: a string literal — a glob or a data
+    /// file, which the host tells apart by the binding's type — or `plugin("…")` or
+    /// `env("…")` with one string literal argument. Anything else is reported at the
+    /// source; the parser read it as any expression, and this is where the forms that
+    /// mean something are decided.
+    fn source_kind(&mut self, source: &Expr) -> Option<SourceKind> {
+        const FORMS: &str = "a `from` source is a string naming a glob or a data file, \
+                             `plugin(\"…\")`, or `env(\"…\")`";
+        let string_literal = |expr: &Expr| match unparen(expr.clone()) {
+            Expr::Literal(literal) if required(literal.kind()) == LiteralKind::String => {
+                Some(decode_string(required(literal.token()).text()))
+            }
+            _ => None,
+        };
+        if let Some(text) = string_literal(source) {
+            return Some(SourceKind::File(Rc::from(text)));
+        }
+        let Expr::Call(call) = unparen(source.clone()) else {
+            self.error(source.span(), FORMS);
+            return None;
+        };
+        let callee = match required(call.callee()) {
+            Expr::Name(name) => required(name.name()),
+            _ => {
+                self.error(source.span(), FORMS);
+                return None;
+            }
+        };
+        let make: fn(Rc<str>) -> SourceKind = match callee.text() {
+            "plugin" => SourceKind::Plugin,
+            "env" => SourceKind::Env,
+            _ => {
+                self.error(source.span(), FORMS);
+                return None;
+            }
+        };
+        let args = call.args();
+        let positional: Vec<Expr> = args.iter().flat_map(ArgList::positional).collect();
+        let named = args.iter().flat_map(ArgList::named).count();
+        let argument = match (positional.as_slice(), named) {
+            ([only], 0) => string_literal(only),
+            _ => None,
+        };
+        match argument {
+            Some(text) => Some(make(Rc::from(text))),
+            None => {
+                self.error(
+                    call.span(),
+                    format!(
+                        "`{}` names its source with one string literal: `{}(\"…\")`",
+                        callee.text(),
+                        callee.text()
+                    ),
+                );
+                None
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::rc::Rc;
+
+    use crate::compile::{compile, compile_unit, prepare};
+    use crate::exports::ExportIndex;
+    use crate::host::{Ambient, Host};
+    use crate::plan::{Fulfilled, Read, SourceKind};
+    use crate::{SourceFile, Unit, Value, render};
+
+    /// A host shaped like the standard shell's, reading `site` from `site.lem`.
+    fn shell_host() -> Host {
+        Host::new()
+            .bind("page", Ambient::named("Page"))
+            .bind("site", Ambient::bindings("site.lem"))
+            .documents("page")
+            .rendered_through("layout")
+    }
+
+    const PAGE: &str = "<lem-type Page>\n  url: url\n</lem-type>";
+
+    fn shown(host: &Host, files: &[SourceFile]) -> Vec<String> {
+        compile(files, host)
+            .diagnostics
+            .iter()
+            .map(ToString::to_string)
+            .collect()
+    }
+
+    /// The unit of `path`, compiled against `host` and an index of every file given.
+    fn unit_of(host: &Host, path: &str, files: &[SourceFile]) -> Unit {
+        let prepared: Vec<_> = files
+            .iter()
+            .map(|file| prepare(file, host).expect("the fixture parses"))
+            .collect();
+        let mut index = ExportIndex::new();
+        for p in &prepared {
+            index.offer(p.path(), p.exports());
+            index.offer_types(p.path(), p.types());
+        }
+        let this = prepared
+            .iter()
+            .find(|p| p.path() == path)
+            .expect("the file is given");
+        compile_unit(this, &index, host).expect_output()
+    }
+
+    fn site_unit(text: &str) -> Unit {
+        unit_of(
+            &shell_host(),
+            "site.lem",
+            &[SourceFile::new("site.lem", text)],
+        )
+    }
+
+    #[test]
+    fn records_each_from_source_by_its_form() {
+        let unit = site_unit(
+            "<lem-let posts: [string] from \"feed/*.md\" />\n\
+             <lem-let photos: {string: int} from plugin(\"photos\") />\n\
+             <lem-let base: string from (env(\"SITE_URL\")) />",
+        );
+        let rows: Vec<(&str, &Fulfilled)> = unit
+            .bindings
+            .iter()
+            .map(|b| (&*b.name, &b.fulfilled))
+            .collect();
+        assert_eq!(
+            rows,
+            [
+                (
+                    "posts",
+                    &Fulfilled::ByHost(SourceKind::File(Rc::from("feed/*.md")))
+                ),
+                (
+                    "photos",
+                    &Fulfilled::ByHost(SourceKind::Plugin(Rc::from("photos")))
+                ),
+                (
+                    "base",
+                    &Fulfilled::ByHost(SourceKind::Env(Rc::from("SITE_URL")))
+                ),
+            ]
+        );
+        // The host fulfils them: nothing to run, so nothing beyond the entry.
+        assert_eq!(unit.functions.len(), 1);
+    }
+
+    #[test]
+    fn refuses_a_from_source_of_another_form() {
+        const FORMS: &str = "a `from` source is a string naming a glob or a data file, \
+                             `plugin(\"…\")`, or `env(\"…\")`";
+        let literal = |callee: &str| {
+            format!(
+                "`{callee}` names its source with one string literal: `{callee}(\"…\")`"
+            )
+        };
+        for (source, message) in [
+            ("42", FORMS.to_owned()),
+            ("photos(\"x\")", FORMS.to_owned()),
+            ("f()(\"x\")", FORMS.to_owned()),
+            ("plugin(1)", literal("plugin")),
+            ("plugin(\"a\", \"b\")", literal("plugin")),
+            ("env(name: \"a\")", literal("env")),
+            ("env()", literal("env")),
+        ] {
+            let text = format!("<lem-let x: [string] from {source} />");
+            let reported = shown(&shell_host(), &[SourceFile::new("site.lem", &text)]);
+            assert_eq!(reported.len(), 1, "{source}: {reported:?}");
+            assert!(reported[0].ends_with(&message), "{source}: {reported:?}");
+        }
+    }
+
+    #[test]
+    fn refuses_a_from_binding_outside_the_bindings_file() {
+        let file =
+            SourceFile::new("other.lem", "<lem-let posts: [string] from \"f/*.md\" />");
+        assert_eq!(
+            shown(&shell_host(), std::slice::from_ref(&file)),
+            [concat!(
+                "other.lem:0..41: a `from` binding belongs at the top level of `site.lem`, ",
+                "the file the host reads bindings from"
+            )]
+        );
+        assert_eq!(
+            shown(&Host::untyped(["site"]), &[file]),
+            [concat!(
+                "other.lem:0..41: a `from` binding needs a host that reads bindings from a ",
+                "file, and this one reads none"
+            )]
+        );
+    }
+
+    #[test]
+    fn compiles_a_computed_binding_into_a_function_that_reads_its_siblings() {
+        // Both spellings of a sibling read — the bare name and `site.name` — are one
+        // read of one field, and the function takes nothing: `site` is ambient.
+        let unit = site_unit(
+            "<lem-let name: string = \"limulus.net\" />\n\
+             <lem-let tagline: string = \"Notes from \" + name + site.name />",
+        );
+        let Fulfilled::Computed { func, reads } = &unit.bindings[1].fulfilled else {
+            panic!("computed: {:?}", unit.bindings);
+        };
+        assert_eq!(
+            *reads,
+            [Read::Ambient {
+                value: Rc::from("site"),
+                field: Rc::from("name")
+            }]
+        );
+        let function = &unit.functions[*func as usize];
+        assert_eq!(function.name, "tagline");
+        assert!(function.params.is_empty());
+        assert_eq!(&*unit.bindings[0].name, "name");
+    }
+
+    #[test]
+    fn reads_a_sibling_by_its_bare_name_from_the_ambient_value() {
+        // Rendering the bindings file itself proves the read reaches `site`, not a
+        // local: the value bound at render is what comes out.
+        let files = [SourceFile::new(
+            "site.lem",
+            "<lem-let name: string = \"x\" />\n<lem.name>",
+        )];
+        let module = compile(&files, &shell_host()).expect_output();
+        let site = Value::map(
+            [(Rc::from("name"), Value::str("from-render"))]
+                .into_iter()
+                .collect(),
+        );
+        assert_eq!(
+            render(&module, "site.lem", &[("site", site)]).unwrap(),
+            "from-render"
+        );
+    }
+
+    #[test]
+    fn narrows_a_sibling_read_by_its_bare_name() {
+        let files = [SourceFile::new(
+            "site.lem",
+            "<lem-let sub: string? = null />\n<lem-if sub><lem.sub></lem-if>",
+        )];
+        assert!(shown(&shell_host(), &files).is_empty());
+    }
+
+    #[test]
+    fn keeps_bare_sibling_names_out_of_the_files_functions() {
+        // A `lem-fn` in the bindings file reads the value as every other file does.
+        let files = [SourceFile::new(
+            "site.lem",
+            "<lem-let name: string = \"x\" />\n<lem-fn f(): string = name />",
+        )];
+        assert_eq!(
+            shown(&shell_host(), &files),
+            ["site.lem:53..57: undefined name `name`"]
+        );
+    }
+
+    #[test]
+    fn reports_a_repeated_top_level_binding_once() {
+        // The repeat is not held to the first binding's type: one mistake, one
+        // diagnostic.
+        let files = [SourceFile::new(
+            "site.lem",
+            "<lem-let a: int = 1 />\n<lem-let a: string = \"x\" />",
+        )];
+        assert_eq!(
+            shown(&shell_host(), &files),
+            [
+                "site.lem:32..33: `a` is already bound here\n  site.lem:9..10: first bound here"
+            ]
+        );
+    }
+
+    #[test]
+    fn refuses_a_top_level_binding_that_takes_a_host_value_s_name() {
+        let files = [SourceFile::new("site.lem", "<lem-let page: int = 1 />")];
+        assert_eq!(
+            shown(&shell_host(), &files),
+            ["site.lem:9..13: `page` is bound by the host and cannot be redefined"]
+        );
+    }
+
+    #[test]
+    fn warns_when_a_top_level_binding_shadows_the_stdlib() {
+        let files = [SourceFile::new(
+            "site.lem",
+            "<lem-let raw: string = \"x\" />",
+        )];
+        assert_eq!(
+            shown(&shell_host(), &files),
+            ["site.lem:9..12: warning: `raw` shadows the stdlib function of the same name"]
+        );
+    }
+
+    #[test]
+    fn checks_a_computed_binding_against_the_type_its_head_declares() {
+        // The other half of the repeat rule above: an admitted binding is held to its
+        // declared type.
+        let files = [SourceFile::new("site.lem", "<lem-let n: int = \"x\" />")];
+        assert_eq!(
+            shown(&shell_host(), &files),
+            ["site.lem:18..21: expected `int`, got `string`"]
+        );
+    }
+
+    #[test]
+    fn refuses_a_from_binding_nested_in_the_bindings_file() {
+        let files = [SourceFile::new(
+            "site.lem",
+            "<lem-if true><lem-let x: [string] from \"f/*.md\" /></lem-if>",
+        )];
+        assert_eq!(
+            shown(&shell_host(), &files),
+            [concat!(
+                "site.lem:13..50: a `from` binding belongs at the top level of `site.lem`, ",
+                "the file the host reads bindings from"
+            )]
+        );
+    }
+
+    #[test]
+    fn names_every_bindings_file_when_a_host_reads_several() {
+        let host = Host::new()
+            .bind("site", Ambient::bindings("site.lem"))
+            .bind("data", Ambient::bindings("data.lem"));
+        let files = [SourceFile::new(
+            "other.lem",
+            "<lem-let x: [string] from \"f/*.md\" />",
+        )];
+        assert_eq!(
+            shown(&host, &files),
+            [concat!(
+                "other.lem:0..37: a `from` binding belongs at the top level of `site.lem` or ",
+                "`data.lem`, the files the host reads bindings from"
+            )]
+        );
+    }
+
+    #[test]
+    fn refuses_the_document_value_in_a_computed_binding() {
+        let files = [
+            SourceFile::new("ambient.lem", PAGE),
+            SourceFile::new("site.lem", "<lem-let home: url = page.url />"),
+        ];
+        assert_eq!(
+            shown(&shell_host(), &files),
+            [concat!(
+                "site.lem:21..25: `page` is bound per page, and a binding here is computed ",
+                "once, at load"
+            )]
+        );
+    }
+
+    #[test]
+    fn compiles_a_capture_binding_for_the_loader() {
+        let unit = site_unit("<lem-let intro><p>hi</p></lem-let>");
+        let Fulfilled::Computed { func, reads } = &unit.bindings[0].fulfilled else {
+            panic!("computed: {:?}", unit.bindings);
+        };
+        assert!(reads.is_empty());
+        assert_eq!(unit.functions[*func as usize].name, "intro");
+    }
+
+    #[test]
+    fn reads_a_binding_that_declared_no_type_without_a_second_diagnostic() {
+        let files = [SourceFile::new(
+            "site.lem",
+            "<lem-let name = \"x\" />\n<lem.name>",
+        )];
+        let reported = shown(&shell_host(), &files);
+        assert_eq!(reported.len(), 1, "{reported:?}");
+        assert!(reported[0].contains("declares its type"), "{reported:?}");
     }
 }

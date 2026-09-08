@@ -157,6 +157,29 @@ impl Host {
         )
     }
 
+    /// The ambient name whose fields are the top-level bindings of the file at `path`,
+    /// if the host reads one from it.
+    #[must_use]
+    pub fn bindings_value(&self, path: &str) -> Option<&str> {
+        self.ambient
+            .iter()
+            .find_map(|(name, ambient)| match ambient {
+                Ambient::Bindings(file) if &**file == path => Some(&**name),
+                _ => None,
+            })
+    }
+
+    /// Every ambient value the host reads from a file's bindings, as `(value, file)`,
+    /// in declaration order — the files a `from` binding may stand in.
+    pub fn bindings_files(&self) -> impl Iterator<Item = (&str, &str)> {
+        self.ambient
+            .iter()
+            .filter_map(|(name, ambient)| match ambient {
+                Ambient::Bindings(file) => Some((&**name, &**file)),
+                _ => None,
+            })
+    }
+
     /// The host as the file at `path` sees it: a file the host gave a `record` reads
     /// the document value as that record, and a document the host gave none reads it
     /// unknown-typed — D30's document that no glob matched, which renders all the same.
@@ -253,6 +276,13 @@ mod tests {
     fn knows_which_file_a_value_takes_its_bindings_from() {
         assert!(shell().binds_from("site.lem"));
         assert!(!shell().binds_from("layout.lem"));
+        assert_eq!(shell().bindings_value("site.lem"), Some("site"));
+        assert_eq!(shell().bindings_value("layout.lem"), None);
+        assert_eq!(
+            shell().bindings_files().collect::<Vec<_>>(),
+            [("site", "site.lem")]
+        );
+        assert_eq!(Host::untyped(["site"]).bindings_files().count(), 0);
     }
 
     #[test]

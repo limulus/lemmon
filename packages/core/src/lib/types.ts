@@ -15,6 +15,12 @@ export interface SourceFileInput {
    * document without one is unknown-typed and renders.
    */
   record?: string
+  /**
+   * Where {@link record} was named — the `type:` key's value, as byte offsets into
+   * `text` — so a diagnostic about the record points at the key rather than at the
+   * front matter as a whole. The host holds the YAML, so the host says where.
+   */
+  recordSpan?: { start: number; end: number }
 }
 
 /**

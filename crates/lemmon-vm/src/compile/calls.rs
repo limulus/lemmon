@@ -73,7 +73,9 @@ impl Compiler<'_> {
                 }
                 self.call_builtin(id, None, &positional, span)
             }
-            Some(Resolved::Local { .. } | Resolved::Ambient(_)) => {
+            Some(
+                Resolved::Local { .. } | Resolved::Ambient(_) | Resolved::Field { .. },
+            ) => {
                 let name = name.expect("a resolved name");
                 if self.reject_named(&named, &name) {
                     self.discard(&positional, &named);
@@ -150,6 +152,7 @@ impl Compiler<'_> {
                 self.call_builtin(id, Some(receiver), positional, span)
             }
             rules::Callable::Field(field) => {
+                self.note_member_read(&object, name.text());
                 let index = self.intern(name.text());
                 self.emit(Op::GetField { name: index }, member_span);
                 let field = self.known(field);

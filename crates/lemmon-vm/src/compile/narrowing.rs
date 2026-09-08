@@ -38,7 +38,7 @@ pub(super) struct Path {
 /// Where a path starts. Both are immutable for the whole render, which is what lets a
 /// narrowing hold for the arm it guards (D35).
 #[derive(Clone, Debug, PartialEq, Eq)]
-enum Root {
+pub(super) enum Root {
     /// A local binding, by the span of its name token: one binding, one span, so an
     /// inner shadow is a different path.
     Local(Span),
@@ -62,6 +62,23 @@ impl Path {
             root: Root::Ambient(Rc::from(name)),
             fields: Vec::new(),
         }
+    }
+
+    /// The path of one field of an ambient value — what a sibling binding read by its
+    /// bare name at the bindings file's top level is (D36).
+    pub(super) fn ambient_field(value: &Rc<str>, field: &str) -> Self {
+        Self {
+            root: Root::Ambient(value.clone()),
+            fields: vec![Rc::from(field)],
+        }
+    }
+
+    pub(super) const fn root(&self) -> &Root {
+        &self.root
+    }
+
+    pub(super) fn fields(&self) -> &[Rc<str>] {
+        &self.fields
     }
 }
 
@@ -123,6 +140,9 @@ impl Compiler<'_> {
                     }
                     Some(Resolved::Ambient(ty)) => {
                         Some((Path::ambient(name.text()), self.known(ty)))
+                    }
+                    Some(Resolved::Field { value, ty }) => {
+                        Some((Path::ambient_field(&value, name.text()), self.known(ty)))
                     }
                     _ => None,
                 }

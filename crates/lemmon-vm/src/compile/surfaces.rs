@@ -35,6 +35,8 @@ pub struct PreparedFile {
     pub(super) path: String,
     /// The record this file's content is, as the host named it (D30).
     pub(super) record: Option<String>,
+    /// Where the host says the record was named, when it can say.
+    record_span: Option<Span>,
     pub(super) source: Source,
     /// A document's prose, rendered by comrak here so markdown never runs later.
     pub(super) chunks: Option<Vec<String>>,
@@ -70,11 +72,14 @@ impl PreparedFile {
         &self.types
     }
 
-    /// Where a diagnostic about the record this file was compiled as points: the front
-    /// matter, which is where the `type:` key that may have named it stands, and the
-    /// start of the file for a template, which has none. ∆iCW's YAML positions are what
-    /// narrow this to the key itself.
+    /// Where a diagnostic about the record this file was compiled as points: the
+    /// `type:` key's value when the host said where that is, else the front matter,
+    /// which is where such a key stands, and the start of the file for a template,
+    /// which has none.
     pub(super) fn record_span(&self) -> Span {
+        if let Some(span) = self.record_span {
+            return span;
+        }
         match &self.source {
             Source::Document(doc) => doc.front_matter.unwrap_or_else(|| Span::new(0, 0)),
             Source::Template(_) => Span::new(0, 0),
@@ -135,6 +140,7 @@ pub fn prepare(file: &SourceFile, host: &Host) -> Result<PreparedFile, Vec<Diagn
     Ok(PreparedFile {
         path: file.path.clone(),
         record: file.record.clone(),
+        record_span: file.record_span,
         source,
         chunks,
         exports,
@@ -309,24 +315,28 @@ fn collect_bindings(
         let (name, ty) = match &item {
             Item::LetVoid(tag) => {
                 let name = required(tag.name());
-                let Some(annotation) = tag.type_annotation() else {
-                    diagnostics.push(Diagnostic::error(
+                // Without its annotation the binding is still a field, of the unknown
+                // type, so a read of it costs no second diagnostic.
+                let ty = match tag.type_annotation() {
+                    Some(annotation) => annotations::resolve(
                         path,
-                        name.span(),
-                        format!(
-                            "a binding the host reads declares its type: \
-                             `<lem-let {}: T = … />`",
-                            name.text()
-                        ),
-                    ));
-                    continue;
+                        &required(annotation.ty()),
+                        &mut diagnostics,
+                        uses,
+                    ),
+                    None => {
+                        diagnostics.push(Diagnostic::error(
+                            path,
+                            name.span(),
+                            format!(
+                                "a binding the host reads declares its type: \
+                                 `<lem-let {}: T = … />`",
+                                name.text()
+                            ),
+                        ));
+                        Type::Any
+                    }
                 };
-                let ty = annotations::resolve(
-                    path,
-                    &required(annotation.ty()),
-                    &mut diagnostics,
-                    uses,
-                );
                 (name, ty)
             }
             Item::LetFrom(tag) => {

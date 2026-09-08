@@ -12,5 +12,7 @@
   layout: (Article, html): html
 </lem-type>
 
+<lem-let photos: {string: Photo} from "_data/photos.json" />
+<lem-let posts: [Article] from "pages/*.md" />
 <lem-let name: string = "limulus.net" />
 <lem-let tagline: string = "Notes from " + name />

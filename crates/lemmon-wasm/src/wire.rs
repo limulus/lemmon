@@ -28,6 +28,25 @@ pub(crate) struct FileInput {
     /// (D30). Absent from a template, and from a document no collection matched.
     #[serde(default)]
     pub(crate) record: Option<String>,
+    /// Where `record` was named — the `type:` key's value, as byte offsets into
+    /// `text` — so a diagnostic about the record points at the key rather than at the
+    /// front matter as a whole. The host holds the YAML, so the host says where.
+    #[serde(default, rename = "recordSpan")]
+    pub(crate) record_span: Option<SpanInput>,
+}
+
+/// A span as a host writes one: byte offsets into a file this call carries.
+#[derive(Clone, Copy, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct SpanInput {
+    start: u32,
+    end: u32,
+}
+
+impl From<SpanInput> for lemmon_vm::Span {
+    fn from(span: SpanInput) -> Self {
+        Self::new(span.start, span.end)
+    }
 }
 
 /// The host's declaration as `compile` receives it: `{ambient, document?, entry?}`,

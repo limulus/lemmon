@@ -1,0 +1,6 @@
+<lem-type Author>
+  bio: html = body
+</lem-type>
+
+An author comes from a data file, not a document: nothing stands behind it that could be
+a body, so the name is undefined here, as `path` would be.

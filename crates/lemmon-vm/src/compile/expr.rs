@@ -31,6 +31,7 @@ use super::{Compiler, TokenSpan, required};
 use crate::Value;
 use crate::bytecode::Op;
 use crate::decls::Kind;
+use crate::plan::Read;
 use crate::types::{Type, join};
 
 impl Compiler<'_> {
@@ -178,16 +179,56 @@ impl Compiler<'_> {
                 Type::Any
             }
             Some(Resolved::Ambient(ty)) => {
+                if let Some(refusal) = self.unavailable_at_load(token.text()) {
+                    self.error(span, refusal);
+                    return Type::Any;
+                }
                 let name = self.intern(token.text());
                 self.emit(Op::Ambient { name }, span);
                 let ty = self.ambient_type(token.text(), ty, span);
                 self.narrowed(&Path::ambient(token.text())).unwrap_or(ty)
+            }
+            // A sibling binding at the bindings file's top level: a field of the
+            // ambient value, read exactly as `value.name` is — the value's binding
+            // recorded as this unit's fact, the read noted for the loader's order.
+            Some(Resolved::Field { value, ty }) => {
+                let ambient = self.intern(&value);
+                self.emit(Op::Ambient { name: ambient }, span);
+                let field = self.intern(token.text());
+                self.emit(Op::GetField { name: field }, span);
+                self.ambient_type(&value, Type::Named(Rc::from(self.path)), span);
+                self.note_read(Read::Ambient {
+                    value: value.clone(),
+                    field: Rc::from(token.text()),
+                });
+                let ty = self.known(ty);
+                self.narrowed(&Path::ambient_field(&value, token.text()))
+                    .unwrap_or(ty)
             }
             None => {
                 self.error(span, self.undefined(token.text()));
                 Type::Any
             }
         }
+    }
+
+    /// Why the ambient value `name` cannot be read by the function being compiled for
+    /// the loader, if it cannot: the host's document value is bound per page, and a
+    /// default or a computed binding runs before any page is (∆iCW).
+    fn unavailable_at_load(&self, name: &str) -> Option<String> {
+        let reads = self.reads.as_ref()?;
+        if self.host.document() != Some(name) {
+            return None;
+        }
+        Some(if reads.self_binder.is_some() {
+            format!(
+                "`{name}` is not bound while a record loads: the record so far is `self`"
+            )
+        } else {
+            format!(
+                "`{name}` is bound per page, and a binding here is computed once, at load"
+            )
+        })
     }
 
     /// Why a name resolves to nothing: a name the project declares as a type is not a
@@ -256,6 +297,7 @@ impl Compiler<'_> {
         }
         let object_ty = self.expr(&object);
         let name = required(member.name());
+        self.note_member_read(&object, name.text());
         let index = self.intern(name.text());
         let optional = member.is_optional();
         let op = if optional {
