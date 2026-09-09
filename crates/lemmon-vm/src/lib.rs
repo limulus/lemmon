@@ -16,6 +16,8 @@ mod exports;
 mod host;
 mod load;
 mod plan;
+#[cfg(test)]
+mod testing;
 mod types;
 mod unit;
 mod value;

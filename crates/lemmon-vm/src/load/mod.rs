@@ -555,6 +555,7 @@ pub(crate) mod tests {
     use lemmon_syntax::{LineIndex, Span};
 
     use super::*;
+    use crate::testing::{all_of, at};
     use crate::{SourceFile, compile};
 
     /// The standard shell's declaration: `page` a `Page`, `build` a `Build`, `site`
@@ -595,19 +596,18 @@ pub(crate) mod tests {
         )
     }
 
-    /// A span table over `text`: each `(path, start, end)` placed by a line index over
-    /// it, as a host would.
-    pub(crate) fn spans(text: &str, entries: &[(&str, u32, u32)]) -> Spans {
+    /// A span table over `text`: each `(path, span)` placed by a line index over it, as
+    /// a host would.
+    pub(crate) fn spans(text: &str, entries: &[(&str, Span)]) -> Spans {
         let index = LineIndex::new(text);
         entries
             .iter()
-            .map(|(path, start, end)| {
-                let span = Span::new(*start, *end);
+            .map(|(path, span)| {
                 (
                     (*path).to_owned(),
                     HostSpan {
-                        span,
-                        range: index.range(span),
+                        span: *span,
+                        range: index.range(*span),
                     },
                 )
             })
@@ -669,8 +669,14 @@ pub(crate) mod tests {
         assert_eq!(
             errors(&module, &shell(), data),
             [
-                "ambient.lem:74..79: `Build` has no field `extra`",
-                "ambient.lem:83..92: expected `string` for `build.generator`, got `int`",
+                format!(
+                    "ambient.lem:{}: `Build` has no field `extra`",
+                    at(AMBIENT, "Build")
+                ),
+                format!(
+                    "ambient.lem:{}: expected `string` for `build.generator`, got `int`",
+                    at(AMBIENT, "generator")
+                ),
             ]
         );
     }
@@ -837,7 +843,7 @@ pub(crate) mod tests {
         let unplaced = Loaded {
             value: Value::str("m"),
             path: None,
-            spans: spans("m", &[("", 0, 1)]),
+            spans: spans("m", &[("", all_of("m"))]),
         };
         assert_eq!(
             refused(vec![
@@ -920,7 +926,7 @@ pub(crate) mod tests {
                     Source::Many(vec![Loaded {
                         value: front,
                         path: Some("pages/a.md".to_owned()),
-                        spans: spans(text, &[("", 4, 12)]),
+                        spans: spans(text, &[("", at(text, "title: A"))]),
                     }]),
                 ),
             ],
@@ -950,14 +956,14 @@ pub(crate) mod tests {
 
     #[test]
     fn reports_a_document_whose_record_is_not_what_the_binding_collects() {
+        const NOTE: &str = "---\ntype: Note\n---\n";
         let site = format!(
             "{SITE}<lem-type Note extends Page>\n  layout: (Note, html): html\n</lem-type>"
         );
         let files = [
             SourceFile::new("ambient.lem", AMBIENT),
             SourceFile::new("site.lem", &site),
-            document("pages/n.md", "---\ntype: Note\n---\n", "Note")
-                .named_at(Span::new(10, 14)),
+            document("pages/n.md", NOTE, "Note").named_at(at(NOTE, "Note")),
         ];
         let module = compile(&files, &shell()).expect_output();
         let data = Data {
@@ -972,9 +978,11 @@ pub(crate) mod tests {
         };
         assert_eq!(
             errors(&module, &shell(), data),
-            [
-                "pages/n.md:10..14: `Note` does not extend `Article`, the type `posts` collects"
-            ]
+            [format!(
+                "pages/n.md:{}: `Note` does not extend `Article`, the type `posts` \
+                 collects",
+                at(NOTE, "Note")
+            )]
         );
     }
 
@@ -993,9 +1001,11 @@ pub(crate) mod tests {
         };
         assert_eq!(
             errors(&module, &shell(), data),
-            [
-                "site.lem:10..17: expected the front matter as a mapping of `Article` fields, got `list`"
-            ]
+            [format!(
+                "site.lem:{}: expected the front matter as a mapping of `Article` \
+                 fields, got `list`",
+                at(SITE, "<lem-type «Article» extends")
+            )]
         );
     }
 
@@ -1013,9 +1023,12 @@ pub(crate) mod tests {
             result.diagnostics.iter().map(ToString::to_string).collect();
         assert_eq!(
             shown,
-            [
-                "site.lem:71..83: index 2 is out of range for a list of 1\n  site.lem:59..60: computing `c`"
-            ]
+            [format!(
+                "site.lem:{}: index 2 is out of range for a list of 1\n  \
+                 site.lem:{}: computing `c`",
+                at(site, "[\"x\"][a + 1]"),
+                at(site, "c")
+            )]
         );
         assert!(result.output.is_none());
     }
@@ -1035,7 +1048,11 @@ pub(crate) mod tests {
                     path: Some("_data/photos.json".to_owned()),
                     spans: spans(
                         json,
-                        &[("", 0, 26), ("sunset", 1, 25), ("sunset.caption", 12, 24)],
+                        &[
+                            ("", all_of(json)),
+                            ("sunset", at(json, "\"sunset\": {\"caption\": 3}")),
+                            ("sunset.caption", at(json, "\"caption\": 3")),
+                        ],
                     ),
                 }),
             )],
@@ -1043,7 +1060,11 @@ pub(crate) mod tests {
         let result = load(&module, &shell(), data).unwrap();
         assert_eq!(
             result.diagnostics[0].to_string(),
-            "_data/photos.json:12..24: expected `string` for `photos.sunset.caption`, got `int`"
+            format!(
+                "_data/photos.json:{}: expected `string` for `photos.sunset.caption`, \
+                 got `int`",
+                at(json, "\"caption\": 3")
+            )
         );
         assert_eq!(
             result.diagnostics[0]
@@ -1113,7 +1134,10 @@ pub(crate) mod tests {
         };
         assert_eq!(
             errors(&module, &shell(), data),
-            ["ambient.lem:83..92: expected `string` for `build.generator`, got `int`"]
+            [format!(
+                "ambient.lem:{}: expected `string` for `build.generator`, got `int`",
+                at(AMBIENT, "generator")
+            )]
         );
     }
 }

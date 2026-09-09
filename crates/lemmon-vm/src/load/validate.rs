@@ -406,11 +406,14 @@ fn listed(names: &[String]) -> String {
 
 #[cfg(test)]
 mod tests {
+    use lemmon_syntax::Span;
+
     use super::super::tests::{
         AMBIENT, build, document, errors, module, object, shell, spans,
     };
     use super::super::{Data, Loaded, Source, Spans, load};
     use super::*;
+    use crate::testing::at;
     use crate::{Module, SourceFile, compile};
 
     const SITE: &str = "<lem-enum Placement = hero | left />\n\
@@ -465,7 +468,7 @@ mod tests {
                     Source::Many(vec![Loaded {
                         value: front,
                         path: Some("pages/a.md".to_owned()),
-                        spans: spans(TEXT, &[("", 4, 12), ("title", 4, 12)]),
+                        spans: spans(TEXT, &[("", record()), ("title", record())]),
                     }]),
                 ),
             ],
@@ -570,6 +573,12 @@ mod tests {
         assert_eq!(&*closure.captures, &[] as &[Value]);
     }
 
+    /// Where the host places the record: `TEXT`'s one front-matter entry, which every
+    /// diagnostic about a field of it points at.
+    fn record() -> Span {
+        at(TEXT, "title: A")
+    }
+
     fn front_errors(front: &[(&str, Value)]) -> Vec<String> {
         errors(&site_module(), &shell(), data(object(front)))
     }
@@ -583,9 +592,15 @@ mod tests {
         assert_eq!(
             front_errors(&front),
             [
-                "pages/a.md:4..12: `Article` has no field `byline`",
-                "pages/a.md:4..12: expected `string` for `title`, got `int`",
-                "pages/a.md:4..12: expected `int` for `words`, got `string`",
+                format!("pages/a.md:{}: `Article` has no field `byline`", record()),
+                format!(
+                    "pages/a.md:{}: expected `string` for `title`, got `int`",
+                    record()
+                ),
+                format!(
+                    "pages/a.md:{}: expected `int` for `words`, got `string`",
+                    record()
+                ),
             ]
         );
     }
@@ -598,7 +613,10 @@ mod tests {
             .collect();
         assert_eq!(
             front_errors(&front),
-            ["pages/a.md:4..12: missing `words`: `Article` declares it with no default"]
+            [format!(
+                "pages/a.md:{}: missing `words`: `Article` declares it with no default",
+                record()
+            )]
         );
     }
 
@@ -614,15 +632,20 @@ mod tests {
         ));
         assert_eq!(
             front_errors(&front),
-            [
-                "pages/a.md:4..12: `hero.placement` is a `Placement` — `hero` or `left` — and \"top\" is none of them"
-            ]
+            [format!(
+                "pages/a.md:{}: `hero.placement` is a `Placement` — `hero` or `left` \
+                 — and \"top\" is none of them",
+                record()
+            )]
         );
         let mut front = complete();
         front.push(("hero", Value::str("dawn")));
         assert_eq!(
             front_errors(&front),
-            ["pages/a.md:4..12: `hero` names \"dawn\", which its index has no entry for"]
+            [format!(
+                "pages/a.md:{}: `hero` names \"dawn\", which its index has no entry for",
+                record()
+            )]
         );
     }
 
@@ -632,21 +655,29 @@ mod tests {
         front.push(("layout", Value::str("articl")));
         assert_eq!(
             front_errors(&front),
-            ["pages/a.md:4..12: `layout` names `articl`, and no `lem-fn` has that name"]
+            [format!(
+                "pages/a.md:{}: `layout` names `articl`, and no `lem-fn` has that name",
+                record()
+            )]
         );
         let mut front = complete();
         front.push(("layout", Value::str("card")));
         assert_eq!(
             front_errors(&front),
-            [
-                "pages/a.md:4..12: `layout` names `card`, a `(Photo): string`, where a `(Article, html): html` is expected"
-            ]
+            [format!(
+                "pages/a.md:{}: `layout` names `card`, a `(Photo): string`, where a \
+                 `(Article, html): html` is expected",
+                record()
+            )]
         );
         let mut front = complete();
         front.push(("layout", Value::Int(1)));
         assert_eq!(
             front_errors(&front),
-            ["pages/a.md:4..12: expected `(Article, html): html` for `layout`, got `int`"]
+            [format!(
+                "pages/a.md:{}: expected `(Article, html): html` for `layout`, got `int`",
+                record()
+            )]
         );
     }
 
@@ -656,7 +687,10 @@ mod tests {
         front.push(("tags", Value::list(vec![Value::str("a"), Value::Int(2)])));
         assert_eq!(
             front_errors(&front),
-            ["pages/a.md:4..12: expected `string` for `tags.1`, got `int`"]
+            [format!(
+                "pages/a.md:{}: expected `string` for `tags.1`, got `int`",
+                record()
+            )]
         );
         let site = "<lem-let counts: {string: int} from \"_data/counts.json\" />";
         let module = module(&shell(), &[("ambient.lem", AMBIENT), ("site.lem", site)]);
@@ -673,7 +707,10 @@ mod tests {
         };
         assert_eq!(
             errors(&module, &shell(), data),
-            ["site.lem:9..15: expected `int` for `counts.b`, got `bool`"]
+            [format!(
+                "site.lem:{}: expected `int` for `counts.b`, got `bool`",
+                at(site, "«counts»: {string:")
+            )]
         );
     }
 
@@ -698,14 +735,19 @@ mod tests {
                         ("layout", Value::str("f")),
                     ]),
                     path: Some("pages/a.md".to_owned()),
-                    spans: spans(TEXT, &[("", 4, 12)]),
+                    spans: spans(TEXT, &[("", record())]),
                 }]),
             )],
         };
         let result = load(&module, &shell(), data).unwrap();
         assert_eq!(
             result.diagnostics[0].to_string(),
-            "site.lem:71..83: index 0 is out of range for a list of 0\n  pages/a.md:4..12: computing `lead` for this `Article`"
+            format!(
+                "site.lem:{}: index 0 is out of range for a list of 0\n  \
+                 pages/a.md:{}: computing `lead` for this `Article`",
+                at(site, "self.tags[0]"),
+                record()
+            )
         );
         assert!(result.diagnostics[0].labels[0].range.is_some());
     }
@@ -728,9 +770,11 @@ mod tests {
         };
         assert_eq!(
             errors(&module, &shell(), data),
-            [
-                "site.lem:85..93: `Article` extends `Page`, so it is loaded from a document of its own, not from data"
-            ]
+            [format!(
+                "site.lem:{}: `Article` extends `Page`, so it is loaded from a document \
+                 of its own, not from data",
+                at(site, "«featured»: Article")
+            )]
         );
     }
 
@@ -738,6 +782,11 @@ mod tests {
     fn reports_an_index_entry_that_is_no_record_of_the_fields_type() {
         // The index is typed `{string: Photo}` at compile; `any` is how a wrong entry
         // gets in.
+        //
+        // `TEXT`'s front matter has no `hero` key to point at, so the host's position
+        // for it is any span inside the record's and distinct from it: what the test
+        // asserts is that the diagnostic uses the entry's span, not the record's.
+        let hero = Span::new(5, 9);
         let site = "<lem-type Photo>\n  caption: string\n</lem-type>\n\
                     <lem-type Article extends Page>\n  hero: Photo? by site.index\n  layout: (Article, html): html\n</lem-type>\n\
                     <lem-fn f(a: Article, b: html)><lem.a.url><lem.b></lem-fn>\n\
@@ -769,16 +818,17 @@ mod tests {
                             ("hero", Value::str("x")),
                         ]),
                         path: Some("pages/a.md".to_owned()),
-                        spans: spans(TEXT, &[("", 4, 12), ("hero", 5, 9)]),
+                        spans: spans(TEXT, &[("", record()), ("hero", hero)]),
                     }]),
                 ),
             ],
         };
         assert_eq!(
             errors(&module, &shell(), data),
-            [
-                "pages/a.md:5..9: `hero` names \"x\", which its index resolves to a `int` rather than a `Photo`"
-            ]
+            [format!(
+                "pages/a.md:{hero}: `hero` names \"x\", which its index resolves to \
+                     a `int` rather than a `Photo`"
+            )]
         );
     }
 
@@ -810,10 +860,10 @@ mod tests {
             )],
         };
         let store = load(&module, &shell(), with(good)).unwrap().expect_output();
-        let Value::Record(site) = &store.ambient[1].1 else {
+        let Value::Record(loaded) = &store.ambient[1].1 else {
             panic!("site");
         };
-        let Some(Value::Record(scalars)) = site.fields.get("scalars") else {
+        let Some(Value::Record(scalars)) = loaded.fields.get("scalars") else {
             panic!("scalars");
         };
         assert_eq!(scalars.fields.get("h"), Some(&Value::html("<b>")));
@@ -833,15 +883,43 @@ mod tests {
         assert_eq!(
             errors(&module, &shell(), with(bad)),
             [
-                "site.lem:21..22: expected `string` for `scalars.s`, got `null`",
-                "site.lem:33..34: expected `int` for `scalars.i`, got `float`",
-                "site.lem:42..43: expected `float` for `scalars.f`, got `string`",
-                "site.lem:53..54: expected `bool` for `scalars.b`, got `int`",
-                "site.lem:63..64: expected `html` for `scalars.h`, got a string: `html` is trusted markup, and `raw()` is the only string that becomes one",
-                "site.lem:73..74: expected `duration` for `scalars.d`, got `int`",
-                "site.lem:87..88: expected `url` for `scalars.u`, got `bool`",
-                "site.lem:96..97: expected `asset` for `scalars.a`, got `null`",
-                "site.lem:107..108: expected `int?` for `scalars.o`, got `string`",
+                format!(
+                    "site.lem:{}: expected `string` for `scalars.s`, got `null`",
+                    at(site, "«s»: string")
+                ),
+                format!(
+                    "site.lem:{}: expected `int` for `scalars.i`, got `float`",
+                    at(site, "«i»: int\n")
+                ),
+                format!(
+                    "site.lem:{}: expected `float` for `scalars.f`, got `string`",
+                    at(site, "«f»: float")
+                ),
+                format!(
+                    "site.lem:{}: expected `bool` for `scalars.b`, got `int`",
+                    at(site, "«b»: bool")
+                ),
+                format!(
+                    "site.lem:{}: expected `html` for `scalars.h`, got a string: `html` \
+                     is trusted markup, and `raw()` is the only string that becomes one",
+                    at(site, "«h»: html")
+                ),
+                format!(
+                    "site.lem:{}: expected `duration` for `scalars.d`, got `int`",
+                    at(site, "«d»: duration")
+                ),
+                format!(
+                    "site.lem:{}: expected `url` for `scalars.u`, got `bool`",
+                    at(site, "«u»: url")
+                ),
+                format!(
+                    "site.lem:{}: expected `asset` for `scalars.a`, got `null`",
+                    at(site, "«a»: asset")
+                ),
+                format!(
+                    "site.lem:{}: expected `int?` for `scalars.o`, got `string`",
+                    at(site, "«o»: int?")
+                ),
             ]
         );
     }
@@ -887,9 +965,11 @@ mod tests {
         };
         assert_eq!(
             errors(&module, &shell(), data),
-            [
-                "site.lem:56..61: expected `Photo` for `photo`, got a string: only a field with a `by` index resolves a string to a record"
-            ]
+            [format!(
+                "site.lem:{}: expected `Photo` for `photo`, got a string: only a field \
+                 with a `by` index resolves a string to a record",
+                at(site, "photo")
+            )]
         );
     }
 
@@ -930,6 +1010,9 @@ mod tests {
 
     #[test]
     fn refuses_a_page_backed_record_nested_in_a_documents_front_matter() {
+        // A span inside the record's and distinct from it, standing for where the host
+        // found the nested key — as in the index test above.
+        let related = Span::new(6, 10);
         let site = "<lem-type Article extends Page>\n  slug: string = path\n  related: Article?\n  layout: (Article, html): html = f\n</lem-type>\n\
                     <lem-fn f(a: Article, b: html)><lem.a.url><lem.b></lem-fn>\n\
                     <lem-let posts: [Article] from \"pages/*.md\" />";
@@ -949,15 +1032,16 @@ mod tests {
                         ("related", object(&[("url", Value::str("/r/"))])),
                     ]),
                     path: Some("pages/a.md".to_owned()),
-                    spans: spans(TEXT, &[("", 4, 12), ("related", 6, 10)]),
+                    spans: spans(TEXT, &[("", record()), ("related", related)]),
                 }]),
             )],
         };
         assert_eq!(
             errors(&module, &shell(), data),
-            [
-                "pages/a.md:6..10: `Article` extends `Page`, so it is loaded from a document of its own, not from data"
-            ]
+            [format!(
+                "pages/a.md:{related}: `Article` extends `Page`, so it is loaded \
+                     from a document of its own, not from data"
+            )]
         );
     }
 
@@ -1011,7 +1095,7 @@ mod tests {
                 Source::Many(vec![Loaded {
                     value: object(&[("url", Value::str("/a/"))]),
                     path: Some("tils/a.md".to_owned()),
-                    spans: spans(TEXT, &[("", 4, 12)]),
+                    spans: spans(TEXT, &[("", record())]),
                 }]),
             )],
         };
@@ -1019,7 +1103,10 @@ mod tests {
         // value that failed, so it cannot add a fault of its own.
         assert_eq!(
             errors(&module, &shell(), data),
-            ["tils/a.md:4..12: missing `topic`: `Til` declares it with no default"]
+            [format!(
+                "tils/a.md:{}: missing `topic`: `Til` declares it with no default",
+                record()
+            )]
         );
     }
 
@@ -1043,7 +1130,10 @@ mod tests {
         };
         assert_eq!(
             errors(&module, &shell(), data(object(&[]))),
-            ["site.lem:75..79: missing `count`: `Blob` declares it with no default"]
+            [format!(
+                "site.lem:{}: missing `count`: `Blob` declares it with no default",
+                at(site, "«blob»: Blob")
+            )]
         );
         let store = load(&module, &shell(), data(object(&[("count", Value::Int(1))])))
             .unwrap()
@@ -1082,9 +1172,11 @@ mod tests {
         );
         assert_eq!(
             errors(&module, &shell(), data((1 << 53) + 1)),
-            [
-                "site.lem:18..23: expected `float` for `stat.ratio`, got an integer a float cannot hold exactly: 9007199254740993"
-            ]
+            [format!(
+                "site.lem:{}: expected `float` for `stat.ratio`, got an integer a float \
+                 cannot hold exactly: 9007199254740993",
+                at(site, "«ratio»: float")
+            )]
         );
     }
 
@@ -1101,9 +1193,12 @@ mod tests {
         };
         assert_eq!(
             errors(&module, &shell(), data),
-            [
-                "ambient.lem:81..87: `banner` reads `site`, which is not loaded yet: the host's own values load before the bindings files, so a `Build` may read only the host's other values here"
-            ]
+            [format!(
+                "ambient.lem:{}: `banner` reads `site`, which is not loaded yet: the \
+                 host's own values load before the bindings files, so a `Build` may \
+                 read only the host's other values here",
+                at(ambient, "banner")
+            )]
         );
     }
 }

@@ -211,6 +211,7 @@ fn index_u32(index: usize) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testing::at;
 
     fn render(src: &str) -> Result<Vec<String>, Vec<Diagnostic>> {
         let doc = lemmon_syntax::parse_document(src);
@@ -262,16 +263,20 @@ mod tests {
 
     #[test]
     fn takes_an_even_run_of_backslashes_before_a_tag_as_a_tag() {
-        let msgs = messages(render("a \\\\<lem.x> b\n"));
+        let src = "a \\\\<lem.x> b\n";
+        let msgs = messages(render(src));
         assert_eq!(msgs.len(), 1);
-        assert!(msgs[0].starts_with("doc.md:4..11: lem tags"), "{msgs:?}");
+        let expected = format!("doc.md:{}: lem tags", at(src, "<lem.x>"));
+        assert!(msgs[0].starts_with(&expected), "{msgs:?}");
     }
 
     #[test]
     fn points_at_the_tag_itself_after_an_entity_earlier_in_the_line() {
-        let msgs = messages(render("&amp;&amp;é <lem.x> here\n"));
+        let src = "&amp;&amp;é <lem.x> here\n";
+        let msgs = messages(render(src));
         assert_eq!(msgs.len(), 1);
-        assert!(msgs[0].starts_with("doc.md:13..20: lem tags"), "{msgs:?}");
+        let expected = format!("doc.md:{}: lem tags", at(src, "<lem.x>"));
+        assert!(msgs[0].starts_with(&expected), "{msgs:?}");
     }
 
     #[test]
@@ -281,21 +286,19 @@ mod tests {
 
     #[test]
     fn rejects_a_tag_inside_a_blockquote_as_prose() {
-        let msgs = messages(render("> quote\n> <lem.x>\n"));
+        let src = "> quote\n> <lem.x>\n";
+        let msgs = messages(render(src));
         assert_eq!(msgs.len(), 1);
-        assert!(
-            msgs[0].starts_with("doc.md:10..17: lem tags in prose"),
-            "{msgs:?}"
-        );
+        let expected = format!("doc.md:{}: lem tags in prose", at(src, "<lem.x>"));
+        assert!(msgs[0].starts_with(&expected), "{msgs:?}");
     }
 
     #[test]
     fn rejects_a_block_inside_indented_code() {
-        let msgs = messages(render("text\n\n    <lem.x>\n"));
-        assert!(
-            msgs[0].starts_with("doc.md:10..17: markdown swallowed"),
-            "{msgs:?}"
-        );
+        let src = "text\n\n    <lem.x>\n";
+        let msgs = messages(render(src));
+        let expected = format!("doc.md:{}: markdown swallowed", at(src, "<lem.x>"));
+        assert!(msgs[0].starts_with(&expected), "{msgs:?}");
     }
 
     #[test]
@@ -314,18 +317,19 @@ mod tests {
 
     #[test]
     fn rejects_a_tag_in_the_middle_of_a_paragraph() {
-        let msgs = messages(render("---\nf: 1\n---\nsee <lem.x> here\n"));
+        let src = "---\nf: 1\n---\nsee <lem.x> here\n";
+        let msgs = messages(render(src));
         assert_eq!(msgs.len(), 1);
-        assert!(
-            msgs[0].starts_with("doc.md:17..24: lem tags in prose"),
-            "{msgs:?}"
-        );
+        let expected = format!("doc.md:{}: lem tags in prose", at(src, "<lem.x>"));
+        assert!(msgs[0].starts_with(&expected), "{msgs:?}");
     }
 
     #[test]
     fn rejects_a_keyword_tag_in_a_list_item() {
-        let msgs = messages(render("- <lem-if x>\n"));
-        assert!(msgs[0].starts_with("doc.md:2..12: lem tags"), "{msgs:?}");
+        let src = "- <lem-if x>\n";
+        let msgs = messages(render(src));
+        let expected = format!("doc.md:{}: lem tags", at(src, "<lem-if x>"));
+        assert!(msgs[0].starts_with(&expected), "{msgs:?}");
     }
 
     #[test]
@@ -337,10 +341,9 @@ mod tests {
 
     #[test]
     fn rejects_a_hand_written_sentinel() {
-        let msgs = messages(render("x\n\n<!--lem:0-->\n\n<lem.y>\n"));
-        assert!(
-            msgs[0].starts_with("doc.md:3..11: `<!--lem:` is reserved"),
-            "{msgs:?}"
-        );
+        let src = "x\n\n<!--lem:0-->\n\n<lem.y>\n";
+        let msgs = messages(render(src));
+        let expected = format!("doc.md:{}: `<!--lem:` is reserved", at(src, "<!--lem:"));
+        assert!(msgs[0].starts_with(&expected), "{msgs:?}");
     }
 }
