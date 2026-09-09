@@ -22,6 +22,10 @@ serde = { version = "1.0.228", features = ["derive"] }
 # `lem-for` walks a map in that order — alphabetising here would reorder every loop.
 serde_json = { version = "1.0.145", features = ["preserve_order"] }
 logos = "0.16.1"
+# Optimal string alignment behind `lemmon_syntax::nearest`, the one did-you-mean policy
+# every stage suggests through. No dependencies of its own, so it costs the .wasm almost
+# nothing.
+strsim = "0.11.1"
 proptest = "1.11.0"
 tempfile = "3.24.0"
 rowan = "0.17.0"

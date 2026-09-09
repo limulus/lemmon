@@ -17,7 +17,7 @@ mod syntax_kind;
 mod token;
 
 pub use ast::AstNode;
-pub use diagnostic::{Diagnostic, Label, Severity};
+pub use diagnostic::{Diagnostic, Label, Severity, nearest};
 pub use document::{DocumentParse, parse_document};
 pub use line_index::{LineIndex, Position, Range};
 pub use parser::{Parse, dump, parse, tag_dump};

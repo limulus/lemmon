@@ -9,7 +9,7 @@
 
 use super::{Marker, Parser, expr};
 use crate::syntax_kind::SyntaxKind;
-use crate::{Span, TokenKind};
+use crate::{Span, TokenKind, nearest};
 
 /// Every `lem-*` name the language reserves.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -58,21 +58,11 @@ impl Builtin {
         BUILTINS.iter().find(|(n, _)| *n == name).map(|(_, b)| *b)
     }
 
-    /// The builtin closest to `name`, for a did-you-mean. Closeness is edit distance
-    /// relative to length — at most half the longer name may differ — so that a short
-    /// or unrelated name (`-`, `xx`, `widget`) gets no suggestion rather than `if`.
-    /// Case-insensitive, since `<lem-ELSE>` is a recognisable `lem-else`.
+    /// The builtin closest to `name`, for a did-you-mean — none when nothing is close
+    /// enough, which is what keeps `<lem-widget>` from being answered with `lem-if`.
+    /// The policy is [`crate::nearest`]'s; the tag namespace only supplies the candidates.
     fn nearest(name: &str) -> Option<&'static str> {
-        let name = name.to_ascii_lowercase();
-        BUILTINS
-            .iter()
-            .map(|(n, _)| {
-                let longest = name.len().max(n.len());
-                (edit_distance(&name, n), longest, *n)
-            })
-            .filter(|(d, longest, _)| d * 2 <= *longest)
-            .min_by_key(|(d, longest, _)| (d * 1000 / longest, *d))
-            .map(|(_, _, n)| n)
+        nearest(name, BUILTINS.iter().map(|(n, _)| *n))
     }
 
     /// Whether the tag is a block — for the builtins the parser keeps opaquely. The
@@ -122,27 +112,6 @@ impl Builtin {
             Self::Import => "is not supported yet (∆PgF)",
         }
     }
-}
-
-/// Optimal string alignment distance: Levenshtein plus adjacent transposition, so that
-/// `fi` is one step from `if`, as a typist would expect.
-fn edit_distance(a: &str, b: &str) -> usize {
-    let a: Vec<char> = a.chars().collect();
-    let b: Vec<char> = b.chars().collect();
-    let mut rows: Vec<Vec<usize>> = vec![(0..=b.len()).collect()];
-    for (i, ca) in a.iter().enumerate() {
-        let mut row = vec![i + 1];
-        for (j, cb) in b.iter().enumerate() {
-            let cost = usize::from(ca != cb);
-            let mut d = (rows[i][j] + cost).min(rows[i][j + 1] + 1).min(row[j] + 1);
-            if i > 0 && j > 0 && *ca == b[j - 1] && a[i - 1] == *cb {
-                d = d.min(rows[i - 1][j - 1] + 1);
-            }
-            row.push(d);
-        }
-        rows.push(row);
-    }
-    rows[a.len()][b.len()]
 }
 
 /// What a block's body may contain besides ordinary items.
@@ -999,15 +968,6 @@ fn skip_until_by(p: &mut Parser<'_>, at: impl Fn(&Parser<'_>) -> bool, message: 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn measures_edit_distance() {
-        assert_eq!(edit_distance("iff", "if"), 1);
-        assert_eq!(edit_distance("lett", "let"), 1);
-        assert_eq!(edit_distance("frobnicate", "for"), 8);
-        assert_eq!(edit_distance("", "if"), 2);
-        assert_eq!(edit_distance("fi", "if"), 1);
-    }
 
     #[test]
     fn suggests_only_a_close_builtin() {
