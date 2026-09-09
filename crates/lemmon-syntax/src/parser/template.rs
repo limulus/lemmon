@@ -969,18 +969,14 @@ fn skip_until_by(p: &mut Parser<'_>, at: impl Fn(&Parser<'_>) -> bool, message: 
 mod tests {
     use super::*;
 
+    /// Only what is this function's own: that the whole tag table reaches the policy,
+    /// and that the policy's refusal reaches back through it. `style` is a name the
+    /// tests over [`crate::nearest`] itself do not offer, so a suggestion of it can only
+    /// have come from here. How close is close enough is settled there, not again here.
     #[test]
-    fn suggests_only_a_close_builtin() {
-        assert_eq!(Builtin::nearest("iff"), Some("if"));
-        assert_eq!(Builtin::nearest("lett"), Some("let"));
-        assert_eq!(Builtin::nearest("elif"), Some("else-if"));
-        assert_eq!(Builtin::nearest("fi"), Some("if"));
-        assert_eq!(Builtin::nearest("ELSE"), Some("else"));
-        assert_eq!(Builtin::nearest("frobnicate"), None);
+    fn offers_every_tag_name_as_a_candidate() {
+        assert_eq!(Builtin::nearest("styl"), Some("style"));
         assert_eq!(Builtin::nearest("widget"), None);
-        assert_eq!(Builtin::nearest("-"), None);
-        assert_eq!(Builtin::nearest("xx"), None);
-        assert_eq!(Builtin::nearest(""), None);
     }
 
     #[test]
