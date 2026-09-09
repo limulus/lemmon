@@ -155,3 +155,8 @@ reproduced cold.
   lowering in `crates/lemmon-vm/src/compile/expr.rs` cannot tell that from a genuinely
   optional right side. Decide what type a refused `??` takes so one mistake costs one
   diagnostic (docs/language.md §Checking); see `render/errors/higher-order-errors.html`
+- ∆eHR A misspelled method read gets no did-you-mean — `s.slugfy` falls to the catch-all
+  "a `string` has no field `slugfy`" in `crates/lemmon-vm/src/compile/rules.rs`, while the
+  same mistake called gets `no_method`'s list of what the type has. `nearest` and
+  `methods_of` are already there; undecided is how a field's refusal names a method. Both
+  siblings sit in `render/errors/method-errors`; this case is the one it never asked for
