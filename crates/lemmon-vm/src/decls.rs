@@ -8,10 +8,14 @@
 //! [`Decls`] is the table the rules ask: types are nominal, so a [`Type::Named`] is a
 //! name alone and everything about it — whether it is a record or an enum, what fields
 //! it has, what it extends — comes from here.
+//!
+//! [`no_field`] is a message rather than a fact, and here for the same reason: refusing
+//! a field name means knowing every field the record has, so the one refusal all three
+//! sites share is built where that knowledge already lives.
 
 use std::rc::Rc;
 
-use lemmon_syntax::Span;
+use lemmon_syntax::{Span, nearest};
 
 use crate::types::Type;
 
@@ -220,6 +224,27 @@ pub trait Decls {
     }
 }
 
+/// The refusal a field name that names nothing gets: which record it was read on, and —
+/// when one of that record's fields is close enough to be worth naming — the field it
+/// was probably meant to be.
+///
+/// One function behind all three places a field name is refused: a `.` read, a record
+/// literal's key, and a loaded document's front-matter key. A typo is the same mistake
+/// wherever an author makes it, and should read the same however it was made.
+///
+/// Candidates come from [`Decls::fields`], which yields a record's own fields before the
+/// ones it inherits, and [`nearest`] breaks a tie towards the first — so a name equally
+/// close to a record's own field and to an ancestor's is answered with the record's own,
+/// which is the declaration the author is looking at.
+pub(crate) fn no_field(record: &str, key: &str, decls: &dyn Decls) -> String {
+    let fields = decls.fields(record);
+    let names = fields.iter().map(|(name, _)| &**name);
+    match nearest(key, names) {
+        Some(near) => format!("`{record}` has no field `{key}`; did you mean `{near}`?"),
+        None => format!("`{record}` has no field `{key}`"),
+    }
+}
+
 /// A table with nothing in it — what the rules are tested against.
 impl Decls for () {
     fn declaration(&self, _name: &str) -> Option<&Declaration> {
@@ -313,6 +338,57 @@ pub(crate) mod tests {
         assert_eq!(table.field("Placement", "hero"), None);
         let (decl, field) = table.field_in("LinkPost", "url").unwrap();
         assert_eq!((&*decl.name, &*field.name), ("Page", "url"));
+    }
+
+    #[test]
+    fn names_the_field_a_misspelling_was_close_to() {
+        assert_eq!(
+            no_field("LinkPost", "titel", &table()),
+            "`LinkPost` has no field `titel`; did you mean `title`?"
+        );
+    }
+
+    /// Own fields reach [`nearest`] before inherited ones and it breaks a tie towards
+    /// the first, so `title` wins over an ancestor's equally close `titel`. Two facts
+    /// that only compose here, which is why neither of their own tests catches this.
+    #[test]
+    fn breaks_a_tie_towards_the_records_own_field() {
+        let table = Table(vec![
+            record("Base", None, &[("titel", Type::String)]),
+            record("Sub", Some("Base"), &[("title", Type::String)]),
+        ]);
+        assert_eq!(
+            no_field("Sub", "titl", &table),
+            "`Sub` has no field `titl`; did you mean `title`?"
+        );
+    }
+
+    #[test]
+    fn suggests_an_inherited_field_as_readily_as_an_own_one() {
+        assert_eq!(
+            no_field("LinkPost", "urls", &table()),
+            "`LinkPost` has no field `urls`; did you mean `url`?"
+        );
+    }
+
+    /// The other half of the rule: a key close to nothing declared is refused with no
+    /// suggestion at all, rather than being answered with whatever field sits nearest.
+    #[test]
+    fn names_no_field_when_a_key_is_close_to_none_of_them() {
+        assert_eq!(
+            no_field("LinkPost", "photographer", &table()),
+            "`LinkPost` has no field `photographer`"
+        );
+    }
+
+    /// A record the table has no entry for has no fields to offer, which is a refusal
+    /// with nothing to add rather than a walk off the end of the chain.
+    #[test]
+    fn names_no_field_of_a_record_the_table_does_not_have() {
+        assert_eq!(
+            no_field("Nope", "title", &table()),
+            "`Nope` has no field `title`"
+        );
     }
 
     #[test]

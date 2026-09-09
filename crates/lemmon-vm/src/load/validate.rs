@@ -10,7 +10,7 @@
 use std::rc::Rc;
 
 use crate::compile::{Diagnostic, omittable};
-use crate::decls::{Decls, Kind};
+use crate::decls::{Decls, Kind, no_field};
 use crate::plan::{Step, StepKind};
 use crate::types::{Type, assignable};
 use crate::value::{Closure, Map, Value};
@@ -231,8 +231,8 @@ impl Loader<'_> {
         for (key, _) in given.iter() {
             if !declared.iter().any(|(field, _)| field == key) {
                 let child = at.child(key, self.type_place(name));
-                self.diagnostics
-                    .push(child.error(format!("`{name}` has no field `{key}`")));
+                let message = no_field(name, key, self.module);
+                self.diagnostics.push(child.error(message));
                 failed = true;
             }
         }

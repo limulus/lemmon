@@ -1,0 +1,8 @@
+<lem-type Article>
+  title: string
+  subhead: string?
+</lem-type>
+<lem-fn card(a: Article): string = a.titel />
+<lem-fn lede(a: Article): string = a.byline />
+<lem.card({title: "T", subhed: "the key misses the field by one letter"})>
+<lem.lede({title: "T", photographer: "and this one misses by everything"})>

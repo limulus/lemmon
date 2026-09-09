@@ -22,7 +22,7 @@ use lemmon_syntax::Span;
 use lemmon_syntax::ast::{BinaryOp, UnaryOp};
 
 use crate::builtins::{self, Builtin};
-use crate::decls::{Decls, Kind};
+use crate::decls::{Decls, Kind, no_field};
 use crate::types::{Type, assignable, join};
 use crate::unit::Param;
 
@@ -195,7 +195,7 @@ fn field(ty: &Type, name: &str, decls: &dyn Decls) -> Rule {
         Type::Named(record) => match decls.kind(record) {
             Some(Kind::Record) => decls
                 .field(record, name)
-                .ok_or_else(|| format!("`{ty}` has no field `{name}`")),
+                .ok_or_else(|| no_field(record, name, decls)),
             Some(Kind::Enum) => Err(format!("a `{ty}` is an enum and has no fields")),
             None => unreachable!("an undeclared name is read as `any` before any rule"),
         },
@@ -296,7 +296,7 @@ pub(super) fn expected_record<'a>(
 pub(super) fn record_entry(record: &str, key: &str, decls: &dyn Decls) -> Rule {
     decls
         .field(record, key)
-        .ok_or_else(|| format!("`{record}` has no field `{key}`"))
+        .ok_or_else(|| no_field(record, key, decls))
 }
 
 /// Whether a record field of type `ty` may be left out, by a literal or by loaded data:

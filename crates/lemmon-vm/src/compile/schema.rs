@@ -435,7 +435,7 @@ mod tests {
         assert_eq!(
             diagnostics_with(&shell_host(), &files),
             [format!(
-                "t.lem:{}: `site.lem` has no field `nope`",
+                "t.lem:{}: `site.lem` has no field `nope`; did you mean `name`?",
                 at(NOPE, "site.nope")
             )]
         );
