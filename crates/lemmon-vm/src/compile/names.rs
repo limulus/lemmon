@@ -576,7 +576,7 @@ mod tests {
                 params: Vec::new(),
                 ret: Type::Html,
                 func: index_u32(i + 1),
-                name_span: at(0),
+                name_span: binder(0),
             })
             .collect();
         let mut index = ExportIndex::new();
@@ -584,7 +584,9 @@ mod tests {
         index
     }
 
-    fn at(start: u32) -> Span {
+    /// A one-byte span at `start`, standing in for a binder's: these tests drive
+    /// `Names` directly, with no source behind the spans they carry.
+    fn binder(start: u32) -> Span {
         Span::new(start, start + 1)
     }
 
@@ -637,9 +639,9 @@ mod tests {
     fn binds_parameters_to_consecutive_slots_in_declaration_order() {
         let host = untyped_host();
         let mut names = in_frame(&host, None);
-        assert_eq!(bind(&mut names, "a", at(0), BindingKind::Parameter), 0);
-        assert_eq!(bind(&mut names, "b", at(2), BindingKind::Parameter), 1);
-        assert_eq!(bind(&mut names, "c", at(4), BindingKind::Parameter), 2);
+        assert_eq!(bind(&mut names, "a", binder(0), BindingKind::Parameter), 0);
+        assert_eq!(bind(&mut names, "b", binder(2), BindingKind::Parameter), 1);
+        assert_eq!(bind(&mut names, "c", binder(4), BindingKind::Parameter), 2);
         assert_eq!(names.pop_frame().n_locals(), 3);
     }
 
@@ -649,8 +651,11 @@ mod tests {
         // a refused one must still be the second slot.
         let host = untyped_host();
         let mut names = in_frame(&host, None);
-        assert_eq!(bind(&mut names, "page", at(0), BindingKind::Parameter), 0);
-        assert_eq!(bind(&mut names, "x", at(6), BindingKind::Parameter), 1);
+        assert_eq!(
+            bind(&mut names, "page", binder(0), BindingKind::Parameter),
+            0
+        );
+        assert_eq!(bind(&mut names, "x", binder(6), BindingKind::Parameter), 1);
     }
 
     #[test]
@@ -658,15 +663,15 @@ mod tests {
         let host = untyped_host();
         let mut names = in_frame(&host, None);
         names.push_scope();
-        let key = names.bind_local("k", at(0), BindingKind::Loop, Type::String);
-        let value = names.bind_local("v", at(3), BindingKind::Loop, Type::Int);
+        let key = names.bind_local("k", binder(0), BindingKind::Loop, Type::String);
+        let value = names.bind_local("v", binder(3), BindingKind::Loop, Type::Int);
         assert_ne!(key, value);
         assert_eq!(
             names.resolve("k"),
             Some(Resolved::Local {
                 slot: key,
                 ty: Type::String,
-                binder: at(0)
+                binder: binder(0)
             })
         );
         assert_eq!(
@@ -674,7 +679,7 @@ mod tests {
             Some(Resolved::Local {
                 slot: value,
                 ty: Type::Int,
-                binder: at(3)
+                binder: binder(3)
             })
         );
     }
@@ -684,7 +689,7 @@ mod tests {
         let host = untyped_host();
         let mut names = in_frame(&host, None);
         names.push_scope();
-        let slot = bind(&mut names, "x", at(0), BindingKind::Definition);
+        let slot = bind(&mut names, "x", binder(0), BindingKind::Definition);
         assert_eq!(slot_of(names.resolve("x")), Some(slot));
         names.pop_scope();
         assert_eq!(names.resolve("x"), None);
@@ -694,21 +699,21 @@ mod tests {
     fn admits_a_function_once_per_file() {
         let host = untyped_host();
         let mut names = Names::new("t.lem", None, &host);
-        assert!(names.bind_function("f", at(0)));
-        assert!(names.bind_function("g", at(2)));
-        assert!(!names.bind_function("f", at(4)));
-        assert!(!names.bind_function("page", at(6)));
-        assert!(names.bind_function("h", at(9)));
+        assert!(names.bind_function("f", binder(0)));
+        assert!(names.bind_function("g", binder(2)));
+        assert!(!names.bind_function("f", binder(4)));
+        assert!(!names.bind_function("page", binder(6)));
+        assert!(names.bind_function("h", binder(9)));
     }
 
     #[test]
     fn does_not_let_a_reference_reach_a_refused_binding() {
         let host = untyped_host();
         let mut names = in_frame(&host, None);
-        names.bind_local("page", at(0), BindingKind::Definition, Type::Int);
+        names.bind_local("page", binder(0), BindingKind::Definition, Type::Int);
         assert_eq!(names.resolve("page"), Some(Resolved::Ambient(Type::Any)));
-        let first = bind(&mut names, "a", at(6), BindingKind::Definition);
-        names.bind_local("a", at(8), BindingKind::Definition, Type::Int);
+        let first = bind(&mut names, "a", binder(6), BindingKind::Definition);
+        names.bind_local("a", binder(8), BindingKind::Definition, Type::Int);
         assert_eq!(slot_of(names.resolve("a")), Some(first));
     }
 
@@ -727,7 +732,7 @@ mod tests {
             let host = untyped_host();
             let mut names = in_frame(&host, None);
             for (i, name) in ["site", "page", "build"].iter().enumerate() {
-                names.bind_local(name, at(index_u32(i)), kind, Type::Any);
+                names.bind_local(name, binder(index_u32(i)), kind, Type::Any);
             }
             assert_eq!(shown(&names.diagnostics), expected, "{kind:?}");
             assert!(
@@ -741,7 +746,7 @@ mod tests {
         let mut names = Names::new("t.lem", None, &host);
         for (i, name) in ["site", "page", "build"].iter().enumerate() {
             assert!(
-                !names.bind_function(name, at(index_u32(i))),
+                !names.bind_function(name, binder(index_u32(i))),
                 "exported `{name}`"
             );
         }
@@ -752,8 +757,8 @@ mod tests {
     fn refuses_a_name_bound_twice_in_one_scope() {
         let host = untyped_host();
         let mut names = in_frame(&host, None);
-        assert_eq!(bind(&mut names, "a", at(0), BindingKind::Parameter), 0);
-        assert_eq!(bind(&mut names, "a", at(3), BindingKind::Parameter), 1);
+        assert_eq!(bind(&mut names, "a", binder(0), BindingKind::Parameter), 0);
+        assert_eq!(bind(&mut names, "a", binder(3), BindingKind::Parameter), 1);
         assert_eq!(
             shown(&names.diagnostics),
             ["t.lem:3..4: `a` is already bound here\n  t.lem:0..1: first bound here"]
@@ -764,9 +769,9 @@ mod tests {
     fn allows_a_name_rebound_in_an_inner_scope() {
         let host = untyped_host();
         let mut names = in_frame(&host, None);
-        let outer = bind(&mut names, "x", at(0), BindingKind::Definition);
+        let outer = bind(&mut names, "x", binder(0), BindingKind::Definition);
         names.push_scope();
-        let inner = bind(&mut names, "x", at(4), BindingKind::Definition);
+        let inner = bind(&mut names, "x", binder(4), BindingKind::Definition);
         assert_ne!(outer, inner);
         assert_eq!(slot_of(names.resolve("x")), Some(inner));
         names.pop_scope();
@@ -782,9 +787,9 @@ mod tests {
     fn allows_a_parameter_rebound_by_a_definition_in_the_body_scope() {
         let host = untyped_host();
         let mut names = in_frame(&host, None);
-        bind(&mut names, "a", at(0), BindingKind::Parameter);
+        bind(&mut names, "a", binder(0), BindingKind::Parameter);
         names.push_scope();
-        assert_eq!(bind(&mut names, "a", at(4), BindingKind::Definition), 1);
+        assert_eq!(bind(&mut names, "a", binder(4), BindingKind::Definition), 1);
         assert!(
             names.diagnostics.is_empty(),
             "{:?}",
@@ -796,8 +801,8 @@ mod tests {
     fn refuses_a_function_defined_twice_citing_the_first() {
         let host = untyped_host();
         let mut names = Names::new("t.lem", None, &host);
-        names.bind_function("f", at(1));
-        assert!(!names.bind_function("f", at(5)));
+        names.bind_function("f", binder(1));
+        assert!(!names.bind_function("f", binder(5)));
         assert_eq!(
             shown(&names.diagnostics),
             ["t.lem:5..6: `f` is already defined\n  t.lem:1..2: first defined here"]
@@ -810,10 +815,10 @@ mod tests {
         // stdlib name bound twice warns once and then errors, never warns again.
         let host = untyped_host();
         let mut names = in_frame(&host, None);
-        bind(&mut names, "page", at(0), BindingKind::Parameter);
-        bind(&mut names, "page", at(2), BindingKind::Parameter);
-        bind(&mut names, "raw", at(4), BindingKind::Definition);
-        bind(&mut names, "raw", at(6), BindingKind::Definition);
+        bind(&mut names, "page", binder(0), BindingKind::Parameter);
+        bind(&mut names, "page", binder(2), BindingKind::Parameter);
+        bind(&mut names, "raw", binder(4), BindingKind::Definition);
+        bind(&mut names, "raw", binder(6), BindingKind::Definition);
         assert_eq!(
             shown(&names.diagnostics),
             [
@@ -829,7 +834,10 @@ mod tests {
     fn warns_when_a_definition_displaces_the_stdlib() {
         let host = untyped_host();
         let mut names = in_frame(&host, None);
-        assert_eq!(bind(&mut names, "raw", at(0), BindingKind::Definition), 0);
+        assert_eq!(
+            bind(&mut names, "raw", binder(0), BindingKind::Definition),
+            0
+        );
         assert_eq!(shown(&names.diagnostics), [SHADOWS]);
         assert!(
             names
@@ -844,7 +852,7 @@ mod tests {
         let index = index(&["raw"]);
         let host = untyped_host();
         let mut names = Names::new("lib.lem", Some(&index), &host);
-        assert!(names.bind_function("raw", at(0)));
+        assert!(names.bind_function("raw", binder(0)));
         assert_eq!(
             shown(&names.diagnostics),
             ["lib.lem:0..1: warning: `raw` shadows the stdlib function of the same name"]
@@ -858,7 +866,7 @@ mod tests {
         let index = index(&["raw"]);
         let host = untyped_host();
         let mut names = Names::new("t.lem", Some(&index), &host);
-        assert!(names.bind_function("raw", at(0)));
+        assert!(names.bind_function("raw", binder(0)));
         assert!(
             names.diagnostics.is_empty(),
             "{:?}",
@@ -870,7 +878,7 @@ mod tests {
     fn does_not_warn_for_a_function_before_the_index_exists() {
         let host = untyped_host();
         let mut names = Names::new("t.lem", None, &host);
-        assert!(names.bind_function("raw", at(0)));
+        assert!(names.bind_function("raw", binder(0)));
         assert!(
             names.diagnostics.is_empty(),
             "{:?}",
@@ -883,7 +891,10 @@ mod tests {
         let index = index(&["raw"]);
         let host = untyped_host();
         let mut names = in_frame(&host, Some(&index));
-        assert_eq!(bind(&mut names, "raw", at(0), BindingKind::Definition), 0);
+        assert_eq!(
+            bind(&mut names, "raw", binder(0), BindingKind::Definition),
+            0
+        );
         assert!(
             names.diagnostics.is_empty(),
             "{:?}",
@@ -895,9 +906,9 @@ mod tests {
     fn does_not_warn_when_a_definition_displaces_an_outer_local() {
         let host = untyped_host();
         let mut names = in_frame(&host, None);
-        bind(&mut names, "raw", at(0), BindingKind::Parameter);
+        bind(&mut names, "raw", binder(0), BindingKind::Parameter);
         names.push_scope();
-        bind(&mut names, "raw", at(4), BindingKind::Definition);
+        bind(&mut names, "raw", binder(4), BindingKind::Definition);
         assert!(
             names.diagnostics.is_empty(),
             "{:?}",
@@ -907,9 +918,9 @@ mod tests {
         // Only the outer definition warns, whatever it displaced itself.
         let host = untyped_host();
         let mut names = in_frame(&host, None);
-        bind(&mut names, "raw", at(0), BindingKind::Definition);
+        bind(&mut names, "raw", binder(0), BindingKind::Definition);
         names.push_scope();
-        bind(&mut names, "raw", at(4), BindingKind::Definition);
+        bind(&mut names, "raw", binder(4), BindingKind::Definition);
         assert_eq!(shown(&names.diagnostics), [SHADOWS]);
     }
 
@@ -917,9 +928,9 @@ mod tests {
     fn does_not_warn_for_a_parameter_or_loop_name_from_the_stdlib() {
         let host = untyped_host();
         let mut names = in_frame(&host, None);
-        bind(&mut names, "raw", at(0), BindingKind::Parameter);
+        bind(&mut names, "raw", binder(0), BindingKind::Parameter);
         names.push_scope();
-        bind(&mut names, "raw", at(4), BindingKind::Loop);
+        bind(&mut names, "raw", binder(4), BindingKind::Loop);
         assert!(
             names.diagnostics.is_empty(),
             "{:?}",
@@ -933,7 +944,7 @@ mod tests {
         let host = untyped_host();
         let mut names = in_frame(&host, Some(&index));
         names.push_scope();
-        let slot = bind(&mut names, "raw", at(0), BindingKind::Definition);
+        let slot = bind(&mut names, "raw", binder(0), BindingKind::Definition);
         assert_eq!(slot_of(names.resolve("raw")), Some(slot));
         names.pop_scope();
         assert_eq!(names.resolve("raw"), Some(Resolved::Function));
@@ -950,10 +961,10 @@ mod tests {
     fn resolves_the_innermost_scope_first() {
         let host = untyped_host();
         let mut names = in_frame(&host, None);
-        bind(&mut names, "x", at(0), BindingKind::Definition);
+        bind(&mut names, "x", binder(0), BindingKind::Definition);
         names.push_scope();
         names.push_scope();
-        let innermost = bind(&mut names, "x", at(4), BindingKind::Definition);
+        let innermost = bind(&mut names, "x", binder(4), BindingKind::Definition);
         assert_eq!(slot_of(names.resolve("x")), Some(innermost));
     }
 
@@ -961,8 +972,8 @@ mod tests {
     fn records_a_capture_when_a_name_comes_from_an_enclosing_frame() {
         let host = untyped_host();
         let mut names = in_frame(&host, None);
-        bind(&mut names, "m", at(0), BindingKind::Definition);
-        let parent = names.bind_local("n", at(2), BindingKind::Definition, Type::Int);
+        bind(&mut names, "m", binder(0), BindingKind::Definition);
+        let parent = names.bind_local("n", binder(2), BindingKind::Definition, Type::Int);
         names.push_frame();
         // The capture carries the binding's type and identity into the inner frame.
         assert_eq!(
@@ -970,7 +981,7 @@ mod tests {
             Some(Resolved::Local {
                 slot: 0,
                 ty: Type::Int,
-                binder: at(2)
+                binder: binder(2)
             })
         );
         let inner = names.pop_frame();
@@ -983,11 +994,11 @@ mod tests {
     fn records_a_capture_in_every_frame_crossed() {
         let host = untyped_host();
         let mut names = in_frame(&host, None);
-        bind(&mut names, "outer", at(0), BindingKind::Definition);
+        bind(&mut names, "outer", binder(0), BindingKind::Definition);
         names.push_frame();
-        bind(&mut names, "a", at(2), BindingKind::Parameter);
+        bind(&mut names, "a", binder(2), BindingKind::Parameter);
         names.push_frame();
-        bind(&mut names, "b", at(4), BindingKind::Parameter);
+        bind(&mut names, "b", binder(4), BindingKind::Parameter);
         assert_eq!(slot_of(names.resolve("outer")), Some(1));
         let innermost = names.pop_frame();
         let middle = names.pop_frame();
@@ -999,7 +1010,7 @@ mod tests {
     fn reuses_a_capture_already_recorded() {
         let host = untyped_host();
         let mut names = in_frame(&host, None);
-        bind(&mut names, "n", at(0), BindingKind::Definition);
+        bind(&mut names, "n", binder(0), BindingKind::Definition);
         names.push_frame();
         assert_eq!(slot_of(names.resolve("n")), Some(0));
         assert_eq!(slot_of(names.resolve("n")), Some(0));
@@ -1010,7 +1021,7 @@ mod tests {
     fn peeks_without_recording_a_capture() {
         let host = untyped_host();
         let mut names = in_frame(&host, None);
-        bind(&mut names, "n", at(0), BindingKind::Definition);
+        bind(&mut names, "n", binder(0), BindingKind::Definition);
         names.push_frame();
         assert_eq!(slot_of(names.peek("n")), Some(0));
         let inner = names.pop_frame();
@@ -1022,10 +1033,10 @@ mod tests {
     fn hands_out_a_temp_slot_that_no_name_reaches() {
         let host = untyped_host();
         let mut names = in_frame(&host, None);
-        bind(&mut names, "n", at(0), BindingKind::Definition);
+        bind(&mut names, "n", binder(0), BindingKind::Definition);
         let temp = names.temp();
         assert_eq!(temp, 1);
-        bind(&mut names, "m", at(1), BindingKind::Definition);
+        bind(&mut names, "m", binder(1), BindingKind::Definition);
         assert_eq!(slot_of(names.peek("m")), Some(2));
         assert_eq!(names.pop_frame().n_locals(), 3);
     }
@@ -1035,7 +1046,7 @@ mod tests {
         let host = untyped_host();
         let mut names = in_frame(&host, None);
         names.push_frame();
-        bind(&mut names, "inner", at(0), BindingKind::Parameter);
+        bind(&mut names, "inner", binder(0), BindingKind::Parameter);
         names.pop_frame();
         assert_eq!(names.resolve("inner"), None);
     }
@@ -1044,8 +1055,8 @@ mod tests {
     fn hands_its_diagnostics_back_in_the_order_the_rules_raised_them() {
         let host = untyped_host();
         let mut names = in_frame(&host, None);
-        bind(&mut names, "raw", at(0), BindingKind::Definition);
-        bind(&mut names, "page", at(2), BindingKind::Definition);
+        bind(&mut names, "raw", binder(0), BindingKind::Definition);
+        bind(&mut names, "page", binder(2), BindingKind::Definition);
         assert_eq!(
             shown(&names.into_diagnostics()),
             [
@@ -1059,10 +1070,10 @@ mod tests {
     fn warns_for_a_definition_or_parameter_nothing_read_when_its_scope_closes() {
         let host = untyped_host();
         let mut names = in_frame(&host, None);
-        names.bind_local("p", at(0), BindingKind::Parameter, Type::Int);
+        names.bind_local("p", binder(0), BindingKind::Parameter, Type::Int);
         names.push_scope();
-        names.bind_local("d", at(2), BindingKind::Definition, Type::Int);
-        names.bind_local("read", at(4), BindingKind::Definition, Type::Int);
+        names.bind_local("d", binder(2), BindingKind::Definition, Type::Int);
+        names.bind_local("read", binder(4), BindingKind::Definition, Type::Int);
         names.resolve("read");
         assert!(
             names.diagnostics.is_empty(),
@@ -1088,8 +1099,8 @@ mod tests {
         let host = untyped_host();
         let mut names = in_frame(&host, None);
         names.push_scope();
-        names.bind_local("i", at(0), BindingKind::Loop, Type::Int);
-        names.bind_local("probed", at(2), BindingKind::Definition, Type::Int);
+        names.bind_local("i", binder(0), BindingKind::Loop, Type::Int);
+        names.bind_local("probed", binder(2), BindingKind::Definition, Type::Int);
         names.peek("probed");
         names.pop_scope();
         assert_eq!(
@@ -1102,7 +1113,7 @@ mod tests {
     fn counts_a_read_through_a_capture_as_a_read_of_the_binding() {
         let host = untyped_host();
         let mut names = in_frame(&host, None);
-        names.bind_local("n", at(0), BindingKind::Definition, Type::Int);
+        names.bind_local("n", binder(0), BindingKind::Definition, Type::Int);
         names.push_frame();
         names.resolve("n");
         names.pop_frame();
@@ -1118,9 +1129,9 @@ mod tests {
     fn never_warns_for_a_refused_binding() {
         let host = untyped_host();
         let mut names = in_frame(&host, None);
-        names.bind_local("page", at(0), BindingKind::Definition, Type::Int);
-        names.bind_local("a", at(2), BindingKind::Definition, Type::Int);
-        names.bind_local("a", at(4), BindingKind::Definition, Type::Int);
+        names.bind_local("page", binder(0), BindingKind::Definition, Type::Int);
+        names.bind_local("a", binder(2), BindingKind::Definition, Type::Int);
+        names.bind_local("a", binder(4), BindingKind::Definition, Type::Int);
         names.resolve("a");
         names.pop_frame();
         let severities: Vec<Severity> =

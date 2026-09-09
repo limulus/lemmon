@@ -351,6 +351,7 @@ mod tests {
     use super::*;
     use crate::compile::compile;
     use crate::host::Ambient;
+    use crate::testing::at;
     use crate::{Host, SourceFile};
 
     fn shown(diagnostics: &[Diagnostic]) -> Vec<String> {
@@ -387,13 +388,17 @@ mod tests {
 
     #[test]
     fn refuses_a_field_the_ambient_values_type_does_not_declare() {
+        const NOPE: &str = "<lem.page.nope>";
         let files = [
             SourceFile::new("ambient.lem", AMBIENT),
-            SourceFile::new("t.lem", "<lem.page.nope>"),
+            SourceFile::new("t.lem", NOPE),
         ];
         assert_eq!(
             diagnostics_with(&shell_host(), &files),
-            ["t.lem:5..14: `Page` has no field `nope`"]
+            [format!(
+                "t.lem:{}: `Page` has no field `nope`",
+                at(NOPE, "page.nope")
+            )]
         );
     }
 
@@ -401,10 +406,13 @@ mod tests {
     fn reports_a_type_the_host_names_that_no_file_declares() {
         // The mistake is the host's, so it is reported where the file first reads the
         // value, once, and the value is `any` from there.
-        let files = [SourceFile::new("t.lem", "<lem.page.a><lem.page.b>")];
+        const SRC: &str = "<lem.page.a><lem.page.b>";
         assert_eq!(
-            diagnostics_with(&shell_host(), &files),
-            ["t.lem:5..9: the host binds `page` to `Page`, which no file declares"]
+            diagnostics_with(&shell_host(), &[SourceFile::new("t.lem", SRC)]),
+            [format!(
+                "t.lem:{}: the host binds `page` to `Page`, which no file declares",
+                at(SRC, "«page».a")
+            )]
         );
     }
 
@@ -419,27 +427,29 @@ mod tests {
 
     #[test]
     fn refuses_a_binding_the_site_file_does_not_make() {
+        const NOPE: &str = "<lem.site.nope>";
         let files = [
             SourceFile::new("site.lem", "<lem-let name: string = \"limulus.net\" />"),
-            SourceFile::new("t.lem", "<lem.site.nope>"),
+            SourceFile::new("t.lem", NOPE),
         ];
         assert_eq!(
             diagnostics_with(&shell_host(), &files),
-            ["t.lem:5..14: `site.lem` has no field `nope`"]
+            [format!(
+                "t.lem:{}: `site.lem` has no field `nope`",
+                at(NOPE, "site.nope")
+            )]
         );
     }
 
     #[test]
     fn requires_a_type_on_a_top_level_binding_of_the_site_file() {
-        let files = [SourceFile::new(
-            "site.lem",
-            "<lem-let name = \"limulus.net\" />",
-        )];
+        const SRC: &str = "<lem-let name = \"limulus.net\" />";
         assert_eq!(
-            diagnostics_with(&shell_host(), &files),
-            [concat!(
-                "site.lem:9..13: a binding the host reads declares its type: ",
-                "`<lem-let name: T = … />`"
+            diagnostics_with(&shell_host(), &[SourceFile::new("site.lem", SRC)]),
+            [format!(
+                "site.lem:{}: a binding the host reads declares its type: \
+                 `<lem-let name: T = … />`",
+                at(SRC, "name")
             )]
         );
     }
@@ -488,13 +498,13 @@ mod tests {
     fn still_warns_for_an_unread_binding_inside_the_site_file() {
         // The exemption is the top level's, where a binding is a field of the record
         // every other file reads — not every `lem-let` in the file.
-        let files = [SourceFile::new(
-            "site.lem",
-            "<lem-fn f(): html><lem-let unread = 1 /><p>x</p></lem-fn>",
-        )];
+        const SRC: &str = "<lem-fn f(): html><lem-let unread = 1 /><p>x</p></lem-fn>";
         assert_eq!(
-            diagnostics_with(&shell_host(), &files),
-            ["site.lem:27..33: warning: `unread` is never used"]
+            diagnostics_with(&shell_host(), &[SourceFile::new("site.lem", SRC)]),
+            [format!(
+                "site.lem:{}: warning: `unread` is never used",
+                at(SRC, "unread")
+            )]
         );
     }
 
@@ -529,27 +539,32 @@ mod tests {
         let text = "---\ntype: Nope\n---\nhi";
         let named = SourceFile::new("post.md", text)
             .with_record("Nope")
-            .named_at(Span::new(10, 14));
+            .named_at(at(text, "Nope"));
         assert_eq!(
             diagnostics_with(&shell_host(), &files(named)),
-            ["post.md:10..14: unknown type `Nope`"]
+            [format!("post.md:{}: unknown type `Nope`", at(text, "Nope"))]
         );
         let unplaced = SourceFile::new("post.md", text).with_record("Nope");
         assert_eq!(
             diagnostics_with(&shell_host(), &files(unplaced)),
-            ["post.md:0..19: unknown type `Nope`"]
+            [format!(
+                "post.md:{}: unknown type `Nope`",
+                at(text, "---\ntype: Nope\n---\n")
+            )]
         );
     }
 
     #[test]
     fn refuses_a_record_where_the_host_renders_no_documents() {
+        const SRC: &str = "hi";
         let host = Host::untyped(["page"]);
-        let files = [SourceFile::new("post.md", "hi").with_record("Post")];
+        let files = [SourceFile::new("post.md", SRC).with_record("Post")];
         assert_eq!(
             diagnostics_with(&host, &files),
-            [concat!(
-                "post.md:0..0: this file is compiled as `Post`, and the host binds no ",
-                "document value to be one"
+            [format!(
+                "post.md:{}: this file is compiled as `Post`, and the host binds no \
+                 document value to be one",
+                at(SRC, "«»hi")
             )]
         );
     }
@@ -574,6 +589,7 @@ mod tests {
 
     #[test]
     fn refuses_a_record_where_the_host_names_a_document_value_it_never_bound() {
+        const POST: &str = "hello";
         // Named is not bound: there is no value for the record to type, so this is the
         // same mistake as naming no document value at all — and recording the binding
         // anyway would leave the unit looking as though the host had dropped one.
@@ -585,14 +601,15 @@ mod tests {
                 "schema.lem",
                 "<lem-type Post>\n  title: string\n</lem-type>",
             ),
-            SourceFile::new("post.md", "hello").with_record("Post"),
+            SourceFile::new("post.md", POST).with_record("Post"),
         ];
         let compiled = compile(&files, &host);
         assert_eq!(
             shown(&compiled.diagnostics),
-            [concat!(
-                "post.md:0..0: this file is compiled as `Post`, and the host binds no ",
-                "document value to be one"
+            [format!(
+                "post.md:{}: this file is compiled as `Post`, and the host binds no \
+                 document value to be one",
+                at(POST, "«»hello")
             )]
         );
     }

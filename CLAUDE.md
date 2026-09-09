@@ -210,6 +210,12 @@ Diagnostics raised only during declaration emit surface in `npm run build`, not 
 - Write corpus cases from the author's seat — the inputs an author would actually type (an
   escaped tag expected to survive as text, a typo'd close), breaking _early_ in a
   realistic file — not the shapes the implementation suggests
+- A diagnostic's span is asserted by the source text it covers, never by a counted
+  offset: `at(source, needle)` in `crates/lemmon-vm/src/testing.rs` finds it, and
+  bracketing part of the needle with `«…»` picks one of several identical names
+  (`at(src, "f(«a»: int")`). It places a host's positions too, so the span a fixture
+  sends and the span a test asserts are written once. A span with no source behind it —
+  a `Display` test, a `Names` unit test — stays a plain `Span::new`
 - A rule that suppresses diagnostics is tested on both halves: what is silenced _and_ what
   a neighbouring input must still report. Suppression keyed on a coincidence (same start
   byte, token adjacency) has hidden real errors more than once

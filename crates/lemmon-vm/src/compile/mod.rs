@@ -807,7 +807,12 @@ mod tests {
     use super::*;
     use crate::host::Ambient;
     use crate::render;
+    use crate::testing::at;
     use crate::unit::Param;
+
+    /// A `lem-fn` taking the name of a stdlib function, which two tests below compile
+    /// as one file and as two.
+    const LIB_RAW: &str = "<lem-fn raw(s: string): string = s />";
 
     /// The host every test below compiles against unless it needs another: the three
     /// names the standard shell binds, none of them typed.
@@ -880,13 +885,14 @@ mod tests {
 
     #[test]
     fn checks_a_fields_default_against_the_fields_type() {
-        let files = [SourceFile::new(
-            "types.lem",
-            "<lem-type A>\n  title: string = \"T\"\n  n: int = \"no\"\n</lem-type>",
-        )];
+        const SRC: &str =
+            "<lem-type A>\n  title: string = \"T\"\n  n: int = \"no\"\n</lem-type>";
         assert_eq!(
-            shown_with(&untyped_host(), &files),
-            ["types.lem:46..50: expected `int`, got `string`"]
+            shown_with(&untyped_host(), &[SourceFile::new("types.lem", SRC)]),
+            [format!(
+                "types.lem:{}: expected `int`, got `string`",
+                at(SRC, "\"no\"")
+            )]
         );
     }
 
@@ -948,16 +954,17 @@ mod tests {
     #[test]
     fn gives_a_data_records_default_neither_path_nor_body() {
         // A record loaded from data has no document behind it.
-        let author = SourceFile::new(
-            "author.lem",
-            "<lem-type Author>\n  bio: html = body\n</lem-type>",
-        );
+        const SRC: &str = "<lem-type Author>\n  bio: html = body\n</lem-type>";
+        let author = SourceFile::new("author.lem", SRC);
         assert_eq!(
             shown_with(
                 &shell_host(),
                 &[SourceFile::new("ambient.lem", PAGE), author]
             ),
-            ["author.lem:32..36: undefined name `body`"]
+            [format!(
+                "author.lem:{}: undefined name `body`",
+                at(SRC, "body")
+            )]
         );
     }
 
@@ -979,19 +986,19 @@ mod tests {
 
     #[test]
     fn refuses_the_document_value_inside_a_default() {
+        const SCHEMA: &str = "<lem-type Post extends Page>\n  title: string = page.url\n  \
+                              layout: (Post, html): html\n</lem-type>";
         let files = [
             SourceFile::new("ambient.lem", PAGE),
-            SourceFile::new(
-                "schema.lem",
-                "<lem-type Post extends Page>\n  title: string = page.url\n  \
-                 layout: (Post, html): html\n</lem-type>",
-            ),
+            SourceFile::new("schema.lem", SCHEMA),
         ];
         assert_eq!(
             shown_with(&shell_host(), &files),
-            [
-                "schema.lem:47..51: `page` is not bound while a record loads: the record so far is `self`"
-            ]
+            [format!(
+                "schema.lem:{}: `page` is not bound while a record loads: the record so \
+                 far is `self`",
+                at(SCHEMA, "page")
+            )]
         );
     }
 
@@ -1054,6 +1061,9 @@ mod tests {
 
     #[test]
     fn resolves_a_default_that_names_a_project_function() {
+        const SCHEMA: &str = "<lem-type Post extends Page>\n  \
+                              layout: (Post, html): html = other\n</lem-type>\n\
+                              <lem-fn other(s: string): html><lem.s></lem-fn>";
         let files = [
             SourceFile::new("ambient.lem", PAGE),
             SourceFile::new(
@@ -1065,15 +1075,14 @@ mod tests {
         assert_eq!(shown_with(&shell_host(), &files), Vec::<String>::new());
         let files = [
             SourceFile::new("ambient.lem", PAGE),
-            SourceFile::new(
-                "schema.lem",
-                "<lem-type Post extends Page>\n  layout: (Post, html): html = other\n\
-                 </lem-type>\n<lem-fn other(s: string): html><lem.s></lem-fn>",
-            ),
+            SourceFile::new("schema.lem", SCHEMA),
         ];
         assert_eq!(
             shown_with(&shell_host(), &files),
-            ["schema.lem:60..65: expected `(Post, html): html`, got `(string): html`"]
+            [format!(
+                "schema.lem:{}: expected `(Post, html): html`, got `(string): html`",
+                at(SCHEMA, "= «other»")
+            )]
         );
     }
 
@@ -1082,37 +1091,45 @@ mod tests {
         // `b.lem`'s `A` lost to `a.lem`'s, and `B`'s second `t` is a repeat: neither
         // default belongs to anything, so neither is compiled — were they, each would
         // add a diagnostic of its own to the duplicate's, since `nope` is no field.
-        let files = [
-            SourceFile::new("a.lem", "<lem-type A>\n  t: string = \"a\"\n</lem-type>"),
-            SourceFile::new(
-                "b.lem",
-                "<lem-type A>\n  t: string = self.nope\n</lem-type>\n\
-                 <lem-type B>\n  t: string = \"1\"\n  t: string = self.nope\n</lem-type>",
-            ),
-        ];
+        const A: &str = "<lem-type A>\n  t: string = \"a\"\n</lem-type>";
+        const B: &str = "<lem-type A>\n  t: string = self.nope\n</lem-type>\n\
+                         <lem-type B>\n  t: string = \"1\"\n  t: string = self.nope\n\
+                         </lem-type>";
+        let files = [SourceFile::new("a.lem", A), SourceFile::new("b.lem", B)];
         assert_eq!(
             shown_with(&untyped_host(), &files),
             [
-                "b.lem:10..11: `A` is already defined\n  a.lem:10..11: first defined here",
-                "b.lem:82..83: `t` is already defined\n  b.lem:64..65: first defined here",
+                format!(
+                    "b.lem:{}: `A` is already defined\n  a.lem:{}: first defined here",
+                    at(B, "A"),
+                    at(A, "A")
+                ),
+                format!(
+                    "b.lem:{}: `t` is already defined\n  b.lem:{}: first defined here",
+                    at(B, "\"1\"\n  «t»: string"),
+                    at(B, "B>\n  «t»: string")
+                ),
             ]
         );
     }
 
     #[test]
     fn refuses_a_file_that_did_not_parse_clean_with_its_parse_diagnostics() {
-        let errors = compile_errors(&[
-            SourceFile::new("a.lem", "<lem-if x>"),
-            SourceFile::new("b.lem", "<lem-bogus />"),
-        ]);
+        const A: &str = "<lem-if x>";
+        const B: &str = "<lem-bogus />";
+        let errors =
+            compile_errors(&[SourceFile::new("a.lem", A), SourceFile::new("b.lem", B)]);
         let shown = shown(&errors);
         assert_eq!(shown.len(), 2, "{shown:?}");
-        assert!(shown[0].starts_with("a.lem:0..7: "), "{shown:?}");
-        assert!(shown[1].starts_with("b.lem:0..10: "), "{shown:?}");
+        let opens = format!("a.lem:{}: ", at(A, "<lem-if"));
+        let bogus = format!("b.lem:{}: ", at(B, "<lem-bogus"));
+        assert!(shown[0].starts_with(&opens), "{shown:?}");
+        assert!(shown[1].starts_with(&bogus), "{shown:?}");
     }
 
     #[test]
     fn shares_functions_across_files_but_not_bindings() {
+        const PAGE_SECRET: &str = "<lem.secret>";
         let files = [
             SourceFile::new(
                 "lib.lem",
@@ -1124,11 +1141,14 @@ mod tests {
         assert_eq!(run_files(&files, "lib.lem").unwrap(), "");
         let files = [
             SourceFile::new("lib.lem", "<lem-let secret = 1 /><lem.secret>"),
-            SourceFile::new("page.lem", "<lem.secret>"),
+            SourceFile::new("page.lem", PAGE_SECRET),
         ];
         assert_eq!(
             run_files(&files, "page.lem").unwrap_err(),
-            "page.lem:5..11: undefined name `secret`"
+            format!(
+                "page.lem:{}: undefined name `secret`",
+                at(PAGE_SECRET, "secret")
+            )
         );
     }
 
@@ -1186,8 +1206,8 @@ mod tests {
                      <lem-type Photo>\n  alt: string\n</lem-type>\n\
                      <lem-type Vod>\n  poster: url\n</lem-type>";
         let lib = "<lem-fn f(m: {string: Article}, g: (Photo): Vod?): [Article] = [] />";
-        let page = "<lem-let xs = f({}, |p| null) />";
-        let prepared: Vec<_> = [("types.lem", types), ("lib.lem", lib), ("page.lem", page)]
+        const PAGE: &str = "<lem-let xs = f({}, |p| null) />";
+        let prepared: Vec<_> = [("types.lem", types), ("lib.lem", lib), ("page.lem", PAGE)]
             .iter()
             .map(|(path, text)| {
                 prepare(&SourceFile::new(*path, *text), &untyped_host()).unwrap()
@@ -1202,7 +1222,7 @@ mod tests {
         let names: Vec<&str> = unit.type_refs.iter().map(|r| &*r.name).collect();
         assert_eq!(names, ["Article", "Photo", "Vod"]);
         let call = unit.imports[0].span;
-        assert_eq!(call, Span::new(14, 29));
+        assert_eq!(call, at(PAGE, "f({}, |p| null)"));
         assert!(unit.type_refs.iter().all(|r| r.span == call));
         assert!(unit.type_refs.iter().all(|r| r.fact.name == r.name));
     }
@@ -1212,22 +1232,25 @@ mod tests {
         // types.lem reports the unknown base at its `extends`; page.lem, which cannot
         // check `l.title` without the chain, says why at its own use rather than
         // claiming `LinkPost` has no such field.
+        const TYPES: &str = "<lem-type LinkPost extends Article>\n  link: url\n\
+                             </lem-type>";
+        const PAGE: &str = "<lem-fn t(l: LinkPost): string = l.link + l.title />";
         let errors = compile_errors(&[
-            SourceFile::new(
-                "types.lem",
-                "<lem-type LinkPost extends Article>\n  link: url\n</lem-type>",
-            ),
-            SourceFile::new(
-                "page.lem",
-                "<lem-fn t(l: LinkPost): string = l.link + l.title />",
-            ),
+            SourceFile::new("types.lem", TYPES),
+            SourceFile::new("page.lem", PAGE),
         ]);
         assert_eq!(
             shown(&errors),
             [
-                "types.lem:27..34: unknown type `Article`",
-                "page.lem:13..21: `LinkPost` extends `Article`, which is not declared",
-                "page.lem:42..49: `LinkPost` has no field `title`",
+                format!("types.lem:{}: unknown type `Article`", at(TYPES, "Article")),
+                format!(
+                    "page.lem:{}: `LinkPost` extends `Article`, which is not declared",
+                    at(PAGE, "LinkPost")
+                ),
+                format!(
+                    "page.lem:{}: `LinkPost` has no field `title`",
+                    at(PAGE, "l.title")
+                ),
             ]
         );
     }
@@ -1235,14 +1258,18 @@ mod tests {
     #[test]
     fn reports_a_broken_file_alongside_the_other_files_problems() {
         // One file's parse errors no longer suppress what is wrong elsewhere.
+        const B: &str = "<lem.missing>";
         let errors = compile_errors(&[
             SourceFile::new("a.lem", "<lem-if x>"),
-            SourceFile::new("b.lem", "<lem.missing>"),
+            SourceFile::new("b.lem", B),
         ]);
         let shown = shown(&errors);
         assert_eq!(shown.len(), 2, "{shown:?}");
         assert!(shown[0].starts_with("a.lem:"), "{shown:?}");
-        assert_eq!(shown[1], "b.lem:5..12: undefined name `missing`");
+        assert_eq!(
+            shown[1],
+            format!("b.lem:{}: undefined name `missing`", at(B, "missing"))
+        );
     }
 
     #[test]
@@ -1268,33 +1295,42 @@ mod tests {
 
     #[test]
     fn cites_the_first_definition_when_a_function_is_redefined_in_another_file() {
-        let files = [
-            SourceFile::new("a.lem", "<lem-fn f(): int = 1 />"),
-            SourceFile::new("b.lem", "x\n<lem-fn f(): int = 2 />"),
-        ];
+        const A: &str = "<lem-fn f(): int = 1 />";
+        const B: &str = "x\n<lem-fn f(): int = 2 />";
+        let files = [SourceFile::new("a.lem", A), SourceFile::new("b.lem", B)];
         assert_eq!(
             run_files(&files, "a.lem").unwrap_err(),
-            "b.lem:10..11: `f` is already defined\n  a.lem:8..9: first defined here"
+            format!(
+                "b.lem:{}: `f` is already defined\n  a.lem:{}: first defined here",
+                at(B, "«f»(): int"),
+                at(A, "«f»(): int")
+            )
         );
     }
 
     #[test]
     fn cites_the_first_definition_when_a_function_is_redefined_in_the_same_file() {
-        let errors = compile_errors(&[SourceFile::new(
-            "t.lem",
-            "<lem-fn f(): int = 1 />\n<lem-fn f(): int = 2 />",
-        )]);
+        const SRC: &str = "<lem-fn f(): int = 1 />\n<lem-fn f(): int = 2 />";
+        let errors = compile_errors(&[SourceFile::new("t.lem", SRC)]);
         assert_eq!(
             errors[0].to_string(),
-            "t.lem:32..33: `f` is already defined\n  t.lem:8..9: first defined here"
+            format!(
+                "t.lem:{}: `f` is already defined\n  t.lem:{}: first defined here",
+                at(SRC, "«f»(): int = 2"),
+                at(SRC, "«f»(): int = 1")
+            )
         );
     }
 
     #[test]
     fn reports_every_problem_in_a_file_rather_than_the_first() {
-        let errors = compile_errors(&[SourceFile::new("t.lem", "<lem.a><lem.b>")]);
+        const SRC: &str = "<lem.a><lem.b>";
+        let errors = compile_errors(&[SourceFile::new("t.lem", SRC)]);
         assert_eq!(errors.len(), 2);
-        assert_eq!(errors[1].to_string(), "t.lem:12..13: undefined name `b`");
+        assert_eq!(
+            errors[1].to_string(),
+            format!("t.lem:{}: undefined name `b`", at(SRC, "b"))
+        );
     }
 
     #[test]
@@ -1357,13 +1393,23 @@ mod tests {
 
     #[test]
     fn refuses_a_parameter_name_given_twice() {
+        const PARAMS: &str = "<lem-fn f(a: int, a: int): int = a />";
         assert_eq!(
-            run("<lem-fn f(a: int, a: int): int = a />").unwrap_err(),
-            "t.lem:18..19: `a` is already bound here\n  t.lem:10..11: first bound here"
+            run(PARAMS).unwrap_err(),
+            format!(
+                "t.lem:{}: `a` is already bound here\n  t.lem:{}: first bound here",
+                at(PARAMS, ", «a»: int"),
+                at(PARAMS, "f(«a»: int")
+            )
         );
+        const LAMBDA: &str = "<lem-let f = |a, a| a /><lem.f(1, 2)>";
         assert_eq!(
-            run("<lem-let f = |a, a| a /><lem.f(1, 2)>").unwrap_err(),
-            "t.lem:17..18: `a` is already bound here\n  t.lem:14..15: first bound here"
+            run(LAMBDA).unwrap_err(),
+            format!(
+                "t.lem:{}: `a` is already bound here\n  t.lem:{}: first bound here",
+                at(LAMBDA, "|a, «a»|"),
+                at(LAMBDA, "|«a», a|")
+            )
         );
     }
 
@@ -1385,9 +1431,10 @@ mod tests {
 
     #[test]
     fn refuses_a_map_key_given_twice() {
+        const SRC: &str = "<lem-let m = {a: 1, \"a\": 2} /><lem.m[\"a\"]>";
         assert_eq!(
-            run("<lem-let m = {a: 1, \"a\": 2} /><lem.m[\"a\"]>").unwrap_err(),
-            "t.lem:20..23: `a` is already given"
+            run(SRC).unwrap_err(),
+            format!("t.lem:{}: `a` is already given", at(SRC, "«\"a\"»: 2"))
         );
     }
 
@@ -1395,19 +1442,21 @@ mod tests {
     fn warns_when_a_definition_shadows_the_stdlib_and_still_compiles() {
         // D23: site definitions may shadow the stdlib, with a warning — and the
         // shadowing definition is what the name then means.
-        for (src, at, out) in [
+        for (src, definition, out) in [
             (
                 "<lem-fn raw(s: string): string = s + \"2\" />\n<lem.raw(\"x\")>",
-                "8..11",
+                "«raw»(s: string)",
                 "x2",
             ),
-            ("<lem-let raw = 2 />\n<lem.raw>", "9..12", "2"),
+            ("<lem-let raw = 2 />\n<lem.raw>", "«raw» = 2", "2"),
         ] {
             let compiled = compile(&[SourceFile::new("t.lem", src)], &untyped_host());
             assert_eq!(
                 shown(&compiled.diagnostics),
                 [format!(
-                    "t.lem:{at}: warning: `raw` shadows the stdlib function of the same name"
+                    "t.lem:{}: warning: `raw` shadows the stdlib function of the same \
+                     name",
+                    at(src, definition)
                 )],
                 "{src}"
             );
@@ -1449,7 +1498,7 @@ mod tests {
         // displaces that function, which D23 allows silently.
         let compiled = compile(
             &[
-                SourceFile::new("lib.lem", "<lem-fn raw(s: string): string = s />"),
+                SourceFile::new("lib.lem", LIB_RAW),
                 SourceFile::new(
                     "t.lem",
                     "<lem-fn card(title: string)><lem-let raw = raw(title) /><lem.raw></lem-fn>",
@@ -1459,7 +1508,10 @@ mod tests {
         );
         assert_eq!(
             shown(&compiled.diagnostics),
-            ["lib.lem:8..11: warning: `raw` shadows the stdlib function of the same name"]
+            [format!(
+                "lib.lem:{}: warning: `raw` shadows the stdlib function of the same name",
+                at(LIB_RAW, "raw")
+            )]
         );
         assert!(compiled.output.is_some());
     }
@@ -1469,14 +1521,23 @@ mod tests {
         // The repeat is an error and nothing more: the name it collides with is the
         // project's, not the stdlib's.
         let errors = compile_errors(&[
-            SourceFile::new("lib.lem", "<lem-fn raw(s: string): string = s />"),
-            SourceFile::new("t.lem", "<lem-fn raw(s: string): string = s />"),
+            SourceFile::new("lib.lem", LIB_RAW),
+            SourceFile::new("t.lem", LIB_RAW),
         ]);
         assert_eq!(
             shown(&errors),
             [
-                "lib.lem:8..11: warning: `raw` shadows the stdlib function of the same name",
-                "t.lem:8..11: `raw` is already defined\n  lib.lem:8..11: first defined here",
+                format!(
+                    "lib.lem:{}: warning: `raw` shadows the stdlib function of the same \
+                     name",
+                    at(LIB_RAW, "raw")
+                ),
+                format!(
+                    "t.lem:{}: `raw` is already defined\n  lib.lem:{}: first defined \
+                     here",
+                    at(LIB_RAW, "raw"),
+                    at(LIB_RAW, "raw")
+                ),
             ]
         );
     }

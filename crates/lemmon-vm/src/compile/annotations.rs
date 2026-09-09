@@ -128,11 +128,17 @@ mod tests {
     use lemmon_syntax::ast::Item;
 
     use super::*;
+    use crate::testing::at;
+
+    /// `src` as a parameter's annotation, which is the text every span below is into.
+    fn annotated(src: &str) -> String {
+        format!("<lem-fn f(a: {src}): int = 1 />")
+    }
 
     /// Resolves `src` written as a parameter's annotation: the type, what was reported,
     /// and the declared names it used.
     fn resolved(src: &str) -> (Type, Vec<String>, Vec<String>) {
-        let text = format!("<lem-fn f(a: {src}): int = 1 />");
+        let text = annotated(src);
         let parse = lemmon_syntax::parse(&text);
         assert!(parse.diagnostics.is_empty(), "{src} did not parse clean");
         let Some(Item::FnVoid(f)) = parse.root().items().next() else {
@@ -180,31 +186,36 @@ mod tests {
     fn resolves_a_declared_name_by_name_and_records_the_use() {
         // Whether `Article` is declared is the index's question, asked once every
         // file's declarations are in; here the name is only recorded.
-        let (ty, diagnostics, uses) = resolved("[Article]");
+        let src = "[Article]";
+        let (ty, diagnostics, uses) = resolved(src);
         assert_eq!(ty, Type::list(Type::Named(Rc::from("Article"))));
         assert!(diagnostics.is_empty());
-        assert_eq!(uses, ["Article@14..21"]);
-        let (ty, _, uses) = resolved("{string: Photo?}");
+        assert_eq!(
+            uses,
+            [format!("Article@{}", at(&annotated(src), "Article"))]
+        );
+        let src = "{string: Photo?}";
+        let (ty, _, uses) = resolved(src);
         assert_eq!(ty.to_string(), "{string: Photo?}");
-        assert_eq!(uses, ["Photo@22..27"]);
+        assert_eq!(uses, [format!("Photo@{}", at(&annotated(src), "Photo"))]);
     }
 
     #[test]
     fn hints_at_the_lemmon_spelling_for_map_list_and_function() {
-        assert_eq!(
-            resolved("map").1,
-            ["t.lem:13..16: unknown type `map`: a map is written `{string: T}`"]
-        );
-        assert_eq!(
-            resolved("list").1,
-            ["t.lem:13..17: unknown type `list`: a list is written `[T]`"]
-        );
-        assert_eq!(
-            resolved("function").1,
-            [
-                "t.lem:13..21: unknown type `function`: a function type is written `(A, B): R`"
-            ]
-        );
+        for (src, hint) in [
+            ("map", "a map is written `{string: T}`"),
+            ("list", "a list is written `[T]`"),
+            ("function", "a function type is written `(A, B): R`"),
+        ] {
+            assert_eq!(
+                resolved(src).1,
+                [format!(
+                    "t.lem:{}: unknown type `{src}`: {hint}",
+                    at(&annotated(src), src)
+                )],
+                "{src}"
+            );
+        }
         assert_eq!(
             reserved("map"),
             Some(Reserved::Hint("a map is written `{string: T}`"))
@@ -214,20 +225,39 @@ mod tests {
 
     #[test]
     fn requires_string_map_keys_and_still_resolves_the_value() {
-        let (ty, diagnostics, _) = resolved("{int: bool}");
+        let src = "{int: bool}";
+        let (ty, diagnostics, _) = resolved(src);
         assert_eq!(ty, Type::map(Type::Bool));
-        assert_eq!(diagnostics, ["t.lem:14..17: map keys are always `string`"]);
-        // A hinted key type is one diagnostic, not two; a declared name as a key is
-        // the wrong key whatever it declares.
-        let (_, diagnostics, _) = resolved("{map: bool}");
         assert_eq!(
             diagnostics,
-            ["t.lem:14..17: unknown type `map`: a map is written `{string: T}`"]
+            [format!(
+                "t.lem:{}: map keys are always `string`",
+                at(&annotated(src), "{«int»: bool}")
+            )]
         );
-        let (_, diagnostics, uses) = resolved("{Key: bool}");
-        assert_eq!(diagnostics, ["t.lem:14..17: map keys are always `string`"]);
+        // A hinted key type is one diagnostic, not two; a declared name as a key is
+        // the wrong key whatever it declares.
+        let src = "{map: bool}";
+        let (_, diagnostics, _) = resolved(src);
+        assert_eq!(
+            diagnostics,
+            [format!(
+                "t.lem:{}: unknown type `map`: a map is written `{{string: T}}`",
+                at(&annotated(src), "map")
+            )]
+        );
+        let src = "{Key: bool}";
+        let (_, diagnostics, uses) = resolved(src);
+        assert_eq!(
+            diagnostics,
+            [format!(
+                "t.lem:{}: map keys are always `string`",
+                at(&annotated(src), "Key")
+            )]
+        );
         assert!(uses.is_empty());
-        let (_, _, uses) = resolved("{string: Key}");
-        assert_eq!(uses, ["Key@22..25"]);
+        let src = "{string: Key}";
+        let (_, _, uses) = resolved(src);
+        assert_eq!(uses, [format!("Key@{}", at(&annotated(src), "Key"))]);
     }
 }

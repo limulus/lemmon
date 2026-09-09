@@ -586,6 +586,7 @@ mod tests {
     use crate::exports::ExportIndex;
     use crate::host::{Ambient, Host};
     use crate::plan::{Fulfilled, Read, SourceKind};
+    use crate::testing::{all_of, at};
     use crate::{SourceFile, Unit, Value, render};
 
     /// A host shaped like the standard shell's, reading `site` from `site.lem`.
@@ -693,20 +694,22 @@ mod tests {
 
     #[test]
     fn refuses_a_from_binding_outside_the_bindings_file() {
-        let file =
-            SourceFile::new("other.lem", "<lem-let posts: [string] from \"f/*.md\" />");
+        const SRC: &str = "<lem-let posts: [string] from \"f/*.md\" />";
+        let file = SourceFile::new("other.lem", SRC);
         assert_eq!(
             shown(&shell_host(), std::slice::from_ref(&file)),
-            [concat!(
-                "other.lem:0..41: a `from` binding belongs at the top level of `site.lem`, ",
-                "the file the host reads bindings from"
+            [format!(
+                "other.lem:{}: a `from` binding belongs at the top level of `site.lem`, \
+                 the file the host reads bindings from",
+                all_of(SRC)
             )]
         );
         assert_eq!(
             shown(&Host::untyped(["site"]), &[file]),
-            [concat!(
-                "other.lem:0..41: a `from` binding needs a host that reads bindings from a ",
-                "file, and this one reads none"
+            [format!(
+                "other.lem:{}: a `from` binding needs a host that reads bindings from a \
+                 file, and this one reads none",
+                all_of(SRC)
             )]
         );
     }
@@ -767,13 +770,14 @@ mod tests {
     #[test]
     fn keeps_bare_sibling_names_out_of_the_files_functions() {
         // A `lem-fn` in the bindings file reads the value as every other file does.
-        let files = [SourceFile::new(
-            "site.lem",
-            "<lem-let name: string = \"x\" />\n<lem-fn f(): string = name />",
-        )];
+        const SRC: &str = "<lem-let name: string = \"x\" />\n\
+                           <lem-fn f(): string = name />";
         assert_eq!(
-            shown(&shell_host(), &files),
-            ["site.lem:53..57: undefined name `name`"]
+            shown(&shell_host(), &[SourceFile::new("site.lem", SRC)]),
+            [format!(
+                "site.lem:{}: undefined name `name`",
+                at(SRC, "= «name» />")
+            )]
         );
     }
 
@@ -781,36 +785,39 @@ mod tests {
     fn reports_a_repeated_top_level_binding_once() {
         // The repeat is not held to the first binding's type: one mistake, one
         // diagnostic.
-        let files = [SourceFile::new(
-            "site.lem",
-            "<lem-let a: int = 1 />\n<lem-let a: string = \"x\" />",
-        )];
+        const SRC: &str = "<lem-let a: int = 1 />\n<lem-let a: string = \"x\" />";
         assert_eq!(
-            shown(&shell_host(), &files),
-            [
-                "site.lem:32..33: `a` is already bound here\n  site.lem:9..10: first bound here"
-            ]
+            shown(&shell_host(), &[SourceFile::new("site.lem", SRC)]),
+            [format!(
+                "site.lem:{}: `a` is already bound here\n  site.lem:{}: first bound here",
+                at(SRC, "«a»: string"),
+                at(SRC, "«a»: int")
+            )]
         );
     }
 
     #[test]
     fn refuses_a_top_level_binding_that_takes_a_host_value_s_name() {
-        let files = [SourceFile::new("site.lem", "<lem-let page: int = 1 />")];
+        const SRC: &str = "<lem-let page: int = 1 />";
         assert_eq!(
-            shown(&shell_host(), &files),
-            ["site.lem:9..13: `page` is bound by the host and cannot be redefined"]
+            shown(&shell_host(), &[SourceFile::new("site.lem", SRC)]),
+            [format!(
+                "site.lem:{}: `page` is bound by the host and cannot be redefined",
+                at(SRC, "page")
+            )]
         );
     }
 
     #[test]
     fn warns_when_a_top_level_binding_shadows_the_stdlib() {
-        let files = [SourceFile::new(
-            "site.lem",
-            "<lem-let raw: string = \"x\" />",
-        )];
+        const SRC: &str = "<lem-let raw: string = \"x\" />";
         assert_eq!(
-            shown(&shell_host(), &files),
-            ["site.lem:9..12: warning: `raw` shadows the stdlib function of the same name"]
+            shown(&shell_host(), &[SourceFile::new("site.lem", SRC)]),
+            [format!(
+                "site.lem:{}: warning: `raw` shadows the stdlib function of the same \
+                 name",
+                at(SRC, "raw")
+            )]
         );
     }
 
@@ -818,24 +825,25 @@ mod tests {
     fn checks_a_computed_binding_against_the_type_its_head_declares() {
         // The other half of the repeat rule above: an admitted binding is held to its
         // declared type.
-        let files = [SourceFile::new("site.lem", "<lem-let n: int = \"x\" />")];
+        const SRC: &str = "<lem-let n: int = \"x\" />";
         assert_eq!(
-            shown(&shell_host(), &files),
-            ["site.lem:18..21: expected `int`, got `string`"]
+            shown(&shell_host(), &[SourceFile::new("site.lem", SRC)]),
+            [format!(
+                "site.lem:{}: expected `int`, got `string`",
+                at(SRC, "\"x\"")
+            )]
         );
     }
 
     #[test]
     fn refuses_a_from_binding_nested_in_the_bindings_file() {
-        let files = [SourceFile::new(
-            "site.lem",
-            "<lem-if true><lem-let x: [string] from \"f/*.md\" /></lem-if>",
-        )];
+        const SRC: &str = "<lem-if true><lem-let x: [string] from \"f/*.md\" /></lem-if>";
         assert_eq!(
-            shown(&shell_host(), &files),
-            [concat!(
-                "site.lem:13..50: a `from` binding belongs at the top level of `site.lem`, ",
-                "the file the host reads bindings from"
+            shown(&shell_host(), &[SourceFile::new("site.lem", SRC)]),
+            [format!(
+                "site.lem:{}: a `from` binding belongs at the top level of `site.lem`, \
+                 the file the host reads bindings from",
+                at(SRC, "<lem-let x: [string] from \"f/*.md\" />")
             )]
         );
     }
@@ -845,30 +853,30 @@ mod tests {
         let host = Host::new()
             .bind("site", Ambient::bindings("site.lem"))
             .bind("data", Ambient::bindings("data.lem"));
-        let files = [SourceFile::new(
-            "other.lem",
-            "<lem-let x: [string] from \"f/*.md\" />",
-        )];
+        const SRC: &str = "<lem-let x: [string] from \"f/*.md\" />";
         assert_eq!(
-            shown(&host, &files),
-            [concat!(
-                "other.lem:0..37: a `from` binding belongs at the top level of `site.lem` or ",
-                "`data.lem`, the files the host reads bindings from"
+            shown(&host, &[SourceFile::new("other.lem", SRC)]),
+            [format!(
+                "other.lem:{}: a `from` binding belongs at the top level of `site.lem` \
+                 or `data.lem`, the files the host reads bindings from",
+                all_of(SRC)
             )]
         );
     }
 
     #[test]
     fn refuses_the_document_value_in_a_computed_binding() {
+        const HOME: &str = "<lem-let home: url = page.url />";
         let files = [
             SourceFile::new("ambient.lem", PAGE),
-            SourceFile::new("site.lem", "<lem-let home: url = page.url />"),
+            SourceFile::new("site.lem", HOME),
         ];
         assert_eq!(
             shown(&shell_host(), &files),
-            [concat!(
-                "site.lem:21..25: `page` is bound per page, and a binding here is computed ",
-                "once, at load"
+            [format!(
+                "site.lem:{}: `page` is bound per page, and a binding here is computed \
+                 once, at load",
+                at(HOME, "page")
             )]
         );
     }

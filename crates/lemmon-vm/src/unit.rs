@@ -765,6 +765,7 @@ mod tests {
     use super::*;
     use crate::compile::{compile_unit, prepare};
     use crate::host::Ambient;
+    use crate::testing::at;
     use crate::{SourceFile, Value, render};
 
     /// The host every test below compiles against unless it needs another: the three
@@ -850,6 +851,8 @@ mod tests {
         // page.lem compiled against `pair(a, b)` — its named arguments are already in
         // that order — while lib.lem now defines `pair(b, a)`. Resolving by name alone
         // would link cleanly and silently swap the arguments.
+        const PAGE: &str = "<lem.pair(b: \"B\", a: \"A\")>";
+        const LIB: &str = "<lem-fn pair(b: string, a: string): string = a + b />";
         let page = unit_of(
             "page.lem",
             &[
@@ -857,24 +860,22 @@ mod tests {
                     "lib.lem",
                     "<lem-fn pair(a: string, b: string): string = a + b />",
                 ),
-                ("page.lem", "<lem.pair(b: \"B\", a: \"A\")>"),
+                ("page.lem", PAGE),
             ],
         );
-        let lib = unit_of(
-            "lib.lem",
-            &[(
-                "lib.lem",
-                "<lem-fn pair(b: string, a: string): string = a + b />",
-            )],
-        );
+        let lib = unit_of("lib.lem", &[("lib.lem", LIB)]);
         let errors = link_errors(&[lib, page]);
         assert_eq!(errors.len(), 1);
         assert_eq!(errors[0].path, "page.lem");
         assert_eq!(
             errors[0].to_string(),
-            "page.lem:5..25: `pair` is now `pair(b: string, a: string): string`, but this \
-             file was compiled against `pair(a: string, b: string): string` — recompile \
-             it\n  lib.lem:8..12: now defined here"
+            format!(
+                "page.lem:{}: `pair` is now `pair(b: string, a: string): string`, but \
+                 this file was compiled against `pair(a: string, b: string): string` — \
+                 recompile it\n  lib.lem:{}: now defined here",
+                at(PAGE, "pair(b: \"B\", a: \"A\")"),
+                at(LIB, "pair")
+            )
         );
     }
 
@@ -1116,23 +1117,23 @@ mod tests {
     fn refuses_to_link_a_unit_whose_type_changed_shape_under_it() {
         // page.lem read `a.title` as a `string` and printed it; with `title` now an
         // `int`, or gone, that check no longer holds and the unit must be recompiled.
-        let page = unit_of(
-            "page.lem",
-            &[
-                ("types.lem", ARTICLE),
-                ("page.lem", "<lem-fn card(a: Article): string = a.title />"),
-            ],
-        );
+        const PAGE: &str = "<lem-fn card(a: Article): string = a.title />";
+        const NARROWED: &str = "<lem-type Article>\n  title: int\n</lem-type>";
+        let page = unit_of("page.lem", &[("types.lem", ARTICLE), ("page.lem", PAGE)]);
         for (edit, expect) in [
             (
-                "<lem-type Article>\n  title: int\n</lem-type>",
-                "page.lem:16..23: `Article` is now `Article {title: int}`, but this file \
-                 was compiled against `Article {title: string, date: datetime}` — \
-                 recompile it\n  types.lem:10..17: now declared here",
+                NARROWED,
+                format!(
+                    "page.lem:{}: `Article` is now `Article {{title: int}}`, but this \
+                     file was compiled against `Article {{title: string, date: \
+                     datetime}}` — recompile it\n  types.lem:{}: now declared here",
+                    at(PAGE, "Article"),
+                    at(NARROWED, "Article")
+                ),
             ),
             (
                 "<lem-type Photo>\n  alt: string\n</lem-type>",
-                "page.lem:16..23: unknown type `Article`",
+                format!("page.lem:{}: unknown type `Article`", at(PAGE, "Article")),
             ),
         ] {
             let types = unit_of("types.lem", &[("types.lem", edit)]);
@@ -1289,20 +1290,21 @@ mod tests {
 
     #[test]
     fn refuses_to_link_a_default_that_reads_itself_through_another() {
-        let linked = linked(
-            &untyped_host(),
-            &[(
-                "types.lem",
-                "<lem-type A>\n  ok: string = \"x\"\n  a: string = self.b\n  \
-                 b: string = self.a\n  c: string = self.c\n</lem-type>",
-            )],
-        );
+        const CYCLE: &str = "<lem-type A>\n  ok: string = \"x\"\n  a: string = self.b\n  \
+                             b: string = self.a\n  c: string = self.c\n</lem-type>";
+        let linked = linked(&untyped_host(), &[("types.lem", CYCLE)]);
         assert!(linked.output.is_none());
         assert_eq!(
             shown_all(&linked.diagnostics),
             [
-                "types.lem:34..35: `a` depends on itself: `a` reads `b`, `b` reads `a`",
-                "types.lem:76..77: `c` depends on itself: `c` reads `c`",
+                format!(
+                    "types.lem:{}: `a` depends on itself: `a` reads `b`, `b` reads `a`",
+                    at(CYCLE, "«a»: string = self.b")
+                ),
+                format!(
+                    "types.lem:{}: `c` depends on itself: `c` reads `c`",
+                    at(CYCLE, "«c»: string")
+                ),
             ]
         );
     }
@@ -1381,17 +1383,15 @@ mod tests {
 
     #[test]
     fn refuses_to_link_a_binding_that_needs_itself() {
+        const SITE: &str = "<lem-let posts: [Article] from \"feed/*.md\" />\n\
+                            <lem-let latest: [Article] = posts.filter(|p| true) />";
         // A default on `Article` reads `site.posts`, the collection the article is
         // being loaded into.
         let linked = linked(
             &shell_host(),
             &[
                 ("ambient.lem", "<lem-type Page>\n  url: url\n</lem-type>"),
-                (
-                    "site.lem",
-                    "<lem-let posts: [Article] from \"feed/*.md\" />\n\
-                     <lem-let latest: [Article] = posts.filter(|p| true) />",
-                ),
+                ("site.lem", SITE),
                 (
                     "schema.lem",
                     "<lem-type Article extends Page>\n  \
@@ -1403,9 +1403,11 @@ mod tests {
         assert!(linked.output.is_none());
         assert_eq!(
             shown_all(&linked.diagnostics),
-            [
-                "site.lem:9..14: `posts` cannot be loaded before itself: `posts` needs `posts`"
-            ]
+            [format!(
+                "site.lem:{}: `posts` cannot be loaded before itself: `posts` needs \
+                 `posts`",
+                at(SITE, "«posts»: [Article] from")
+            )]
         );
     }
 
@@ -1575,6 +1577,8 @@ mod tests {
 
     #[test]
     fn reports_a_units_stale_types_beside_its_stale_imports() {
+        const PAGE: &str = "<lem-fn card(a: Article): string = f(a.title) />\n\
+                            <lem-fn other(): string = f(\"x\") />";
         // One pass per unit, so a file's diagnostics stay together and in span order
         // whatever kind they are.
         let page = unit_of(
@@ -1585,11 +1589,7 @@ mod tests {
                     "<lem-type Article>\n  title: string\n</lem-type>\n\
                      <lem-fn f(s: string): string = s />",
                 ),
-                (
-                    "page.lem",
-                    "<lem-fn card(a: Article): string = f(a.title) />\n\
-                     <lem-fn other(): string = f(\"x\") />",
-                ),
+                ("page.lem", PAGE),
             ],
         );
         let lib = unit_of(
@@ -1602,16 +1602,20 @@ mod tests {
         );
         let errors = link_errors(&[lib, page]);
         let starts: Vec<u32> = errors.iter().map(|e| e.span.start).collect();
-        assert_eq!(starts, [16, 35]);
+        assert_eq!(
+            starts,
+            [at(PAGE, "Article").start, at(PAGE, "f(a.title)").start]
+        );
     }
 
     #[test]
     fn refuses_to_link_a_unit_the_host_rebound_an_ambient_name_under() {
+        const PAGE: &str = "<lem.page.url>";
         // page.lem read `page.url` as a `Page`'s field; a host that now calls `page`
         // something else checked that read against a declaration this unit never saw.
         let files = [
             ("ambient.lem", "<lem-type Page>\n  url: url\n</lem-type>"),
-            ("page.lem", "<lem.page.url>"),
+            ("page.lem", PAGE),
         ];
         let host = Host::new().bind("page", Ambient::named("Page"));
         let unit = unit_against(&host, "page.lem", &files);
@@ -1619,12 +1623,18 @@ mod tests {
         for (rebound, expect) in [
             (
                 Host::new().bind("page", Ambient::named("Photo")),
-                "page.lem:5..9: the host binds `page` as a `Photo` now, and this file \
-                 was compiled against `Page`",
+                format!(
+                    "page.lem:{}: the host binds `page` as a `Photo` now, and this file \
+                     was compiled against `Page`",
+                    at(PAGE, "«page».url")
+                ),
             ),
             (
                 Host::new(),
-                "page.lem:5..9: the host no longer binds `page`",
+                format!(
+                    "page.lem:{}: the host no longer binds `page`",
+                    at(PAGE, "«page».url")
+                ),
             ),
         ] {
             let units = [ambient.clone(), unit.clone()];
@@ -1686,10 +1696,9 @@ mod tests {
         let host = Host::new()
             .bind("site", Ambient::bindings("site.lem"))
             .bind("data", Ambient::bindings("data.lem"));
-        let files = [
-            ("site.lem", "<lem-let motto: string from env(\"MOTTO\") />"),
-            ("data.lem", "<lem-let motto: string from env(\"OTHER\") />"),
-        ];
+        const SITE: &str = "<lem-let motto: string from env(\"MOTTO\") />";
+        const DATA: &str = "<lem-let motto: string from env(\"OTHER\") />";
+        let files = [("site.lem", SITE), ("data.lem", DATA)];
         let errors: Vec<String> = linked(&host, &files)
             .diagnostics
             .iter()
@@ -1697,9 +1706,13 @@ mod tests {
             .collect();
         assert_eq!(
             errors,
-            [
-                "data.lem:9..14: `motto` is already loaded, for `site`: the host fulfils a `from` binding by name, so no two files it reads bindings from may load one called `motto`\n  site.lem:9..14: first loaded here"
-            ]
+            [format!(
+                "data.lem:{}: `motto` is already loaded, for `site`: the host fulfils a \
+                 `from` binding by name, so no two files it reads bindings from may \
+                 load one called `motto`\n  site.lem:{}: first loaded here",
+                at(DATA, "«motto»: string"),
+                at(SITE, "«motto»: string")
+            )]
         );
     }
 }

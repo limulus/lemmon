@@ -20,11 +20,6 @@ mechanism: `delto surface` trusts these edges to decide what is eligible to work
 Standing epic for reshaping working code. It comes first so that document order gives a
 refactor priority: reshaping is cheapest before more code is built on what it reshapes.
 
-- ∆SSw Span-by-text test helper — a helper for the Rust tests in `crates/lemmon-vm` that
-  finds a byte span by its text in a source (`at(source, "banner")`), and the diagnostic
-  assertions that hand-count `path:start..end` offsets converted to it. Today an offset is
-  guessed, run, and copied back from the failure, so those tests are written by trial and
-  cannot be read as the spans they assert
 - ∆tdb Hand-rolled algorithms to crates — `edit_distance` in
   `crates/lemmon-syntax/src/parser/template.rs` becomes `strsim::osa_distance`, and
   `describe` in `crates/lemmon-corpus/src/lib.rs` reports a unified diff via `similar`
