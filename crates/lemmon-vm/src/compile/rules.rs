@@ -299,10 +299,18 @@ pub(super) fn record_entry(record: &str, key: &str, decls: &dyn Decls) -> Rule {
         .ok_or_else(|| format!("`{record}` has no field `{key}`"))
 }
 
-/// What a record literal that gave the fields `given` leaves out: the optional fields
-/// it may omit, which the literal fills with null so the record is complete — or the
-/// refusal naming the non-optional ones it must give. A field's default is not
-/// consulted: defaults are the loader's, evaluated where `body` and `site` exist (D35).
+/// Whether a record field of type `ty` may be left out, by a literal or by loaded data:
+/// one whose type admits `null` — a `T?`, or `any`, which is what `any?` folds to.
+pub(crate) fn omittable(ty: &Type) -> bool {
+    matches!(ty, Type::Optional(_) | Type::Any)
+}
+
+/// What a record literal that gave the fields `given` leaves out: the fields it may
+/// omit — those whose type admits `null`, which the literal fills with null so the
+/// record is complete — or the refusal naming the ones it must give. A field's default
+/// is not consulted: defaults are the loader's, evaluated where `body` and `site` exist
+/// (D35). The loader fills an omitted field by the same rule, so the two producers of a
+/// record agree.
 pub(super) fn record_omissions(
     record: &str,
     given: &[String],
@@ -314,7 +322,7 @@ pub(super) fn record_omissions(
         if given.iter().any(|key| **key == *name) {
             continue;
         }
-        if matches!(ty, Type::Optional(_)) {
+        if omittable(&ty) {
             optional.push(name);
         } else {
             missing.push(format!("`{name}`"));
@@ -1199,6 +1207,10 @@ mod tests {
             record_omissions("Article", &given(&["subhead"]), &table),
             Err("missing fields `title`, `date`, `url` of `Article`".to_owned())
         );
+        // `any` admits `null`, and is what `any?` folds to, so it may be left out.
+        assert!(omittable(&Type::Any));
+        assert!(omittable(&opt(Type::Int)));
+        assert!(!omittable(&Type::Int));
     }
 
     #[test]

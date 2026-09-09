@@ -14,7 +14,7 @@ use std::rc::Rc;
 use lemmon_syntax::Span;
 
 use crate::Value;
-use crate::bytecode::{Function, Module, Op};
+use crate::bytecode::{Declared, Document, Exported, Function, Module, Op};
 use crate::compile::{Compiled, Diagnostic, index_u32};
 use crate::decls::{Declaration, Decls, Kind, Shape, TypeFact};
 use crate::exports::ExportIndex;
@@ -67,6 +67,12 @@ pub struct Unit {
     /// The top-level bindings of this file when it is the one the host reads an
     /// ambient value from — what fulfils each, in binding order. Empty elsewhere.
     pub bindings: Vec<BindingFn>,
+    /// Where the record was named — the `type:` key's value when the host said, else
+    /// the front matter — for what the loader has to say about the record.
+    pub record_span: Span,
+    /// A document's prose as rendered, its blocks' output absent: what `body` is when
+    /// the loader runs the document's defaults (D37). `None` for a template.
+    pub body: Option<Rc<str>>,
 }
 
 /// One loader-run function a unit compiled for a field of a record it declares.
@@ -310,20 +316,14 @@ pub fn link(units: &[Unit], index: &ExportIndex, host: &Host) -> Compiled<Module
         return Compiled::new(None, diagnostics);
     }
 
-    // Every record the project declares, whichever unit it came from, with its chain
-    // closed here: a type test asks the table at run time, so the table is the module's
-    // and not any unit's, and the walk over declarations happens once rather than per
-    // test.
-    let types = index
+    // Every type the project declares, whichever unit it came from: a type test asks
+    // the table at run time and the loader validates against it, so the table is the
+    // module's and not any unit's.
+    let declarations = index
         .types()
-        .filter(|export| matches!(export.decl.shape, Shape::Record { .. }))
-        .map(|export| {
-            let chain = index
-                .chain(&export.decl.name)
-                .iter()
-                .map(|decl| decl.name.clone())
-                .collect();
-            (export.decl.name.clone(), chain)
+        .map(|export| Declared {
+            file: index_u32(positions[export.path.as_str()]),
+            decl: export.decl.clone(),
         })
         .collect();
     let places = Places {
@@ -343,14 +343,15 @@ pub fn link(units: &[Unit], index: &ExportIndex, host: &Host) -> Compiled<Module
         .exports()
         .map(|export| {
             let owner = positions[export.path.as_str()];
-            (
-                export.signature.name.clone(),
-                add_u32(function_offsets[owner], export.signature.func),
-            )
+            Exported {
+                name: export.signature.name.clone(),
+                func: add_u32(function_offsets[owner], export.signature.func),
+                ty: export.signature.ty(),
+            }
         })
         .collect();
     let mut module = Module {
-        types,
+        declarations,
         exports,
         records,
         bindings,
@@ -369,6 +370,13 @@ pub fn link(units: &[Unit], index: &ExportIndex, host: &Host) -> Compiled<Module
         };
         module.files.push(unit.path.clone());
         module.entries.push(function_offset);
+        module
+            .documents
+            .push(unit.body.as_ref().map(|body| Document {
+                record: unit.record.as_deref().map(Rc::from),
+                record_span: unit.record_span,
+                body: body.clone(),
+            }));
         module.constants.extend(unit.constants.iter().cloned());
         for function in &unit.functions {
             let mut function = function.clone();
@@ -548,11 +556,43 @@ impl Places<'_> {
         records: &[RecordPlan],
         diagnostics: &mut Vec<Diagnostic>,
     ) -> Vec<Bindings> {
-        host.bindings_files()
+        let plans: Vec<Bindings> = host
+            .bindings_files()
             .filter_map(|(value, file)| {
                 self.bindings_plan(value, file, records, diagnostics)
             })
-            .collect()
+            .collect();
+        // The host fulfils a `from` binding by its name alone (D37), so one name may
+        // stand for one binding across every file the host reads bindings from.
+        let mut loaded: Vec<(&Bindings, &BindingStep)> = Vec::new();
+        for plan in &plans {
+            for step in &plan.steps {
+                if !matches!(step.fulfilled, Fulfilled::ByHost(_)) {
+                    continue;
+                }
+                match loaded.iter().find(|(_, first)| first.name == step.name) {
+                    Some((first_plan, first)) => diagnostics.push(
+                        Diagnostic::error(
+                            &self.units[plan.file as usize].path,
+                            step.span,
+                            format!(
+                                "`{}` is already loaded, for `{}`: the host fulfils a \
+                                 `from` binding by name, so no two files it reads bindings \
+                                 from may load one called `{}`",
+                                step.name, first_plan.value, step.name
+                            ),
+                        )
+                        .with_label(
+                            &self.units[first_plan.file as usize].path,
+                            first.span,
+                            "first loaded here",
+                        ),
+                    ),
+                    None => loaded.push((plan, step)),
+                }
+            }
+        }
+        plans
     }
 
     /// The plan for the bindings file `file`, read as `value`: its bindings in load
@@ -1024,10 +1064,12 @@ mod tests {
         let module =
             link(&units, &ExportIndex::of(&units), &untyped_host()).expect_output();
         let mut types: Vec<String> = module
-            .types
+            .declarations
             .iter()
-            .map(|(name, chain)| {
-                let chain: Vec<&str> = chain.iter().map(|a| &**a).collect();
+            .map(|declared| {
+                let name = &declared.decl.name;
+                let chain: Vec<&str> =
+                    module.chain(name).iter().map(|d| &*d.name).collect();
                 format!("{name}: {}", chain.join(", "))
             })
             .collect();
@@ -1038,6 +1080,7 @@ mod tests {
                 "Article: Article, Page",
                 "LinkPost: LinkPost, Article, Page",
                 "Page: Page",
+                "Placement: Placement",
             ]
         );
         assert!(module.is_a("LinkPost", "Page"));
@@ -1447,12 +1490,25 @@ mod tests {
             ],
         )
         .expect_output();
-        let names: Vec<(&str, &str)> = module
+        let names: Vec<(&str, &str, String)> = module
             .exports
             .iter()
-            .map(|(name, func)| (&**name, module.functions[*func as usize].name.as_str()))
+            .map(|export| {
+                (
+                    &*export.name,
+                    module.functions[export.func as usize].name.as_str(),
+                    export.ty.to_string(),
+                )
+            })
             .collect();
-        assert_eq!(names, [("f", "f"), ("g", "g"), ("h", "h")]);
+        assert_eq!(
+            names,
+            [
+                ("f", "f", "(): int".to_owned()),
+                ("g", "g", "(): int".to_owned()),
+                ("h", "h", "(): int".to_owned()),
+            ]
+        );
     }
 
     #[test]
@@ -1623,5 +1679,27 @@ mod tests {
             .map(|p| compile_unit(p, &index, &host).expect_output())
             .collect();
         assert!(link(&units, &index, &host).output.is_some());
+    }
+
+    #[test]
+    fn refuses_one_from_binding_name_in_two_bindings_files() {
+        let host = Host::new()
+            .bind("site", Ambient::bindings("site.lem"))
+            .bind("data", Ambient::bindings("data.lem"));
+        let files = [
+            ("site.lem", "<lem-let motto: string from env(\"MOTTO\") />"),
+            ("data.lem", "<lem-let motto: string from env(\"OTHER\") />"),
+        ];
+        let errors: Vec<String> = linked(&host, &files)
+            .diagnostics
+            .iter()
+            .map(ToString::to_string)
+            .collect();
+        assert_eq!(
+            errors,
+            [
+                "data.lem:9..14: `motto` is already loaded, for `site`: the host fulfils a `from` binding by name, so no two files it reads bindings from may load one called `motto`\n  site.lem:9..14: first loaded here"
+            ]
+        );
     }
 }

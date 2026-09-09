@@ -53,6 +53,7 @@ use crate::{SourceFile, Value};
 pub use diagnostics::{Compiled, Diagnostic, Label};
 pub(crate) use names::duplicate_named;
 use names::{BindingKind, Frame, Names, Resolved};
+pub(crate) use rules::omittable;
 use surfaces::Source;
 pub use surfaces::{PreparedFile, prepare};
 
@@ -158,6 +159,11 @@ pub fn compile_unit(
             record: prepared.record.clone(),
             defaults: Vec::new(),
             bindings: Vec::new(),
+            record_span: prepared.record_span(),
+            body: prepared
+                .chunks
+                .as_ref()
+                .map(|chunks| Rc::from(chunks.concat())),
         },
         strings: HashMap::new(),
         index,

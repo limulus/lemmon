@@ -21,6 +21,12 @@ Standing epic for reshaping working code that belongs to no milestone. An item s
 only while doing it first makes the work below it smaller; if that work is claimed first, it
 absorbs the item and the item is removed.
 
+- ∆SSw Span-by-text test helper — a helper for the Rust tests in `crates/lemmon-vm` that
+  finds a byte span by its text in a source (`at(source, "banner")`), and the diagnostic
+  assertions that hand-count `path:start..end` offsets converted to it. Today an offset is
+  guessed, run, and copied back from the failure, so those tests are written by trial and
+  cannot be read as the spans they assert
+
 ## Phase 1 — Language complete, tooling from day one
 
 Seed items for the next phase (architecture doc 3, phase 1); expect these to be split
@@ -32,6 +38,11 @@ further at claim time.
   running computed defaults in dependency order, resolving `by` references and strings by
   expected type, and rejecting extra keys, so limulus.net's build throws become load
   errors
+- ∆HF0 Order defaults through calls — each unit records the reads of every function it
+  defines, and the link step closes reads through calls before ordering a record's defaults
+  and the bindings file's computed bindings, so a default that calls a `lem-fn` reading a
+  not-yet-computed sibling is ordered instead of faulting at load. Removes the "only reads
+  written in the default itself count" clause from D37 and docs/language.md; needs: ∆iCW
 - ∆Q6L Stdlib — strings/lists/maps, `datetime("…")` (compile-time checked on a literal
   argument; there is no datetime literal) + rfc3339/rfc822 formatting, `slugify`,
   `readingTime`, `url()`, `asset()`, `raw()`, `uniqueId()`, with typed signatures the

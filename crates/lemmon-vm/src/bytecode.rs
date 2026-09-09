@@ -1,17 +1,19 @@
 //! The bytecode a module is compiled to and the VM runs.
 //!
-//! A [`Module`] is plain data — constants, functions, a file table, and the record
-//! types' ancestry — so that it can be serialised for `exportModule` later (`∆TNT`)
-//! without the VM changing. Every instruction in a function has a [`Span`] beside it at
-//! the same index: that parallel table is how a runtime error points at source
-//! (invariant 8).
+//! A [`Module`] is plain data — constants, functions, a file table, the project's type
+//! declarations, and the loader's plans — so that it can be serialised for
+//! `exportModule` later (`∆TNT`) without the VM changing. Every instruction in a
+//! function has a [`Span`] beside it at the same index: that parallel table is how a
+//! runtime error points at source (invariant 8).
 
 use std::rc::Rc;
 
 use lemmon_syntax::Span;
 
 use crate::Value;
+use crate::decls::{Declaration, Decls, Shape};
 use crate::plan::{Bindings, RecordPlan};
+use crate::types::Type;
 
 /// Defines [`Op`] and, from the same list, the table of variant names — so that the
 /// corpus gate asserting every op is reached by some case cannot fall out of date.
@@ -151,6 +153,39 @@ pub struct Function {
     pub spans: Vec<Span>,
 }
 
+/// A project-flat function as loaded data may name it: `layout: article` resolves
+/// through the module's table of these, and the type is what the string is checked
+/// against where a function type is expected.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Exported {
+    pub name: Rc<str>,
+    /// The function, in the module.
+    pub func: u32,
+    pub ty: Type,
+}
+
+/// A type declaration with the file that made it — the project's declaration table,
+/// carried by the module so the loader can validate against it and point at it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Declared {
+    /// Index into the module's file table.
+    pub file: u32,
+    pub decl: Declaration,
+}
+
+/// What a document is to the loader: the record the host compiled it as, where that
+/// was named, and its prose as rendered — what `body` is in a default (D37).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Document {
+    /// The record this document's content is, if the host named one (D30).
+    pub record: Option<Rc<str>>,
+    /// Where the record was named: the `type:` key's value when the host said, else
+    /// the front matter.
+    pub record_span: Span,
+    /// The prose, rendered, with what the document's blocks would emit absent.
+    pub body: Rc<str>,
+}
+
 /// A compiled program: every file of a site, sharing one constant pool.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Module {
@@ -158,17 +193,20 @@ pub struct Module {
     pub files: Vec<String>,
     /// The entry function of each file, parallel to `files`.
     pub entries: Vec<u32>,
+    /// What each file is to the loader, parallel to `files`: a document's record and
+    /// rendered prose, or `None` for a template.
+    pub documents: Vec<Option<Document>>,
     /// Literals, text runs, and names.
     pub constants: Vec<Value>,
     /// Every function; indices are what `Call`, `Global`, and `MakeClosure` name.
     pub functions: Vec<Function>,
-    /// Every declared record with the types it is: itself, then the records it extends,
-    /// nearest first. Closed at link, so `TypeTest` answers with one lookup and no walk
-    /// — and neither a cycle nor a base the project lost can be spelled here.
-    pub types: Vec<(Rc<str>, Vec<Rc<str>>)>,
+    /// Every type the project declares, records and enums, with the file that declares
+    /// it. The one table the VM's type tests and the loader's validation both read, so
+    /// they cannot disagree about what a name is.
+    pub declarations: Vec<Declared>,
     /// Every project-flat function by name — what a string in loaded data resolves
     /// through where a function type is expected (`layout: article`).
-    pub exports: Vec<(Rc<str>, u32)>,
+    pub exports: Vec<Exported>,
     /// What the loader runs for each declared record: its defaults and `by` indexes,
     /// in dependency order (∆iCW).
     pub records: Vec<RecordPlan>,
@@ -179,29 +217,83 @@ pub struct Module {
 
 impl Module {
     /// Whether a record of the declared type `ty` is a `name`: itself, or a record it
-    /// extends. The table is the whole answer — every record a module can build has a
-    /// row — so a tag with no row is no type at all rather than a type that is itself.
+    /// extends. The declaration table is the whole answer — every record a module can
+    /// build is declared in it — so a tag it has no row for is no type at all rather
+    /// than a type that is itself.
     #[must_use]
     pub fn is_a(&self, ty: &str, name: &str) -> bool {
-        self.types
-            .iter()
-            .find(|(declared, _)| &**declared == ty)
-            .is_some_and(|(_, chain)| chain.iter().any(|ancestor| &**ancestor == name))
+        let mut next = Some(ty);
+        // A walk up `extends` links, collecting nothing: `TypeTest` asks this on every
+        // test at render. A chain visits no more declarations than the table holds, so
+        // a longer walk is a cycle a failing file introduced, and ends as a missing
+        // base does — with no answer but `false`.
+        for _ in 0..=self.declarations.len() {
+            let Some(decl) = next.and_then(|current| self.declaration(current)) else {
+                return false;
+            };
+            if &*decl.name == name {
+                return true;
+            }
+            next = match &decl.shape {
+                Shape::Record {
+                    base: Some((base, _)),
+                    ..
+                } => Some(base),
+                _ => None,
+            };
+        }
+        false
     }
 
     /// The entry function of the file at `path`, if the module has that file.
     #[must_use]
     pub fn entry(&self, path: &str) -> Option<u32> {
-        self.files
+        self.file(path).map(|i| self.entries[i])
+    }
+
+    /// The index of the file at `path` in the file table, if the module has it.
+    #[must_use]
+    pub fn file(&self, path: &str) -> Option<usize> {
+        self.files.iter().position(|p| p == path)
+    }
+
+    /// What the file at `path` is to the loader, if it is a document the module has.
+    #[must_use]
+    pub fn document(&self, path: &str) -> Option<&Document> {
+        self.file(path).and_then(|i| self.documents[i].as_ref())
+    }
+
+    /// The project-flat function called `name`, if there is one.
+    #[must_use]
+    pub fn export(&self, name: &str) -> Option<&Exported> {
+        self.exports.iter().find(|export| &*export.name == name)
+    }
+
+    /// The declaration of `name` with the file that made it, if the project declares it.
+    #[must_use]
+    pub fn declared(&self, name: &str) -> Option<&Declared> {
+        self.declarations
             .iter()
-            .position(|p| p == path)
-            .map(|i| self.entries[i])
+            .find(|declared| &*declared.decl.name == name)
+    }
+
+    /// The file that declared `name`, if the project declares it.
+    #[must_use]
+    pub fn declared_in(&self, name: &str) -> Option<u32> {
+        self.declared(name).map(|declared| declared.file)
+    }
+}
+
+impl Decls for Module {
+    fn declaration(&self, name: &str) -> Option<&Declaration> {
+        self.declared(name).map(|declared| &declared.decl)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::decls::tests::record;
 
     #[test]
     fn names_every_op_from_one_list() {
@@ -212,19 +304,17 @@ mod tests {
     }
 
     #[test]
-    fn answers_a_type_test_from_the_closed_ancestry_table() {
+    fn answers_a_type_test_from_the_declaration_table() {
         let module = Module {
-            types: vec![
-                (Rc::from("Page"), vec![Rc::from("Page")]),
-                (
-                    Rc::from("Article"),
-                    vec![Rc::from("Article"), Rc::from("Page")],
-                ),
-                (
-                    Rc::from("LinkPost"),
-                    vec![Rc::from("LinkPost"), Rc::from("Article"), Rc::from("Page")],
-                ),
-            ],
+            files: vec!["types.lem".to_owned()],
+            declarations: [
+                record("Page", None, &[]),
+                record("Article", Some("Page"), &[]),
+                record("LinkPost", Some("Article"), &[]),
+            ]
+            .into_iter()
+            .map(|decl| Declared { file: 0, decl })
+            .collect(),
             ..Module::default()
         };
         assert!(module.is_a("LinkPost", "LinkPost"));
@@ -235,6 +325,59 @@ mod tests {
         // module whose constant pool went wrong pass a test against its own bad tag.
         assert!(!module.is_a("Unknown", "Page"));
         assert!(!module.is_a("Unknown", "Unknown"));
+        assert_eq!(module.declared_in("Article"), Some(0));
+        assert_eq!(module.declared_in("Unknown"), None);
+    }
+
+    #[test]
+    fn ends_a_type_test_at_a_missing_base_or_a_cycle() {
+        // Neither can come out of a clean link; a resident subtype outlives its base's
+        // file failing to recompile, and the test must still answer.
+        let module = Module {
+            files: vec!["types.lem".to_owned()],
+            declarations: [
+                record("Orphan", Some("Gone"), &[]),
+                record("A", Some("B"), &[]),
+                record("B", Some("A"), &[]),
+            ]
+            .into_iter()
+            .map(|decl| Declared { file: 0, decl })
+            .collect(),
+            ..Module::default()
+        };
+        assert!(module.is_a("Orphan", "Orphan"));
+        assert!(!module.is_a("Orphan", "Gone"));
+        assert!(module.is_a("A", "B"));
+        assert!(!module.is_a("A", "C"));
+    }
+
+    #[test]
+    fn finds_a_document_and_an_export_by_name() {
+        let module = Module {
+            files: vec!["a.lem".to_owned(), "b.md".to_owned()],
+            documents: vec![
+                None,
+                Some(Document {
+                    record: Some(Rc::from("Article")),
+                    record_span: Span::new(4, 11),
+                    body: Rc::from("<p>b</p>\n"),
+                }),
+            ],
+            exports: vec![Exported {
+                name: Rc::from("f"),
+                func: 3,
+                ty: Type::function(vec![], Type::Html),
+            }],
+            ..Module::default()
+        };
+        assert_eq!(module.document("a.lem"), None);
+        assert_eq!(
+            module.document("b.md").and_then(|d| d.record.as_deref()),
+            Some("Article")
+        );
+        assert_eq!(module.document("c.md"), None);
+        assert_eq!(module.export("f").map(|e| e.func), Some(3));
+        assert_eq!(module.export("g"), None);
     }
 
     #[test]

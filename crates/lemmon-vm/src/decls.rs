@@ -172,18 +172,26 @@ pub trait Decls {
             .any(|decl| &*decl.name == base)
     }
 
-    /// The type of the field `name` of the record `record`: its own, or the nearest
-    /// ancestor's.
-    fn field(&self, record: &str, name: &str) -> Option<Type> {
+    /// The field `name` of the record `record` as declared, with the declaration in
+    /// its chain that declares it — the nearest, since a redeclaration may change the
+    /// default (D32).
+    fn field_in(&self, record: &str, name: &str) -> Option<(&Declaration, &FieldDecl)> {
         self.chain(record)
-            .iter()
+            .into_iter()
             .find_map(|decl| match &decl.shape {
                 Shape::Record { fields, .. } => fields
                     .iter()
                     .find(|field| &*field.name == name)
-                    .map(|field| field.ty.clone()),
+                    .map(|field| (decl, field)),
                 Shape::Enum { .. } => None,
             })
+    }
+
+    /// The type of the field `name` of the record `record`: its own, or the nearest
+    /// ancestor's.
+    fn field(&self, record: &str, name: &str) -> Option<Type> {
+        self.field_in(record, name)
+            .map(|(_, field)| field.ty.clone())
     }
 
     /// Every field of the record `record`, its own and its ancestors', each once with
@@ -303,6 +311,8 @@ pub(crate) mod tests {
         assert_eq!(table.field("LinkPost", "url"), Some(Type::Url));
         assert_eq!(table.field("LinkPost", "nope"), None);
         assert_eq!(table.field("Placement", "hero"), None);
+        let (decl, field) = table.field_in("LinkPost", "url").unwrap();
+        assert_eq!((&*decl.name, &*field.name), ("Page", "url"));
     }
 
     #[test]

@@ -1,3 +1,3 @@
-<lem-type Til extends Page>
+<lem-type Memo extends Page>
   topic: string
 </lem-type>

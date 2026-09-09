@@ -240,15 +240,25 @@ the checker's question, not the parser's.
   error at the read, never a guess. A `layout` default names a function:
   `layout: (Article, html): html = article`.
 - **Extra front-matter keys are errors.** A record has exactly its declared fields.
+- **The loader reads data by declared type.** A field's value is checked against the
+  field's type as a literal's would be, and an omitted field is filled with `null`
+  exactly when its type admits one — a `T?`, or `any` — as a literal fills it; a string
+  resolves by the type expected of it (see **Ambient types**). Two readings are the
+  loader's alone: a whole number in data is a `float` where one is declared, since a
+  shell serialising JSON cannot tell `2` from `2.0` — the checker's rule that an `int` is
+  not a `float` stands — and a string is never `html`, wherever it came from: `raw()` is
+  the only string that becomes one (invariant 7), so an `html` field takes its value
+  from a default or not at all.
 - **`extends`** names a record — never an enum, a builtin type, or the type itself
   through any chain — and a field an ancestor declares may be redeclared only with the
   same type, to give it a default (D32); a redeclaration that gives none leaves the
   ancestor's default in force. So `layout: (Article, html): html` is declared once, on
   `Article`, and a `LinkPost extends Article` inherits it: a layout that only a link
   post needs takes an `Article` and narrows inside.
-- _Not yet (∆iCW): the loader that runs defaults and resolves `by` indexes is not here
-  yet. Until it is, loaded data is neither validated nor tagged, and a field with a
-  default is still absent from a record the host loaded without it._
+- _Not yet (∆iCW): the loader runs defaults and resolves `by` indexes in the core, but
+  no host reaches it — `loadData` still takes the spike's envelope — so data loaded
+  through the boundary is neither validated nor tagged, and a field with a default is
+  still absent from a record a host loaded without it._
 - _Not yet (∆Q6L): `datetime`, `duration`, `url`, and `asset` have no run-time values;
   a loaded field of one of those types keeps its string until the stdlib gives them
   one._
@@ -302,7 +312,15 @@ D19's flag — a draft is skipped and left out of collections unless `--drafts`.
   — `concat(posts, links, tils)` below — and that is the same read as `site.posts`,
   recorded for the loader's order; a `lem-fn` or a default in the file reads
   `site.posts` as every other file does. A binding here may not read the host's
-  document value: it is computed once, before any page is bound.
+  document value: it is computed once, before any page is bound. The host fulfils a
+  `from` binding by its name alone, so no two files it reads bindings from may load one
+  of the same name. The host's own values — `build` — load first, in the host's
+  declaration order, and a bindings file's after them; so a binding may read `build`,
+  and a default on the host's own record may read the host's other values and nothing a
+  bindings file loads. The host's document value is the one value the loader leaves as
+  sent: the envelope carries it only for a render no loaded document stands in for — a
+  document no collection matched, whose `page` is unknown-typed — so it is bound
+  untyped, not validated.
 
 ```
 <lem-let posts:    [Article]        from "feed/*/index.md" />
@@ -352,11 +370,11 @@ plus the facts it consumed (invariant 11, D25): a type error in one file's body 
 change how another file is checked, and nothing has to be compiled in dependency order
 for a name to have a type. Everywhere else a `lem-let` is a local and infers as usual.
 
-_Not yet (∆iCW): a `from` binding compiles, and its source is recorded for the host to
-fulfil; a computed binding compiles to a function the loader runs. Nothing fulfils or
-runs them yet — the loader is what this item builds — so data a host loads is untagged
-and unvalidated until then, and a type test over an ambient value is a render error
-(D35)._
+_Not yet (∆iCW): the loader in the core fulfils `from` bindings, runs computed ones,
+and validates and tags what a host sends; the boundary does not call it yet — `loadData`
+still takes the spike's envelope — so data a host loads through it is untagged and
+unvalidated until then, and a type test over an ambient value the host sent is a render
+error (D35)._
 
 ### Checking
 

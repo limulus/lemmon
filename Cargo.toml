@@ -31,3 +31,8 @@ line-index = "0.1.2"
 # No default features: they pull in the CLI and syntect, which the core does not use yet
 # and which would grow the .wasm by about a megabyte when it does.
 comrak = { version = "0.54.0", default-features = false, features = ["attributes"] }
+# Test-only, for the corpus harness: the shell owns YAML and globs (D30, D37), and the
+# `host/` corpus models it — front matter parsed with positions, documents matched to
+# the collection whose glob names them. Neither enters the wasm.
+saphyr = "0.0.12"
+glob = "0.3.4"

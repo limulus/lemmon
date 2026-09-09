@@ -8,11 +8,32 @@
 <lem-type Article extends Page>
   title: string
   subhead: string?
-  hero: Photo?
-  layout: (Article, html): html
+  hero: Photo? by site.photos
+  layout: (Article, html): html = article
 </lem-type>
+
+<lem-type Til extends Page>
+  topic: string
+  title: string = "TIL: " + self.topic
+  slug: string = path
+  excerpt: html = body
+  hero: Photo? by site.photos
+  layout: (Til, html): html = til
+</lem-type>
+
+<lem-fn article(a: Article, body: html)>
+  <h1><lem.a.title></h1>
+  <lem.body>
+</lem-fn>
+
+<lem-fn til(t: Til, body: html)>
+  <h1><lem.t.title></h1>
+  <lem.body>
+</lem-fn>
 
 <lem-let photos: {string: Photo} from "_data/photos.json" />
 <lem-let posts: [Article] from "pages/*.md" />
+<lem-let tils: [Til] from "tils/*.md" />
+<lem-let siteUrl: url from env("SITE_URL") />
 <lem-let name: string = "limulus.net" />
 <lem-let tagline: string = "Notes from " + name />

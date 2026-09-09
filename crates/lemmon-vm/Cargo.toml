@@ -12,3 +12,5 @@ comrak = { workspace = true }
 
 [dev-dependencies]
 lemmon-corpus = { workspace = true }
+saphyr = { workspace = true }
+glob = { workspace = true }

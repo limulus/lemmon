@@ -11,7 +11,7 @@
 
 use std::fmt;
 
-use lemmon_syntax::{Severity, Span};
+use lemmon_syntax::{Range, Severity, Span};
 
 /// Something a compile has to say about a file, pointed at precisely: an error the file
 /// cannot compile past, or a warning it compiles with.
@@ -21,6 +21,11 @@ pub struct Diagnostic {
     pub path: String,
     /// The bytes the problem is about.
     pub span: Span,
+    /// The same two points as positions, when the producer had them: a loader
+    /// diagnostic about a file the host holds — front matter, a data file — which no
+    /// resident index can place, so the host's own positions travel with it (D37).
+    /// `None` where an index over `path` places `span`.
+    pub range: Option<Range>,
     pub severity: Severity,
     /// Human-readable description of the problem.
     pub message: String,
@@ -34,6 +39,8 @@ pub struct Diagnostic {
 pub struct Label {
     pub path: String,
     pub span: Span,
+    /// As [`Diagnostic::range`]: the host's positions, for a span in a file it holds.
+    pub range: Option<Range>,
     /// The note, phrased to read after the diagnostic's message.
     pub message: String,
 }
@@ -45,6 +52,7 @@ impl Diagnostic {
         Self {
             path: path.into(),
             span,
+            range: None,
             severity: Severity::Error,
             message: message.into(),
             labels: Vec::new(),
@@ -64,17 +72,38 @@ impl Diagnostic {
         }
     }
 
+    /// The same diagnostic carrying the host's positions for its span.
+    #[must_use]
+    pub const fn placed_by_host(mut self, range: Option<Range>) -> Self {
+        self.range = range;
+        self
+    }
+
     /// Adds a secondary span with its note.
     #[must_use]
     pub fn with_label(
+        self,
+        path: impl Into<String>,
+        span: Span,
+        message: impl Into<String>,
+    ) -> Self {
+        self.with_placed_label(path, span, None, message)
+    }
+
+    /// Adds a secondary span with its note and, for a span in a file the host holds,
+    /// the host's positions for it.
+    #[must_use]
+    pub fn with_placed_label(
         mut self,
         path: impl Into<String>,
         span: Span,
+        range: Option<Range>,
         message: impl Into<String>,
     ) -> Self {
         self.labels.push(Label {
             path: path.into(),
             span,
+            range,
             message: message.into(),
         });
         self
@@ -91,6 +120,7 @@ impl Diagnostic {
         Self {
             path: path.to_owned(),
             span: diagnostic.span,
+            range: None,
             severity: diagnostic.severity,
             message: diagnostic.message.clone(),
             labels: diagnostic
@@ -99,6 +129,7 @@ impl Diagnostic {
                 .map(|label| Label {
                     path: path.to_owned(),
                     span: label.span,
+                    range: None,
                     message: label.message.clone(),
                 })
                 .collect(),

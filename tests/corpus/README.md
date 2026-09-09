@@ -26,14 +26,21 @@ both crates — its `.cst` shows the segmentation and its `.html` the spliced ou
 that, directories group by **language feature**, and names are descriptive — no numeric
 prefixes, because a corpus that only grows makes them meaningless.
 
-`host/` is where the host's declaration is the subject (D30, D36). Those cases compile
-against the two files in `host/environment/` — an `ambient.lem` declaring `Page` and
-`Build`, and a `site.lem` declaring the site's schemas and bindings — with `page`, `build`,
-and `site` typed from them, and a document's record read from its own `type:` key, the one
-raw key a shell reads before a document has a type. The two environment files are cases
-themselves, so nothing about them is hidden. `render/` and `document/` deliberately keep an
-untyped host, which names the same three values and types none: that is a host a site
-really has (the Phase 0 spike's), and what any document no collection matched sees.
+`host/` is where the host's declaration is the subject (D30, D36, D37). Those cases
+compile against the two files in `host/environment/` — an `ambient.lem` declaring `Page`
+and `Build`, and a `site.lem` declaring the site's schemas, collections, and bindings —
+with `page`, `build`, and `site` typed from them. The group's directory is the site's
+content root: a document under it is compiled as the record its own `type:` key names —
+the one raw key a shell reads before a document has a type — or else as the element type
+of the collection whose glob matched it, and it is loaded the way the shell will load it
+(∆4tG): its front matter parsed with positions and handed to the loader as the one member
+of that collection, beside fixed fixtures for the environment's other sources. So
+`host/pages/` and `host/tils/` hold documents of the two collections, `host/unmatched/`
+a document no glob matches, and a load error is a trailer line at the front-matter entry
+it is about. The two environment files are cases themselves, so nothing about them is
+hidden. `render/` and `document/` deliberately keep an untyped host, which names the same
+three values and types none: that is a host a site really has (the Phase 0 spike's), and
+what any document no collection matched sees.
 
 There is no `ok/` versus `broken/` split. Whether a case parses clean is _data_: its
 diagnostics section is empty. That keeps a case in the directory that says what it tests

@@ -1,9 +1,11 @@
 //! Codegen and the VM for Lemmon: the stages below the typed AST.
 //!
 //! [`compile`] lowers every file of a site to one [`Module`] of bytecode, checking types
-//! as it lowers (D31); [`render`] runs a file's entry function and returns its HTML. The
-//! VM is the runtime for `any`: what the checker could not decide statically — every
-//! operation on a value typed `any` — it checks at run time, with a span.
+//! as it lowers (D31); [`load`] validates the data a host hands it against the module's
+//! declarations and runs the module's plans, building what every render binds (D37);
+//! [`render`] runs a file's entry function and returns its HTML. The VM is the runtime
+//! for `any`: what the checker could not decide statically — every operation on a value
+//! typed `any` — it checks at run time, with a span.
 
 mod builtins;
 mod bytecode;
@@ -12,6 +14,7 @@ mod decls;
 mod document;
 mod exports;
 mod host;
+mod load;
 mod plan;
 mod types;
 mod unit;
@@ -24,7 +27,7 @@ use std::fmt;
 /// severities without depending on the syntax crate directly.
 pub use lemmon_syntax::{LineIndex, Position, Range, Severity, Span};
 
-pub use bytecode::{Function, Module, Op};
+pub use bytecode::{Declared, Document, Exported, Function, Module, Op};
 pub use compile::{
     Compiled, Diagnostic, Label, PreparedFile, compile, compile_unit, prepare,
     repeated_path,
@@ -32,6 +35,7 @@ pub use compile::{
 pub use decls::{Declaration, Decls, FieldDecl, Kind, Shape, ShapeFact, TypeFact};
 pub use exports::{Export, ExportIndex, TypeExport};
 pub use host::{Ambient, Host};
+pub use load::{Data, HostSpan, Loaded, Source, Spans, Store, collects, field_path, load};
 pub use plan::{
     BindingStep, Bindings, Fulfilled, Read, RecordPlan, SourceKind, Step, StepKind,
 };
@@ -41,7 +45,7 @@ pub use unit::{
     link,
 };
 pub use value::{Closure, Map, Value};
-pub use vm::render;
+pub use vm::{invoke, render};
 
 /// Whether the file at `path` holds a document rather than a template: `.md` is a
 /// document, anything else a template. The rule a site runs on, read from the path

@@ -187,14 +187,17 @@ form (`exportModule`) first-class.
 
 ## VM
 
-Stack machine; serializable `Module { constants, functions, types, pages, spans }` plus
-the loader's plans — each record's default and `by` functions and the bindings file's
+Stack machine; serializable
+`Module { files, documents, constants, functions, declarations, exports, records, bindings }`
+— the code, the project's type declarations, its project-flat functions by name, and
+the loader's plans: each record's default and `by` functions and the bindings file's
 computed bindings, in the order their recorded reads dictate (D37) — linked from
 per-file units (above). Values are immutable and Rc'd:
 `Null | Bool | Int | Float | Str | Html | DateTime | Duration | Url | Asset | List | Map | Fn | Record`.
-Records carry their declared name, and the module each record's closed ancestry, which
-`TypeTest` answers from in one lookup;
-fields are read by name (by index is an optimisation nothing needs, D35). Ops sketch:
+Records carry their declared name, and the module the declaration table that
+`TypeTest` walks and the loader validates against, so the two cannot disagree about
+what a name is; fields are read by name (by index is an optimisation nothing needs,
+D35). Ops sketch:
 `Const/Local/Global/Ambient`, `GetField/OptField/ Index`, `Call/CallBuiltin/CallValue`
 (named args reordered at compile time; lambdas are closures over copied captures),
 `Jump/JumpIfFalse` plus the short-circuit `JumpUnlessNull/JumpIfFalseKeep/JumpIfTrueKeep`,

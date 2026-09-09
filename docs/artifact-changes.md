@@ -113,6 +113,23 @@ moved it. Newest last. An entry is removed when its change has been applied.
   or `env("…")` with one string-literal argument; that a computed binding compiles to a
   function the loader runs in dependency order; and that at that file's top level a
   sibling is read by its bare name, the same read as `site.x` (D37, ∆iCW).
+- **Schemas, the loader** — where the text says how loaded data is read, say the loader
+  validates by declared type and fills an omitted field with `null` exactly when its type
+  admits one — a `T?`, or `any` — the rule a record literal follows; that a whole number
+  in data is a `float` where one is declared (a shell serialising JSON cannot tell `2`
+  from `2.0`; the checker's `int`-is-not-`float` rule stands; one a float cannot hold
+  exactly is an error); that a string is never `html`, since `raw()` is the only string
+  that becomes one; and that a page-backed record is loaded from a document of its own
+  only — never from a data file or nested in another document's front matter (D37,
+  ∆iCW).
+- **Ambient types, load order** — say the host fulfils a `from` binding by its name
+  alone, so no two bindings files may load one of the same name (a link error); that the
+  host's own values load first, in the host's declaration order, then each bindings
+  file, so a default on a host-typed record may read the host's other values and nothing
+  a bindings file loads (a load error at the step, before it runs); that once a value has
+  failed no later plan runs, so the one error is the author's; and that the host's
+  document value is bound as sent, untyped, since the envelope carries it only for a
+  document no collection matched (D37, ∆iCW).
 
 ## Shell & Core
 
@@ -197,6 +214,14 @@ moved it. Newest last. An entry is removed when its change has been applied.
   its runtime type's method — the agreement with the checker. Loaded data stays untagged
   `any` until the loader tags it at the boundary (∆iCW) — ambient values included, since
   which record a page carries is the record store's to know (D35 as revised, D36, ∆Iau).
+- **VM, the module's tables** — where the text (and the entry above) says `Module`
+  carries a name → base table (`types`), say instead it carries the project's
+  declaration table (`declarations`, each with its file), its project-flat functions by
+  name with their types (`exports`), and per document its record and rendered prose
+  (`documents`); `TypeTest` walks `extends` links in the declaration table, the same
+  table the loader validates against. Say `Diagnostic` and `Label` carry an optional
+  `range` — the host's positions, set by the loader for a file the host holds — and
+  the boundary places such a span by it rather than by an index (D37, D35 revised, ∆iCW).
 
 ## From Eleventy to Lemmon
 

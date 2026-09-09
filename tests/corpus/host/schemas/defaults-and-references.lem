@@ -1,13 +1,13 @@
-<lem-type Til extends Page>
+<lem-type Note extends Page>
   topic: string
   title: string = "TIL: " + self.topic
   slug: string = path
   hero: Photo? by site.photos
-  layout: (Til, html): html = til
+  layout: (Note, html): html = note
 </lem-type>
 
-<lem-fn til(t: Til, body: html)>
-  <h1><lem.t.title></h1>
+<lem-fn note(n: Note, body: html)>
+  <h1><lem.n.title></h1>
   <lem.body>
 </lem-fn>
 

@@ -51,20 +51,37 @@ plan front to back and reasons about nothing.
 **The bindings file is where a `from` binding stands.** Its source is a string literal (a
 glob or a data file, told apart by the binding's type), `plugin("…")`, or `env("…")` with
 one string-literal argument; the kind and literal are recorded for the host. A `from`
-binding anywhere else is an error naming the file the host reads bindings from. At the
+binding anywhere else is an error naming the file the host reads bindings from. The host
+fulfils a `from` binding by its name alone, so the link step refuses one name loaded for
+two bindings files. At the
 top level of that file a sibling binding is read by its bare name, which is the same read
 as `site.x`; a `lem-fn` or a default in the file reads `site.x` like every other file.
 
 **The loader validates by declared type and tags what it builds.** A JSON object under a
-record type becomes a `Value::Record` of that type with every declared field — omitted
-optionals `null`, an omitted non-optional without a default an error, an unknown key an
-error with no opt-out. A string resolves by its expected type: an enum's variant, a
-project function of an assignable type where a function type is expected (`layout:
-article`), the value a `by` index maps it to where a reference field is. A document in a
-glob binding is validated as the record it was compiled as, which must extend the
-binding's element type, so `is` and `lem-match` reach loaded data. The host's own ambient
-values are validated against what the host bound them to, and `render` binds the
-document value from the store for a loaded document, else from the envelope.
+record type becomes a `Value::Record` of that type with every declared field — an
+omitted field `null` exactly when its type admits one (a `T?`, or `any`), which is the
+rule a record literal follows too; an omitted field of any other type without a default
+an error; an unknown key an error with no opt-out. A string resolves by its expected
+type: an enum's variant, a project function of an assignable type where a function type
+is expected (`layout: article`), the value a `by` index maps it to where a reference
+field is — and never `html`, since `raw()` is the only string that becomes one
+(invariant 7). A whole number is a `float` where one is declared, because a shell
+serialising JSON cannot tell `2` from `2.0`; the checker's rule that an `int` is not a
+`float` stands, and a whole number a float cannot hold exactly is an error. A document in
+a glob binding is validated as the record it was compiled as, which must extend the
+binding's element type, so `is` and `lem-match` reach loaded data; a page-backed record
+is loaded from a document of its own and nowhere else — not from a data file, and not
+nested in another document's front matter. The host's own ambient values are validated
+against what the host bound them to, except its document value: the envelope carries
+that only for a render no loaded document stands in for — a document no collection
+matched, whose `page` is unknown-typed (D30) — so the loader binds it as sent, and
+`render` binds the document value from the store for a loaded document, else from the
+envelope. Loading proceeds in one order — the host's own values in its declaration
+order, then each bindings file — and no function runs over a value that is not loaded
+yet or that failed: a default on a host-typed record that reads a bindings value, or a
+computed binding that reads a later file's, is a load error at the step, and once a
+value has failed the plans after it are not run, so the one error reported is the
+author's and not a fault downstream of it.
 
 **Positions come from the host, as complete boundary spans.** `loadData` receives, per
 loaded value, a table from field path to `{start, end, range}`. The host owns the text of
@@ -113,7 +130,17 @@ document's record, so the core never sees it.
 
 - `Unit` carries `defaults` and `bindings`; `Module` carries `records`, `bindings`, and
   `exports`, all plain data. `Op` gained nothing: a loader-run function is an ordinary
-  function the loader invokes.
+  function the loader invokes — with the arguments its own declaration takes, so a
+  default inherited from a record above the document type runs without the document.
+- `Module` carries the project's declaration table and, per document, its record and
+  rendered prose; the closed ancestry table D35 described is gone, and `TypeTest` walks
+  the same table the loader validates against (D35 revised).
+- A load diagnostic about a file the host holds carries the host's positions with it
+  (`Diagnostic::range`), and the boundary places such a span by them rather than by an
+  index it does not have.
+- A host that binds a name to a type no file declares, carries a name twice, or fulfils
+  a source the program has no `from` binding for is a caller bug — an `Err` with no data
+  to point at — not a diagnostic.
 - The bindings file's top-level `lem-let`s are no longer locals of its entry: reading one
   by bare name compiles to a read of the ambient value's field, so rendering the bindings
   file shows whatever `site` was bound to.

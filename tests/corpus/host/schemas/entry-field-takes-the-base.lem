@@ -1,4 +1,4 @@
-<lem-type Til extends Page>
+<lem-type Recipe extends Page>
   topic: string
   layout: (Page, html): html
 </lem-type>

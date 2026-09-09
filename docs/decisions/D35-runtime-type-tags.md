@@ -4,7 +4,10 @@
   a narrowed path may be rooted at an ambient value, now that a host types one and no
   binding may take its name; and tagging loaded data is the loader's alone (∆iCW),
   since only the record store it builds knows which page's record a document's ambient
-  value carries
+  value carries; revised 2026-09-08 (∆iCW, D37) — the closed ancestry table is replaced
+  by the declaration table the module carries, walked per test, so the VM's type tests
+  and the loader's validation read one table; and the completeness question is closed:
+  the loader fills an omitted field as a literal does, by whether its type admits `null`
 - **Backlog item:** ∆PCK
 - **Normative text:** `docs/language.md` § Tags (`lem-if`, `lem-match` rows),
   § Expressions (Literals, Type tests), § Checking (Literals, Narrowing, Type tests,
@@ -25,11 +28,13 @@ reading, since exhaustiveness stays a deferred question.
 **A record value carries its declared name.** `Value::Record` is a type name and a map
 of fields, and the name is the most specific type the value was made as. Fields are read
 by name: reading by declaration index is an optimisation with no consumer, and D31's rule
-— nothing recorded until something reads it — applies. The linked module carries every
-record's ancestry, closed at link from the declaration table, so a type test is one
-lookup: neither a cycle nor a base the project lost can be spelled in it, and a tag the
-table has no row for is no type at all rather than a type that is itself — a module whose
-constant pool went wrong must not pass a test against its own bad tag.
+— nothing recorded until something reads it — applies. The linked module carries the
+project's declaration table, and a type test walks a record's `extends` links in it
+(revised by D37: the closed ancestry table went when the loader needed the declarations
+themselves, and one table for both is worth a walk of a few hops). The walk ends at a
+base the table lacks or a cycle, and a tag the table has no row for is no type at all
+rather than a type that is itself — a module whose constant pool went wrong must not pass
+a test against its own bad tag.
 
 **A map literal where a record is expected is that record** — the expected type, never a
 subtype. Every key must be a declared field, each value is checked against it, an omitted
@@ -80,26 +85,25 @@ have refused, which is the only sense in which they guess by type.
   so the module's table serves every producer alike.
 - **Reading fields by declaration index.** Deferred, not rejected: the checker has the
   index in hand at the emit site, and nothing measures a cost yet.
-- **A name-to-base table walked per test.** Rejected during review: it made the walk
-  O(records × depth) at render, needed a cycle guard against a table the compiler
-  cannot produce, and answered "itself" for an unknown tag — which hid a missing
-  constant relocation from the test that was written to catch it.
+- **A name-to-base table walked per test.** Rejected during review, then adopted by
+  D37 once the module carried the declarations for the loader: the walk is a few hops
+  over a table of tens, it collects nothing, and its guards end it at a missing base or
+  a cycle. The objection that stands — "itself" for an unknown tag — is answered by the
+  walk finding no row and saying `false`.
 - **Exhaustiveness over `bool` and `null`-complete optionals.** Left with the deferred
   question rather than decided here.
 
 ## Consequences
 
-- `Value::Record`, `Op::MakeRecord`, `Op::TypeTest`, and `Module.types` exist; the
-  `Op::NAMES` gate covers both ops, and `link`'s relocation of their constant operands
-  is negative-tested at a non-zero offset, which every single-file corpus case misses.
-- **A record's completeness is the producer's, and only the literal keeps it today.**
-  `Value::record` accepts any map, while `field` and `equals` assume every declared
-  field is present. The loader (∆iCW) tags from JSON, where
-  an omitted optional is an absent key: it must fill as the literal does, or the two
-  differ — a loaded `Article` without `hero` would compare unequal to a literal one and
-  fault on a read the checker admitted. Whether to move the rule into the VM instead —
-  the module carrying each record's field list, and a declared-but-absent field reading
-  as null — is ∆iCW's to settle, with the producers it will have.
+- `Value::Record`, `Op::MakeRecord`, `Op::TypeTest`, and `Module.declarations` exist;
+  the `Op::NAMES` gate covers both ops, and `link`'s relocation of their constant
+  operands is negative-tested at a non-zero offset, which every single-file corpus case
+  misses.
+- **A record's completeness is the producer's.** `Value::record` accepts any map, while
+  `field` and `equals` assume every declared field is present. Both producers keep it
+  by one rule (D37): an omitted field is `null` exactly when its type admits one, and
+  the loader fills it so before any default runs, so a loaded `Article` without `hero`
+  compares equal to a literal one and a default reading `self.hero` sees `null`.
 - `render/calls/methods-on-any` pins the agreement of the two receiver paths, and
   `render/errors/is-on-untyped-value` the render error.
 - The canonical corpus case reads `article.vod.poster` again, with its output byte

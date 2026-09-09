@@ -61,6 +61,40 @@ pub fn render(
     Ok(vm.out.pop().expect("the root output buffer"))
 }
 
+/// Calls `functions[func]` of `module` with `args`, `globals` bound to the ambient
+/// names, and returns what it returned. How the loader runs a default, a `by` index,
+/// or a computed binding (D37): a loader-run function is an ordinary function, and this
+/// is a render's machinery with a call in place of an entry.
+///
+/// # Errors
+///
+/// The first runtime error, pointing at the instruction's source.
+///
+/// # Panics
+///
+/// If `args` are not as many as the function's parameters — the compiler fixed both,
+/// so a mismatch is a bug in the caller rather than anything a template can provoke.
+pub fn invoke(
+    module: &Module,
+    func: u32,
+    args: Vec<Value>,
+    globals: &[(&str, Value)],
+) -> Result<Value, RuntimeError> {
+    let argc = u16::try_from(args.len()).expect("a function takes fewer than 65536");
+    let mut vm = Vm {
+        module,
+        globals,
+        stack: args,
+        frames: Vec::new(),
+        iters: Vec::new(),
+        out: vec![String::new()],
+    };
+    vm.call(func, argc, &[])
+        .unwrap_or_else(|message| panic!("invoking `{func}` failed: {message}"));
+    vm.run_until(0)?;
+    Ok(vm.pop())
+}
+
 struct Frame {
     func: u32,
     /// The next instruction to run.
@@ -237,7 +271,7 @@ impl<'a> Vm<'a> {
                     .iter()
                     .find(|(n, _)| *n == name)
                     .map(|(_, v)| v.clone())
-                    .ok_or_else(|| format!("`{name}` is not bound for this render"))?;
+                    .ok_or_else(|| format!("`{name}` is not bound"))?;
                 self.stack.push(value);
             }
             Op::GetField { name } => {
@@ -622,6 +656,8 @@ mod tests {
     use lemmon_syntax::Span;
 
     use super::*;
+    use crate::bytecode::Declared;
+    use crate::decls::tests::record as declare;
 
     /// A function whose every instruction is spanned `10*pc..10*pc+5`, so a test can
     /// tell which instruction an error blamed.
@@ -649,13 +685,13 @@ mod tests {
             entries: vec![0],
             constants,
             functions,
-            types: vec![
-                (Rc::from("Article"), vec![Rc::from("Article")]),
-                (
-                    Rc::from("LinkPost"),
-                    vec![Rc::from("LinkPost"), Rc::from("Article")],
-                ),
-            ],
+            declarations: [
+                declare("Article", None, &[]),
+                declare("LinkPost", Some("Article"), &[]),
+            ]
+            .into_iter()
+            .map(|decl| Declared { file: 0, decl })
+            .collect(),
             ..Module::default()
         }
     }
@@ -1202,10 +1238,7 @@ mod tests {
             vec![Value::str("page"), Value::str("site")],
             vec![Op::Ambient { name: 1 }],
         ));
-        assert_eq!(
-            (pc, message.as_str()),
-            (0, "`site` is not bound for this render")
-        );
+        assert_eq!((pc, message.as_str()), (0, "`site` is not bound"));
     }
 
     #[test]

@@ -196,7 +196,11 @@ impl From<Position> for PositionOut {
 impl SpanOut {
     /// Places `span` in the file `index` describes.
     fn placed(span: lemmon_vm::Span, index: &LineIndex) -> Self {
-        let range = index.range(span);
+        Self::at(span, index.range(span))
+    }
+
+    /// `span` with the positions `range` the producer already had for it.
+    fn at(span: lemmon_vm::Span, range: lemmon_vm::Range) -> Self {
         Self {
             start: span.start,
             end: span.end,
@@ -204,6 +208,22 @@ impl SpanOut {
                 start: range.start.into(),
                 end: range.end.into(),
             },
+        }
+    }
+
+    /// `span` in the file at `path`: by the positions carried with it when the
+    /// producer had them — a loader diagnostic about a file the host holds, which no
+    /// index here describes (D37) — and by the file's index otherwise.
+    fn carried_or_placed(
+        span: lemmon_vm::Span,
+        range: Option<lemmon_vm::Range>,
+        path: &str,
+        incoming: Option<&LineIndexes>,
+        resident: &LineIndexes,
+    ) -> Self {
+        match range {
+            Some(range) => Self::at(span, range),
+            None => Self::placed(span, index_for(path, incoming, resident)),
         }
     }
 }
@@ -242,9 +262,14 @@ impl Diagnostic {
         incoming: &LineIndexes,
         resident: &LineIndexes,
     ) -> Self {
-        let index = index_for(&diagnostic.path, Some(incoming), resident);
         Self {
-            span: SpanOut::placed(diagnostic.span, index),
+            span: SpanOut::carried_or_placed(
+                diagnostic.span,
+                diagnostic.range,
+                &diagnostic.path,
+                Some(incoming),
+                resident,
+            ),
             path: diagnostic.path,
             severity: diagnostic.severity.into(),
             message: diagnostic.message,
@@ -252,9 +277,12 @@ impl Diagnostic {
                 .labels
                 .into_iter()
                 .map(|label| LabelOut {
-                    span: SpanOut::placed(
+                    span: SpanOut::carried_or_placed(
                         label.span,
-                        index_for(&label.path, Some(incoming), resident),
+                        label.range,
+                        &label.path,
+                        Some(incoming),
+                        resident,
                     ),
                     path: label.path,
                     message: label.message,
@@ -305,5 +333,57 @@ pub(crate) fn value_from_json(json: &serde_json::Value) -> Value {
                 .map(|(key, value)| (Rc::from(key.as_str()), value_from_json(value)))
                 .collect::<Map>(),
         ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use lemmon_vm::{Position, Range, Span};
+
+    use super::*;
+
+    fn range(line: u32, from: u32, to: u32) -> Range {
+        Range {
+            start: Position {
+                line,
+                character: from,
+            },
+            end: Position {
+                line,
+                character: to,
+            },
+        }
+    }
+
+    #[test]
+    fn places_a_diagnostic_by_the_range_it_carries_when_no_index_has_its_path() {
+        // A loader diagnostic names a file the host holds and the core never compiled:
+        // without the carried range this would be the "no line index" panic.
+        let diagnostic =
+            lemmon_vm::Diagnostic::error("_data/photos.json", Span::new(12, 24), "bad")
+                .placed_by_host(Some(range(1, 12, 24)))
+                .with_placed_label(
+                    "pages/a.md",
+                    Span::new(4, 9),
+                    Some(range(1, 0, 5)),
+                    "here",
+                );
+        let placed =
+            Diagnostic::placed(diagnostic, &LineIndexes::new(), &LineIndexes::new());
+        let json = serde_json::to_value(&placed).unwrap();
+        assert_eq!(json["span"]["range"]["start"]["character"], 12);
+        assert_eq!(json["labels"][0]["span"]["range"]["end"]["character"], 5);
+    }
+
+    #[test]
+    fn places_a_diagnostic_by_its_files_index_when_it_carries_no_range() {
+        let resident: LineIndexes = [("a.lem".to_owned(), LineIndex::new("ab\ncd"))]
+            .into_iter()
+            .collect();
+        let diagnostic = lemmon_vm::Diagnostic::error("a.lem", Span::new(3, 4), "bad");
+        let placed = Diagnostic::placed(diagnostic, &LineIndexes::new(), &resident);
+        let json = serde_json::to_value(&placed).unwrap();
+        assert_eq!(json["span"]["range"]["start"]["line"], 1);
+        assert_eq!(json["span"]["range"]["start"]["character"], 0);
     }
 }
