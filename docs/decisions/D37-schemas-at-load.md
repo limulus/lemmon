@@ -73,15 +73,18 @@ binding's element type, so `is` and `lem-match` reach loaded data; a page-backed
 is loaded from a document of its own and nowhere else — not from a data file, and not
 nested in another document's front matter. The host's own ambient values are validated
 against what the host bound them to, except its document value: the envelope carries
-that only for a render no loaded document stands in for — a document no collection
-matched, whose `page` is unknown-typed (D30) — so the loader binds it as sent, and
+that for the renders no loaded document stands in for — a document no collection
+matched, whose `page` is unknown-typed (D30), and a template, whose `page` is the
+declared type — so the loader binds it as sent, one value for all of them, and
 `render` binds the document value from the store for a loaded document, else from the
-envelope. Loading proceeds in one order — the host's own values in its declaration
-order, then each bindings file — and no function runs over a value that is not loaded
-yet or that failed: a default on a host-typed record that reads a bindings value, or a
-computed binding that reads a later file's, is a load error at the step, and once a
-value has failed the plans after it are not run, so the one error reported is the
-author's and not a fault downstream of it.
+envelope. A template's `page` is therefore checked by the compiler and not by the
+loader until `plan()` (∆RGQ) gives each page a value of its own. Loading proceeds in
+one order — the host's own values in its declaration order, then each bindings file —
+and no function runs over a value that is not loaded yet or that failed: a default on
+a host-typed record that reads a bindings value, or a computed binding that reads a
+later file's, is a load error at the step, and once a value has failed the plans after
+it are not run, so the one error reported is the author's and not a fault downstream of
+it.
 
 **Positions come from the host, as complete boundary spans.** `loadData` receives, per
 loaded value, a table from field path to `{start, end, range}`. The host owns the text of
@@ -138,6 +141,21 @@ document's record, so the core never sees it.
 - A load diagnostic about a file the host holds carries the host's positions with it
   (`Diagnostic::range`), and the boundary places such a span by them rather than by an
   index it does not have.
+- The resident `Core` keeps what the last successful load built — the store every render
+  binds — with the program it was loaded against: a load that reports an error leaves it
+  as it was, stale until fixed, as a failed compile leaves the program, and a compile
+  that installs a new program drops it, since the store is a function of the program
+  and the data. A load runs against the program that linked, under the declaration it
+  linked with, and its diagnostics are placed by the text that program was linked from;
+  a load before any compile has succeeded, or after the declaration changed without a
+  compile succeeding under it, is a caller bug. `render` binds a loaded document's own
+  record from the store, and the envelope's document value only where no loaded
+  document stands.
+- A host's spans are checked at the door: a `recordSpan` that is not a span of its
+  file's text, or a `spans` entry that ends before it starts, is a caller bug, since a
+  line index panics on the one and an editor would be handed the other as sent. The
+  boundary takes the host's ambient names in declaration order and refuses a name
+  given twice at any level of the envelope, as the loader's rules require.
 - A host that binds a name to a type no file declares, carries a name twice, or fulfils
   a source the program has no `from` binding for is a caller bug — an `Err` with no data
   to point at — not a diagnostic.

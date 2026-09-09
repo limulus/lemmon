@@ -117,7 +117,7 @@ impl Loader<'_> {
                         None => failed = true,
                     }
                 }
-                (!failed).then(|| Value::map(out.into_iter().collect()))
+                (!failed).then(|| Value::map(Map::from_unique(out)))
             }
             (Type::Fn(..), Value::Str(name)) => self.function(&name, ty, at),
             (Type::Named(name), value) => match self.module.kind(name) {

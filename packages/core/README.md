@@ -9,8 +9,9 @@ Typed JS wrapper around the Lemmon Rust core compiled to WebAssembly (see
 import { loadCore } from '@limulus/lemmon-core'
 
 const core = await loadCore() // the staged artifact in the repo's artifacts/wasm/
-core.compile([{ path: 'page.lem', text: 'Hi <lem.site.name>' }]) // [] = clean
-core.loadData({ ambient: { site: { name: 'limulus.net' } } })
+const host = { ambient: { site: null } } // names `site`, types nothing (D30)
+core.compile([{ path: 'page.lem', text: 'Hi <lem.site.name>' }], host) // [] = clean
+core.loadData({ ambient: { site: { name: 'limulus.net' } } }) // [] = loaded
 core.render({ path: 'page.lem' }) // { html, diagnostics }
 ```
 
@@ -21,7 +22,8 @@ glue is `--target web` output, so the same files will serve a browser playground
 artifact deliberately has no home inside this package yet: nothing publishes, and where
 it lands in the published layout is decided when something does.
 
-A boundary throw is a caller bug (malformed payload, rendering an unknown path);
-everything wrong with a template or document comes back as `Diagnostic[]` with byte
-spans. The package's specs run against the real staged artifact — stage it before
-`npm run verify`.
+A boundary throw is a caller bug — a malformed payload, rendering an unknown path, an
+envelope the program cannot be loaded from, a load or render before any compile has
+succeeded; everything wrong with a template, document, or data file comes back as
+`Diagnostic[]` with byte spans. The package's specs run against the real staged
+artifact — stage it before `npm run verify`.

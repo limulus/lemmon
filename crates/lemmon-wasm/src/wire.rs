@@ -13,9 +13,16 @@
 //! boundary's tests exercise them without a `JsError` in sight.
 
 use std::collections::BTreeMap;
+use std::fmt;
+use std::marker::PhantomData;
 use std::rc::Rc;
 
-use lemmon_vm::{Ambient, Host, LineIndex, Map, Position, RuntimeError, Severity, Value};
+use lemmon_vm::{
+    Ambient, Data, Host, HostSpan, LineIndex, Loaded, Map, Position, Range, RuntimeError,
+    Severity, Source, Span, Spans, Value, repeated_path,
+};
+use serde::de::value::{MapAccessDeserializer, SeqAccessDeserializer};
+use serde::de::{self, Deserializer, MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Serialize};
 
 /// A source file as `compile` receives it.
@@ -43,9 +50,73 @@ pub(crate) struct SpanInput {
     end: u32,
 }
 
-impl From<SpanInput> for lemmon_vm::Span {
+impl From<SpanInput> for Span {
     fn from(span: SpanInput) -> Self {
         Self::new(span.start, span.end)
+    }
+}
+
+impl SpanInput {
+    /// Why this span cannot be placed in `text`, if it cannot. A line index panics on
+    /// an offset past the end of its text or inside a character, and a span's end
+    /// before its start underflows its length in a release build, so a host's offsets
+    /// are checked here, where the text is in hand, before anything keeps them.
+    pub(crate) fn misplaced_in(&self, text: &str) -> Option<String> {
+        let (start, end) = (self.start as usize, self.end as usize);
+        if start > end {
+            Some(format!("{start}..{end} that ends before it starts"))
+        } else if end > text.len() {
+            Some(format!(
+                "{start}..{end}, past the end of a {}-byte file",
+                text.len()
+            ))
+        } else if !text.is_char_boundary(start) || !text.is_char_boundary(end) {
+            Some(format!(
+                "{start}..{end} that does not fall on a character boundary"
+            ))
+        } else {
+            None
+        }
+    }
+}
+
+/// The entries of a JSON object in the order they were written, each key once. A
+/// declaration's names are taken in declaration order, and the loader refuses a name
+/// given twice — both of which a map that sorts its keys, or keeps the last value for
+/// a repeated one, would decide before the loader saw the text.
+fn ordered<'de, D, V>(deserializer: D) -> Result<Vec<(String, V)>, D::Error>
+where
+    D: Deserializer<'de>,
+    V: Deserialize<'de>,
+{
+    struct Ordered<V>(PhantomData<V>);
+
+    impl<'de, V: Deserialize<'de>> Visitor<'de> for Ordered<V> {
+        type Value = Vec<(String, V)>;
+
+        fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            f.write_str("an object")
+        }
+
+        fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
+            let mut entries = Vec::with_capacity(map.size_hint().unwrap_or(0));
+            while let Some(key) = map.next_key::<String>()? {
+                let value = map.next_value()?;
+                entries.push((key, value));
+            }
+            each_once(&entries)?;
+            Ok(entries)
+        }
+    }
+
+    deserializer.deserialize_map(Ordered(PhantomData))
+}
+
+/// Refuses a key that `entries` holds twice.
+fn each_once<V, E: de::Error>(entries: &[(String, V)]) -> Result<(), E> {
+    match repeated_path(entries.iter().map(|(key, _)| key.as_str())) {
+        Some(key) => Err(de::Error::custom(format!("`{key}` is given twice"))),
+        None => Ok(()),
     }
 }
 
@@ -55,7 +126,9 @@ impl From<SpanInput> for lemmon_vm::Span {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct HostInput {
-    pub(crate) ambient: BTreeMap<String, Option<AmbientBinding>>,
+    /// In declaration order: the order the host's values load in (D37).
+    #[serde(deserialize_with = "ordered")]
+    pub(crate) ambient: Vec<(String, Option<AmbientBinding>)>,
     #[serde(default)]
     document: Option<String>,
     #[serde(default)]
@@ -100,23 +173,157 @@ impl From<HostInput> for Host {
     }
 }
 
-/// What `loadData` receives — the spike's `DataInput`: the ambient records only. The
-/// envelope is an object so `records`, data files, and the asset manifest are additive
-/// fields later.
+/// What `loadData` receives (D37): `{ambient?, sources?}`. `ambient` is bare JSON by
+/// the name the host bound each value, and `sources` fulfils each `from` binding of the
+/// bindings files by name — a list of entries, one per document, for a glob, and one
+/// entry for a data file, a plugin, or an environment value. Which names may appear,
+/// and which must, is the program's to say, so the loader checks them; what an entry
+/// may hold is the wire's, so `deny_unknown_fields` does. The asset manifest is an
+/// additive field that is not here yet (∆d1N).
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct DataInput {
-    pub(crate) ambient: AmbientInput,
+    #[serde(default, deserialize_with = "ordered")]
+    ambient: Vec<(String, serde_json::Value)>,
+    #[serde(default, deserialize_with = "sources")]
+    sources: Vec<(String, SourceInput)>,
 }
 
-/// The three ambient records and nothing else — an unknown name here is a caller bug,
-/// not data to carry silently (invariant 10).
+/// What fulfils one `from` binding on the wire: one entry, or a list of them.
+enum SourceInput {
+    One(LoadedInput),
+    Many(Vec<LoadedInput>),
+}
+
+impl<'de> Deserialize<'de> for SourceInput {
+    /// Read in one pass from whichever shape is there — an object is an entry, an
+    /// array a list of them — rather than through an untagged enum, which would buffer
+    /// the entry and report every fault in it as "no variant matched".
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct Shape;
+
+        impl<'de> Visitor<'de> for Shape {
+            type Value = SourceInput;
+
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str("an entry `{value, path?, spans?}` or a list of them")
+            }
+
+            fn visit_map<A: MapAccess<'de>>(self, map: A) -> Result<SourceInput, A::Error> {
+                LoadedInput::deserialize(MapAccessDeserializer::new(map))
+                    .map(SourceInput::One)
+            }
+
+            fn visit_seq<A: SeqAccess<'de>>(self, seq: A) -> Result<SourceInput, A::Error> {
+                Vec::deserialize(SeqAccessDeserializer::new(seq)).map(SourceInput::Many)
+            }
+        }
+
+        deserializer.deserialize_any(Shape)
+    }
+}
+
+/// The entries of `sources`, in order and each once, with a fault in an entry named
+/// for the binding it fulfils.
+fn sources<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Vec<(String, SourceInput)>, D::Error> {
+    struct Sources;
+
+    impl<'de> Visitor<'de> for Sources {
+        type Value = Vec<(String, SourceInput)>;
+
+        fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            f.write_str("an object of sources by binding name")
+        }
+
+        fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
+            let mut entries = Vec::with_capacity(map.size_hint().unwrap_or(0));
+            while let Some(name) = map.next_key::<String>()? {
+                let source = map
+                    .next_value::<SourceInput>()
+                    .map_err(|e| de::Error::custom(format!("source `{name}`: {e}")))?;
+                entries.push((name, source));
+            }
+            each_once(&entries)?;
+            Ok(entries)
+        }
+    }
+
+    deserializer.deserialize_map(Sources)
+}
+
+/// One value the host loaded, as an entry of `sources`: `{value, path?, spans?}`.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct AmbientInput {
-    pub(crate) site: Option<serde_json::Value>,
-    pub(crate) page: Option<serde_json::Value>,
-    pub(crate) build: Option<serde_json::Value>,
+struct LoadedInput {
+    /// The value as parsed — a document's front matter with the `type:` key stripped.
+    value: serde_json::Value,
+    /// The file it came from: always for a document, a data file's path otherwise,
+    /// and absent for a plugin or environment value.
+    #[serde(default)]
+    path: Option<String>,
+    /// Where each field path stands in that file, spanning the key through the value;
+    /// the empty path is the value as a whole.
+    #[serde(default, deserialize_with = "ordered")]
+    spans: Vec<(String, SpanWire)>,
+}
+
+impl DataInput {
+    /// The envelope as the loader takes it. Which names it carries is left to the
+    /// loader, which knows the program.
+    ///
+    /// # Errors
+    ///
+    /// A span in an entry of `sources` that ends before it starts, named for its
+    /// binding and field.
+    pub(crate) fn into_data(self) -> Result<Data, String> {
+        let ambient = self
+            .ambient
+            .into_iter()
+            .map(|(name, value)| (name, value_from_json(&value)))
+            .collect();
+        let mut sources = Vec::with_capacity(self.sources.len());
+        for (name, source) in self.sources {
+            let source = match source {
+                SourceInput::One(entry) => Source::One(loaded(&name, entry)?),
+                SourceInput::Many(entries) => Source::Many(
+                    entries
+                        .into_iter()
+                        .map(|entry| loaded(&name, entry))
+                        .collect::<Result<_, _>>()?,
+                ),
+            };
+            sources.push((name, source));
+        }
+        Ok(Data { ambient, sources })
+    }
+}
+
+/// One entry of `sources` under `name`, as the loader takes it.
+fn loaded(name: &str, entry: LoadedInput) -> Result<Loaded, String> {
+    let mut spans = Spans::new();
+    for (field, span) in entry.spans {
+        // The core holds no text to check these against (D37); what it can check is
+        // that each span is a span, since `Span::new`'s own guard is a debug assertion
+        // and an inverted range would reach an editor as sent.
+        if span.start > span.end || span.range.start.after(&span.range.end) {
+            let what = if field.is_empty() {
+                "the value as a whole".to_owned()
+            } else {
+                format!("`{field}`")
+            };
+            return Err(format!(
+                "source `{name}`: the span for {what} ends before it starts"
+            ));
+        }
+        spans.insert(field, span.into());
+    }
+    Ok(Loaded {
+        value: value_from_json(&entry.value),
+        path: entry.path,
+        spans,
+    })
 }
 
 /// What `render` receives — the spike's `PageRef`: a path names the page until `plan()`
@@ -132,7 +339,7 @@ pub(crate) struct PageRef {
 #[derive(Serialize)]
 pub(crate) struct Diagnostic {
     pub(crate) path: String,
-    pub(crate) span: SpanOut,
+    pub(crate) span: SpanWire,
     severity: SeverityOut,
     message: String,
     labels: Vec<LabelOut>,
@@ -157,34 +364,46 @@ impl From<Severity> for SeverityOut {
 #[derive(Serialize)]
 struct LabelOut {
     pub(crate) path: String,
-    pub(crate) span: SpanOut,
+    pub(crate) span: SpanWire,
     message: String,
 }
 
-/// A span as both of the things a consumer needs: the byte offsets the core works in,
-/// and the two LSP positions an editor or a printed diagnostic wants.
-#[derive(Serialize)]
-pub(crate) struct SpanOut {
+/// A span as both of the things a consumer needs and a host supplies: the byte offsets
+/// the core works in, and the same two points as LSP positions. One shape both ways —
+/// what a diagnostic carries out, and what a host sends in for a file it holds and the
+/// core never indexed (D37).
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct SpanWire {
     start: u32,
     end: u32,
-    range: RangeOut,
+    range: RangeWire,
 }
 
 /// Zero-based line and UTF-16 `character`, exactly as the LSP defines a position — so a
 /// language server can pass one straight through.
-#[derive(Serialize)]
-struct PositionOut {
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PositionWire {
     line: u32,
     character: u32,
 }
 
-#[derive(Serialize)]
-struct RangeOut {
-    start: PositionOut,
-    end: PositionOut,
+impl PositionWire {
+    /// Whether this position comes after `other`.
+    fn after(&self, other: &Self) -> bool {
+        (self.line, self.character) > (other.line, other.character)
+    }
 }
 
-impl From<Position> for PositionOut {
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RangeWire {
+    start: PositionWire,
+    end: PositionWire,
+}
+
+impl From<Position> for PositionWire {
     fn from(position: Position) -> Self {
         Self {
             line: position.line,
@@ -193,7 +412,28 @@ impl From<Position> for PositionOut {
     }
 }
 
-impl SpanOut {
+impl From<PositionWire> for Position {
+    fn from(position: PositionWire) -> Self {
+        Self {
+            line: position.line,
+            character: position.character,
+        }
+    }
+}
+
+impl From<SpanWire> for HostSpan {
+    fn from(span: SpanWire) -> Self {
+        Self {
+            span: Span::new(span.start, span.end),
+            range: Range {
+                start: span.range.start.into(),
+                end: span.range.end.into(),
+            },
+        }
+    }
+}
+
+impl SpanWire {
     /// Places `span` in the file `index` describes.
     fn placed(span: lemmon_vm::Span, index: &LineIndex) -> Self {
         Self::at(span, index.range(span))
@@ -204,7 +444,7 @@ impl SpanOut {
         Self {
             start: span.start,
             end: span.end,
-            range: RangeOut {
+            range: RangeWire {
                 start: range.start.into(),
                 end: range.end.into(),
             },
@@ -228,11 +468,14 @@ impl SpanOut {
     }
 }
 
-/// Every resident file's line index, by path — what places a span at the boundary.
-pub(crate) type LineIndexes = BTreeMap<String, LineIndex>;
+/// A set of files' line indexes, by path — what places a span at the boundary. Shared
+/// by reference, so that the set a linked program keeps is a copy of the resident one
+/// in name only.
+pub(crate) type LineIndexes = BTreeMap<String, Rc<LineIndex>>;
 
 /// The index that places a span in `path`: the text of the call in progress if that call
-/// carried the file, otherwise the text the resident unit at that path was compiled from.
+/// carried the file, otherwise the text the file's span was produced from — the
+/// resident unit's for a compile, the linked program's for a load or a render.
 ///
 /// The two differ exactly when a recompile failed. That file keeps its previous unit, and
 /// the unit's spans are offsets into the text that produced it — so a diagnostic the
@@ -251,23 +494,25 @@ fn index_for<'a>(
     incoming
         .and_then(|indexes| indexes.get(path))
         .or_else(|| resident.get(path))
+        .map(|index| &**index)
         .unwrap_or_else(|| panic!("no line index for `{path}`, which a diagnostic names"))
 }
 
 impl Diagnostic {
-    /// Places a compile diagnostic and each of its labels — a label by *its own* path,
-    /// since it may point into a different file than the diagnostic does.
+    /// Places a diagnostic and each of its labels — a label by *its own* path, since it
+    /// may point into a different file than the diagnostic does. `incoming` is the text
+    /// of the call in progress, when the call carries files.
     pub(crate) fn placed(
         diagnostic: lemmon_vm::Diagnostic,
-        incoming: &LineIndexes,
+        incoming: Option<&LineIndexes>,
         resident: &LineIndexes,
     ) -> Self {
         Self {
-            span: SpanOut::carried_or_placed(
+            span: SpanWire::carried_or_placed(
                 diagnostic.span,
                 diagnostic.range,
                 &diagnostic.path,
-                Some(incoming),
+                incoming,
                 resident,
             ),
             path: diagnostic.path,
@@ -277,11 +522,11 @@ impl Diagnostic {
                 .labels
                 .into_iter()
                 .map(|label| LabelOut {
-                    span: SpanOut::carried_or_placed(
+                    span: SpanWire::carried_or_placed(
                         label.span,
                         label.range,
                         &label.path,
-                        Some(incoming),
+                        incoming,
                         resident,
                     ),
                     path: label.path,
@@ -294,7 +539,7 @@ impl Diagnostic {
     /// A runtime failure is always an error, and the VM has one span to point at.
     pub(crate) fn placed_runtime(error: RuntimeError, resident: &LineIndexes) -> Self {
         Self {
-            span: SpanOut::placed(error.span, index_for(&error.path, None, resident)),
+            span: SpanWire::placed(error.span, index_for(&error.path, None, resident)),
             path: error.path,
             severity: SeverityOut::Error,
             message: error.message,
@@ -315,7 +560,7 @@ pub(crate) struct RenderResult {
 /// objects become insertion-ordered `Map`s in the key order the shell sent (which is
 /// what a `lem-for` over a map walks). Every string arrives untrusted (`Str`) —
 /// `raw()` is the only way to `html` (invariant 7).
-pub(crate) fn value_from_json(json: &serde_json::Value) -> Value {
+fn value_from_json(json: &serde_json::Value) -> Value {
     match json {
         serde_json::Value::Null => Value::Null,
         serde_json::Value::Bool(b) => Value::Bool(*b),
@@ -327,19 +572,18 @@ pub(crate) fn value_from_json(json: &serde_json::Value) -> Value {
         serde_json::Value::Array(items) => {
             Value::list(items.iter().map(value_from_json).collect())
         }
-        serde_json::Value::Object(entries) => Value::map(
-            entries
-                .iter()
-                .map(|(key, value)| (Rc::from(key.as_str()), value_from_json(value)))
-                .collect::<Map>(),
-        ),
+        // A JSON object's keys are unique, so the map is built without the scan for a
+        // repeated key that `collect` would make per entry.
+        serde_json::Value::Object(entries) => {
+            Value::map(Map::from_unique(entries.iter().map(|(key, value)| {
+                (Rc::from(key.as_str()), value_from_json(value))
+            })))
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use lemmon_vm::{Position, Range, Span};
-
     use super::*;
 
     fn range(line: u32, from: u32, to: u32) -> Range {
@@ -355,6 +599,13 @@ mod tests {
         }
     }
 
+    fn indexes(entries: &[(&str, &str)]) -> LineIndexes {
+        entries
+            .iter()
+            .map(|(path, text)| ((*path).to_owned(), Rc::new(LineIndex::new(text))))
+            .collect()
+    }
+
     #[test]
     fn places_a_diagnostic_by_the_range_it_carries_when_no_index_has_its_path() {
         // A loader diagnostic names a file the host holds and the core never compiled:
@@ -368,8 +619,7 @@ mod tests {
                     Some(range(1, 0, 5)),
                     "here",
                 );
-        let placed =
-            Diagnostic::placed(diagnostic, &LineIndexes::new(), &LineIndexes::new());
+        let placed = Diagnostic::placed(diagnostic, None, &LineIndexes::new());
         let json = serde_json::to_value(&placed).unwrap();
         assert_eq!(json["span"]["range"]["start"]["character"], 12);
         assert_eq!(json["labels"][0]["span"]["range"]["end"]["character"], 5);
@@ -377,13 +627,175 @@ mod tests {
 
     #[test]
     fn places_a_diagnostic_by_its_files_index_when_it_carries_no_range() {
-        let resident: LineIndexes = [("a.lem".to_owned(), LineIndex::new("ab\ncd"))]
-            .into_iter()
-            .collect();
+        let resident = indexes(&[("a.lem", "ab\ncd")]);
         let diagnostic = lemmon_vm::Diagnostic::error("a.lem", Span::new(3, 4), "bad");
-        let placed = Diagnostic::placed(diagnostic, &LineIndexes::new(), &resident);
+        let placed = Diagnostic::placed(diagnostic, None, &resident);
         let json = serde_json::to_value(&placed).unwrap();
         assert_eq!(json["span"]["range"]["start"]["line"], 1);
         assert_eq!(json["span"]["range"]["start"]["character"], 0);
+    }
+
+    #[test]
+    fn says_why_a_record_span_cannot_be_placed_in_its_text() {
+        let text = "---\ntype: X\n---\nI’m\n";
+        let span = |start, end| SpanInput { start, end };
+        assert_eq!(span(10, 11).misplaced_in(text), None);
+        assert_eq!(
+            span(11, 10).misplaced_in(text).unwrap(),
+            "11..10 that ends before it starts"
+        );
+        assert_eq!(
+            span(9000, 9001).misplaced_in(text).unwrap(),
+            format!("9000..9001, past the end of a {}-byte file", text.len())
+        );
+        // The `’` is three bytes; an offset inside it is a panic in the line index.
+        assert_eq!(
+            span(17, 18).misplaced_in(text).unwrap(),
+            "17..18 that does not fall on a character boundary"
+        );
+    }
+
+    fn data(json: &str) -> Result<Data, String> {
+        serde_json::from_str::<DataInput>(json)
+            .map_err(|e| e.to_string())?
+            .into_data()
+    }
+
+    #[test]
+    fn takes_a_list_of_entries_for_a_glob_and_one_entry_otherwise() {
+        let data = data(
+            r#"{"ambient": {"build": {"time": 1}}, "sources": {
+                "posts": [{"path": "a.md", "value": {"title": "A"}, "spans": {
+                    "title": {"start": 4, "end": 12, "range": {
+                        "start": {"line": 1, "character": 0},
+                        "end": {"line": 1, "character": 8}}}}}],
+                "motto": {"value": "hi"}
+            }}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            data.ambient,
+            vec![(
+                "build".to_owned(),
+                Value::map(Map::from_unique([(Rc::from("time"), Value::Int(1))]))
+            )]
+        );
+        let [(posts, Source::Many(documents)), (motto, Source::One(one))] =
+            data.sources.as_slice()
+        else {
+            panic!("{:?}", data.sources);
+        };
+        assert_eq!((posts.as_str(), motto.as_str()), ("posts", "motto"));
+        assert_eq!(documents[0].path.as_deref(), Some("a.md"));
+        let title = &documents[0].spans["title"];
+        assert_eq!(title.span, Span::new(4, 12));
+        assert_eq!(title.range.end.character, 8);
+        assert_eq!((one.path.as_deref(), one.spans.len()), (None, 0));
+        assert_eq!(one.value, Value::str("hi"));
+    }
+
+    #[test]
+    fn takes_an_envelope_with_nothing_in_it() {
+        let data = data("{}").unwrap();
+        assert!(data.ambient.is_empty() && data.sources.is_empty());
+    }
+
+    #[test]
+    fn refuses_an_entry_in_a_shape_no_source_has_naming_the_binding() {
+        let unknown = data(r#"{"sources": {"posts": [{"value": 1, "nope": 2}]}}"#);
+        assert!(
+            unknown
+                .as_ref()
+                .is_err_and(|e| e.starts_with("source `posts`: unknown field `nope`")),
+            "{unknown:?}"
+        );
+        let scalar = data(r#"{"sources": {"motto": "hi"}}"#);
+        assert!(
+            scalar.as_ref().is_err_and(|e| e.starts_with(
+                "source `motto`: invalid type: string \"hi\", expected an entry"
+            )),
+            "{scalar:?}"
+        );
+        let inverted = data(
+            r#"{"sources": {"motto": {"value": "hi", "path": "m.txt", "spans": {
+                "": {"start": 2, "end": 0, "range": {
+                    "start": {"line": 0, "character": 2},
+                    "end": {"line": 0, "character": 0}}}}}}}"#,
+        );
+        assert_eq!(
+            inverted.unwrap_err(),
+            "source `motto`: the span for the value as a whole ends before it starts"
+        );
+        let backwards = data(
+            r#"{"sources": {"motto": {"value": "hi", "path": "m.txt", "spans": {
+                "x": {"start": 0, "end": 2, "range": {
+                    "start": {"line": 1, "character": 0},
+                    "end": {"line": 0, "character": 2}}}}}}}"#,
+        );
+        assert_eq!(
+            backwards.unwrap_err(),
+            "source `motto`: the span for `x` ends before it starts"
+        );
+    }
+
+    #[test]
+    fn refuses_a_name_given_twice_at_every_level_of_the_envelope() {
+        let twice = |json: &str| data(json).unwrap_err();
+        assert!(
+            twice(r#"{"ambient": {"page": 1, "page": 2}}"#)
+                .contains("`page` is given twice")
+        );
+        assert!(
+            twice(r#"{"sources": {"posts": [], "posts": []}}"#)
+                .contains("`posts` is given twice")
+        );
+        assert!(
+            twice(
+                r#"{"sources": {"m": {"value": 1, "path": "m", "spans": {
+                    "": {"start": 0, "end": 1, "range": {
+                        "start": {"line": 0, "character": 0},
+                        "end": {"line": 0, "character": 1}}},
+                    "": {"start": 0, "end": 1, "range": {
+                        "start": {"line": 0, "character": 0},
+                        "end": {"line": 0, "character": 1}}}}}}}"#
+            )
+            .contains("`` is given twice")
+        );
+        // A repeated field inside an entry is the entry's own refusal, which only a
+        // single pass over the text can make.
+        assert!(
+            twice(r#"{"sources": {"m": {"value": 1, "value": 2}}}"#)
+                .contains("duplicate field `value`")
+        );
+    }
+
+    #[test]
+    fn keeps_the_hosts_names_in_declaration_order_and_each_once() {
+        let host: Host = serde_json::from_str::<HostInput>(
+            r#"{"ambient": {"site": {"bindingsOf": "site.lem"}, "brand": null, "a": "A"}}"#,
+        )
+        .unwrap()
+        .into();
+        let names: Vec<&str> = host.names().collect();
+        assert_eq!(names, ["site", "brand", "a"]);
+        let twice =
+            serde_json::from_str::<HostInput>(r#"{"ambient": {"a": null, "a": null}}"#);
+        assert!(
+            twice
+                .as_ref()
+                .is_err_and(|e| e.to_string().contains("`a` is given twice")),
+            "{:?}",
+            twice.err().map(|e| e.to_string())
+        );
+    }
+
+    #[test]
+    fn round_trips_a_span_through_the_one_wire_shape() {
+        // What a host sends in is what a diagnostic sends out, byte for byte.
+        let json = r#"{"start":4,"end":12,"range":{"start":{"line":1,"character":0},"end":{"line":1,"character":8}}}"#;
+        let span: SpanWire = serde_json::from_str(json).unwrap();
+        let host: HostSpan = span.into();
+        let out = SpanWire::at(host.span, host.range);
+        assert_eq!(serde_json::to_string(&out).unwrap(), json);
     }
 }

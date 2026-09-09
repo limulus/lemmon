@@ -71,9 +71,12 @@ trailers, which nothing reads programmatically.
   a Rust version would be a recorded fact with no reader.
 - The resident `Core` keeps a `LineIndex` per resident unit, updated in lockstep with the
   units, so it grows with them and no faster.
-- `loadData`'s diagnostics (∆iCW) will point into the host's YAML envelope rather than a
-  resident file, so they will need an index this core does not hold. That is ∆iCW's to
-  work out.
+- `loadData`'s diagnostics point into files the host holds — YAML front matter, data
+  files — which no resident index describes. D37 closed the question the other way: the
+  host sends complete spans, offsets and positions both, keyed by field path, and a
+  diagnostic about such a file carries them (`Diagnostic::range`); the boundary places
+  it by them rather than by an index, and falls back to the index only for a diagnostic
+  at a resident declaration.
 - `lemmon-corpus` now depends on `lemmon-syntax`, and `lemmon-syntax` takes it back as a
   dev-dependency — a cycle Cargo allows, since only the test target links back.
 - A blessed diff can be reviewed against the source, which is what the corpus asks of a

@@ -61,6 +61,26 @@ impl Map {
     }
 }
 
+impl Map {
+    /// A map from `entries` whose keys are unique by construction — a JSON object, a
+    /// record's declared fields, a map rebuilt entry by entry. Skips the scan for an
+    /// earlier occurrence of each key that [`FromIterator`] makes, which would make a
+    /// wide map quadratic to build.
+    #[must_use]
+    pub fn from_unique(entries: impl IntoIterator<Item = (Rc<str>, Value)>) -> Self {
+        let entries: Vec<(Rc<str>, Value)> = entries.into_iter().collect();
+        debug_assert!(
+            {
+                let mut keys: Vec<&Rc<str>> = entries.iter().map(|(key, _)| key).collect();
+                keys.sort();
+                keys.windows(2).all(|pair| pair[0] != pair[1])
+            },
+            "a key given twice to `Map::from_unique`"
+        );
+        Self { entries }
+    }
+}
+
 impl FromIterator<(Rc<str>, Value)> for Map {
     /// A later entry under an existing key replaces the earlier one in place, so a map
     /// never holds a key twice and the first occurrence fixes its position.
@@ -280,6 +300,27 @@ pub fn escape_html(text: &str, out: &mut String) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn builds_a_map_from_unique_entries_in_their_order() {
+        let map = Map::from_unique([
+            (Rc::from("z"), Value::Int(1)),
+            (Rc::from("a"), Value::Int(2)),
+        ]);
+        let keys: Vec<&str> = map.iter().map(|(key, _)| &**key).collect();
+        assert_eq!(keys, ["z", "a"]);
+        assert_eq!(map.get("a"), Some(&Value::Int(2)));
+    }
+
+    #[cfg(debug_assertions)]
+    #[test]
+    #[should_panic(expected = "a key given twice to `Map::from_unique`")]
+    fn refuses_a_repeated_key_given_as_unique() {
+        let _ = Map::from_unique([
+            (Rc::from("a"), Value::Int(1)),
+            (Rc::from("a"), Value::Int(2)),
+        ]);
+    }
 
     fn emitted(value: &Value) -> Result<String, String> {
         let mut out = String::new();

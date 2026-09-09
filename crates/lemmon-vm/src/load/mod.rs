@@ -80,6 +80,28 @@ pub struct Store {
     pub documents: BTreeMap<String, Value>,
 }
 
+impl Store {
+    /// What a render of the file at `path` binds: every ambient value, with the host's
+    /// document value replaced by the file's own record when the file is a loaded
+    /// document. The value the envelope carried under that name, if any, stands only
+    /// where no loaded document does (D37).
+    #[must_use]
+    pub fn globals<'a>(&'a self, host: &'a Host, path: &str) -> Vec<(&'a str, Value)> {
+        let mut globals: Vec<(&str, Value)> = self
+            .ambient
+            .iter()
+            .map(|(name, value)| (&**name, value.clone()))
+            .collect();
+        if let Some((document, record)) = host.document().zip(self.documents.get(path)) {
+            match globals.iter_mut().find(|(name, _)| *name == document) {
+                Some(slot) => slot.1 = record.clone(),
+                None => globals.push((document, record.clone())),
+            }
+        }
+        globals
+    }
+}
+
 /// Validates and assembles `data` against `module` for `host`.
 ///
 /// Every load diagnostic is reported — the store comes back only when none of them is
@@ -221,7 +243,16 @@ fn check_envelope(
             (None, Source::Many(_)) => {
                 return Err(format!("`{name}` is one value, not a list"));
             }
-            (None, Source::One(_)) => {}
+            // Positions are placed in a file; with no file to place them in they would
+            // be dropped unread, and a diagnostic about the value would point at its
+            // binding instead of at the key the host had a position for.
+            (None, Source::One(loaded)) => {
+                if loaded.path.is_none() && !loaded.spans.is_empty() {
+                    return Err(format!(
+                        "`{name}` carries positions and no path to place them in"
+                    ));
+                }
+            }
         }
     }
     for plan in &module.bindings {
@@ -438,17 +469,14 @@ impl Loader<'_> {
     /// The record `name` built from `fields`, in declaration order — the order the
     /// fields were computed in is the plan's business, not the value's.
     fn assembled(&self, name: &Rc<str>, fields: &[(Rc<str>, Value)]) -> Value {
-        let map: Map = self
-            .module
-            .fields(name)
-            .into_iter()
-            .filter_map(|(field, _)| {
+        let map = Map::from_unique(self.module.fields(name).into_iter().filter_map(
+            |(field, _)| {
                 fields
                     .iter()
                     .find(|(name, _)| *name == field)
                     .map(|(_, value)| (field.clone(), value.clone()))
-            })
-            .collect();
+            },
+        ));
         Value::record(name, map)
     }
 
@@ -721,6 +749,45 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn binds_a_loaded_documents_record_under_the_name_the_host_declared() {
+        let store = Store {
+            ambient: vec![
+                (Rc::from("build"), Value::Int(1)),
+                (Rc::from("entry"), Value::str("sent")),
+            ],
+            documents: [("pages/a.md".to_owned(), Value::str("record"))]
+                .into_iter()
+                .collect(),
+        };
+        // The name is the host's, not `page`: the record replaces the envelope's value
+        // in place, keeping the host's order.
+        let host = Host::untyped(["build", "entry"]).documents("entry");
+        assert_eq!(
+            store.globals(&host, "pages/a.md"),
+            vec![("build", Value::Int(1)), ("entry", Value::str("record"))]
+        );
+        // No loaded document at the path: the envelope's value stands.
+        assert_eq!(
+            store.globals(&host, "pages/b.md")[1],
+            ("entry", Value::str("sent"))
+        );
+        // The envelope carried no document value: the record is bound anyway.
+        let uncarried = Store {
+            ambient: vec![(Rc::from("build"), Value::Int(1))],
+            documents: store.documents.clone(),
+        };
+        assert_eq!(
+            uncarried.globals(&host, "pages/a.md"),
+            vec![("build", Value::Int(1)), ("entry", Value::str("record"))]
+        );
+        // A host that names no document value binds what was loaded and nothing else.
+        assert_eq!(
+            store.globals(&Host::untyped(["build", "entry"]), "pages/a.md")[1],
+            ("entry", Value::str("sent"))
+        );
+    }
+
+    #[test]
     fn refuses_sources_in_the_wrong_shape() {
         let module = site_module();
         let refused = |sources: Vec<(String, Source)>| {
@@ -766,6 +833,18 @@ pub(crate) mod tests {
                 motto()
             ]),
             "a document in `posts` has no path"
+        );
+        let unplaced = Loaded {
+            value: Value::str("m"),
+            path: None,
+            spans: spans("m", &[("", 0, 1)]),
+        };
+        assert_eq!(
+            refused(vec![
+                ("posts".to_owned(), Source::Many(vec![])),
+                ("motto".to_owned(), Source::One(unplaced)),
+            ]),
+            "`motto` carries positions and no path to place them in"
         );
         assert_eq!(
             refused(vec![

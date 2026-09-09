@@ -88,3 +88,40 @@ fn reaches_the_depth_cap_through_nested_invokes_without_trapping() {
         "{result}"
     );
 }
+
+/// A load crosses with the host's positions and its diagnostics come back placed by
+/// them: the data file was never compiled, so nothing but the carried range could
+/// place an error in it (D37). An envelope the program cannot be loaded from throws.
+#[wasm_bindgen_test]
+fn loads_data_against_the_program_through_the_abi() {
+    let mut core = Core::new();
+    let files = serde_json::json!([
+        {"path": "ambient.lem", "text": "<lem-type Page>\n  url: url\n</lem-type>"},
+        {
+            "path": "site.lem",
+            "text": "<lem-type Photo>\n  caption: string\n</lem-type>\n<lem-let photos: {string: Photo} from \"_data/photos.json\" />",
+        },
+    ])
+    .to_string();
+    let host = r#"{"ambient": {"page": "Page", "site": {"bindingsOf": "site.lem"}}, "document": "page", "entry": "layout"}"#;
+    let diagnostics = core
+        .compile(&files, Some(host.to_owned()))
+        .expect("a well-formed compile payload");
+    assert_eq!(diagnostics, "[]");
+    let reported = core
+        .load_data(
+            r#"{"ambient": {}, "sources": {"photos": {
+                "path": "_data/photos.json",
+                "value": {"x": {"caption": 3}},
+                "spans": {"x.caption": {"start": 20, "end": 32, "range": {
+                    "start": {"line": 2, "character": 4},
+                    "end": {"line": 2, "character": 16}}}}}}}"#,
+        )
+        .expect("a well-formed loadData payload");
+    assert!(
+        reported.contains(r#""path":"_data/photos.json""#),
+        "{reported}"
+    );
+    assert!(reported.contains(r#""line":2"#), "{reported}");
+    assert!(core.load_data(r#"{"ambient": {"weather": 1}}"#).is_err());
+}

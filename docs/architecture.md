@@ -65,19 +65,32 @@ without one compiles with `page` unknown-typed, which is how the spike renders t
 settled the spike shapes the sketch left open — each chosen so the full form is additive,
 not a break:
 
-- `DataInput` is `{ambient: {site?, page?, build?}}`: an envelope object, so `records`,
-  data files, and the manifest arrive as new fields. `loadData` validates nothing yet
-  (schemas at load are ∆iCW) and always returns `[]`. D37 settled what it grows into:
-  `ambient` becomes bare JSON by any name the host bound, and `sources` fulfils each
-  `from` binding by name — a list of `{path, value, spans}` for a glob, one for a data
-  file, `{value}` for a plugin or env source — where `spans` maps a field path to a
+- `DataInput` is `{ambient, sources?}` (D37, ∆iCW): `ambient` is bare JSON by any name
+  the host bound — an untyped host's values pass through as sent — and `sources` fulfils
+  each `from` binding by name: a list of `{path, value, spans}` for a glob, one such for
+  a data file, `{value}` for a plugin or env source, where `spans` maps a field path to a
   complete boundary span the host computed from the YAML it parsed; the shell strips the
-  `type:` key it consumed. A file passed to `compile` may carry `recordSpan`, the byte
-  offsets of that key's value, so a diagnostic about the record points at the key.
-  _Not yet (∆iCW): the resident core still takes the spike's envelope._
+  `type:` key it consumed. The core validates every value against the program, runs the
+  defaults and computed bindings, tags each record, and keeps the result resident — the
+  store every render binds — returning the load diagnostics, each placed by the host's
+  positions or at the declaration that expected the value. The store lives with the
+  program it was loaded against: a load that reports an error leaves the previous data
+  bound, stale until fixed, as a failed compile leaves the program, and a compile that
+  installs a new program drops it — `loadData` again before `render`. A load runs
+  against the program that linked, under the declaration it linked with; an envelope
+  the program cannot be loaded from — a name the host does not bind, a source no `from`
+  binding asked for, a document never compiled, a load before any compile has succeeded
+  or after the declaration changed without one succeeding — is a thrown caller bug. The
+  asset manifest is the one additive field not yet here (∆d1N). A file passed to
+  `compile` may carry `recordSpan`, the byte offsets of the `type:` key's value, so a
+  diagnostic about the record points at the key; offsets that are not a span of the
+  file's text are refused as a caller bug, since a line index panics on them.
 - `PageRef` is `{path}` until `plan()` exists to mint richer references.
 - `render` returns `{html, diagnostics}` — `html: null` plus one diagnostic when the page
-  fails at runtime. `channels` and `deps` are omitted entirely until ∆RGQ, not stubbed.
+  fails at runtime. `channels` and `deps` are omitted entirely until ∆RGQ, not stubbed. A
+  loaded document renders with the host's document value bound to its own record from
+  the store; any other file — a template, a document no collection matched — reads the
+  value the envelope carried, if it did, as sent (D37).
 - A `Diagnostic` is `{path, span: {start, end, range}, severity, message, labels}`. The
   span carries byte offsets (invariant 8) *and* `range`, the same two points as
   `{line, character}` LSP positions — zero-based, `character` in UTF-16 code units. The
@@ -125,8 +138,9 @@ not a break:
    with one yields no unit.
    Templates compile first: the shell matches documents against the `from` globs that
    `site.lem` reports, then compiles each document with its `record` (D30).
-4. **Load** (core) — validate records against schemas, evaluate computed fields, resolve
-   reference fields and assets. Failures point at YAML positions.
+4. **Load** (core) — validate records against schemas, run the defaults and computed
+   bindings, resolve reference fields (D37) and, later, assets. Failures point at the
+   YAML positions the shell sent with the data.
 5. **Plan** (core) — expand generators → full output list (url, entry, deps); `entry` is
    the page's `layout`, the field the host named (D30).
 6. **Render × N** (core) — body → the entry function → html + channels (styles/
@@ -214,10 +228,11 @@ What ∆c8h built is the untyped subset of that: `Value` without the stdlib type
 Records are checked by declaration since ∆cea, and since ∆PCK a record value is tagged
 with its declared name (`Value::Record`, made by a map literal where a record is expected
 and, later, by the loader at the boundary), which `TypeTest` reads; an enum value is its
-variant's name as a string. Data that arrives untagged — everything a host loads until ∆iCW, ambient values
-included — is `any`, and a type test over it is a render error (D35). The VM is the runtime
-for `any` (∆C8d): its type checks fire only on values the checker let through as `any`,
-and stay for that reason.
+variant's name as a string. The loader tags what it validates at `loadData` (D37, ∆iCW),
+so a type test reaches loaded data; what still arrives untagged — an untyped host's
+values, and `page` in a document no collection matched — is `any`, and a type test over
+it is a render error (D35). The VM is the runtime for `any` (∆C8d): its type checks fire
+only on values the checker let through as `any`, and stay for that reason.
 
 Calibration, not promise: whole site tens of ms inside WASM; single page well under 1 ms of
 VM time (that number is the Phase 0 exit criterion).

@@ -4,7 +4,8 @@
 //! loaded data across calls (docs/architecture.md §"WASM API"): few large calls, each
 //! carrying its bulk data as one UTF-8 JSON string. `compile` takes only the files that
 //! changed, compiles each into its own unit against the resident signatures, and
-//! relinks; `loadData` stores the ambient records; `render` runs one file's entry.
+//! relinks; `loadData` validates the host's data against the program and keeps what it
+//! builds; `render` runs one file's entry over it.
 //!
 //! Diagnostics come back as a JSON array of
 //! `{path, span: {start, end, range}, severity, message, labels}`, every one pointing at
@@ -17,10 +18,11 @@
 //! the program does not have — which have no source span to point at.
 
 use std::collections::BTreeMap;
+use std::rc::Rc;
 
 use lemmon_vm::{
-    ExportIndex, Host, LineIndex, Module, SourceFile, Unit, Value, compile_unit, link,
-    prepare, render, repeated_path,
+    ExportIndex, Host, LineIndex, Module, SourceFile, Store, Unit, Value, compile_unit,
+    link, load, prepare, render, repeated_path,
 };
 use wasm_bindgen::JsError;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -29,7 +31,6 @@ mod wire;
 
 use wire::{
     DataInput, Diagnostic, FileInput, HostInput, LineIndexes, PageRef, RenderResult,
-    value_from_json,
 };
 
 /// The version of the core this `.wasm` was built from.
@@ -49,11 +50,10 @@ pub struct Core {
     /// What every project-flat name means across the resident units: offered to as
     /// each file compiles, and always a description of `units` (`∆e5i`).
     index: ExportIndex,
-    /// The linked program: absent until a compile succeeds, and left as it was by one
-    /// that fails — stale until fixed, with the failure reported, never guessed around.
-    module: Option<Module>,
-    /// The ambient records `loadData` stored, bound at every render.
-    ambient: Vec<(String, Value)>,
+    /// The linked program, with what a load or a render of it needs: absent until a
+    /// compile succeeds, and left as it was by one that fails — stale until fixed, with
+    /// the failure reported, never guessed around.
+    linked: Option<Linked>,
     /// What the host declared about the ambient environment: resident like the units,
     /// since a `compile` of one changed file is compiled in the same environment as the
     /// files already held. Replaced whenever a call carries a declaration.
@@ -66,6 +66,26 @@ pub struct Core {
     unit_indexes: LineIndexes,
 }
 
+/// A program a clean relink installed, kept with everything that was true of it when
+/// it linked. The resident units, indexes, and declaration all move on as later calls
+/// compile — a call that compiles a file cleanly and then fails to link leaves the
+/// unit newer than the program — so a load or a render, whose spans and names come
+/// from the program, reads these and not the resident ones.
+struct Linked {
+    module: Module,
+    /// The declaration the program linked under.
+    host: Host,
+    /// An index over the text each unit of `module` was compiled from.
+    indexes: LineIndexes,
+    /// What the last successful `loadData` built against `module` — every ambient
+    /// value, validated and tagged where the host typed it, and each loaded document's
+    /// record — bound at every render. `None` until a load succeeds, and left as it was
+    /// by a load that reports an error: stale until fixed, with the failure reported.
+    /// The store is a function of the program and the data, so it lives and dies with
+    /// the program: a new program binds nothing until data is loaded against it.
+    store: Option<Store>,
+}
+
 #[wasm_bindgen]
 impl Core {
     /// A fresh core with nothing compiled or loaded.
@@ -75,8 +95,7 @@ impl Core {
         Self {
             units: BTreeMap::new(),
             index: ExportIndex::new(),
-            module: None,
-            ambient: Vec::new(),
+            linked: None,
             host: Host::new(),
             unit_indexes: BTreeMap::new(),
         }
@@ -95,10 +114,14 @@ impl Core {
     /// one that carries it replaces what the core holds. A core given none has no
     /// ambient values at all.
     ///
+    /// A compile that installs a new program drops the data loaded against the old
+    /// one: `loadData` again before `render`, or an ambient read fails as not bound.
+    ///
     /// # Errors
     ///
-    /// A malformed `files` or `host` payload, or files naming the same path twice —
-    /// caller bugs; template problems are diagnostics.
+    /// A malformed `files` or `host` payload, files naming the same path twice, or a
+    /// `recordSpan` that is not a span of its file's text — caller bugs; template
+    /// problems are diagnostics.
     pub fn compile(
         &mut self,
         files: &str,
@@ -108,13 +131,20 @@ impl Core {
             .map_err(|m| JsError::new(&m))
     }
 
-    /// Stores the data every render binds. `input` is JSON
-    /// `{ambient: {site?, page?, build?}}`; the result is the JSON array of
-    /// diagnostics — always empty until schemas exist to validate against (`∆iCW`).
+    /// Loads the data every render binds, validating it against the program (D37).
+    /// `input` is JSON `{ambient?, sources?}` — the envelope `DataInput` in `wire.rs`
+    /// defines and D37 §"The envelope grows additively" settles. The result is the JSON
+    /// array of load diagnostics, each placed by the positions the host sent or at the
+    /// declaration that expected the value. On an error the previous data stays bound,
+    /// stale until fixed.
     ///
     /// # Errors
     ///
-    /// A malformed `input` payload.
+    /// Caller bugs with no source span to carry: a malformed `input` payload; a load
+    /// before any compile has succeeded, or after the declaration changed without a
+    /// compile succeeding under it; and an envelope the program cannot be loaded from —
+    /// a name the host does not bind, a source no `from` binding asked for, positions
+    /// with no file to place them in, a document the program never compiled.
     #[wasm_bindgen(js_name = loadData)]
     pub fn load_data(&mut self, input: &str) -> Result<String, JsError> {
         self.load_data_json(input).map_err(|m| JsError::new(&m))
@@ -122,6 +152,8 @@ impl Core {
 
     /// Renders one page. `page` is JSON `{path}`; the result is JSON
     /// `{html, diagnostics}` — the page's HTML, or `null` with the runtime diagnostic.
+    /// A loaded document is rendered with the host's document value bound to its own
+    /// record; any other file reads the value the envelope carried, if it did.
     ///
     /// # Errors
     ///
@@ -160,6 +192,19 @@ impl Core {
         if let Some(path) = repeated_path(files.iter().map(|file| file.path.as_str())) {
             return Err(format!("malformed `compile` input: `{path}` given twice"));
         }
+        // A record span is the host's offsets into text this call carries, so it is
+        // checked here, once, rather than trusted by every diagnostic placed at it.
+        for file in &files {
+            if let Some(problem) = file
+                .record_span
+                .and_then(|span| span.misplaced_in(&file.text))
+            {
+                return Err(format!(
+                    "malformed `compile` input: `{}` has a `recordSpan` of {problem}",
+                    file.path
+                ));
+            }
+        }
         // Installed once the call is past everything that would refuse it: a rejected
         // call is a caller bug, and leaves the resident core exactly as it was.
         if let Some(host) = host {
@@ -169,7 +214,7 @@ impl Core {
         // can still have its own diagnostics placed.
         let incoming: LineIndexes = files
             .iter()
-            .map(|file| (file.path.clone(), LineIndex::new(&file.text)))
+            .map(|file| (file.path.clone(), Rc::new(LineIndex::new(&file.text))))
             .collect();
         let mut diagnostics: Vec<lemmon_vm::Diagnostic> = Vec::new();
         let mut prepared = Vec::new();
@@ -217,10 +262,15 @@ impl Core {
             self.index = ExportIndex::of(self.units.values());
         } else {
             let units: Vec<Unit> = self.units.values().cloned().collect();
-            let linked = link(&units, &self.index, &self.host);
-            diagnostics.extend(linked.diagnostics);
-            if let Some(module) = linked.output {
-                self.module = Some(module);
+            let relinked = link(&units, &self.index, &self.host);
+            diagnostics.extend(relinked.diagnostics);
+            if let Some(module) = relinked.output {
+                self.linked = Some(Linked {
+                    module,
+                    host: self.host.clone(),
+                    indexes: self.unit_indexes.clone(),
+                    store: None,
+                });
             }
         }
         debug_assert_eq!(
@@ -234,7 +284,7 @@ impl Core {
         );
         let diagnostics: Vec<Diagnostic> = diagnostics
             .into_iter()
-            .map(|d| Diagnostic::placed(d, &incoming, &self.unit_indexes))
+            .map(|d| Diagnostic::placed(d, Some(&incoming), &self.unit_indexes))
             .collect();
         serde_json::to_string(&diagnostics)
             .map_err(|e| format!("serialising diagnostics failed: {e}"))
@@ -243,46 +293,66 @@ impl Core {
     fn load_data_json(&mut self, input_json: &str) -> Result<String, String> {
         let input: DataInput = serde_json::from_str(input_json)
             .map_err(|e| format!("malformed `loadData` input: {e}"))?;
-        let mut ambient = Vec::new();
-        for (name, value) in [
-            ("site", input.ambient.site),
-            ("page", input.ambient.page),
-            ("build", input.ambient.build),
-        ] {
-            if let Some(value) = value {
-                ambient.push((name.to_owned(), value_from_json(&value)));
-            }
+        let Some(linked) = self.linked.as_mut() else {
+            return Err(
+                "nothing has compiled successfully yet — `loadData` needs a `compile` first"
+                    .to_owned(),
+            );
+        };
+        // A failed compile keeps the declaration its units compiled under, so the
+        // resident declaration can be newer than the program's. An envelope built for
+        // the newer one cannot be loaded against the older program, and saying so beats
+        // blaming the envelope for a compile that has not succeeded yet.
+        if self.host != linked.host {
+            return Err(
+                "the ambient declaration changed since the program last linked: \
+                        `compile` successfully before `loadData`"
+                    .to_owned(),
+            );
         }
-        self.ambient = ambient;
-        // Nothing to validate against until schemas exist (`∆iCW`). Those diagnostics
-        // will point into the host's YAML envelope rather than a resident file, so they
-        // will need a line index this core does not hold — ∆iCW's to work out.
-        Ok("[]".to_owned())
+        let data = input
+            .into_data()
+            .map_err(|e| format!("malformed `loadData` input: {e}"))?;
+        let loaded = load(&linked.module, &linked.host, data).map_err(|e| {
+            format!("the program cannot be loaded from this `loadData` envelope: {e}")
+        })?;
+        if let Some(store) = loaded.output {
+            linked.store = Some(store);
+        }
+        // A load diagnostic about a file the host holds carries the host's positions
+        // and needs no index; one at a declaration names a file of the program.
+        let diagnostics: Vec<Diagnostic> = loaded
+            .diagnostics
+            .into_iter()
+            .map(|d| Diagnostic::placed(d, None, &linked.indexes))
+            .collect();
+        serde_json::to_string(&diagnostics)
+            .map_err(|e| format!("serialising diagnostics failed: {e}"))
     }
 
     fn render_json(&self, page_json: &str) -> Result<String, String> {
         let page: PageRef = serde_json::from_str(page_json)
             .map_err(|e| format!("malformed `render` input: {e}"))?;
-        let module = self.module.as_ref().ok_or(
+        let linked = self.linked.as_ref().ok_or(
             "nothing has compiled successfully yet — `render` needs a `compile` first",
         )?;
         // Checked here so the VM's unknown-path panic is unreachable from the boundary.
-        if module.entry(&page.path).is_none() {
+        if linked.module.entry(&page.path).is_none() {
             return Err(format!("no compiled file at `{}`", page.path));
         }
-        let globals: Vec<(&str, Value)> = self
-            .ambient
-            .iter()
-            .map(|(name, value)| (name.as_str(), value.clone()))
-            .collect();
-        let result = match render(module, &page.path, &globals) {
+        let globals: Vec<(&str, Value)> = linked
+            .store
+            .as_ref()
+            .map(|store| store.globals(&linked.host, &page.path))
+            .unwrap_or_default();
+        let result = match render(&linked.module, &page.path, &globals) {
             Ok(html) => RenderResult {
                 html: Some(html),
                 diagnostics: Vec::new(),
             },
             Err(error) => RenderResult {
                 html: None,
-                diagnostics: vec![Diagnostic::placed_runtime(error, &self.unit_indexes)],
+                diagnostics: vec![Diagnostic::placed_runtime(error, &linked.indexes)],
             },
         };
         serde_json::to_string(&result)
@@ -303,9 +373,13 @@ mod tests {
     /// a test that reads one says so (D30).
     const UNTYPED: &str = r#"{"ambient": {"site": null, "page": null, "build": null}}"#;
 
-    fn compile_clean(core: &mut Core, files: &str) {
-        let result = core.compile_json(files, Some(UNTYPED)).unwrap();
+    fn compile_clean_with(core: &mut Core, files: &str, host: Option<&str>) {
+        let result = core.compile_json(files, host).unwrap();
         assert_eq!(result, "[]", "expected a clean compile");
+    }
+
+    fn compile_clean(core: &mut Core, files: &str) {
+        compile_clean_with(core, files, Some(UNTYPED));
     }
 
     /// The declaration a typed host makes: `Page` is declared in a file it compiles
@@ -317,6 +391,61 @@ mod tests {
         {"path": "ambient.lem", "text": "<lem-type Page>\n  url: url\n</lem-type>"},
         {"path": "schema.lem", "text": "<lem-type Article extends Page>\n  title: string\n  layout: (Article, html): html\n</lem-type>"}
     ]"#;
+
+    /// A typed site: the host reads `site` from `site.lem`, whose bindings collect the
+    /// documents of `posts/*.md` as `Post`s, load a data file, and take an environment
+    /// value. `posts/a.md` is one such document.
+    const SITE_HOST: &str = r#"{"ambient": {"page": "Page", "site": {"bindingsOf": "site.lem"}}, "document": "page", "entry": "layout"}"#;
+
+    const AMBIENT_LEM: &str = "<lem-type Page>\n  url: url\n</lem-type>";
+
+    /// Twelve lines; the `motto` binding is the last, line 11.
+    const SITE_LEM: &str = "<lem-type Photo>\n  caption: string\n</lem-type>\n\
+        <lem-type Post extends Page>\n  title: string\n  slug: string = path\n  \
+        layout: (Post, html): html = post\n</lem-type>\n\
+        <lem-fn post(p: Post, body: html)><h1><lem.p.title></h1><lem.body></lem-fn>\n\
+        <lem-let posts: [Post] from \"posts/*.md\" />\n\
+        <lem-let photos: {string: Photo} from \"_data/photos.json\" />\n\
+        <lem-let motto: string from env(\"MOTTO\") />";
+
+    const POST_MD: &str = "---\ntitle: A\nurl: /a/\n---\n<lem.page.title>\n<lem.page.slug>\n<lem.site.motto>\n";
+
+    fn site_files() -> String {
+        serde_json::json!([
+            {"path": "ambient.lem", "text": AMBIENT_LEM},
+            {"path": "site.lem", "text": SITE_LEM},
+            {"path": "posts/a.md", "text": POST_MD, "record": "Post"},
+        ])
+        .to_string()
+    }
+
+    /// A core with the typed site compiled clean.
+    fn site_core() -> Core {
+        let mut core = Core::new();
+        compile_clean_with(&mut core, &site_files(), Some(SITE_HOST));
+        core
+    }
+
+    /// The envelope that loads the typed site cleanly; a test varies it by path.
+    fn loaded() -> serde_json::Value {
+        serde_json::json!({"ambient": {}, "sources": {
+            "posts": [{"path": "posts/a.md", "value": {"title": "A", "url": "/a/"}}],
+            "photos": {"path": "_data/photos.json", "value": {}},
+            "motto": {"value": "hi"}
+        }})
+    }
+
+    fn load(core: &mut Core, envelope: &serde_json::Value) -> serde_json::Value {
+        diagnostics(&core.load_data_json(&envelope.to_string()).unwrap())
+    }
+
+    /// A span as a host writes one, `start..end` running from one position to another.
+    fn span(start: u32, end: u32, from: (u32, u32), to: (u32, u32)) -> serde_json::Value {
+        serde_json::json!({"start": start, "end": end, "range": {
+            "start": {"line": from.0, "character": from.1},
+            "end": {"line": to.0, "character": to.1},
+        }})
+    }
 
     fn html_of(core: &Core, path: &str) -> String {
         let result = core
@@ -780,7 +909,7 @@ mod tests {
                 .starts_with("malformed `compile` input:")
         );
         assert!(
-            core.load_data_json(r#"{"ambient": {"weather": 1}}"#)
+            core.load_data_json(r#"{"nope": 1}"#)
                 .unwrap_err()
                 .starts_with("malformed `loadData` input:")
         );
@@ -792,18 +921,282 @@ mod tests {
     }
 
     #[test]
+    fn loads_the_documents_of_a_glob_and_binds_each_at_render_as_its_own_record() {
+        let mut core = site_core();
+        assert_eq!(load(&mut core, &loaded()), serde_json::json!([]));
+        // `title` was validated, `slug`'s default ran over the document's path, and
+        // `motto` came through `site` — all bound at the render of that document.
+        let html = html_of(&core, "posts/a.md");
+        assert!(html.contains("A\nposts/a.md\nhi"), "{html}");
+    }
+
+    #[test]
+    fn binds_the_envelopes_document_value_only_where_no_loaded_document_stands() {
+        let mut core = site_core();
+        // A document no collection matched, compiled in the resident environment.
+        compile_clean_with(
+            &mut core,
+            r#"[{"path": "loose.md", "text": "<lem.page.title>"}]"#,
+            None,
+        );
+        let mut envelope = loaded();
+        envelope["ambient"]["page"] = serde_json::json!({"title": "Loose"});
+        assert_eq!(load(&mut core, &envelope), serde_json::json!([]));
+        // The unmatched document reads the value the envelope carried; the loaded one
+        // reads its own record, not the envelope's.
+        assert!(html_of(&core, "loose.md").contains("Loose"));
+        assert!(html_of(&core, "posts/a.md").contains("A\nposts/a.md"));
+    }
+
+    /// A load diagnostic about front matter is placed by the positions the host sent,
+    /// as a data file's has to be: `_data/photos.json` was never compiled, so no index
+    /// could place it, and the host's span comes back as sent.
+    #[test]
+    fn places_a_load_diagnostic_by_the_positions_the_host_sent() {
+        let mut core = site_core();
+        let mut envelope = loaded();
+        let post = &mut envelope["sources"]["posts"][0];
+        post["value"]["title"] = serde_json::json!(3);
+        post["spans"] = serde_json::json!({"title": span(4, 12, (1, 0), (1, 8))});
+        let photos = &mut envelope["sources"]["photos"];
+        photos["value"] = serde_json::json!({"x": {"caption": 3}});
+        photos["spans"] = serde_json::json!({"x.caption": span(20, 32, (2, 4), (2, 16))});
+        let reported = load(&mut core, &envelope);
+        assert_eq!(reported.as_array().map(Vec::len), Some(2), "{reported:?}");
+        assert_eq!(reported[0]["path"], "posts/a.md");
+        assert_eq!(reported[0]["span"], span(4, 12, (1, 0), (1, 8)));
+        assert!(
+            reported[0]["message"].as_str().unwrap().contains("string"),
+            "{reported:?}"
+        );
+        assert_eq!(reported[1]["path"], "_data/photos.json");
+        assert_eq!(reported[1]["span"], span(20, 32, (2, 4), (2, 16)));
+    }
+
+    #[test]
+    fn places_a_load_diagnostic_at_the_declaration_when_the_host_sent_no_positions() {
+        let mut core = site_core();
+        // An environment value has no file behind it, so the error is at the `from`
+        // binding — the last line of site.lem — placed by the program's index.
+        let mut envelope = loaded();
+        envelope["sources"]["motto"]["value"] = serde_json::json!(3);
+        let reported = load(&mut core, &envelope);
+        assert_eq!(reported[0]["path"], "site.lem", "{reported:?}");
+        assert_eq!(reported[0]["span"]["range"]["start"]["line"], 11);
+        assert_eq!(reported[0]["severity"], "error");
+    }
+
+    /// A program's spans are placed against the text it was linked from. The resident
+    /// units run ahead of that whenever a call compiles a file cleanly and then fails
+    /// to link; placed against their newer, shorter text, the old span would be past
+    /// the end of the file — a panic in the line index, and a trap at the boundary.
+    #[test]
+    fn places_a_load_diagnostic_against_the_text_the_program_was_linked_from() {
+        let mut core = site_core();
+        let failed = core
+            .compile_json(
+                r#"[{"path": "site.lem", "text": "x"}, {"path": "broken.lem", "text": "<lem-if x>"}]"#,
+                None,
+            )
+            .unwrap();
+        assert!(!diagnostics(&failed).as_array().unwrap().is_empty());
+        let mut envelope = loaded();
+        envelope["sources"]["motto"]["value"] = serde_json::json!(3);
+        let reported = load(&mut core, &envelope);
+        assert_eq!(reported[0]["path"], "site.lem", "{reported:?}");
+        assert_eq!(reported[0]["span"]["range"]["start"]["line"], 11);
+    }
+
+    #[test]
+    fn keeps_the_last_good_data_when_a_load_reports_an_error() {
+        let mut core = site_core();
+        assert_eq!(load(&mut core, &loaded()), serde_json::json!([]));
+        let mut envelope = loaded();
+        envelope["sources"]["posts"][0]["value"]["title"] = serde_json::json!(3);
+        let reported = load(&mut core, &envelope);
+        assert_eq!(reported.as_array().map(Vec::len), Some(1), "{reported:?}");
+        // Stale until fixed: the render still binds what the last good load built.
+        assert!(html_of(&core, "posts/a.md").contains("A\nposts/a.md\nhi"));
+    }
+
+    #[test]
+    fn keeps_the_loaded_data_when_a_compile_fails() {
+        let mut core = site_core();
+        assert_eq!(load(&mut core, &loaded()), serde_json::json!([]));
+        let failed = core
+            .compile_json(r#"[{"path": "broken.lem", "text": "<lem-if x>"}]"#, None)
+            .unwrap();
+        assert!(!diagnostics(&failed).as_array().unwrap().is_empty());
+        // The program stands, and so does the data loaded against it.
+        assert!(html_of(&core, "posts/a.md").contains("A\nposts/a.md\nhi"));
+    }
+
+    /// The store is a function of the program and the data. A compile that installs
+    /// a new program — here one default changed; a relink also renumbers every
+    /// function a stored `layout` names — drops it rather than binding what the old
+    /// program computed.
+    #[test]
+    fn drops_the_loaded_data_when_a_compile_installs_a_new_program() {
+        let mut core = site_core();
+        assert_eq!(load(&mut core, &loaded()), serde_json::json!([]));
+        let edited = SITE_LEM.replace("slug: string = path", "slug: string = \"/\" + path");
+        assert_ne!(edited, SITE_LEM);
+        compile_clean_with(
+            &mut core,
+            &serde_json::json!([{"path": "site.lem", "text": edited}]).to_string(),
+            None,
+        );
+        // Until the data is loaded again nothing is bound, so a read fails instead of
+        // showing the old program's value.
+        let result: serde_json::Value =
+            serde_json::from_str(&core.render_json(r#"{"path": "posts/a.md"}"#).unwrap())
+                .unwrap();
+        assert!(
+            result["diagnostics"][0]["message"]
+                .as_str()
+                .is_some_and(|m| m.contains("is not bound")),
+            "{result}"
+        );
+        assert_eq!(load(&mut core, &loaded()), serde_json::json!([]));
+        assert!(html_of(&core, "posts/a.md").contains("A\n/posts/a.md\nhi"));
+    }
+
+    /// A failed compile keeps the declaration its units compiled under, which is not
+    /// the one the program linked under; an envelope built for the new declaration
+    /// cannot be loaded against the old program, and the refusal says which.
+    #[test]
+    fn refuses_a_load_after_the_declaration_changed_without_a_compile_succeeding() {
+        let mut core = site_core();
+        // A failed compile that changes nothing about the declaration leaves the
+        // program loadable.
+        let failed = core
+            .compile_json(r#"[{"path": "broken.lem", "text": "<lem-if x>"}]"#, None)
+            .unwrap();
+        assert!(!diagnostics(&failed).as_array().unwrap().is_empty());
+        assert_eq!(load(&mut core, &loaded()), serde_json::json!([]));
+        // One that changes it does not, until a compile succeeds under it.
+        let changed = r#"{"ambient": {"page": "Page", "site": {"bindingsOf": "site.lem"}, "build": "Build"}, "document": "page", "entry": "layout"}"#;
+        let failed = core
+            .compile_json(
+                r#"[{"path": "build.lem", "text": "<lem-type Build>\n  generator: strng\n</lem-type>"}]"#,
+                Some(changed),
+            )
+            .unwrap();
+        assert!(!diagnostics(&failed).as_array().unwrap().is_empty());
+        let refused = core.load_data_json(&loaded().to_string()).unwrap_err();
+        assert!(
+            refused.starts_with(
+                "the ambient declaration changed since the program last linked"
+            ),
+            "{refused}"
+        );
+        // The data loaded before it still renders.
+        assert!(html_of(&core, "posts/a.md").contains("A\nposts/a.md\nhi"));
+    }
+
+    #[test]
+    fn refuses_a_load_before_any_compile_has_succeeded() {
+        let mut core = Core::new();
+        let error = core.load_data_json(r#"{"ambient": {}}"#).unwrap_err();
+        assert!(error.contains("`compile` first"), "{error}");
+    }
+
+    #[test]
+    fn refuses_an_ambient_name_the_host_does_not_bind() {
+        let mut core = site_core();
+        let refused = core
+            .load_data_json(r#"{"ambient": {"weather": 1}}"#)
+            .unwrap_err();
+        assert_eq!(
+            refused,
+            "the program cannot be loaded from this `loadData` envelope: the host binds \
+             no `weather`"
+        );
+    }
+
+    #[test]
+    fn refuses_a_source_no_from_binding_asked_for() {
+        let mut core = site_core();
+        let mut envelope = loaded();
+        envelope["sources"]["extra"] = serde_json::json!({"value": 1});
+        let refused = core.load_data_json(&envelope.to_string()).unwrap_err();
+        assert_eq!(
+            refused,
+            "the program cannot be loaded from this `loadData` envelope: no `from` \
+             binding is named `extra`"
+        );
+    }
+
+    #[test]
+    fn keeps_the_last_good_data_when_an_envelope_is_refused() {
+        let mut core = site_core();
+        assert_eq!(load(&mut core, &loaded()), serde_json::json!([]));
+        // A caller bug with no data to point at: a throw, and the data the last good
+        // load built stays bound.
+        assert!(
+            core.load_data_json(r#"{"ambient": {"weather": 1}}"#)
+                .is_err()
+        );
+        assert!(html_of(&core, "posts/a.md").contains("A\nposts/a.md\nhi"));
+    }
+
+    /// The files the host reads bindings from load in declaration order, so the order
+    /// has to survive the boundary: `brand` reads `site`, which is declared first —
+    /// and sorts last.
+    #[test]
+    fn loads_bindings_files_in_the_hosts_declaration_order() {
+        let mut core = Core::new();
+        let host = r#"{"ambient": {"site": {"bindingsOf": "site.lem"}, "brand": {"bindingsOf": "brand.lem"}}}"#;
+        compile_clean_with(
+            &mut core,
+            r#"[
+                {"path": "site.lem", "text": "<lem-let motto: string = \"m\" />"},
+                {"path": "brand.lem", "text": "<lem-let tag: string = site.motto />"},
+                {"path": "page.lem", "text": "<lem.brand.tag>"}
+            ]"#,
+            Some(host),
+        );
+        assert_eq!(
+            load(&mut core, &serde_json::json!({})),
+            serde_json::json!([])
+        );
+        assert_eq!(html_of(&core, "page.lem"), "m");
+    }
+
+    #[test]
+    fn refuses_a_record_span_that_is_not_a_span_of_its_file() {
+        const TEXT: &str = "---\ntype: Post\n---\nhi\n";
+        let mut core = Core::new();
+        let files = serde_json::json!([{
+            "path": "a.md", "text": TEXT, "record": "Post",
+            "recordSpan": {"start": 9000, "end": 9001},
+        }])
+        .to_string();
+        let refused = core.compile_json(&files, Some(TYPED)).unwrap_err();
+        assert_eq!(
+            refused,
+            format!(
+                "malformed `compile` input: `a.md` has a `recordSpan` of 9000..9001, past \
+                 the end of a {}-byte file",
+                TEXT.len()
+            )
+        );
+        // Refused before anything was installed, declaration included.
+        compile_clean(&mut core, r#"[{"path": "page.lem", "text": "ok"}]"#);
+        assert_eq!(html_of(&core, "page.lem"), "ok");
+    }
+
+    #[test]
     fn keeps_the_host_declaration_across_calls() {
         // The shell declares its environment once and then compiles changed files, so
         // a call that carries no declaration compiles against the resident one.
         let mut core = Core::new();
         compile_clean(&mut core, SCHEMA);
-        let result = core
-            .compile_json(
-                r##"[{"path": "post.md", "text": "<lem.page.title>", "record": "Article"}]"##,
-                Some(TYPED),
-            )
-            .unwrap();
-        assert_eq!(result, "[]", "{result}");
+        compile_clean_with(
+            &mut core,
+            r##"[{"path": "post.md", "text": "<lem.page.title>", "record": "Article"}]"##,
+            Some(TYPED),
+        );
         let later = core
             .compile_json(
                 r##"[{"path": "other.md", "text": "<lem.page.nope>", "record": "Article"}]"##,
@@ -835,13 +1228,11 @@ mod tests {
     fn reads_a_document_no_record_named_as_unknown_typed() {
         let mut core = Core::new();
         compile_clean(&mut core, SCHEMA);
-        let result = core
-            .compile_json(
-                r##"[{"path": "loose.md", "text": "<lem.page.whatever>"}]"##,
-                Some(TYPED),
-            )
-            .unwrap();
-        assert_eq!(result, "[]", "{result}");
+        compile_clean_with(
+            &mut core,
+            r##"[{"path": "loose.md", "text": "<lem.page.whatever>"}]"##,
+            Some(TYPED),
+        );
     }
 
     #[test]
@@ -868,9 +1259,10 @@ mod tests {
             Some(TYPED),
         );
         assert!(refused.is_err(), "{refused:?}");
-        let result = core
-            .compile_json(r#"[{"path": "page.lem", "text": "<lem.site.name>"}]"#, None)
-            .unwrap();
-        assert_eq!(result, "[]", "{result}");
+        compile_clean_with(
+            &mut core,
+            r#"[{"path": "page.lem", "text": "<lem.site.name>"}]"#,
+            None,
+        );
     }
 }

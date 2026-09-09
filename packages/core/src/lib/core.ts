@@ -36,6 +36,10 @@ export class Core {
    * that changes nothing about the environment omits it, and one that carries it
    * replaces what the core holds. A core given none has no ambient values at all, so
    * `page` in a template is an undefined name like any other.
+   *
+   * A compile that installs a new program drops the data loaded against the old one:
+   * call {@link loadData} again before {@link render}, or an ambient read fails as
+   * not bound.
    */
   compile(files: SourceFileInput[], host?: HostDecl): Diagnostic[] {
     const declaration = host === undefined ? undefined : JSON.stringify(host)
@@ -45,14 +49,30 @@ export class Core {
   }
 
   /**
-   * Stores the data every render binds. Diagnostics are empty until schemas exist to
-   * validate against (∆iCW).
+   * Loads the data every render binds, validating it against the program (D37): each
+   * value against the type the host or a `from` binding declared for it, omitted
+   * fields filled by their defaults, references resolved through their `by` indexes,
+   * and every record tagged with its type. No `error` diagnostic means the data is
+   * loaded; on an error the previous data stays bound, stale until fixed, as the
+   * program does after a failed compile. A load diagnostic points at the positions
+   * the host sent with the value, or at the declaration that expected it when the
+   * host sent none.
+   *
+   * A throw is a caller bug: an envelope the program cannot be loaded from — a name
+   * the host does not bind, a source no `from` binding asked for, positions with no
+   * file to place them in, a document the program never compiled — a load before any
+   * compile has succeeded, or one after the declaration changed without a compile
+   * succeeding under it.
    */
   loadData(input: DataInput): Diagnostic[] {
     return JSON.parse(this.#core.loadData(JSON.stringify(input))) as Diagnostic[]
   }
 
-  /** Renders one page: its HTML, or `null` alongside the runtime diagnostic. */
+  /**
+   * Renders one page: its HTML, or `null` alongside the runtime diagnostic. A loaded
+   * document renders with the host's document value bound to its own record; any
+   * other file reads the value the envelope carried, if it did.
+   */
   render(page: PageRef): RenderResult {
     return JSON.parse(this.#core.render(JSON.stringify(page))) as RenderResult
   }

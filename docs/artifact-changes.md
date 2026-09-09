@@ -211,9 +211,11 @@ moved it. Newest last. An entry is removed when its change has been applied.
   is a render error on any other value, since only a record carries a type. Say `Module`
   carries that table (`types`), built at link from the index. Where the text describes
   the `any` receiver of `x.f(…)`, say a record reads its field and everything else takes
-  its runtime type's method — the agreement with the checker. Loaded data stays untagged
-  `any` until the loader tags it at the boundary (∆iCW) — ambient values included, since
-  which record a page carries is the record store's to know (D35 as revised, D36, ∆Iau).
+  its runtime type's method — the agreement with the checker. The loader tags what it
+  validates at `loadData`; what it leaves as sent — an untyped host's values, the host's
+  document value where no loaded document stands in for it — stays untagged `any`, and
+  which record a page carries is the store's to know (D35 as revised, D36, D37, ∆Iau,
+  ∆iCW).
 - **VM, the module's tables** — where the text (and the entry above) says `Module`
   carries a name → base table (`types`), say instead it carries the project's
   declaration table (`declarations`, each with its file), its project-flat functions by
@@ -222,6 +224,20 @@ moved it. Newest last. An entry is removed when its change has been applied.
   table the loader validates against. Say `Diagnostic` and `Label` carry an optional
   `range` — the host's positions, set by the loader for a file the host holds — and
   the boundary places such a span by it rather than by an index (D37, D35 revised, ∆iCW).
+- **WASM API, `loadData` and `render`** — where the class sketch and the boundary rules
+  describe `loadData`, say its input is `{ambient, sources?}`: `ambient` bare JSON by
+  the name the host bound each value, `sources` fulfilling each `from` binding by name
+  with `{value, path?, spans?}` entries (a list for a glob) whose `spans` map field
+  paths to complete spans the host computed; that the core validates, defaults, tags,
+  and keeps the result resident as the store every render binds; that a load reporting
+  an error leaves the previous data bound, as a failed compile leaves the program; and
+  that an envelope the program cannot be loaded from throws. Say the store lives with
+  the linked program — a compile that installs a new program drops it, and `loadData`
+  runs against the program that linked, under the declaration it linked with — and
+  that `render` binds the host's document value to a loaded document's own record from
+  the store, and to the envelope's value, unvalidated, where no loaded document stands:
+  a template, or a document no collection matched — one value for every such render
+  until `plan()` (∆RGQ) gives each page its own (D37, ∆iCW).
 
 ## From Eleventy to Lemmon
 

@@ -27,6 +27,7 @@ import {
 import {
   loadCore,
   type Diagnostic,
+  type JsonValue,
   type SourceFileInput,
 } from '../packages/core/src/index.ts'
 
@@ -58,7 +59,7 @@ function sourceFiles(): SourceFileInput[] {
   return [post, ...layouts]
 }
 
-type JsonRecord = Record<string, unknown>
+type JsonRecord = Record<string, JsonValue>
 
 /**
  * The core skips a document's front matter without reading it (that is the shell's
@@ -246,7 +247,8 @@ const ambient = ambientData(files[0].text)
 const core = await loadCore()
 
 // The spike's host names the three ambient values and types none of them, which is
-// what leaves its ad hoc fields unknown-typed and renders them unannotated (D30).
+// what leaves its ad hoc fields unknown-typed and renders them unannotated (D30) —
+// and what lets `loadData` bind them as sent, validating nothing (D37).
 const host = { ambient: { site: null, page: null, build: null } }
 
 const compile = record(`compile (${files.length} files, 1 call)`)

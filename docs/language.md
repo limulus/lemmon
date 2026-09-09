@@ -255,10 +255,6 @@ the checker's question, not the parser's.
   ancestor's default in force. So `layout: (Article, html): html` is declared once, on
   `Article`, and a `LinkPost extends Article` inherits it: a layout that only a link
   post needs takes an `Article` and narrows inside.
-- _Not yet (∆iCW): the loader runs defaults and resolves `by` indexes in the core, but
-  no host reaches it — `loadData` still takes the spike's envelope — so data loaded
-  through the boundary is neither validated nor tagged, and a field with a default is
-  still absent from a record a host loaded without it._
 - _Not yet (∆Q6L): `datetime`, `duration`, `url`, and `asset` have no run-time values;
   a loaded field of one of those types keeps its string until the stdlib gives them
   one._
@@ -318,9 +314,12 @@ D19's flag — a draft is skipped and left out of collections unless `--drafts`.
   declaration order, and a bindings file's after them; so a binding may read `build`,
   and a default on the host's own record may read the host's other values and nothing a
   bindings file loads. The host's document value is the one value the loader leaves as
-  sent: the envelope carries it only for a render no loaded document stands in for — a
-  document no collection matched, whose `page` is unknown-typed — so it is bound
-  untyped, not validated.
+  sent: the envelope carries it for the renders no loaded document stands in for — a
+  document no collection matched, whose `page` is unknown-typed, and a template, whose
+  `page` is the declared type — so it is bound as sent, not validated.
+- _Not yet (∆RGQ): the envelope's document value is one value for every render no
+  loaded document stands in for, so a template's `page` is checked by the compiler and
+  not by the loader; `plan()` gives each page its own, validated as the declared type._
 
 ```
 <lem-let posts:    [Article]        from "feed/*/index.md" />
@@ -369,12 +368,6 @@ annotation an expression-bodied `lem-fn` needs, and the one a top-level `lem-let
 plus the facts it consumed (invariant 11, D25): a type error in one file's body cannot
 change how another file is checked, and nothing has to be compiled in dependency order
 for a name to have a type. Everywhere else a `lem-let` is a local and infers as usual.
-
-_Not yet (∆iCW): the loader in the core fulfils `from` bindings, runs computed ones,
-and validates and tags what a host sends; the boundary does not call it yet — `loadData`
-still takes the spike's envelope — so data a host loads through it is untagged and
-unvalidated until then, and a type test over an ambient value the host sent is a render
-error (D35)._
 
 ### Checking
 

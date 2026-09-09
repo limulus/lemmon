@@ -32,17 +32,11 @@ absorbs the item and the item is removed.
 Seed items for the next phase (architecture doc 3, phase 1); expect these to be split
 further at claim time.
 
-- ∆iCW Schemas at load — the content model is typed (∆Iau); `loadData` now fulfils it:
-  validating records (the host's envelope and ambient values too) at their YAML positions,
-  tagging each with its declared type so `is` and `lem-match` reach loaded data (D35),
-  running computed defaults in dependency order, resolving `by` references and strings by
-  expected type, and rejecting extra keys, so limulus.net's build throws become load
-  errors
 - ∆HF0 Order defaults through calls — each unit records the reads of every function it
   defines, and the link step closes reads through calls before ordering a record's defaults
   and the bindings file's computed bindings, so a default that calls a `lem-fn` reading a
   not-yet-computed sibling is ordered instead of faulting at load. Removes the "only reads
-  written in the default itself count" clause from D37 and docs/language.md; needs: ∆iCW
+  written in the default itself count" clause from D37 and docs/language.md
 - ∆Q6L Stdlib — strings/lists/maps, `datetime("…")` (compile-time checked on a literal
   argument; there is no datetime literal) + rfc3339/rfc822 formatting, `slugify`,
   `readingTime`, `url()`, `asset()`, `raw()`, `uniqueId()`, with typed signatures the
@@ -50,7 +44,7 @@ further at claim time.
 - ∆Hbw Document mode, full rules — nested `lem-let` capture bodies as sub-documents, and
   string-literal reference resolution in prose calls (docs/language.md §Document mode
   items 2 and 6) with the resolved ids reported as compile-time facts (D25); front matter
-  itself is validated by ∆iCW; needs: ∆iCW
+  itself is validated by ∆iCW
 - ∆BfR Syntax highlighting for code fences — comrak's `SyntaxHighlighterAdapter` wired to
   syntect with class-based output plus a generated theme stylesheet (D08,
   docs/architecture.md §Crates). Deferred out of document mode: it adds ~1 MB to the .wasm
@@ -132,8 +126,7 @@ API); the port itself lives in limulus-dot-net on a branch while 11ty stays gree
 - ∆rT5 Schemas, layouts, components — `site.lem` types for articles, link posts, TILs,
   photos, vod, authors; the base/page/article/video layouts and ~20 WebC components
   rewritten as `.lem` functions with `lem-style` scoping (D20). First real exercise of the
-  language at scale; expect it to feed fixes back into Phase 1 items; needs: ∆iCW, ∆Q6L,
-  ∆RGQ
+  language at scale; expect it to feed fixes back into Phase 1 items; needs: ∆Q6L, ∆RGQ
 - ∆o24 Content + markdown parity — typed front matter for every `.md` (globs replace `tags`,
   schema defaults replace `links.json`), computed defaults replacing `eleventyComputed.js`
   (title from linkTitle, tilTopic from path, link/via domains, readingTime), the link-post

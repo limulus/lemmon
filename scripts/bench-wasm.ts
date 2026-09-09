@@ -13,6 +13,8 @@
  *  - incremental recompile — one page of the resident site recompiled repeatedly:
  *    what a dev-server edit costs (compile one unit + relink all).
  *  - loadData floor — a near-empty payload, repeated: per-call boundary overhead.
+ *  - typed loadData — N documents' front matter with positions, validated against
+ *    their schema and tagged (D37): what a real load costs per site.
  */
 
 import { readdirSync, readFileSync } from 'node:fs'
@@ -20,8 +22,13 @@ import { join, relative } from 'node:path'
 
 import {
   loadCore,
+  type DataInput,
   type Diagnostic,
+  type HostDecl,
+  type LoadedValue,
+  type Position,
   type SourceFileInput,
+  type Span,
 } from '../packages/core/src/index.ts'
 
 const CORPUS = 'tests/corpus'
@@ -29,6 +36,7 @@ const SITE_PAGES = 100
 const INCREMENTAL_RUNS = 50
 const RENDER_RUNS = 200
 const LOAD_DATA_RUNS = 200
+const TYPED_LOAD_RUNS = 50
 
 // The corpus render globals (crates/lemmon-vm/tests/corpus.rs), so document fixtures
 // that read `page`/`site` resolve.
@@ -114,7 +122,75 @@ function site(): SourceFileInput[] {
 }
 
 /** The host these fixtures compile against: the ambient names, none of them typed. */
-const HOST = { ambient: { site: null, page: null, build: null } }
+const HOST: HostDecl = { ambient: { site: null, page: null, build: null } }
+
+/** A span from one position to another, as a shell computes one from parsed YAML. */
+function span(start: number, end: number, from: Position, to: Position): Span {
+  return { start, end, range: { start: from, end: to } }
+}
+
+/**
+ * A typed site: N `Post` documents collected by a glob, each with the front matter
+ * and positions a shell would send — what `loadData` validates and tags (D37). The
+ * spans are what they would be for the front matter as written — each key through its
+ * value, and the whole value across both lines — so the payload is the real one, not
+ * a stand-in.
+ */
+function typedSite(): { host: HostDecl; files: SourceFileInput[]; data: DataInput } {
+  const host: HostDecl = {
+    ambient: { page: 'Page', site: { bindingsOf: 'site.lem' } },
+    document: 'page',
+    entry: 'layout',
+  }
+  const files: SourceFileInput[] = [
+    { path: 'ambient.lem', text: '<lem-type Page>\n  url: url\n</lem-type>' },
+    {
+      path: 'site.lem',
+      text:
+        '<lem-type Post extends Page>\n  title: string\n  slug: string = path\n' +
+        '  layout: (Post, html): html = post\n</lem-type>\n' +
+        '<lem-fn post(p: Post, body: html)><h1><lem.p.title></h1><lem.body></lem-fn>\n' +
+        '<lem-let posts: [Post] from "posts/*.md" />',
+    },
+  ]
+  const posts: LoadedValue[] = []
+  for (let i = 0; i < SITE_PAGES; i += 1) {
+    const path = `posts/post-${i}.md`
+    const title = `title: Post ${i}`
+    const url = `url: /posts/${i}/`
+    const frontMatter = `${title}\n${url}\n`
+    files.push({ path, text: `---\n${frontMatter}---\n<lem.page.title>\n`, record: 'Post' })
+    // Line 0 is the opening `---`; `title:` is line 1 and `url:` line 2.
+    const titleStart = 4
+    const urlStart = titleStart + title.length + 1
+    const urlEnd = urlStart + url.length
+    posts.push({
+      path,
+      value: { title: `Post ${i}`, url: `/posts/${i}/` },
+      spans: {
+        '': span(
+          titleStart,
+          urlEnd,
+          { line: 1, character: 0 },
+          { line: 2, character: url.length }
+        ),
+        title: span(
+          titleStart,
+          titleStart + title.length,
+          { line: 1, character: 0 },
+          { line: 1, character: title.length }
+        ),
+        url: span(
+          urlStart,
+          urlEnd,
+          { line: 2, character: 0 },
+          { line: 2, character: url.length }
+        ),
+      },
+    })
+  }
+  return { host, files, data: { ambient: {}, sources: { posts } } }
+}
 
 // --- Scenarios --------------------------------------------------------------------
 
@@ -192,6 +268,23 @@ async function siteScenarios(): Promise<void> {
   }
 }
 
+async function typedLoadScenarios(): Promise<void> {
+  const { host, files, data } = typedSite()
+  const core = await loadCore()
+  expectClean(core.compile(files, host), 'compiling the typed site')
+  const typed = record(`typed loadData (${SITE_PAGES} documents, positions included)`)
+  for (let i = 0; i < TYPED_LOAD_RUNS; i += 1) {
+    typed(() => {
+      const diagnostics = core.loadData(data)
+      expectClean(diagnostics, 'loading the typed site')
+      return { in: data, out: diagnostics }
+    })
+  }
+  // One render proves the load bound something: an unbound `page` would be a
+  // diagnostic here. What it rendered is the corpus gate's business, not this one's.
+  expectClean(core.render({ path: 'posts/post-0.md' }).diagnostics, 'rendering a post')
+}
+
 // --- Report -----------------------------------------------------------------------
 
 function percentile(sorted: number[], p: number): number {
@@ -238,4 +331,5 @@ function report(): void {
 
 await corpusScenarios()
 await siteScenarios()
+await typedLoadScenarios()
 report()

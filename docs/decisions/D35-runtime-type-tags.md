@@ -6,8 +6,9 @@
   since only the record store it builds knows which page's record a document's ambient
   value carries; revised 2026-09-08 (∆iCW, D37) — the closed ancestry table is replaced
   by the declaration table the module carries, walked per test, so the VM's type tests
-  and the loader's validation read one table; and the completeness question is closed:
-  the loader fills an omitted field as a literal does, by whether its type admits `null`
+  and the loader's validation read one table; the completeness question is closed:
+  the loader fills an omitted field as a literal does, by whether its type admits `null`;
+  and the tagging clause is delivered, with the untyped values it leaves as `any` named
 - **Backlog item:** ∆PCK
 - **Normative text:** `docs/language.md` § Tags (`lem-if`, `lem-match` rows),
   § Expressions (Literals, Type tests), § Checking (Literals, Narrowing, Type tests,
@@ -40,8 +41,11 @@ a test against its own bad tag.
 subtype. Every key must be a declared field, each value is checked against it, an omitted
 optional field is filled with null, and an omitted non-optional field is refused whether
 or not it has a default: defaults are evaluated at load, where `body` and `site` exist,
-and a declaration's facts (D25) do not carry them. The loader (∆iCW) tags at the
-boundary, a host's ambient values included; until then loaded data stays untagged `any`.
+and a declaration's facts (D25) do not carry them. The loader tags what it validates at
+`loadData` (D37): every record in a typed ambient value or a `from` binding. What it
+leaves as sent stays untagged `any` — an untyped host's values, and the host's document
+value where no loaded document stands in for it — and a type test over one of those is
+a render error.
 
 **A type test reads the tag, and only a tag.** `x is T` over a record answers by name and
 ancestry; over `null` it is false; over anything else — an untagged map that came through

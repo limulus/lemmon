@@ -51,18 +51,51 @@ export interface HostDecl {
 }
 
 /**
- * The data {@link Core.loadData} stores — the spike's `DataInput`: the ambient records
- * only. `records`, data files, and the asset manifest become additive fields later.
+ * What {@link Core.loadData} takes (D37): the host's own ambient values, and what
+ * fulfils each `from` binding of the program's bindings files. Which names must be
+ * present is the program's to say, so an empty envelope is a well-formed one. The
+ * asset manifest is an additive field not yet here (∆d1N).
  */
 export interface DataInput {
-  ambient: AmbientData
+  /**
+   * The host's own values, by the name it bound each: `build`; `page` where no loaded
+   * document stands in for it — a template, or a document no collection matched;
+   * whatever an untyped host names. A value the host reads from a file's bindings
+   * (`{bindingsOf}`) is built by the core, never carried. The document value is bound
+   * as sent, not validated: it is one value for every such render until `plan()`
+   * gives each page its own (∆RGQ).
+   */
+  ambient?: Record<string, JsonValue>
+  /**
+   * What fulfils each `from` binding, by binding name: one {@link LoadedValue} per
+   * document, as a list, for a glob; one for a data file, a plugin, or an environment
+   * value. Every `from` binding the program declares is fulfilled here, or the call
+   * throws.
+   */
+  sources?: Record<string, LoadedValue | LoadedValue[]>
 }
 
-/** The three ambient records every template may read. */
-export interface AmbientData {
-  site?: JsonValue
-  page?: JsonValue
-  build?: JsonValue
+/** One value the host loaded, with where it came from. */
+export interface LoadedValue {
+  /**
+   * The value as parsed — objects as maps in key order, every string untrusted. For a
+   * document, its front matter with the `type:` key stripped.
+   */
+  value: JsonValue
+  /**
+   * The file the value came from: required for a document, which the program must
+   * have compiled; a data file's path; absent for a plugin or environment value.
+   */
+  path?: string
+  /**
+   * Where each field path stands in that file — `title`, `hero.caption`, `tags.2`,
+   * and `''` for the value as a whole — each spanning the key through the value. A
+   * load diagnostic about a field points here; a path with no entry falls back to its
+   * nearest ancestor, then to the whole value, then to the declaration of what was
+   * expected. The host computes offsets and positions both, since the core holds no
+   * index for a file it never compiled.
+   */
+  spans?: Record<string, Span>
 }
 
 /**

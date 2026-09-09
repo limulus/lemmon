@@ -221,15 +221,7 @@ fn typed_html(case: &Case) -> String {
             load(&module, &host, data).unwrap_or_else(|bug| panic!("{path}: {bug}"));
         diagnostics.extend(loaded.diagnostics.iter().map(ToString::to_string));
         if let Some(store) = loaded.output {
-            let mut globals: Vec<(&str, Value)> = store
-                .ambient
-                .iter()
-                .map(|(name, value)| (&**name, value.clone()))
-                .collect();
-            if let Some(record) = store.documents.get(&path) {
-                globals.retain(|(name, _)| *name != "page");
-                globals.push(("page", record.clone()));
-            }
+            let globals = store.globals(&host, &path);
             let (html, error) = rendered(&module, &path, &globals);
             out = html;
             diagnostics.extend(error);
