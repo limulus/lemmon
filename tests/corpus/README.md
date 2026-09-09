@@ -97,7 +97,10 @@ npm run corpus:bless     # UPDATE_CORPUS=1 cargo test --workspace
 ```
 
 That rewrites every expectation from what the code currently produces. **It is not a fix —
-it is a proposal.** Read the resulting `git diff` before keeping it:
+it is a proposal.** A failing case already prints a unified diff of what it produced
+against what is checked in — the first five differing cases in full, the rest named — so
+blessing is for after you have read that and decided the change is wanted, never how you
+find out what the change was. Read the resulting `git diff` before keeping it:
 
 - Lines appearing in a `--- diagnostics` trailer that was empty mean a case that used to
   parse (or render) clean no longer does. That is a regression until proven otherwise.

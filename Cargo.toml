@@ -35,6 +35,9 @@ line-index = "0.1.2"
 # No default features: they pull in the CLI and syntect, which the core does not use yet
 # and which would grow the .wasm by about a megabyte when it does.
 comrak = { version = "0.54.0", default-features = false, features = ["attributes"] }
+# The corpus harness's failure report, and dev-only by construction: `lemmon-corpus` is
+# never anything but a dev-dependency, so this reaches no shipped build.
+similar = "3.2.0"
 # Test-only, for the corpus harness: the shell owns YAML and globs (D30, D37), and the
 # `host/` corpus models it — front matter parsed with positions, documents matched to
 # the collection whose glob names them. Neither enters the wasm.

@@ -16,6 +16,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use lemmon_syntax::{LineIndex, Position};
+use similar::TextDiff;
 
 /// Every extension a stage may check a case against, one per stage artifact.
 ///
@@ -150,8 +151,9 @@ fn cases_in(dir: &Path) -> Vec<Case> {
     cases
 }
 
-/// Checks every case in `group` against its `ext` expectation, reporting every
-/// mismatch at once rather than stopping at the first.
+/// Checks every case in `group` against its `ext` expectation, naming every mismatch at
+/// once rather than stopping at the first — the nearest [`CASE_BUDGET`] of them with a
+/// diff, the rest by name.
 ///
 /// With `UPDATE_CORPUS` set in the environment, rewrites the expectations instead of
 /// comparing — the blessing path behind `npm run corpus:bless`.
@@ -167,6 +169,7 @@ pub fn check(group: &str, ext: &str, produce: impl Fn(&Case) -> String) {
     );
     let update = std::env::var_os(UPDATE).is_some();
     let mut report = String::new();
+    let mut differing: Vec<String> = Vec::new();
     for case in cases(group) {
         let actual = with_positions(&case, &produce(&case));
         let path = case.expectation(ext);
@@ -177,11 +180,15 @@ pub fn check(group: &str, ext: &str, produce: impl Fn(&Case) -> String) {
         }
         let expected = read_or_empty(&path);
         if expected != actual {
-            describe(&mut report, &case, &expected, &actual);
+            if differing.len() < CASE_BUDGET {
+                describe(&mut report, &case, &expected, &actual);
+            }
+            differing.push(case.name);
         }
     }
+    name_the_rest(&mut report, &differing);
     assert!(
-        report.is_empty(),
+        differing.is_empty(),
         "{report}\nrun `npm run corpus:bless` to accept these, then review the diff"
     );
 }
@@ -295,34 +302,58 @@ fn shown(position: Position) -> String {
     format!("{}:{}", position.line + 1, position.character + 1)
 }
 
-/// Appends the first line at which `actual` departs from `expected`, and how many more
-/// follow. A whole tree dump on both sides buries the one line that moved.
-fn describe(report: &mut String, case: &Case, expected: &str, actual: &str) {
-    const MISSING: &str = "<end of file>";
-    let expected: Vec<&str> = expected.lines().collect();
-    let actual: Vec<&str> = actual.lines().collect();
-    let differing: Vec<usize> = (0..expected.len().max(actual.len()))
-        .filter(|&i| expected.get(i) != actual.get(i))
-        .collect();
-    let out = &mut *report;
-    let _ = writeln!(out, "\n{}:", case.name);
-    let Some(&line) = differing.first() else {
-        let _ = writeln!(out, "  differs only in trailing whitespace");
+/// How much of one case's diff is worth printing before the rest is in the way.
+const DIFF_BUDGET: usize = 40;
+
+/// How many differing cases get a diff before the rest are named and nothing more.
+///
+/// A change at a stage moves every case at once, and what a reader needs then is the
+/// list of which ones moved — not the same rewrite shown sixty times, with the one case
+/// that moved for a different reason somewhere inside it. Reading all of them is what
+/// blessing and `git diff` are for (`tests/corpus/README.md`).
+const CASE_BUDGET: usize = 5;
+
+/// Appends the names of the differing cases past [`CASE_BUDGET`], which got no diff of
+/// their own. Nothing at all when every differing case already has one — including the
+/// run where there are exactly [`CASE_BUDGET`] of them.
+fn name_the_rest(report: &mut String, differing: &[String]) {
+    let Some(rest) = differing.get(CASE_BUDGET..).filter(|rest| !rest.is_empty()) else {
         return;
     };
-    let _ = writeln!(out, "  line {}:", line + 1);
     let _ = writeln!(
-        out,
-        "    expected: {}",
-        expected.get(line).unwrap_or(&MISSING)
+        report,
+        "\nand {} more differing: {}",
+        rest.len(),
+        rest.join(", ")
     );
-    let _ = writeln!(
-        out,
-        "      actual: {}",
-        actual.get(line).unwrap_or(&MISSING)
-    );
-    if differing.len() > 1 {
-        let _ = writeln!(out, "  ({} more differing lines)", differing.len() - 1);
+}
+
+/// Appends a unified diff of what the case produced against what is checked in.
+///
+/// A diff, because the question a failure has to answer is *what changed*. Naming the
+/// first line that differs answers only where to start looking, which left blessing as
+/// the way to see the change — and that inverts the corpus's safety mechanism, since
+/// blessing is a proposal to be judged, not how one finds out what is being judged.
+fn describe(report: &mut String, case: &Case, expected: &str, actual: &str) {
+    let out = &mut *report;
+    let _ = writeln!(out, "\n{}:", case.name);
+    // Line-equal but not byte-equal: a trailing newline one side has and the other does
+    // not. A diff of that is two lines that look identical, so it is said in words.
+    if expected.lines().eq(actual.lines()) {
+        let _ = writeln!(out, "  differs only in trailing whitespace");
+        return;
+    }
+    let diff = TextDiff::from_lines(expected, actual)
+        .unified_diff()
+        .header("expected", "actual")
+        .to_string();
+    let mut lines = diff.lines();
+    for line in lines.by_ref().take(DIFF_BUDGET) {
+        let _ = writeln!(out, "  {line}");
+    }
+    let rest = lines.count();
+    if rest > 0 {
+        let _ = writeln!(out, "  ({rest} more diff lines)");
     }
 }
 
@@ -588,32 +619,75 @@ mod tests {
         let _ = with_positions(&case_of("ab"), &produced);
     }
 
-    #[test]
-    fn reports_the_first_differing_line_and_how_many_follow() {
+    /// A case with nothing about it that matters here — `describe` reads only its name.
+    fn described(expected: &str, actual: &str) -> String {
         let case = Case {
             name: "syntax/x".to_owned(),
             input: PathBuf::from("x.lem"),
             source: String::new(),
         };
         let mut report = String::new();
-        describe(&mut report, &case, "a\nb\nc", "a\nB\nC");
-        assert!(report.contains("line 2:"), "{report}");
-        assert!(report.contains("expected: b"), "{report}");
-        assert!(report.contains("actual: B"), "{report}");
-        assert!(report.contains("(1 more differing lines)"), "{report}");
+        describe(&mut report, &case, expected, actual);
+        report
     }
 
     #[test]
-    fn reports_a_line_that_only_one_side_has_as_the_end_of_file() {
-        let case = Case {
-            name: "syntax/x".to_owned(),
-            input: PathBuf::from("x.lem"),
-            source: String::new(),
-        };
+    fn diffs_every_line_that_changed_under_the_case_name() {
+        let report = described("a\nb\nc\n", "a\nB\nC\n");
+        assert!(report.contains("syntax/x:"), "{report}");
+        assert!(report.contains("--- expected"), "{report}");
+        assert!(report.contains("+++ actual"), "{report}");
+        for line in ["-b", "+B", "-c", "+C"] {
+            assert!(
+                report.lines().any(|l| l.trim_end() == format!("  {line}")),
+                "{line} missing from {report}"
+            );
+        }
+    }
+
+    #[test]
+    fn shows_a_line_only_one_side_has_as_an_addition() {
+        let report = described("a\n", "a\nb\n");
+        assert!(report.lines().any(|l| l.trim_end() == "  +b"), "{report}");
+        assert!(!report.contains("-b"), "{report}");
+        assert!(!report.contains("more diff lines"), "{report}");
+    }
+
+    /// A stage change rewrites whole trees, and every one of them at once would bury the
+    /// case whose rewrite was the unintended one.
+    #[test]
+    fn stops_after_a_budget_of_diff_lines_and_says_how_many_are_left() {
+        let expected: String = (0..60).map(|i| format!("line {i}\n")).collect();
+        let actual: String = (0..60).map(|i| format!("moved {i}\n")).collect();
+        let report = described(&expected, &actual);
+        // The budget's worth of diff, plus the line saying how much was left out.
+        let shown = report.lines().filter(|l| l.starts_with("  ")).count();
+        assert_eq!(shown, DIFF_BUDGET + 1, "{report}");
+        assert!(report.contains("more diff lines"), "{report}");
+    }
+
+    fn names(count: usize) -> Vec<String> {
+        (0..count).map(|i| format!("syntax/case-{i}")).collect()
+    }
+
+    #[test]
+    fn names_the_differing_cases_that_got_no_diff_of_their_own() {
         let mut report = String::new();
-        describe(&mut report, &case, "a", "a\nb");
-        assert!(report.contains("expected: <end of file>"), "{report}");
-        assert!(!report.contains("more differing"), "{report}");
+        name_the_rest(&mut report, &names(CASE_BUDGET + 2));
+        assert!(report.contains("and 2 more differing:"), "{report}");
+        let last = format!("syntax/case-{}", CASE_BUDGET + 1);
+        assert!(report.contains(&last), "{report}");
+        assert!(!report.contains("syntax/case-0"), "{report}");
+    }
+
+    /// Including the run that differs in exactly a budget's worth of cases, which has
+    /// nothing left over to name.
+    #[test]
+    fn names_nothing_when_every_differing_case_has_a_diff() {
+        let mut report = String::new();
+        name_the_rest(&mut report, &names(CASE_BUDGET));
+        name_the_rest(&mut report, &names(0));
+        assert_eq!(report, "");
     }
 
     /// A corpus tree with one file of each shape `orphans_in` has an opinion about.
@@ -696,13 +770,8 @@ mod tests {
 
     #[test]
     fn reports_a_difference_no_line_shows() {
-        let case = Case {
-            name: "syntax/x".to_owned(),
-            input: PathBuf::from("x.lem"),
-            source: String::new(),
-        };
-        let mut report = String::new();
-        describe(&mut report, &case, "a\n", "a");
+        let report = described("a\n", "a");
         assert!(report.contains("trailing whitespace"), "{report}");
+        assert!(!report.contains("--- expected"), "{report}");
     }
 }
