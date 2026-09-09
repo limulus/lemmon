@@ -5,6 +5,8 @@
 //! one type every later stage depends on. The [`ast`] module is the typed view of that
 //! tree the checker and code generator read.
 
+use std::fmt;
+
 pub mod ast;
 mod diagnostic;
 mod document;
@@ -35,6 +37,13 @@ pub struct Span {
     pub start: u32,
     /// Byte offset one past the last byte in the range.
     pub end: u32,
+}
+
+/// Renders as `start..end`, the form every diagnostic prints its span in.
+impl fmt::Display for Span {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}..{}", self.start, self.end)
+    }
 }
 
 impl From<rowan::TextRange> for Span {
@@ -85,6 +94,12 @@ mod tests {
     fn treats_a_zero_width_span_as_empty() {
         assert!(Span::new(4, 4).is_empty());
         assert_eq!(Span::new(4, 4).len(), 0);
+    }
+
+    #[test]
+    fn renders_as_the_byte_range_it_covers() {
+        assert_eq!(Span::new(9, 12).to_string(), "9..12");
+        assert_eq!(Span::new(4, 4).to_string(), "4..4");
     }
 
     #[test]

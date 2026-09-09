@@ -127,11 +127,7 @@ impl RuntimeError {
 
 impl fmt::Display for RuntimeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{}:{}..{}: {}",
-            self.path, self.span.start, self.span.end, self.message
-        )
+        write!(f, "{}:{}: {}", self.path, self.span, self.message)
     }
 }
 

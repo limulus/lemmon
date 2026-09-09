@@ -149,17 +149,9 @@ impl fmt::Display for Diagnostic {
             Severity::Error => "",
             Severity::Warning => "warning: ",
         };
-        write!(
-            f,
-            "{}:{}..{}: {severity}{}",
-            self.path, self.span.start, self.span.end, self.message
-        )?;
+        write!(f, "{}:{}: {severity}{}", self.path, self.span, self.message)?;
         for label in &self.labels {
-            write!(
-                f,
-                "\n  {}:{}..{}: {}",
-                label.path, label.span.start, label.span.end, label.message
-            )?;
+            write!(f, "\n  {}:{}: {}", label.path, label.span, label.message)?;
         }
         Ok(())
     }
