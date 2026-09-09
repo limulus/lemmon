@@ -20,12 +20,6 @@ mechanism: `delto surface` trusts these edges to decide what is eligible to work
 Standing epic for reshaping working code. It comes first so that document order gives a
 refactor priority: reshaping is cheapest before more code is built on what it reshapes.
 
-- ∆tdb Hand-rolled algorithms to crates — `edit_distance` in
-  `crates/lemmon-syntax/src/parser/template.rs` becomes `strsim::osa_distance`, and
-  `describe` in `crates/lemmon-corpus/src/lib.rs` reports a unified diff via `similar`
-  (dev-only) rather than the first differing line alone. `lemmon-vm`'s `has no field` errors
-  want a did-you-mean that private function cannot reach, and a blessed diff is read by eye
-
 ## Phase 1 — Language complete, tooling from day one
 
 Seed items for the next phase (architecture doc 3, phase 1); expect these to be split
