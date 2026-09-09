@@ -17,15 +17,19 @@ mechanism: `delto surface` trusts these edges to decide what is eligible to work
 
 ### Refactors
 
-Standing epic for reshaping working code that belongs to no milestone. An item sits here
-only while doing it first makes the work below it smaller; if that work is claimed first, it
-absorbs the item and the item is removed.
+Standing epic for reshaping working code. It comes first so that document order gives a
+refactor priority: reshaping is cheapest before more code is built on what it reshapes.
 
 - ∆SSw Span-by-text test helper — a helper for the Rust tests in `crates/lemmon-vm` that
   finds a byte span by its text in a source (`at(source, "banner")`), and the diagnostic
   assertions that hand-count `path:start..end` offsets converted to it. Today an offset is
   guessed, run, and copied back from the failure, so those tests are written by trial and
   cannot be read as the spans they assert
+- ∆tdb Hand-rolled algorithms to crates — `edit_distance` in
+  `crates/lemmon-syntax/src/parser/template.rs` becomes `strsim::osa_distance`, and
+  `describe` in `crates/lemmon-corpus/src/lib.rs` reports a unified diff via `similar`
+  (dev-only) rather than the first differing line alone. `lemmon-vm`'s `has no field` errors
+  want a did-you-mean that private function cannot reach, and a blessed diff is read by eye
 
 ## Phase 1 — Language complete, tooling from day one
 
@@ -151,9 +155,9 @@ API); the port itself lives in limulus-dot-net on a branch while 11ty stays gree
 
 ## Defects
 
-Standing section for confirmed bugs in landed code that block no milestone. It sits last so
+Standing section for confirmed bugs in landed code that block nothing else. It sits last so
 that document order stays priority order: an item here is picked up when the code it sits in
-is next touched, or in the slack between milestone items, and no milestone item waits on
+is next touched, or in the slack between initiative items, and no initiative item waits on
 one. Each names where the bug shows — a corpus case or a journal entry — so it can be
 reproduced cold.
 
