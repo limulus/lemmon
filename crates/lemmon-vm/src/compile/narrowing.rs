@@ -72,14 +72,6 @@ impl Path {
             fields: vec![Rc::from(field)],
         }
     }
-
-    pub(super) const fn root(&self) -> &Root {
-        &self.root
-    }
-
-    pub(super) fn fields(&self) -> &[Rc<str>] {
-        &self.fields
-    }
 }
 
 impl Compiler<'_> {
@@ -125,6 +117,22 @@ impl Compiler<'_> {
         let narrowed = self.type_test(&subject, &name, span, rules::TestForm::Is);
         (Type::Bool, path.zip(narrowed))
     }
+    /// The root `expr` names bare — a local or an ambient value, parenthesised or not
+    /// — the one shape whose fields decide when the loader may run a function, and
+    /// the one shape a call hands a root whole (∆HF0). Peeked, as [`Self::path_of`]
+    /// peeks, and cheaper: nothing about the value is wanted, only its root.
+    pub(super) fn bare_root(&self, expr: &Expr) -> Option<Root> {
+        let Expr::Name(name) = unparen(expr.clone()) else {
+            return None;
+        };
+        let name = required(name.name());
+        match self.names.peek(name.text())? {
+            Resolved::Local { binder, .. } => Some(Root::Local(binder)),
+            Resolved::Ambient(_) => Some(Root::Ambient(Rc::from(name.text()))),
+            Resolved::Field { .. } | Resolved::Function | Resolved::Builtin(_) => None,
+        }
+    }
+
     /// The path `expr` reads, if it reads one — a local, or fields read off one with
     /// plain `.`s, parenthesised or not — with the type its last step was declared
     /// with, whatever a condition has narrowed that step to: the binding's, or the

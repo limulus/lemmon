@@ -119,7 +119,7 @@ impl Compiler<'_> {
         let name = required(member.name());
         let member_span = member.span();
         let optional = member.is_optional();
-        let object_ty = self.expr(&object);
+        let object_ty = self.object(&object);
         let verdict =
             rules::callable_member(&object_ty, name.text(), optional, self.decls());
         let callable = match verdict {
@@ -341,16 +341,24 @@ impl Compiler<'_> {
                 return Type::Any;
             }
         };
+        // A root passed whole is what lets the link step count the callee's reads off
+        // that parameter as the caller's own (∆HF0); asked before the argument is
+        // lowered, since asking is not reading.
+        let collecting = self.uses.is_some();
+        let mut handed = Vec::new();
         for (param, arg) in export.signature.params.iter().zip(order) {
             let param_ty = self.known(param.ty.clone());
-            match arg {
-                Arg::Positional(i) => {
-                    self.check(&positional[i], &param_ty);
-                }
-                Arg::Named(n) => {
-                    self.check(&required(named[n].value()), &param_ty);
-                }
+            let expr = match arg {
+                Arg::Positional(i) => positional[i].clone(),
+                Arg::Named(n) => required(named[n].value()),
+            };
+            if collecting {
+                handed.push(self.root_of(&expr));
             }
+            self.check(&expr, &param_ty);
+        }
+        if collecting {
+            self.note_call(fn_name, handed);
         }
         let argc = u16::try_from(export.signature.params.len())
             .expect("fewer than 65536 parameters");

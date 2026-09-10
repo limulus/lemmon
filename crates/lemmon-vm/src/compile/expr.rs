@@ -31,8 +31,8 @@ use super::{Compiler, TokenSpan, required};
 use crate::Value;
 use crate::bytecode::Op;
 use crate::decls::Kind;
-use crate::plan::Read;
 use crate::types::{Type, join};
+use crate::unit::Access;
 
 impl Compiler<'_> {
     /// Lowers `expr`, leaving its value on the stack, and returns its type.
@@ -156,6 +156,21 @@ impl Compiler<'_> {
     /// where a `lem-if` on it is open — a function's signature, or what the host gave an
     /// ambient value.
     pub(super) fn name(&mut self, token: &SyntaxToken) -> Type {
+        self.name_read(token, true)
+    }
+
+    /// Lowers the object of a member access: as [`Self::expr`] does, except that a
+    /// bare ambient value here is read for one of its fields, not whole.
+    pub(super) fn object(&mut self, object: &Expr) -> Type {
+        match unparen(object.clone()) {
+            Expr::Name(name) => self.name_read(&required(name.name()), false),
+            _ => self.expr(object),
+        }
+    }
+
+    /// Lowers a reference to `token`; `whole` says the value itself is what is read,
+    /// which for an ambient value is noted for the loader's order (∆HF0).
+    fn name_read(&mut self, token: &SyntaxToken, whole: bool) -> Type {
         let span = token.span();
         match self.resolve(token.text()) {
             Some(Resolved::Local { slot, ty, binder }) => {
@@ -164,6 +179,11 @@ impl Compiler<'_> {
             }
             Some(Resolved::Function) => {
                 let export = self.export(token.text());
+                // Named as a value, the function may be called with anything, by
+                // anyone: what it reads still counts for the loader's order, handed
+                // nothing the caller can vouch for (∆HF0).
+                let arity = export.signature.params.len();
+                self.note_call(token.text(), vec![None; arity]);
                 let func = self.func_operand(export, span);
                 self.emit(Op::Global { func }, span);
                 self.known(export.signature.ty())
@@ -183,6 +203,9 @@ impl Compiler<'_> {
                     self.error(span, refusal);
                     return Type::Any;
                 }
+                if whole {
+                    self.note_read(Access::Whole(Rc::from(token.text())));
+                }
                 let name = self.intern(token.text());
                 self.emit(Op::Ambient { name }, span);
                 let ty = self.ambient_type(token.text(), ty, span);
@@ -197,7 +220,7 @@ impl Compiler<'_> {
                 let field = self.intern(token.text());
                 self.emit(Op::GetField { name: field }, span);
                 self.ambient_type(&value, Type::Named(Rc::from(self.path)), span);
-                self.note_read(Read::Ambient {
+                self.note_read(Access::Ambient {
                     value: value.clone(),
                     field: Rc::from(token.text()),
                 });
@@ -216,11 +239,11 @@ impl Compiler<'_> {
     /// the loader, if it cannot: the host's document value is bound per page, and a
     /// default or a computed binding runs before any page is (∆iCW).
     fn unavailable_at_load(&self, name: &str) -> Option<String> {
-        let reads = self.reads.as_ref()?;
-        if self.host.document() != Some(name) {
+        let collecting = self.uses.as_ref()?;
+        if !collecting.at_load || self.host.document() != Some(name) {
             return None;
         }
-        Some(if reads.self_binder.is_some() {
+        Some(if collecting.self_binder.is_some() {
             format!(
                 "`{name}` is not bound while a record loads: the record so far is `self`"
             )
@@ -295,7 +318,7 @@ impl Compiler<'_> {
         if let Some(enum_name) = self.enum_object(&object) {
             return self.qualified_variant(&enum_name, member, object.span());
         }
-        let object_ty = self.expr(&object);
+        let object_ty = self.object(&object);
         let name = required(member.name());
         self.note_member_read(&object, name.text());
         let index = self.intern(name.text());

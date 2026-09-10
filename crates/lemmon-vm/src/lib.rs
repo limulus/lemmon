@@ -43,8 +43,8 @@ pub use plan::{
 };
 pub use types::Type;
 pub use unit::{
-    BindingFn, DefaultFn, ExportedSignature, ImportRef, ImportedSignature, Param, Unit,
-    link,
+    Access, BindingFn, Call, DefaultFn, ExportedSignature, ImportRef, ImportedSignature,
+    Param, Root, Supplied, Unit, Uses, link,
 };
 pub use value::{Closure, Map, Value};
 pub use vm::{invoke, render};

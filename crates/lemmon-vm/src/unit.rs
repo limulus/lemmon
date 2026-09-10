@@ -20,7 +20,7 @@ use crate::decls::{Declaration, Decls, Kind, Shape, TypeFact};
 use crate::exports::ExportIndex;
 use crate::host::Host;
 use crate::plan::{
-    BindingStep, Bindings, Fulfilled, Read, RecordPlan, Step, StepKind, order,
+    BindingStep, Bindings, Fulfilled, Read, RecordPlan, SourceKind, Step, StepKind, order,
 };
 use crate::types::Type;
 
@@ -61,12 +61,18 @@ pub struct Unit {
     /// schemas cannot share one.
     pub record: Option<String>,
     /// The functions the loader runs for the records this file declares: each field's
-    /// default and `by` index, with what it reads (∆iCW). Part of this unit and no
-    /// consumer's: a default is not part of a type's shape fact.
+    /// default and `by` index (∆iCW). Part of this unit and no consumer's: a default
+    /// is not part of a type's shape fact.
     pub defaults: Vec<DefaultFn>,
     /// The top-level bindings of this file when it is the one the host reads an
-    /// ambient value from — what fulfils each, in binding order. Empty elsewhere.
+    /// ambient value from — what supplies each, in binding order. Empty elsewhere.
     pub bindings: Vec<BindingFn>,
+    /// What each function whose body the loader may run reads and calls, by its index
+    /// here: every top-level `lem-fn`, and the functions behind `defaults` and
+    /// `bindings`. The link step closes these through calls to order the loader's
+    /// work (∆HF0). Part of this unit alone, like `defaults`: a body is never a
+    /// consumer's fact.
+    pub uses: BTreeMap<u32, Uses>,
     /// Where the record was named — the `type:` key's value when the host said, else
     /// the front matter — for what the loader has to say about the record.
     pub record_span: Span,
@@ -81,21 +87,105 @@ pub struct DefaultFn {
     pub record: Rc<str>,
     pub field: Rc<str>,
     pub kind: StepKind,
-    /// The function's index in its unit.
+    /// The function's index in its unit; its reads and calls are in [`Unit::uses`].
     pub func: u32,
-    pub reads: Vec<Read>,
     /// The field's name in the declaration.
     pub span: Span,
 }
 
-/// One top-level binding of the bindings file, as compiled: a computed one's `func`
-/// is an index in its unit.
+/// One top-level binding of the bindings file, as compiled.
 #[derive(Clone, Debug, PartialEq)]
 pub struct BindingFn {
     pub name: Rc<str>,
-    pub fulfilled: Fulfilled,
+    pub supplied: Supplied,
     /// The binding's name in the file.
     pub span: Span,
+}
+
+/// How one binding of the bindings file gets its value, as compiled — what
+/// [`Fulfilled`] is once the link step has closed the function's reads.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Supplied {
+    /// A `from` binding: the host loads it.
+    ByHost(SourceKind),
+    /// An `= expr` or capture binding: the loader runs this function of the unit.
+    ByFunction(u32),
+}
+
+/// What one function of a unit reads and calls — the notes the link step closes
+/// through calls, so that a default calling a `lem-fn` that reads a sibling is ordered
+/// after that sibling instead of faulting at load (∆HF0).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Uses {
+    /// What is read, inside a lambda of the body as much as in the body itself.
+    pub reads: Vec<Access>,
+    /// The project functions the body names, with what was handed to each.
+    pub calls: Vec<Call>,
+}
+
+/// One thing a function reads, as its own body has it — before the link step has
+/// closed it through the calls that reach it, into the [`Read`]s a plan carries.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Access {
+    /// A field of `self`, the record a default or `by` index is building.
+    Own(Rc<str>),
+    /// A field of the function's own parameter, by position: what a `lem-fn` reads
+    /// off a record handed to it. Closed into the caller's own read of that field
+    /// when the caller handed a root, dropped when it handed anything else.
+    Param { index: u32, field: Rc<str> },
+    /// A field of an ambient value: `site.photos`.
+    Ambient { value: Rc<str>, field: Rc<str> },
+    /// An ambient value read whole: `page`, handed on or returned. Orders nothing —
+    /// a binding may read the site so far — but is how a default that reaches the
+    /// host's document value through a call is found (D37).
+    Whole(Rc<str>),
+}
+
+/// One call of a project function by name — or a naming of it as a value, which may
+/// call it with anything, so hands it nothing the caller can vouch for.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Call {
+    /// The function's project-flat name.
+    pub name: Rc<str>,
+    /// Per callee parameter, in declaration order, the caller's root passed whole —
+    /// `None` for anything else: a field of one, a literal, a call's result.
+    pub args: Vec<Option<Root>>,
+}
+
+/// A value whose fields a function's reads are counted off: the record a step is
+/// building, one of a `lem-fn`'s parameters, or an ambient value. Read off directly,
+/// by name — a local bound to one is not a root, so a field read through it is not
+/// counted.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Root {
+    /// `self` of a default or `by` index.
+    Own,
+    /// A parameter of a `lem-fn`, by position.
+    Param(u32),
+    /// A value the host binds, by name.
+    Ambient(Rc<str>),
+}
+
+impl Uses {
+    /// What a step's function reads, as the plan orders it: its own fields and the
+    /// ambient fields. A step has no parameter to read off, and a whole ambient value
+    /// orders nothing.
+    fn reads(&self) -> Vec<Read> {
+        self.reads
+            .iter()
+            .filter_map(|access| match access {
+                Access::Own(field) => Some(Read::Own(field.clone())),
+                Access::Ambient { value, field } => Some(Read::Ambient {
+                    value: value.clone(),
+                    field: field.clone(),
+                }),
+                Access::Whole(_) => None,
+                Access::Param { .. } => {
+                    unreachable!("a step reads off `self`, not a parameter")
+                }
+            })
+            .collect()
+    }
 }
 
 /// A foreign type a unit was compiled against: where this file first reached it, and
@@ -504,7 +594,7 @@ impl Places<'_> {
                             field: row.field.clone(),
                             kind: row.kind,
                             func: self.func(position, row.func),
-                            reads: row.reads.clone(),
+                            reads: unit.uses[&row.func].reads(),
                             file: index_u32(position),
                             span: row.span,
                         });
@@ -615,12 +705,12 @@ impl Places<'_> {
             .iter()
             .map(|binding| BindingStep {
                 name: binding.name.clone(),
-                fulfilled: match &binding.fulfilled {
-                    Fulfilled::Computed { func, reads } => Fulfilled::Computed {
+                fulfilled: match &binding.supplied {
+                    Supplied::ByFunction(func) => Fulfilled::Computed {
                         func: self.func(position, *func),
-                        reads: reads.clone(),
+                        reads: unit.uses[func].reads(),
                     },
-                    by_host @ Fulfilled::ByHost(_) => by_host.clone(),
+                    Supplied::ByHost(kind) => Fulfilled::ByHost(kind.clone()),
                 },
                 span: binding.span,
             })

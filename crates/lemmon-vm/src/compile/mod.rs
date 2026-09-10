@@ -35,7 +35,7 @@ mod schema;
 mod surfaces;
 mod whitespace;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::rc::Rc;
 
 use lemmon_syntax::ast::{Item, Spanned};
@@ -45,9 +45,11 @@ use crate::bytecode::{Function, Module, Op};
 use crate::decls::{Decls, Kind, Shape};
 use crate::exports::{Export, ExportIndex};
 use crate::host::Host;
-use crate::plan::{Read, StepKind};
+use crate::plan::StepKind;
 use crate::types::Type;
-use crate::unit::{DefaultFn, ImportRef, ImportedSignature, Unit, link};
+use crate::unit::{
+    Access, Call, DefaultFn, ImportRef, ImportedSignature, Root, Unit, Uses, link,
+};
 use crate::{SourceFile, Value};
 
 pub use diagnostics::{Compiled, Diagnostic, Label};
@@ -159,6 +161,7 @@ pub fn compile_unit(
             record: prepared.record.clone(),
             defaults: Vec::new(),
             bindings: Vec::new(),
+            uses: BTreeMap::new(),
             record_span: prepared.record_span(),
             body: prepared
                 .chunks
@@ -173,7 +176,7 @@ pub fn compile_unit(
         diagnostics: prepared.diagnostics.clone(),
         ctxs: Vec::new(),
         narrowings: Vec::new(),
-        reads: None,
+        uses: None,
         top_bindings: Vec::new(),
     };
     let entry = compiler.reserve(&prepared.path);
@@ -277,21 +280,39 @@ struct Compiler<'a> {
     /// with the type it holds while the condition is known to hold: a binding, or a
     /// field path from one (`article.hero`), which immutability keeps true (D35).
     narrowings: Vec<(narrowing::Path, Type)>,
-    /// What the function being compiled reads that the loader must have ready before
-    /// running it — open while a default, a `by` index, or a computed binding is being
-    /// lowered, and through every lambda inside one (∆iCW).
-    reads: Option<Reads>,
+    /// What the function being compiled reads and calls — open while a function the
+    /// loader may run is being lowered, a top-level `lem-fn` or a loader-run one, and
+    /// through every lambda inside it (∆iCW, ∆HF0).
+    uses: Option<Collecting>,
     /// The top-level bindings of the bindings file lowered so far, by name — the list a
     /// repeat is checked against, since they are fields and not locals in any scope.
     top_bindings: Vec<(Rc<str>, Span)>,
 }
 
-/// The reads a loader-run function makes, being collected.
-struct Reads {
-    /// The `self` parameter of a default or `by` index, by its binder — what tells a
-    /// read of the record being built from any other. `None` in a computed binding.
+/// The reads and calls of a function the loader may run, being collected.
+struct Collecting {
+    /// Whether the loader itself runs this function — a default, a `by` index, or a
+    /// computed binding — which is when the host's document value is refused (∆iCW).
+    at_load: bool,
+    /// The `self` of a default or `by` index, by its binder — what tells a read of
+    /// the record being built from any other.
     self_binder: Option<Span>,
-    items: Vec<Read>,
+    /// A `lem-fn`'s parameters, by binder, in declaration order.
+    params: Vec<Span>,
+    uses: Uses,
+}
+
+impl Collecting {
+    /// The root the local `binder` is, if it is one.
+    fn root(&self, binder: Span) -> Option<Root> {
+        if self.self_binder == Some(binder) {
+            return Some(Root::Own);
+        }
+        self.params
+            .iter()
+            .position(|param| *param == binder)
+            .map(|index| Root::Param(index_u32(index)))
+    }
 }
 
 impl<'a> Compiler<'a> {
@@ -348,18 +369,22 @@ impl<'a> Compiler<'a> {
                 let ty = self.known(param.ty.clone());
                 self.bind(token, BindingKind::Parameter, ty);
             }
-            match &item {
+            let binders = tokens.iter().map(TokenSpan::span).collect();
+            // A `lem-fn` runs at render as much as at load, so its body may read the
+            // host's document value; what it reads is noted for the link step to
+            // close through the calls that reach it from a loader-run function (∆HF0).
+            let uses = self.collecting(false, None, binders, |c| match &item {
                 Item::FnBlock(f) => {
                     let body = required(f.body());
-                    self.emit(Op::Capture, f.span());
-                    self.lower_block(body.items().collect(), whitespace::Kind::Value);
-                    self.emit(Op::EndCapture, f.span());
+                    c.emit(Op::Capture, f.span());
+                    c.lower_block(body.items().collect(), whitespace::Kind::Value);
+                    c.emit(Op::EndCapture, f.span());
                 }
                 Item::FnVoid(f) => {
-                    self.check(&required(f.value()), &ret);
+                    c.check(&required(f.value()), &ret);
                 }
                 _ => unreachable!("only functions reach here"),
-            }
+            });
             self.emit(Op::Return, item.span());
             let (ctx, frame) = self.pop_frame();
             self.finish(
@@ -368,6 +393,7 @@ impl<'a> Compiler<'a> {
                 &frame,
                 params.iter().map(|p| p.name.clone()).collect(),
             );
+            self.unit.uses.insert(func, uses);
         }
     }
 
@@ -422,22 +448,21 @@ impl<'a> Compiler<'a> {
                 let ty = self.known(field_decl.ty.clone());
                 let span = field_name.span();
                 let name = format!("{}.{}", declared.name, field_decl.name);
-                let row = |compiler: &mut Self, kind: StepKind, func: u32, reads| {
+                let row = |compiler: &mut Self, kind: StepKind, func: u32| {
                     compiler.unit.defaults.push(DefaultFn {
                         record: declared.name.clone(),
                         field: field_decl.name.clone(),
                         kind,
                         func,
-                        reads,
                         span,
                     });
                 };
                 if let Some(default) = field.default() {
-                    let (func, reads) =
+                    let func =
                         self.compile_step(&name, &declared.name, page_backed, span, |c| {
                             c.check(&default, &ty);
                         });
-                    row(self, StepKind::Default, func, reads);
+                    row(self, StepKind::Default, func);
                 }
                 if let Some(index) = field.index() {
                     let record = match ty.strip_optional() {
@@ -448,7 +473,7 @@ impl<'a> Compiler<'a> {
                         }
                         _ => None,
                     };
-                    let (func, reads) = self.compile_step(
+                    let func = self.compile_step(
                         &format!("{name}.by"),
                         &declared.name,
                         page_backed,
@@ -478,7 +503,7 @@ impl<'a> Compiler<'a> {
                             }
                         },
                     );
-                    row(self, StepKind::Index, func, reads);
+                    row(self, StepKind::Index, func);
                 }
             }
         }
@@ -497,7 +522,7 @@ impl<'a> Compiler<'a> {
         page_backed: bool,
         span: Span,
         lower: impl FnOnce(&mut Self),
-    ) -> (u32, Vec<Read>) {
+    ) -> u32 {
         let mut params: Vec<(&str, Type, Span)> =
             vec![("self", Type::Named(record.clone()), span)];
         if page_backed {
@@ -508,8 +533,8 @@ impl<'a> Compiler<'a> {
     }
 
     /// Compiles a function of `params` the loader calls, returning what `lower` leaves
-    /// on the stack, and the reads it made — `self_binder` being the binder of the
-    /// `self` among the parameters, if one is.
+    /// on the stack, with its reads and calls recorded in the unit — `self_binder`
+    /// being the binder of the `self` among the parameters, if one is.
     fn function_for_loader(
         &mut self,
         name: &str,
@@ -517,20 +542,14 @@ impl<'a> Compiler<'a> {
         self_binder: Option<Span>,
         span: Span,
         lower: impl FnOnce(&mut Self),
-    ) -> (u32, Vec<Read>) {
+    ) -> u32 {
         self.push_frame();
         for (param, ty, binder) in params {
             self.names
                 .bind_local(param, *binder, BindingKind::Implicit, ty.clone());
         }
-        let outer = self.reads.replace(Reads {
-            self_binder,
-            items: Vec::new(),
-        });
-        lower(self);
+        let uses = self.collecting(true, self_binder, Vec::new(), lower);
         self.emit(Op::Return, span);
-        let reads = self.reads.take().expect("the reads opened above").items;
-        self.reads = outer;
         let (ctx, frame) = self.pop_frame();
         let func = self.reserve(name);
         self.finish(
@@ -542,42 +561,90 @@ impl<'a> Compiler<'a> {
                 .map(|(param, _, _)| Rc::from(*param))
                 .collect(),
         );
-        (func, reads)
+        self.unit.uses.insert(func, uses);
+        func
     }
 
-    /// Records `read` as one the function being compiled for the loader makes, once.
-    fn note_read(&mut self, read: Read) {
-        if let Some(reads) = &mut self.reads
-            && !reads.items.contains(&read)
+    /// Runs `lower` with a collector open for the function it lowers — `at_load` when
+    /// the loader itself runs that function — and returns what was collected. Nested
+    /// under an outer collector, which is restored after: a lambda is its enclosing
+    /// function's, so nothing opens one for it.
+    fn collecting(
+        &mut self,
+        at_load: bool,
+        self_binder: Option<Span>,
+        params: Vec<Span>,
+        lower: impl FnOnce(&mut Self),
+    ) -> Uses {
+        let outer = self.uses.replace(Collecting {
+            at_load,
+            self_binder,
+            params,
+            uses: Uses::default(),
+        });
+        lower(self);
+        let collected = self.uses.take().expect("the collector opened above");
+        self.uses = outer;
+        collected.uses
+    }
+
+    /// Records `read` as one the function being compiled makes, once.
+    fn note_read(&mut self, read: Access) {
+        if let Some(collecting) = &mut self.uses
+            && !collecting.uses.reads.contains(&read)
         {
-            reads.items.push(read);
+            collecting.uses.reads.push(read);
         }
     }
 
-    /// Records the read `object.field` makes, when a loader-run function is being
-    /// compiled and the object is one whose fields decide order: the record being
-    /// built, through `self`, or an ambient value, by name.
+    /// Records the read `object.field` makes, when a function the loader may run is
+    /// being compiled and the object is one whose fields decide order: a root, or an
+    /// ambient value, by name.
     fn note_member_read(&mut self, object: &lemmon_syntax::ast::Expr, field: &str) {
-        let Some(reads) = &self.reads else {
+        let Some(collecting) = &self.uses else {
             return;
         };
-        let Some((path, _)) = self.path_of(object) else {
-            return;
-        };
-        if !path.fields().is_empty() {
-            return;
-        }
-        let read = match path.root() {
-            narrowing::Root::Local(binder) if Some(*binder) == reads.self_binder => {
-                Read::Own(Rc::from(field))
-            }
-            narrowing::Root::Local(_) => return,
-            narrowing::Root::Ambient(value) => Read::Ambient {
-                value: value.clone(),
+        let read = match self.bare_root(object) {
+            Some(narrowing::Root::Ambient(value)) => Access::Ambient {
+                value,
                 field: Rc::from(field),
             },
+            Some(narrowing::Root::Local(binder)) => match collecting.root(binder) {
+                Some(Root::Own) => Access::Own(Rc::from(field)),
+                Some(Root::Param(index)) => Access::Param {
+                    index,
+                    field: Rc::from(field),
+                },
+                Some(Root::Ambient(_)) | None => return,
+            },
+            None => return,
         };
         self.note_read(read);
+    }
+
+    /// Records a naming of the project function `name`, when a function the loader
+    /// may run is being compiled, once per distinct `args` — what the call handed
+    /// each parameter, in the callee's declaration order.
+    fn note_call(&mut self, name: &str, args: Vec<Option<Root>>) {
+        if let Some(collecting) = &mut self.uses {
+            let call = Call {
+                name: Rc::from(name),
+                args,
+            };
+            if !collecting.uses.calls.contains(&call) {
+                collecting.uses.calls.push(call);
+            }
+        }
+    }
+
+    /// The root `expr` is, when it is one written bare — `self`, a parameter, or an
+    /// ambient value — and the function being compiled is one the loader may run.
+    fn root_of(&self, expr: &lemmon_syntax::ast::Expr) -> Option<Root> {
+        let collecting = self.uses.as_ref()?;
+        match self.bare_root(expr)? {
+            narrowing::Root::Local(binder) => collecting.root(binder),
+            narrowing::Root::Ambient(value) => Some(Root::Ambient(value)),
+        }
     }
 
     /// Compiles the file's top level into its entry function. `fields_of` is the
@@ -905,25 +972,49 @@ mod tests {
                 "types.lem",
                 "<lem-type A>\n  first: string\n  words: [string]\n  \
                  full: string = self.first + words(self)\n  \
-                 tags: [string] = self.words.filter(|w| w != self.first)\n</lem-type>\n\
-                 <lem-fn words(a: A): string = a.first />",
+                 tags: [string] = self.words.filter(|w| w != self.first + join(self, w))\n\
+                 </lem-type>\n\
+                 <lem-fn words(a: A): string = a.first />\n\
+                 <lem-fn join(a: A, w: string): string = w />",
             )],
         );
-        let rows: Vec<(String, StepKind, Vec<Read>)> = unit
+        let rows: Vec<(String, StepKind, &Uses)> = unit
             .defaults
             .iter()
-            .map(|d| (format!("{}.{}", d.record, d.field), d.kind, d.reads.clone()))
+            .map(|d| {
+                (
+                    format!("{}.{}", d.record, d.field),
+                    d.kind,
+                    &unit.uses[&d.func],
+                )
+            })
             .collect();
-        let own = |f: &str| Read::Own(Rc::from(f));
+        let own = |f: &str| Access::Own(Rc::from(f));
+        let call = |name: &str, args: &[Option<Root>]| Call {
+            name: Rc::from(name),
+            args: args.to_vec(),
+        };
         assert_eq!(
             rows,
             [
-                ("A.full".to_owned(), StepKind::Default, vec![own("first")]),
-                // Read inside a lambda, and through `self` captured into it.
+                (
+                    "A.full".to_owned(),
+                    StepKind::Default,
+                    // `words(self)` hands the record over whole: a call, not a read.
+                    &Uses {
+                        reads: vec![own("first")],
+                        calls: vec![call("words", &[Some(Root::Own)])],
+                    }
+                ),
+                // Read inside a lambda, and through `self` captured into it — and
+                // called there too, `w` being the lambda's own and no root.
                 (
                     "A.tags".to_owned(),
                     StepKind::Default,
-                    vec![own("words"), own("first")]
+                    &Uses {
+                        reads: vec![own("words"), own("first")],
+                        calls: vec![call("join", &[Some(Root::Own), None])],
+                    }
                 ),
             ]
         );
@@ -932,6 +1023,183 @@ mod tests {
         assert_eq!(full.params, [Rc::from("self")]);
         // `words(self)` passes the record to a function: no field read, no fact.
         assert_eq!(unit.facts.len(), 0);
+    }
+
+    /// Functions whose uses the tests below read: what the link step closes a
+    /// default's calls through (∆HF0).
+    const FNS: &str = "<lem-type Photo>\n  alt: string\n</lem-type>\n\
+                       <lem-type A>\n  first: string\n  hero: Photo?\n  words: [string]\n\
+                       </lem-type>\n\
+                       <lem-fn tail(a: A, sep: string): string = sep + a.first />\n\
+                       <lem-fn describe(p: Photo?): string = p?.alt ?? \"\" />\n\
+                       <lem-fn tally(s: any): string = s.name />\n\
+                       <lem-fn full(a: A, sep: string): string = \
+                       a.first + tail(sep: sep, a: a) + site.name + describe(a.hero) + \
+                       a.words.map(|w| tail(a, w))[0] + tally(site) />";
+
+    /// The uses of the `lem-fn` `name` in `unit`.
+    fn uses_of<'a>(unit: &'a Unit, name: &str) -> &'a Uses {
+        let export = unit.exports.iter().find(|e| &*e.name == name).unwrap();
+        &unit.uses[&export.func]
+    }
+
+    fn param(index: u32, field: &str) -> Access {
+        Access::Param {
+            index,
+            field: Rc::from(field),
+        }
+    }
+
+    #[test]
+    fn records_the_fields_a_function_reads_off_its_parameters_and_ambient_values() {
+        let unit = unit_with(
+            &untyped_host(),
+            "fns.lem",
+            &[SourceFile::new("fns.lem", FNS)],
+        );
+        assert_eq!(
+            uses_of(&unit, "full").reads,
+            [
+                param(0, "first"),
+                Access::Ambient {
+                    value: Rc::from("site"),
+                    field: Rc::from("name"),
+                },
+                // `describe(a.hero)` reads `hero` and hands a field over, not a root:
+                // `describe`'s reads off its parameter are the photo's.
+                param(0, "hero"),
+                param(0, "words"),
+                Access::Whole(Rc::from("site")),
+            ]
+        );
+        assert_eq!(uses_of(&unit, "tail").reads, [param(0, "first")]);
+        assert_eq!(uses_of(&unit, "tally").reads, [param(0, "name")]);
+    }
+
+    #[test]
+    fn records_the_calls_a_function_makes_with_the_root_handed_each_parameter() {
+        // In the callee's parameter order, whatever order the arguments were written
+        // in; a root is `self`, a parameter, or an ambient value, handed whole.
+        let unit = unit_with(
+            &untyped_host(),
+            "fns.lem",
+            &[SourceFile::new("fns.lem", FNS)],
+        );
+        assert_eq!(
+            uses_of(&unit, "full").calls,
+            [
+                Call {
+                    name: Rc::from("tail"),
+                    args: vec![Some(Root::Param(0)), Some(Root::Param(1))],
+                },
+                Call {
+                    name: Rc::from("describe"),
+                    args: vec![None],
+                },
+                // Inside the lambda, `a` is still the function's parameter and `w`
+                // is the lambda's own.
+                Call {
+                    name: Rc::from("tail"),
+                    args: vec![Some(Root::Param(0)), None],
+                },
+                Call {
+                    name: Rc::from("tally"),
+                    args: vec![Some(Root::Ambient(Rc::from("site")))],
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn records_a_repeated_call_once() {
+        let unit = unit_with(
+            &untyped_host(),
+            "fns.lem",
+            &[SourceFile::new(
+                "fns.lem",
+                "<lem-fn twice(s: string): string = once(s) + once(s) + once(\"\") />\n\
+                 <lem-fn once(s: string): string = s />",
+            )],
+        );
+        assert_eq!(
+            uses_of(&unit, "twice").calls,
+            [
+                Call {
+                    name: Rc::from("once"),
+                    args: vec![Some(Root::Param(0))],
+                },
+                Call {
+                    name: Rc::from("once"),
+                    args: vec![None],
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn records_a_function_named_as_a_value_as_a_call_handed_nothing() {
+        // `self.words.map(loud)` may call `loud` with anything: what `loud` reads
+        // still counts for the order, off no root the default can vouch for.
+        let unit = unit_with(
+            &untyped_host(),
+            "types.lem",
+            &[SourceFile::new(
+                "types.lem",
+                "<lem-type A>\n  words: [string]\n  \
+                 shouted: [string] = self.words.map(loud)\n</lem-type>\n\
+                 <lem-fn loud(w: string): string = w + site.name />",
+            )],
+        );
+        assert_eq!(
+            unit.uses[&unit.defaults[0].func].calls,
+            [Call {
+                name: Rc::from("loud"),
+                args: vec![None],
+            }]
+        );
+    }
+
+    #[test]
+    fn records_a_block_functions_reads_but_not_those_through_a_local() {
+        // A block body's reads count like a value's; a local bound to a parameter is
+        // not a root, so a field read through it is not counted — the loader's error
+        // at the read is what an author who aliases `self` or a parameter gets.
+        let unit = unit_with(
+            &untyped_host(),
+            "fns.lem",
+            &[SourceFile::new(
+                "fns.lem",
+                "<lem-type A>\n  first: string\n  last: string\n</lem-type>\n\
+                 <lem-fn card(a: A)><lem-let b = a /><lem.a.first><lem.b.last></lem-fn>",
+            )],
+        );
+        assert_eq!(uses_of(&unit, "card").reads, [param(0, "first")]);
+    }
+
+    #[test]
+    fn lets_a_function_read_the_document_value_and_records_it() {
+        // A `lem-fn` runs at render, where `page` is bound; the read is recorded, a
+        // field or the value whole, so the link step can refuse a default that
+        // reaches it through the call (∆HF0).
+        const FNS: &str = "<lem-fn where(): url = page.url />\n\
+                           <lem-fn here(): Page = page />";
+        let files = [
+            SourceFile::new("ambient.lem", PAGE),
+            SourceFile::new("fns.lem", FNS),
+        ];
+        assert_eq!(shown_with(&shell_host(), &files), Vec::<String>::new());
+        let unit = unit_with(&shell_host(), "fns.lem", &files);
+        assert_eq!(
+            uses_of(&unit, "where").reads,
+            [Access::Ambient {
+                value: Rc::from("page"),
+                field: Rc::from("url")
+            }]
+        );
+        assert_eq!(
+            uses_of(&unit, "here").reads,
+            [Access::Whole(Rc::from("page"))]
+        );
     }
 
     #[test]
@@ -981,7 +1249,10 @@ mod tests {
                  full: string = self.fmt(\"x\")\n</lem-type>",
             )],
         );
-        assert_eq!(unit.defaults[0].reads, [Read::Own(Rc::from("fmt"))]);
+        let uses = &unit.uses[&unit.defaults[0].func];
+        assert_eq!(uses.reads, [Access::Own(Rc::from("fmt"))]);
+        // A call through a value names no function the link step could follow.
+        assert!(uses.calls.is_empty());
     }
 
     #[test]
@@ -1024,8 +1295,8 @@ mod tests {
         assert_eq!(unit.defaults.len(), 1);
         assert_eq!(unit.defaults[0].kind, StepKind::Index);
         assert_eq!(
-            unit.defaults[0].reads,
-            [Read::Ambient {
+            unit.uses[&unit.defaults[0].func].reads,
+            [Access::Ambient {
                 value: Rc::from("site"),
                 field: Rc::from("photos")
             }]

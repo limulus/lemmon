@@ -17,9 +17,9 @@ use super::whitespace::{Arm, Body, Case, Kind, Piece};
 use super::{Compiler, Diagnostic, TokenSpan, required, rules};
 use crate::bytecode::Op;
 use crate::decls::Decls;
-use crate::plan::{Fulfilled, SourceKind};
+use crate::plan::SourceKind;
 use crate::types::Type;
-use crate::unit::BindingFn;
+use crate::unit::{BindingFn, Supplied};
 
 /// A document chunk as emitted: without the line ending a silent tag's sentinel left at
 /// its head, when one stands before it.
@@ -436,12 +436,13 @@ impl Compiler<'_> {
         lower: impl FnOnce(&mut Self, bool),
     ) {
         let admitted = self.admit_exported(name);
-        let (func, reads) =
-            self.function_for_loader(name.text(), &[], None, span, |c| lower(c, admitted));
+        let func = self.function_for_loader(name.text(), &[], None, span, |c| {
+            lower(c, admitted);
+        });
         if admitted {
             self.unit.bindings.push(BindingFn {
                 name: Rc::from(name.text()),
-                fulfilled: Fulfilled::Computed { func, reads },
+                supplied: Supplied::ByFunction(func),
                 span: name.span(),
             });
         }
@@ -512,7 +513,7 @@ impl Compiler<'_> {
         if admitted {
             self.unit.bindings.push(BindingFn {
                 name: Rc::from(name.text()),
-                fulfilled: Fulfilled::ByHost(kind),
+                supplied: Supplied::ByHost(kind),
                 span: name.span(),
             });
         }
@@ -585,8 +586,9 @@ mod tests {
     use crate::compile::{compile, compile_unit, prepare};
     use crate::exports::ExportIndex;
     use crate::host::{Ambient, Host};
-    use crate::plan::{Fulfilled, Read, SourceKind};
+    use crate::plan::SourceKind;
     use crate::testing::{all_of, at};
+    use crate::unit::{Access, Call, Supplied};
     use crate::{SourceFile, Unit, Value, render};
 
     /// A host shaped like the standard shell's, reading `site` from `site.lem`.
@@ -641,25 +643,25 @@ mod tests {
              <lem-let photos: {string: int} from plugin(\"photos\") />\n\
              <lem-let base: string from (env(\"SITE_URL\")) />",
         );
-        let rows: Vec<(&str, &Fulfilled)> = unit
+        let rows: Vec<(&str, &Supplied)> = unit
             .bindings
             .iter()
-            .map(|b| (&*b.name, &b.fulfilled))
+            .map(|b| (&*b.name, &b.supplied))
             .collect();
         assert_eq!(
             rows,
             [
                 (
                     "posts",
-                    &Fulfilled::ByHost(SourceKind::File(Rc::from("feed/*.md")))
+                    &Supplied::ByHost(SourceKind::File(Rc::from("feed/*.md")))
                 ),
                 (
                     "photos",
-                    &Fulfilled::ByHost(SourceKind::Plugin(Rc::from("photos")))
+                    &Supplied::ByHost(SourceKind::Plugin(Rc::from("photos")))
                 ),
                 (
                     "base",
-                    &Fulfilled::ByHost(SourceKind::Env(Rc::from("SITE_URL")))
+                    &Supplied::ByHost(SourceKind::Env(Rc::from("SITE_URL")))
                 ),
             ]
         );
@@ -722,20 +724,43 @@ mod tests {
             "<lem-let name: string = \"limulus.net\" />\n\
              <lem-let tagline: string = \"Notes from \" + name + site.name />",
         );
-        let Fulfilled::Computed { func, reads } = &unit.bindings[1].fulfilled else {
+        let Supplied::ByFunction(func) = unit.bindings[1].supplied else {
             panic!("computed: {:?}", unit.bindings);
         };
         assert_eq!(
-            *reads,
-            [Read::Ambient {
+            unit.uses[&func].reads,
+            [Access::Ambient {
                 value: Rc::from("site"),
                 field: Rc::from("name")
             }]
         );
-        let function = &unit.functions[*func as usize];
+        let function = &unit.functions[func as usize];
         assert_eq!(function.name, "tagline");
         assert!(function.params.is_empty());
         assert_eq!(&*unit.bindings[0].name, "name");
+    }
+
+    #[test]
+    fn records_the_functions_a_computed_binding_calls() {
+        // What `all()` reads is its own body's business until the link step follows
+        // the call (∆HF0); here the binding records the call and nothing it reads.
+        let unit = site_unit(
+            "<lem-fn all(): [string] = site.posts />\n\
+             <lem-let posts: [string] from \"feed/*.md\" />\n\
+             <lem-let articles: [string] = all() />",
+        );
+        let Supplied::ByFunction(func) = unit.bindings[1].supplied else {
+            panic!("computed: {:?}", unit.bindings);
+        };
+        let uses = &unit.uses[&func];
+        assert!(uses.reads.is_empty());
+        assert_eq!(
+            uses.calls,
+            [Call {
+                name: Rc::from("all"),
+                args: Vec::new()
+            }]
+        );
     }
 
     #[test]
@@ -884,11 +909,11 @@ mod tests {
     #[test]
     fn compiles_a_capture_binding_for_the_loader() {
         let unit = site_unit("<lem-let intro><p>hi</p></lem-let>");
-        let Fulfilled::Computed { func, reads } = &unit.bindings[0].fulfilled else {
+        let Supplied::ByFunction(func) = unit.bindings[0].supplied else {
             panic!("computed: {:?}", unit.bindings);
         };
-        assert!(reads.is_empty());
-        assert_eq!(unit.functions[*func as usize].name, "intro");
+        assert!(unit.uses[&func].reads.is_empty());
+        assert_eq!(unit.functions[func as usize].name, "intro");
     }
 
     #[test]
