@@ -20,12 +20,6 @@ mechanism: `delto surface` trusts these edges to decide what is eligible to work
 Standing epic for reshaping working code. It comes first so that document order gives a
 refactor priority: reshaping is cheapest before more code is built on what it reshapes.
 
-- ∆eag Restrict defaults to the record and `by` to a declared field — a default reads
-  `self`, `path`, and `body`, never an ambient value, and `by` names one field of an
-  ambient value (`by site.photos`), a pair the head declares rather than a function the
-  loader runs. A record's plan then depends on its declarations alone, never on a body: a
-  default reading `site` couples every record to the site's load order (D37 revised); needs: ∆HF0
-
 ## Phase 1 — Language complete, tooling from day one
 
 Seed items for the next phase (architecture doc 3, phase 1); expect these to be split
