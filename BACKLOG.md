@@ -20,6 +20,12 @@ mechanism: `delto surface` trusts these edges to decide what is eligible to work
 Standing epic for reshaping working code. It comes first so that document order gives a
 refactor priority: reshaping is cheapest before more code is built on what it reshapes.
 
+- ∆eag Restrict defaults to the record and drop `by` — a default or computed binding reads
+  `self`, `path`, and `body`, never `site`, and `hero: Photo? by site.photos` goes, a map
+  index in the layout carrying the lookup. A record's plan then depends on nothing but its
+  own declarations, and `from` bindings stop waiting on what their records read: a default
+  reading `site` couples every record to the site's load order (D37 revised); needs: ∆HF0
+
 ## Phase 1 — Language complete, tooling from day one
 
 Seed items for the next phase (architecture doc 3, phase 1); expect these to be split
@@ -119,7 +125,7 @@ API); the port itself lives in limulus-dot-net on a branch while 11ty stays gree
 - ∆rT5 Schemas, layouts, components — `site.lem` types for articles, link posts, TILs,
   photos, vod, authors; the base/page/article/video layouts and ~20 WebC components
   rewritten as `.lem` functions with `lem-style` scoping (D20). First real exercise of the
-  language at scale; expect it to feed fixes back into Phase 1 items; needs: ∆Q6L, ∆RGQ
+  language at scale; expect it to feed fixes back into Phase 1 items; needs: ∆Q6L, ∆RGQ, ∆eag
 - ∆o24 Content + markdown parity — typed front matter for every `.md` (globs replace `tags`,
   schema defaults replace `links.json`), computed defaults replacing `eleventyComputed.js`
   (title from linkTitle, tilTopic from path, link/via domains, readingTime), the link-post
