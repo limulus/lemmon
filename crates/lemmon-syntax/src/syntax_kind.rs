@@ -136,7 +136,7 @@ syntax_kinds! {
     FnType,
     /// The body of a `lem-type`: its fields, one per line.
     FieldList,
-    /// One `name: Type [by index] [= default]` field.
+    /// One `name: Type [by value.field] [= default]` field.
     Field,
     /// The head of a `lem-case`: a literal, `null`, a variant name, or `Type as name`.
     Pattern,

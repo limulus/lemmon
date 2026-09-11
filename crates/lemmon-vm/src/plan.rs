@@ -1,13 +1,15 @@
 //! What a module tells the loader to run: the plan behind `loadData` (∆iCW,
 //! `docs/language.md` §Schemas, §Ambient types).
 //!
-//! A schema's computed defaults and `by` indexes, and the bindings file's computed
-//! bindings, are expressions the *loader* evaluates rather than a render — a default
-//! sees the record being built, a binding sees the site so far. The compiler lowers
-//! each into a function of its own unit and records what it reads; [`link`](crate::link)
-//! joins those into the tables here, in the order the reads dictate, and refuses a cycle
-//! as it refuses an unresolved import. The loader then runs each table front to back
-//! and never has to reason about order itself.
+//! A schema's computed defaults and the bindings file's computed bindings are
+//! expressions the *loader* evaluates rather than a render — a default sees the record
+//! being built, a binding sees the site so far. The compiler lowers each into a
+//! function of its own unit and records what it reads; [`link`](crate::link) joins
+//! those into the tables here, in the order the reads dictate, and refuses a cycle as
+//! it refuses an unresolved import. A field's `by` index is no function: it names one
+//! field of one ambient value, and the loader indexes that map as loaded (∆eag). The
+//! loader then runs each table front to back and never has to reason about order
+//! itself.
 //!
 //! Everything here is plain data on the [`Module`](crate::Module), so it serialises
 //! with the rest of the program.
@@ -40,21 +42,12 @@ pub enum Read {
     Ambient { value: Rc<str>, field: Rc<str> },
 }
 
-/// What a step computes for its field.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum StepKind {
-    /// The field's `= default`, run when the loaded data omits the field.
-    Default,
-    /// The field's `by index`, run when the loaded data gives a string to resolve.
-    Index,
-}
-
-/// One function the loader runs for one field of a record. Its parameters are `self`
-/// and, on a record that extends the host's document type, `path` and `body`.
+/// One field's `= default`: the function the loader runs when the loaded data omits
+/// the field. Its parameters are `self` and, on a record that extends the host's
+/// document type, `path` and `body`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Step {
     pub field: Rc<str>,
-    pub kind: StepKind,
     /// The function, in the module.
     pub func: u32,
     /// Everything the function reads that the loader must have ready first.
@@ -66,12 +59,30 @@ pub struct Step {
     pub span: Span,
 }
 
+/// One field's `by value.field` index: the map a string the loaded data gives for the
+/// field resolves through, named as a field of an ambient value (∆eag). Resolved
+/// before any default runs, since a default may read the field.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Index {
+    pub field: Rc<str>,
+    /// The ambient value the map is a field of: `site`.
+    pub value: Rc<str>,
+    /// The map's name in that value: `photos`.
+    pub key: Rc<str>,
+    /// The file the field is declared in, as a module file index — what an error in
+    /// the lookup names.
+    pub file: u32,
+    /// The field's name in that file.
+    pub span: Span,
+}
+
 /// Every step of one declared record, its ancestors' included, in an order that has
-/// each field's reads computed before it.
+/// each field's reads computed before it, and every index of one.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RecordPlan {
     pub name: Rc<str>,
     pub steps: Vec<Step>,
+    pub indexes: Vec<Index>,
 }
 
 /// How one binding of the bindings file gets its value.

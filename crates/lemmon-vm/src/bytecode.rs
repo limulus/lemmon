@@ -207,8 +207,8 @@ pub struct Module {
     /// Every project-flat function by name — what a string in loaded data resolves
     /// through where a function type is expected (`layout: article`).
     pub exports: Vec<Exported>,
-    /// What the loader runs for each declared record: its defaults and `by` indexes,
-    /// in dependency order (∆iCW).
+    /// What the loader does for each declared record: its defaults, in dependency
+    /// order (∆iCW), and the ambient maps its `by` indexes name (∆eag).
     pub records: Vec<RecordPlan>,
     /// One plan per ambient value the host reads from a file the program has, in the
     /// host's declaration order.

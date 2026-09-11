@@ -40,12 +40,12 @@ pub use exports::{Export, ExportIndex, TypeExport};
 pub use host::{Ambient, Host};
 pub use load::{Data, HostSpan, Loaded, Source, Spans, Store, collects, field_path, load};
 pub use plan::{
-    BindingStep, Bindings, Fulfilled, Read, RecordPlan, SourceKind, Step, StepKind,
+    BindingStep, Bindings, Fulfilled, Index, Read, RecordPlan, SourceKind, Step,
 };
 pub use types::Type;
 pub use unit::{
     Access, BindingFn, Call, DefaultFn, ExportedSignature, ImportRef, ImportedSignature,
-    Param, Root, Supplied, Unit, Uses, link,
+    IndexDecl, Param, Root, Supplied, Unit, Uses, link,
 };
 pub use value::{Closure, Map, Value};
 pub use vm::{invoke, render};

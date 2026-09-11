@@ -1,0 +1,9 @@
+<lem-type Gallery extends Page>
+  hero: Photo? by lookup()
+  layout: (Gallery, html): html
+</lem-type>
+
+<lem-fn lookup(): {string: Photo} = site.photos />
+
+`by` names a field of an ambient value and nothing else: the loader indexes that map as
+loaded, and no function runs to produce it.

@@ -401,7 +401,9 @@ impl Field {
         child(&self.syntax)
     }
 
-    /// The reference index after `by`, if the field is a reference field.
+    /// The index after `by`, if the field is a reference field: parsed as any
+    /// expression, and held to `value.field` by the compiler, whose vocabulary the
+    /// refusal needs.
     #[must_use]
     pub fn index(&self) -> Option<Expr> {
         self.expr_after(|t| t.kind() == SyntaxKind::Ident && t.text() == "by")

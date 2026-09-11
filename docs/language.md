@@ -100,8 +100,8 @@ follows:
   place goes unsaid, while mistakes in the tokens that are present — a `/>` on a
   block tag, a reserved word as a name, a close tag after the head — are still
   reported.
-- A `lem-type` body holds fields, one per line: `name: Type`, then `by index` if the
-  field is a reference, then `= default` if it has one. Whatever else stands on a
+- A `lem-type` body holds fields, one per line: `name: Type`, then `by value.field` if
+  the field is a reference, then `= default` if it has one. Whatever else stands on a
   field's line is one diagnostic; a `>` there is a mistake in the field, not its end.
   Anything the scanner handed back to text mode before the close tag — an element, a
   tag — is reported as out of place and still parsed as items, so its tags nest and
@@ -218,12 +218,18 @@ the checker's question, not the parser's.
 </lem-type>
 ```
 
-- **Fields** are one per line, in the order `name: Type`, then `by <index>`, then
-  `= <default>`; a default may span lines inside its brackets (D29).
-- **Reference fields** (`by <index>`): the field's type is a record `R` (or `R?`), and
-  the index is an expression of type `{string: R}` — a map on `site`, as a rule —
-  checked where the field is declared. The loader resolves the front-matter string
-  through it; a miss is a load error at the YAML position.
+- **Fields** are one per line, in the order `name: Type`, then `by <value>.<field>`,
+  then `= <default>`; a default may span lines inside its brackets (D29).
+- **Reference fields** (`by <value>.<field>`): the field's type is a record `R` (or
+  `R?`), and the index names a field of an ambient value declared `{string: R}` —
+  `by site.photos` — checked where the field is declared. Nothing else may stand after
+  `by`: the index is a pair the head declares, not an expression the loader runs, so
+  a record's plan depends on nothing a body says (∆eag). The loader looks the
+  front-matter string up in the map as loaded, before any default runs; a miss is a
+  load error at the YAML position. A `from` binding whose records index a sibling
+  loads after it, which is the one way a record shapes the site's load order; a map
+  in another bindings file, or in a host value declared later, is one the loader
+  reaches later, and the index is a load error at the field.
 - **Computed defaults** are checked against their field where they are declared and run
   once at load, when the loaded data omits the field, in dependency order (D37). A
   default sees `self`, the record being built, as the declaring type — a subtype that
@@ -263,7 +269,8 @@ the checker's question, not the parser's.
 - **`extends`** names a record — never an enum, a builtin type, or the type itself
   through any chain — and a field an ancestor declares may be redeclared only with the
   same type, to give it a default (D32); a redeclaration that gives none leaves the
-  ancestor's default in force. So `layout: (Article, html): html` is declared once, on
+  ancestor's default in force, and its index likewise — each comes from the nearest
+  declaration that gives one. So `layout: (Article, html): html` is declared once, on
   `Article`, and a `LinkPost extends Article` inherits it: a layout that only a link
   post needs takes an `Article` and narrows inside.
 - _Not yet (∆Q6L): `datetime`, `duration`, `url`, and `asset` have no run-time values;

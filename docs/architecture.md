@@ -206,9 +206,10 @@ form (`exportModule`) first-class.
 Stack machine; serializable
 `Module { files, documents, constants, functions, declarations, exports, records, bindings }`
 — the code, the project's type declarations, its project-flat functions by name, and
-the loader's plans: each record's default and `by` functions and the bindings file's
-computed bindings, in the order their recorded reads, closed through calls, dictate
-(D37, ∆HF0) — linked from
+the loader's plans: each record's default functions and the bindings file's computed
+bindings, in the order their recorded reads, closed through calls, dictate (D37,
+∆HF0), and each record's `by` indexes, the ambient fields its strings resolve through
+(∆eag) — linked from
 per-file units (above). Values are immutable and Rc'd:
 `Null | Bool | Int | Float | Str | Html | DateTime | Duration | Url | Asset | List | Map | Fn | Record`.
 Records carry their declared name, and the module the declaration table that

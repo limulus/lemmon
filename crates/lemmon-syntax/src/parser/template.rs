@@ -759,7 +759,8 @@ fn field_list(p: &mut Parser<'_>) {
     m.complete(p, SyntaxKind::FieldList);
 }
 
-/// `name: Type [by index] [= default]`, ending at its line. Whatever else stands on
+/// `name: Type [by value.field] [= default]`, ending at its line — the index is
+/// parsed as an expression and narrowed by the compiler. Whatever else stands on
 /// the line is skipped with one diagnostic, which is also what keeps [`field_list`]
 /// moving over a line that starts with junk.
 fn field(p: &mut Parser<'_>) {

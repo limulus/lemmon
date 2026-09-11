@@ -38,17 +38,17 @@ mod whitespace;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::rc::Rc;
 
-use lemmon_syntax::ast::{Item, Spanned};
+use lemmon_syntax::ast::{Expr, Item, Spanned};
 use lemmon_syntax::{Parse, Span, SyntaxToken};
 
 use crate::bytecode::{Function, Module, Op};
 use crate::decls::{Decls, Kind, Shape};
 use crate::exports::{Export, ExportIndex};
 use crate::host::Host;
-use crate::plan::StepKind;
 use crate::types::Type;
 use crate::unit::{
-    Access, Call, DefaultFn, ImportRef, ImportedSignature, Root, Unit, Uses, link,
+    Access, Call, DefaultFn, ImportRef, ImportedSignature, IndexDecl, Root, Unit, Uses,
+    link,
 };
 use crate::{SourceFile, Value};
 
@@ -161,6 +161,7 @@ pub fn compile_unit(
             ambient_refs: Vec::new(),
             record: prepared.record.clone(),
             defaults: Vec::new(),
+            indexes: Vec::new(),
             bindings: Vec::new(),
             uses: BTreeMap::new(),
             record_span: prepared.record_span(),
@@ -292,11 +293,11 @@ struct Compiler<'a> {
 
 /// The reads and calls of a function the loader may run, being collected.
 struct Collecting {
-    /// Whether the loader itself runs this function — a default, a `by` index, or a
-    /// computed binding — which is when the host's document value is refused (∆iCW).
+    /// Whether the loader itself runs this function — a default or a computed
+    /// binding — which is when the host's document value is refused (∆iCW).
     at_load: bool,
-    /// The `self` of a default or `by` index, by its binder — what tells a read of
-    /// the record being built from any other.
+    /// The `self` of a default, by its binder — what tells a read of the record
+    /// being built from any other.
     self_binder: Option<Span>,
     /// A `lem-fn`'s parameters, by binder, in declaration order.
     params: Vec<Span>,
@@ -398,11 +399,13 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    /// Compiles the loader's function for every field default and `by` index the
-    /// records this file declares carry (∆iCW). A default is checked against its
-    /// field's type; an index must be a map from string to the field's record. Each
-    /// runs with `self` — the record being built, as the declaring type — and, on a
-    /// record that extends the host's document type, `path` and `body` as well.
+    /// Compiles the loader's function for every field default the records this file
+    /// declares carry (∆iCW), and records every `by` index (∆eag). A default is
+    /// checked against its field's type and runs with `self` — the record being
+    /// built, as the declaring type — and, on a record that extends the host's
+    /// document type, `path` and `body` as well. An index names a field of an
+    /// ambient value that is a map from string to the field's record, and is no
+    /// function: the loader indexes that map as loaded.
     fn compile_defaults(&mut self, parse: &Parse) {
         for item in parse.root().items() {
             let Item::TypeDecl(decl) = &item else {
@@ -449,63 +452,103 @@ impl<'a> Compiler<'a> {
                 let ty = self.known(field_decl.ty.clone());
                 let span = field_name.span();
                 let name = format!("{}.{}", declared.name, field_decl.name);
-                let row = |compiler: &mut Self, kind: StepKind, func: u32| {
-                    compiler.unit.defaults.push(DefaultFn {
-                        record: declared.name.clone(),
-                        field: field_decl.name.clone(),
-                        kind,
-                        func,
-                        span,
-                    });
-                };
                 if let Some(default) = field.default() {
                     let func =
                         self.compile_step(&name, &declared.name, page_backed, span, |c| {
                             c.check(&default, &ty);
                         });
-                    row(self, StepKind::Default, func);
+                    self.unit.defaults.push(DefaultFn {
+                        record: declared.name.clone(),
+                        field: field_decl.name.clone(),
+                        func,
+                        span,
+                    });
                 }
                 if let Some(index) = field.index() {
-                    let record = match ty.strip_optional() {
-                        Type::Named(record)
-                            if self.decls().kind(record) == Some(Kind::Record) =>
-                        {
-                            Some(record.clone())
+                    if let Type::Named(record) = ty.strip_optional()
+                        && self.decls().kind(record) == Some(Kind::Record)
+                    {
+                        let record = record.clone();
+                        if let Some((value, key)) = self.index_field(&index, &record) {
+                            self.unit.indexes.push(IndexDecl {
+                                record: declared.name.clone(),
+                                field: field_decl.name.clone(),
+                                value,
+                                key,
+                                span,
+                            });
                         }
-                        _ => None,
-                    };
-                    let func = self.compile_step(
-                        &format!("{name}.by"),
-                        &declared.name,
-                        page_backed,
-                        span,
-                        |c| {
-                            match &record {
-                                Some(record) => {
-                                    c.check(
-                                        &index,
-                                        &Type::map(Type::Named(record.clone())),
-                                    );
-                                }
-                                // An unknown type was reported at the annotation; anything
-                                // else declared is the mistake here.
-                                None => {
-                                    if ty != Type::Any {
-                                        c.error(
-                                            index.span(),
-                                            format!(
-                                                "`by` resolves a record: `{}` is a `{ty}`",
-                                                field_decl.name
-                                            ),
-                                        );
-                                    }
-                                    c.expr(&index);
-                                }
-                            }
-                        },
-                    );
-                    row(self, StepKind::Index, func);
+                    } else if ty == field_decl.ty {
+                        // Declared as written — `any` included, which is spelled and
+                        // resolves nothing. An unknown type reads as `any` only after
+                        // the annotation reported it, and nothing more is said then.
+                        self.error(
+                            index.span(),
+                            format!(
+                                "`by` resolves a record: `{}` is declared `{ty}`",
+                                field_decl.name
+                            ),
+                        );
+                    }
                 }
+            }
+        }
+    }
+
+    /// The ambient value and field a `by` index names — `by site.photos` — checked
+    /// to be declared `{string: R}` for the field's record `R`, or nothing once what
+    /// is wrong with the index has been reported: it is some other expression, the
+    /// name is undefined or not an ambient value, the value is the host's document
+    /// value, which no record may reach while it loads, or the field is not declared
+    /// or not that map — the field read typed as `value.field` is typed anywhere.
+    /// The value's binding is a fact of this unit, as any read of it is (D25); a
+    /// value the host left untyped admits any field.
+    fn index_field(
+        &mut self,
+        index: &Expr,
+        record: &Rc<str>,
+    ) -> Option<(Rc<str>, Rc<str>)> {
+        const SHAPE: &str =
+            "`by` names a field of an ambient value, as in `by site.photos`";
+        let Expr::Member(member) = index else {
+            self.error(index.span(), SHAPE);
+            return None;
+        };
+        let (Expr::Name(name), false) = (required(member.object()), member.is_optional())
+        else {
+            self.error(index.span(), SHAPE);
+            return None;
+        };
+        let (value, key) = (required(name.name()), required(member.name()));
+        let ty = match self.names.peek(value.text()) {
+            Some(Resolved::Ambient(ty)) => ty,
+            Some(_) => {
+                self.error(index.span(), SHAPE);
+                return None;
+            }
+            None => {
+                self.error(value.span(), self.undefined(value.text()));
+                return None;
+            }
+        };
+        if self.host.document() == Some(value.text()) {
+            self.error(value.span(), document_unavailable(value.text(), true));
+            return None;
+        }
+        let ty = self.ambient_type(value.text(), ty, value.span());
+        let actual = match rules::member(&ty, key.text(), false, self.decls()) {
+            Ok(actual) => self.known(actual),
+            Err(message) => {
+                self.error(key.span(), message);
+                return None;
+            }
+        };
+        let expected = Type::map(Type::Named(record.clone()));
+        match rules::expected(actual, &expected, self.decls()) {
+            Ok(_) => Some((Rc::from(value.text()), Rc::from(key.text()))),
+            Err(message) => {
+                self.error(index.span(), message);
+                None
             }
         }
     }
@@ -979,16 +1022,10 @@ mod tests {
                  <lem-fn join(a: A, w: string): string = w />",
             )],
         );
-        let rows: Vec<(String, StepKind, &Uses)> = unit
+        let rows: Vec<(String, &Uses)> = unit
             .defaults
             .iter()
-            .map(|d| {
-                (
-                    format!("{}.{}", d.record, d.field),
-                    d.kind,
-                    &unit.uses[&d.func],
-                )
-            })
+            .map(|d| (format!("{}.{}", d.record, d.field), &unit.uses[&d.func]))
             .collect();
         let own = |f: &str| Access::Own(Rc::from(f));
         let call = |name: &str, args: &[Option<Root>]| Call {
@@ -1000,7 +1037,6 @@ mod tests {
             [
                 (
                     "A.full".to_owned(),
-                    StepKind::Default,
                     // `words(self)` hands the record over whole: a call, not a read.
                     &Uses {
                         reads: vec![own("first")],
@@ -1011,7 +1047,6 @@ mod tests {
                 // called there too, `w` being the lambda's own and no root.
                 (
                     "A.tags".to_owned(),
-                    StepKind::Default,
                     &Uses {
                         reads: vec![own("words"), own("first")],
                         calls: vec![call("join", &[Some(Root::Own), None])],
@@ -1275,36 +1310,38 @@ mod tests {
     }
 
     #[test]
-    fn compiles_a_by_index_as_a_map_from_string_to_the_fields_record() {
+    fn records_a_by_index_as_the_ambient_field_it_names() {
+        // No function: the pair is the whole of what the loader needs, and `site`'s
+        // binding is a fact of the unit as any read of it would make it (∆eag).
         let site = SourceFile::new(
             "site.lem",
             "<lem-let photos: {string: Photo} from \"p.json\" />\n\
              <lem-let name: string = \"n\" />",
         );
         let photo = "<lem-type Photo>\n  alt: string\n</lem-type>\n";
-        let files = [
-            site.clone(),
-            SourceFile::new(
-                "schema.lem",
-                format!(
-                    "{photo}<lem-type Post>\n  hero: Photo? by site.photos\n</lem-type>"
-                ),
-            ),
-        ];
+        let schema =
+            format!("{photo}<lem-type Post>\n  hero: Photo? by site.photos\n</lem-type>");
+        let files = [site.clone(), SourceFile::new("schema.lem", schema.clone())];
         assert!(shown_with(&shell_host(), &files).is_empty());
         let unit = unit_with(&shell_host(), "schema.lem", &files);
-        assert_eq!(unit.defaults.len(), 1);
-        assert_eq!(unit.defaults[0].kind, StepKind::Index);
+        assert!(unit.defaults.is_empty());
         assert_eq!(
-            unit.uses[&unit.defaults[0].func].reads,
-            [Access::Ambient {
+            unit.indexes,
+            [IndexDecl {
+                record: Rc::from("Post"),
+                field: Rc::from("hero"),
                 value: Rc::from("site"),
-                field: Rc::from("photos")
+                key: Rc::from("photos"),
+                span: at(&schema, "«hero»: Photo?"),
             }]
         );
+        assert_eq!(unit.functions.len(), 1, "the entry alone");
         assert_eq!(
-            unit.functions[unit.defaults[0].func as usize].name,
-            "Post.hero.by"
+            unit.ambient_refs
+                .iter()
+                .map(|r| &*r.name)
+                .collect::<Vec<_>>(),
+            ["site"]
         );
         for (field, message) in [
             (
@@ -1312,11 +1349,34 @@ mod tests {
                 "expected `{string: Photo}`, got `string`",
             ),
             (
+                "hero: Photo? by site.nope",
+                "`site.lem` has no field `nope`; did you mean `name`?",
+            ),
+            (
+                "hero: Photo? by lookup()",
+                "`by` names a field of an ambient value, as in `by site.photos`",
+            ),
+            (
+                "hero: Photo? by photos",
+                "`by` names a field of an ambient value, as in `by site.photos`",
+            ),
+            (
+                "hero: Photo? by page.photos",
+                "`page` is not bound while a record loads: the record so far is `self`",
+            ),
+            ("hero: Photo? by ste.photos", "undefined name `ste`"),
+            (
                 "title: string by site.photos",
-                "`by` resolves a record: `title` is a `string`",
+                "`by` resolves a record: `title` is declared `string`",
+            ),
+            // `any` is spelled, and resolves nothing.
+            (
+                "hero: any by site.photos",
+                "`by` resolves a record: `hero` is declared `any`",
             ),
             // The unknown type was reported at the annotation; nothing more is said.
             ("x: Nope by site.photos", "unknown type `Nope`"),
+            ("x: Nope? by site.photos", "unknown type `Nope`"),
         ] {
             let files = [
                 site.clone(),
@@ -1329,6 +1389,21 @@ mod tests {
             assert_eq!(reported.len(), 1, "{field}: {reported:?}");
             assert!(reported[0].ends_with(message), "{field}: {reported:?}");
         }
+    }
+
+    #[test]
+    fn takes_any_field_of_an_untyped_value_as_a_by_index() {
+        let unit = unit_with(
+            &untyped_host(),
+            "schema.lem",
+            &[SourceFile::new(
+                "schema.lem",
+                "<lem-type Photo>\n  alt: string\n</lem-type>\n\
+                 <lem-type Post>\n  hero: Photo? by site.whatever\n</lem-type>",
+            )],
+        );
+        assert_eq!(unit.indexes.len(), 1);
+        assert_eq!(&*unit.indexes[0].key, "whatever");
     }
 
     #[test]

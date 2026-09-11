@@ -4,14 +4,15 @@
 //! given up — a record with three bad keys reports three things, not thirty — and a
 //! string resolves by the type expected of it: an enum's variant, a project function
 //! where a function type stands, the record a `by` index maps it to. A record is built
-//! field by field and then its plan runs: a default for each field the data omitted, an
-//! index for each string the data gave, in the order the link step settled.
+//! field by field and then its plan runs: each string the data gave for an indexed
+//! field looked up in the map its index names, then a default for each field the
+//! data omitted, in the order the link step settled.
 
 use std::rc::Rc;
 
 use crate::compile::{Diagnostic, omittable};
 use crate::decls::{Decls, Kind, no_field};
-use crate::plan::{Step, StepKind};
+use crate::plan::{Index, Step};
 use crate::types::{Type, assignable};
 use crate::value::{Closure, Map, Value};
 use crate::vm::invoke;
@@ -222,11 +223,10 @@ impl Loader<'_> {
             )));
             return None;
         }
-        let has_step = |field: &Rc<str>, kind: StepKind| {
-            plan.steps
-                .iter()
-                .any(|step| step.field == *field && step.kind == kind)
-        };
+        let has_default =
+            |field: &Rc<str>| plan.steps.iter().any(|step| step.field == *field);
+        let has_index =
+            |field: &Rc<str>| plan.indexes.iter().any(|index| index.field == *field);
         let mut failed = false;
         for (key, _) in given.iter() {
             if !declared.iter().any(|(field, _)| field == key) {
@@ -242,7 +242,7 @@ impl Loader<'_> {
                 continue;
             };
             // A string where a `by` field stands is the plan's to resolve.
-            if has_step(field, StepKind::Index) && matches!(value, Value::Str(_)) {
+            if has_index(field) && matches!(value, Value::Str(_)) {
                 continue;
             }
             let child = at.child(field, self.field_place(name, field));
@@ -257,7 +257,7 @@ impl Loader<'_> {
             return None;
         }
         for (field, ty) in &declared {
-            if given.get(field).is_some() || has_step(field, StepKind::Default) {
+            if given.get(field).is_some() || has_default(field) {
                 continue;
             }
             if omittable(ty) {
@@ -272,27 +272,76 @@ impl Loader<'_> {
         if failed || self.incomplete {
             return None;
         }
-        for step in &plan.steps {
-            match (step.kind, given.get(&step.field)) {
-                (StepKind::Default, None) => {
-                    let value = self.step(step, name, &fields, doc, at)?;
-                    fields.push((step.field.clone(), value));
-                }
-                (StepKind::Index, Some(Value::Str(key))) => {
-                    let index = self.step(step, name, &fields, doc, at)?;
-                    let child = at.child(&step.field, self.field_place(name, &step.field));
-                    let ty = declared
-                        .iter()
-                        .find(|(field, _)| *field == step.field)
-                        .map(|(_, ty)| ty.strip_optional())
-                        .expect("a step's field is declared");
-                    let value = self.resolved(&index, key, ty, &child)?;
-                    fields.push((step.field.clone(), value));
-                }
-                _ => {}
+        // Every lookup before any default, since a default may read the field; each
+        // bad string is its own diagnostic, as each bad field above is.
+        for index in &plan.indexes {
+            let Some(Value::Str(key)) = given.get(&index.field) else {
+                continue;
+            };
+            let child = at.child(&index.field, self.field_place(name, &index.field));
+            let ty = declared
+                .iter()
+                .find(|(field, _)| *field == index.field)
+                .map(|(_, ty)| ty.strip_optional())
+                .expect("an index's field is declared");
+            let resolved = self
+                .indexed(index)
+                .and_then(|map| self.resolved(&map, key, ty, &child));
+            match resolved {
+                Some(value) => fields.push((index.field.clone(), value)),
+                None => failed = true,
             }
         }
+        if failed {
+            return None;
+        }
+        for step in &plan.steps {
+            if given.get(&step.field).is_some() {
+                continue;
+            }
+            let value = self.step(step, name, &fields, doc, at)?;
+            fields.push((step.field.clone(), value));
+        }
         Some(self.assembled(name, &fields))
+    }
+
+    /// The map `index` names, from the ambient values loaded so far: the field of a
+    /// record the host typed, or the entry of a value it left untyped. The link step
+    /// ordered a bindings file's own values for every index its records carry, and
+    /// the values load in one order (D37); a value not loaded yet is one the loader
+    /// reaches later, and the index is an error at its declaration. So is a value
+    /// with no map there, which only a value the host left untyped can be, since a
+    /// typed one was checked where the index stands.
+    fn indexed(&mut self, index: &Index) -> Option<Rc<Map>> {
+        let value = self.ambient.iter().find(|(name, _)| *name == index.value);
+        let refuse = |loader: &mut Self, why: &str| {
+            let file = &loader.module.files[index.file as usize];
+            loader.diagnostics.push(Diagnostic::error(
+                file,
+                index.span,
+                format!(
+                    "`{}` looks `{}.{}` up, {why}",
+                    index.field, index.value, index.key
+                ),
+            ));
+            None
+        };
+        let Some((_, value)) = value else {
+            return refuse(
+                self,
+                "which is not loaded yet: the host's own values load first, in its \
+                 declaration order, then the files it reads bindings from",
+            );
+        };
+        let entry = match value {
+            Value::Record(loaded) => loaded.fields.get(&index.key),
+            Value::Map(loaded) => loaded.get(&index.key),
+            _ => None,
+        };
+        match entry {
+            Some(Value::Map(map)) => Some(map.clone()),
+            _ => refuse(self, &format!("but `{}` holds no map there", index.value)),
+        }
     }
 
     /// Runs one step of a record's plan with the record so far as `self` — and, when
@@ -347,22 +396,16 @@ impl Loader<'_> {
         }
     }
 
-    /// The value the index a `by` step produced maps `key` to, checked to be the
+    /// The value the map a `by` index names holds for `key`, checked to be the
     /// record `ty` the field is declared as.
     fn resolved(
         &mut self,
-        index: &Value,
+        index: &Map,
         key: &str,
         ty: &Type,
         at: &At<'_>,
     ) -> Option<Value> {
-        let found = match index {
-            Value::Map(entries) => entries.get(key).cloned(),
-            // The compiler held the index to `{string: R}`; anything else came through
-            // `any`, and has no entry for anything.
-            _ => None,
-        };
-        let Some(found) = found else {
+        let Some(found) = index.get(key).cloned() else {
             self.diagnostics.push(at.error(format!(
                 "`{}` names \"{key}\", which its index has no entry for",
                 at.label()
@@ -413,6 +456,7 @@ mod tests {
     };
     use super::super::{Data, Loaded, Source, Spans, load};
     use super::*;
+    use crate::host::{Ambient, Host};
     use crate::testing::at;
     use crate::{Module, SourceFile, compile};
 
@@ -1233,6 +1277,116 @@ mod tests {
                 "site.lem:{}: expected `float` for `stat.ratio`, got an integer a float \
                  cannot hold exactly: 9007199254740993",
                 at(site, "«ratio»: float")
+            )]
+        );
+    }
+
+    #[test]
+    fn reports_an_index_naming_a_value_not_loaded_yet_at_its_declaration() {
+        // The host's own values load first, so a `Build` field cannot look a string
+        // up in `site`; the pair is refused before anything is indexed.
+        let ambient = "<lem-type Page>\n  url: string\n</lem-type>\n\
+                       <lem-type Photo>\n  alt: string\n</lem-type>\n\
+                       <lem-type Build>\n  generator: string\n  hero: Photo? by site.photos\n</lem-type>";
+        let site = "<lem-let photos: {string: Photo} from \"p.json\" />";
+        let module = module(&shell(), &[("ambient.lem", ambient), ("site.lem", site)]);
+        let data = Data {
+            ambient: vec![(
+                "build".to_owned(),
+                object(&[
+                    ("generator", Value::str("lemmon")),
+                    ("hero", Value::str("sunset")),
+                ]),
+            )],
+            sources: vec![(
+                "photos".to_owned(),
+                Source::One(Loaded {
+                    value: object(&[]),
+                    path: None,
+                    spans: Spans::new(),
+                }),
+            )],
+        };
+        assert_eq!(
+            errors(&module, &shell(), data),
+            [format!(
+                "ambient.lem:{}: `hero` looks `site.photos` up, which is not loaded yet: \
+                 the host's own values load first, in its declaration order, then the \
+                 files it reads bindings from",
+                at(ambient, "«hero»: Photo?")
+            )]
+        );
+    }
+
+    #[test]
+    fn looks_a_string_up_before_a_default_that_reads_the_field_runs() {
+        // `caption` reads `self.hero`: the lookup has to have happened first, or the
+        // default sees the `null` an omitted optional is filled with.
+        let site = "<lem-type Photo>\n  caption: string\n</lem-type>\n\
+                    <lem-type Article extends Page>\n  hero: Photo? by site.photos\n  \
+                    caption: string = self.hero ? self.hero.caption : \"none\"\n  \
+                    layout: (Article, html): html\n</lem-type>\n\
+                    <lem-fn f(a: Article, b: html)><lem.a.url><lem.b></lem-fn>\n\
+                    <lem-let photos: {string: Photo} from \"_data/photos.json\" />\n\
+                    <lem-let posts: [Article] from \"pages/*.md\" />";
+        let files = [
+            SourceFile::new("ambient.lem", AMBIENT),
+            SourceFile::new("site.lem", site),
+            document("pages/a.md", TEXT, "Article"),
+        ];
+        let module = compile(&files, &shell()).expect_output();
+        let data = Data {
+            ambient: vec![build()],
+            sources: vec![
+                photos(),
+                (
+                    "posts".to_owned(),
+                    Source::Many(vec![Loaded {
+                        value: object(&[
+                            ("url", Value::str("/a/")),
+                            ("layout", Value::str("f")),
+                            ("hero", Value::str("sunset")),
+                        ]),
+                        path: Some("pages/a.md".to_owned()),
+                        spans: spans(TEXT, &[("", record())]),
+                    }]),
+                ),
+            ],
+        };
+        let store = load(&module, &shell(), data).unwrap().expect_output();
+        let Value::Record(article) = &store.documents["pages/a.md"] else {
+            panic!("a tagged record");
+        };
+        assert_eq!(article.fields.get("caption"), Some(&Value::str("Sunset")));
+    }
+
+    #[test]
+    fn reports_an_index_whose_untyped_value_holds_no_map_at_its_declaration() {
+        // An untyped value admits any field at compile; at load the mistake is the
+        // schema's, not the string's, and it is said at the field.
+        let host = Host::new()
+            .bind("data", Ambient::Untyped)
+            .bind("site", Ambient::bindings("site.lem"));
+        let site = "<lem-type Photo>\n  caption: string\n</lem-type>\n\
+                    <lem-type Post>\n  hero: Photo? by data.photos\n</lem-type>\n\
+                    <lem-let post: Post from \"_data/post.json\" />";
+        let module = module(&host, &[("site.lem", site)]);
+        let data = Data {
+            ambient: vec![("data".to_owned(), object(&[("generator", Value::str("x"))]))],
+            sources: vec![(
+                "post".to_owned(),
+                Source::One(Loaded {
+                    value: object(&[("hero", Value::str("sunset"))]),
+                    path: None,
+                    spans: Spans::new(),
+                }),
+            )],
+        };
+        assert_eq!(
+            errors(&module, &host, data),
+            [format!(
+                "site.lem:{}: `hero` looks `data.photos` up, but `data` holds no map there",
+                at(site, "«hero»: Photo?")
             )]
         );
     }

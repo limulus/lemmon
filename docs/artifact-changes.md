@@ -130,6 +130,13 @@ moved it. Newest last. An entry is removed when its change has been applied.
   not followed and a field reached through one before the loader computed it stays a
   load error at the read; and that a default or computed binding reaching the host's
   document value through a call is a link error at the field (D37 revised, ∆HF0).
+- **Schemas, reference fields** — where the text says a `by` index is an expression of
+  type `{string: R}`, say it names one field of one ambient value, `by site.photos`,
+  declared that type: a pair the head declares, checked against the value's
+  declaration, never an expression the loader runs. The loader looks a front-matter
+  string up in the map as loaded, before the record's defaults run, and a `from`
+  binding loads after the siblings its records index; a map in another bindings file
+  or a later host value is a load error at the field (D37 revised, ∆eag).
 - **Ambient types, load order** — say the host fulfils a `from` binding by its name
   alone, so no two bindings files may load one of the same name (a link error); that the
   host's own values load first, in the host's declaration order, then each bindings
@@ -246,6 +253,10 @@ moved it. Newest last. An entry is removed when its change has been applied.
   the store, and to the envelope's value, unvalidated, where no loaded document stands:
   a template, or a document no collection matched — one value for every such render
   until `plan()` (∆RGQ) gives each page its own (D37, ∆iCW).
+
+- **VM, the module's plans** — where the text gives `RecordPlan` as a record's ordered
+  steps, add `indexes` beside them: each a field with the ambient value and field its
+  strings resolve through; a step is a default only, with no kind (∆eag).
 
 ## From Eleventy to Lemmon
 

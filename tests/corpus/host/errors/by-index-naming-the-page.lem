@@ -1,0 +1,6 @@
+<lem-type Gallery extends Page>
+  hero: Photo? by page.photos
+  layout: (Gallery, html): html
+</lem-type>
+
+A record loads before `page` is bound to it, so an index cannot name a field of it.

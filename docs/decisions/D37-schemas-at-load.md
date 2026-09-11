@@ -3,8 +3,9 @@
 - **Status:** Accepted 2026-09-08 (∆iCW); revised 2026-09-09 (∆HF0) in one clause —
   the recorded reads are closed through calls by name at link, so the order is exact
   for reads through a `lem-fn` too, and only a call through a value stays a load error
-  at the read
-- **Backlog item:** ∆iCW, ∆HF0
+  at the read; revised 2026-09-10 (∆eag) — a `by` index names one field of one
+  ambient value and compiles to no function
+- **Backlog item:** ∆iCW, ∆HF0, ∆eag
 - **Normative text:** `docs/language.md` § Schemas, § Ambient types;
   `docs/architecture.md` § WASM API (`loadData`, as it grows), § VM
 
@@ -23,44 +24,49 @@ build?}}` had left open by design.
 
 ## Decision
 
-**Defaults, `by` indexes, and computed site bindings compile to functions.** Each is an
-expression the loader evaluates rather than a render, so each is lowered into a function
-of its declaring unit — typed where it stands, against the field or binding's declared
-type — and the compiler records what it reads: sibling fields through `self` or by bare
-name, and fields of ambient values. A default's scope is `self`, the record being built
-as the declaring type; on a record that extends the host's document type, `path` and
-`body` (the document's rendered prose) as well; and the ambient values, except the host's
-document value, which a default may not read since it is bound to the record only once
-the record is built. A `by` index is an expression of type `{string: R}` for the field's
-record `R`, checked where it is declared. No fact carries any of this: a default is not
-part of a type's shape (D32), so a consumer's unit is byte-identical whatever the
-default says (invariant 11). The reads recorded with a function are the ones written in
-its body — what a called `lem-fn` reads is its own body, which invariant 11 keeps out of
-the compiler's reach — so every unit records, for each function the loader may run, its
-own reads and the project functions it calls, with the root it handed each parameter:
-`self`, a parameter of its own, or an ambient value, whole. _(Revised by ∆HF0: the
-first reading recorded a default's lexical reads only, and was silent about reads
-through a call.)_ The link step, the first place every unit is in hand, closes those
-reads through the calls written as `f(…)`, however deep — a callee's read off a
-parameter becomes the caller's read off the root it handed, or nothing when it handed
-a field, a literal, or a result — so the order is exact for the reads written off
-`self`, a parameter, or an ambient value by name, in a callee as in a default. A
-function named as a value is stored or handed on, not called, so nothing it reads is
-followed — `layout = article` orders nothing, whatever `article` reads of `page`. A
-call through a value names no function to open, a field read off a local bound to a
-root is counted in neither, and a step that reaches a field the loader has not
-computed either way is a load error at the read (invariant 10). A field's steps come
-from the nearest declaration in its chain that gives it any: a redeclaration changes
-the default (D32), and one that gives none leaves the ancestor's in force.
+**Defaults and computed site bindings compile to functions; a `by` index is a declared
+pair.** A default or computed binding is an expression the loader evaluates rather than a
+render, so each is lowered into a function of its declaring unit — typed where it stands,
+against the field or binding's declared type — and the compiler records what it reads:
+sibling fields through `self` or by bare name, and fields of ambient values. A default's
+scope is `self`, the record being built as the declaring type; on a record that extends the
+host's document type, `path` and `body` (the document's rendered prose) as well; and the
+ambient values, except the host's document value, which a default may not read since it is
+bound to the record only once the record is built. A `by` index names one field of one
+ambient value — `by site.photos` — declared `{string: R}` for the field's record `R`,
+checked where the field is declared against the value's declaration; any other expression
+after `by` is a compile error, and so is the host's document value. The pair is recorded
+with the field and no function is compiled for it: the loader indexes the map as loaded,
+before any default of the record runs. _(Revised by ∆eag: the first reading took any
+expression of that type and compiled it as a function whose reads were recorded like a
+default's.)_ No fact carries any of this: a default is not part of a type's shape (D32), so
+a consumer's unit is byte-identical whatever the default says (invariant 11). The reads
+recorded with a function are the ones written in its body — what a called `lem-fn` reads is
+its own body, which invariant 11 keeps out of the compiler's reach — so every unit records,
+for each function the loader may run, its own reads and the project functions it calls, with
+the root it handed each parameter: `self`, a parameter of its own, or an ambient value,
+whole. _(Revised by ∆HF0: the first reading recorded a default's lexical reads only, and was
+silent about reads through a call.)_ The link step, the first place every unit is in hand,
+closes those reads through the calls written as `f(…)`, however deep — a callee's read off a
+parameter becomes the caller's read off the root it handed, or nothing when it handed a
+field, a literal, or a result — so the order is exact for the reads written off `self`, a
+parameter, or an ambient value by name, in a callee as in a default. A function named as a
+value is stored or handed on, not called, so nothing it reads is followed — `layout =
+article` orders nothing, whatever `article` reads of `page`. A call through a value names no
+function to open, a field read off a local bound to a root is counted in neither, and a step
+that reaches a field the loader has not computed either way is a load error at the read
+(invariant 10). A field's default and its index each come from the nearest declaration in
+its chain that gives one: a redeclaration changes the default (D32), and one that gives none
+leaves the ancestor's in force.
 
-**The link step orders the work and refuses a cycle.** From the closed reads it builds,
-per declared record, the steps of its nearest declarations in an order that computes
-every field before the fields that read it, and for the bindings file the bindings in an
-order that has each computed one after the siblings it reads and each `from` binding
-after every ambient field the records its value may hold — through `extends` and through
-field types — read while they load. A cycle, a self-read included, is a link error at the
-field or binding, and every cycle is reported, not the first. The loader then runs each
-plan front to back and reasons about nothing.
+**The link step orders the work and refuses a cycle.** From the closed reads it builds, per
+declared record, the steps of its nearest declarations in an order that computes every field
+before the fields that read it, and for the bindings file the bindings in an order that has
+each computed one after the siblings it reads and each `from` binding after every ambient
+field the records its value may hold — through `extends` and through field types — read or
+index while they load. A cycle, a self-read included, is a link error at the field or
+binding, and every cycle is reported, not the first. The loader then runs each plan front to
+back and reasons about nothing.
 
 **The bindings file is where a `from` binding stands.** Its source is a string literal (a
 glob or a data file, told apart by the binding's type), `plugin("…")`, or `env("…")` with
@@ -95,10 +101,10 @@ envelope. A template's `page` is therefore checked by the compiler and not by th
 loader until `plan()` (∆RGQ) gives each page a value of its own. Loading proceeds in
 one order — the host's own values in its declaration order, then each bindings file —
 and no function runs over a value that is not loaded yet or that failed: a default on
-a host-typed record that reads a bindings value, or a computed binding that reads a
-later file's, is a load error at the step, and once a value has failed the plans after
-it are not run, so the one error reported is the author's and not a fault downstream of
-it.
+a host-typed record that reads a bindings value, a computed binding that reads a later
+file's, or a `by` index naming a map the loader reaches later, is a load error at the
+step or the field, and once a value has failed the plans after it are not run, so the
+one error reported is the author's and not a fault downstream of it.
 
 **Positions come from the host, as complete boundary spans.** `loadData` receives, per
 loaded value, a table from field path to `{start, end, range}`. The host owns the text of
@@ -152,8 +158,9 @@ document's record, so the core never sees it.
   came through and, for a `from` binding, the record field that made the read. A
   default or binding that reaches the host's document value through a call is a link
   error at the field, in the compiler's words for the direct read (∆HF0).
-- `Unit` carries `defaults` and `bindings`; `Module` carries `records`, `bindings`, and
-  `exports`, all plain data. `Op` gained nothing: a loader-run function is an ordinary
+- `Unit` carries `defaults`, `indexes`, and `bindings`; `Module` carries `records` —
+  each a record's ordered steps and its indexes — `bindings`, and `exports`, all plain
+  data. `Op` gained nothing: a loader-run function is an ordinary
   function the loader invokes — with the arguments its own declaration takes, so a
   default inherited from a record above the document type runs without the document.
 - `Module` carries the project's declaration table and, per document, its record and

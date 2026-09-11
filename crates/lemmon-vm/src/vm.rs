@@ -62,9 +62,9 @@ pub fn render(
 }
 
 /// Calls `functions[func]` of `module` with `args`, `globals` bound to the ambient
-/// names, and returns what it returned. How the loader runs a default, a `by` index,
-/// or a computed binding (D37): a loader-run function is an ordinary function, and this
-/// is a render's machinery with a call in place of an entry.
+/// names, and returns what it returned. How the loader runs a default or a computed
+/// binding (D37): a loader-run function is an ordinary function, and this is a
+/// render's machinery with a call in place of an entry.
 ///
 /// # Errors
 ///
