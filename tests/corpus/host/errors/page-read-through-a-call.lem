@@ -1,0 +1,9 @@
+<lem-type Note extends Page>
+  at: url = urlOf()
+  layout: (Note, html): html
+</lem-type>
+
+<lem-fn urlOf(): url = page.url />
+
+`urlOf` reads `page`, which is fine where it stands — a layout may call it — but a
+default runs while the record is being built, before `page` is bound to it.

@@ -177,13 +177,10 @@ impl Compiler<'_> {
                 self.emit(Op::Local { slot }, span);
                 self.narrowed(&Path::local(binder)).unwrap_or(ty)
             }
+            // Named as a value, a function is stored or handed on, not called: what
+            // it reads is no part of the loader's order (∆HF0).
             Some(Resolved::Function) => {
                 let export = self.export(token.text());
-                // Named as a value, the function may be called with anything, by
-                // anyone: what it reads still counts for the loader's order, handed
-                // nothing the caller can vouch for (∆HF0).
-                let arity = export.signature.params.len();
-                self.note_call(token.text(), vec![None; arity]);
                 let func = self.func_operand(export, span);
                 self.emit(Op::Global { func }, span);
                 self.known(export.signature.ty())
@@ -243,17 +240,22 @@ impl Compiler<'_> {
         if !collecting.at_load || self.host.document() != Some(name) {
             return None;
         }
-        Some(if collecting.self_binder.is_some() {
-            format!(
-                "`{name}` is not bound while a record loads: the record so far is `self`"
-            )
-        } else {
-            format!(
-                "`{name}` is bound per page, and a binding here is computed once, at load"
-            )
-        })
+        Some(document_unavailable(name, collecting.self_binder.is_some()))
     }
+}
 
+/// Why the host's document value `name` is not there for a function the loader runs:
+/// `in_record` for a default or `by` index, else for a computed binding. Said here
+/// where the read stands, and by the link step when a call reaches it (∆HF0).
+pub(crate) fn document_unavailable(name: &str, in_record: bool) -> String {
+    if in_record {
+        format!("`{name}` is not bound while a record loads: the record so far is `self`")
+    } else {
+        format!("`{name}` is bound per page, and a binding here is computed once, at load")
+    }
+}
+
+impl Compiler<'_> {
     /// Why a name resolves to nothing: a name the project declares as a type is not a
     /// value, and saying so beats "undefined name" for the author who wrote `Placement`
     /// where its variant belonged.

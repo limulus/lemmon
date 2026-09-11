@@ -429,10 +429,12 @@ mod tests {
            layout: (Article, html): html = article\n\
            slug: string = path\n\
            excerpt: html = body\n\
+           teaser: string = tease(self)\n\
            heading: string = \"Re: \" + self.title\n\
          </lem-type>\n\
          <lem-fn article(a: Article, body: html)><lem.a.title><lem.body></lem-fn>\n\
          <lem-fn card(p: Photo): string = p.caption />\n\
+         <lem-fn tease(a: Article): string = a.heading + \"!\" />\n\
          <lem-let photos: {string: Photo} from \"_data/photos.json\" />\n\
          <lem-let posts: [Article] from \"pages/*.md\" />";
 
@@ -503,7 +505,7 @@ mod tests {
             fields,
             [
                 "title", "subhead", "words", "ratio", "when", "hero", "tags", "layout",
-                "slug", "excerpt", "heading", "url", "draft"
+                "slug", "excerpt", "teaser", "heading", "url", "draft"
             ]
         );
         assert_eq!(article.fields.get("subhead"), Some(&Value::Null));
@@ -524,6 +526,61 @@ mod tests {
         );
         assert_eq!(article.fields.get("heading"), Some(&Value::str("Re: A")));
         assert!(matches!(article.fields.get("layout"), Some(Value::Fn(_))));
+        // `teaser` is declared before `heading` and reads it inside `tease`: the
+        // link step followed the call, so the loader had `heading` first (∆HF0).
+        assert_eq!(article.fields.get("teaser"), Some(&Value::str("Re: A!")));
+    }
+
+    #[test]
+    fn faults_at_the_read_when_a_default_reaches_a_field_through_a_call_by_value() {
+        // A field holding a function names no `lem-fn` the link step could follow, so
+        // the loader runs `late` where it stands and the read of `heading` — not yet
+        // computed — is the error, at the read (invariant 10).
+        let site = "<lem-type Article extends Page>\n\
+                      title: string\n\
+                      describe: (Article): string = describe\n\
+                      late: string = self.describe(self)\n\
+                      heading: string = \"Re: \" + self.title\n\
+                      layout: (Article, html): html = f\n\
+                    </lem-type>\n\
+                    <lem-fn describe(a: Article): string = a.heading />\n\
+                    <lem-fn f(a: Article, b: html)><lem.a.title><lem.b></lem-fn>\n\
+                    <lem-let posts: [Article] from \"pages/*.md\" />";
+        let files = [
+            SourceFile::new("ambient.lem", AMBIENT),
+            SourceFile::new("site.lem", site),
+            document("pages/a.md", TEXT, "Article"),
+        ];
+        let module = compile(&files, &shell()).expect_output();
+        let data = Data {
+            ambient: vec![build()],
+            sources: vec![(
+                "posts".to_owned(),
+                Source::Many(vec![Loaded {
+                    value: object(&[
+                        ("title", Value::str("A")),
+                        ("url", Value::str("/a/")),
+                    ]),
+                    path: Some("pages/a.md".to_owned()),
+                    spans: spans(TEXT, &[("", record()), ("title", record())]),
+                }]),
+            )],
+        };
+        let result = load(&module, &shell(), data).unwrap();
+        assert!(result.output.is_none());
+        assert_eq!(
+            result
+                .diagnostics
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
+            [format!(
+                "site.lem:{}: no field `heading` on `Article` record\n  \
+                 pages/a.md:{}: computing `late` for this `Article`",
+                at(site, "a.heading"),
+                record()
+            )]
+        );
     }
 
     #[test]
@@ -1186,6 +1243,30 @@ mod tests {
         let ambient = "<lem-type Page>\n  url: string\n</lem-type>\n\
                        <lem-type Build>\n  generator: string\n  banner: string = site.name\n</lem-type>";
         let site = "<lem-let name: string = \"limulus.net\" />";
+        let module = module(&shell(), &[("ambient.lem", ambient), ("site.lem", site)]);
+        let data = Data {
+            ambient: vec![build()],
+            sources: Vec::new(),
+        };
+        assert_eq!(
+            errors(&module, &shell(), data),
+            [format!(
+                "ambient.lem:{}: `banner` reads `site`, which is not loaded yet: the \
+                 host's own values load before the bindings files, so a `Build` may \
+                 read only the host's other values here",
+                at(ambient, "banner")
+            )]
+        );
+    }
+
+    #[test]
+    fn reports_a_default_that_reads_a_value_not_loaded_yet_through_a_call() {
+        // The same rule, with the read inside `motto()`: the link step closed it into
+        // the step's reads, so the loader refuses the step before running it (∆HF0).
+        let ambient = "<lem-type Page>\n  url: string\n</lem-type>\n\
+                       <lem-type Build>\n  generator: string\n  banner: string = motto()\n</lem-type>";
+        let site = "<lem-let name: string = \"limulus.net\" />\n\
+                    <lem-fn motto(): string = site.name />";
         let module = module(&shell(), &[("ambient.lem", ambient), ("site.lem", site)]);
         let data = Data {
             ambient: vec![build()],

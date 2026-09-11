@@ -1,7 +1,10 @@
 # D37 — Schemas at load
 
-- **Status:** Accepted 2026-09-08 (∆iCW)
-- **Backlog item:** ∆iCW
+- **Status:** Accepted 2026-09-08 (∆iCW); revised 2026-09-09 (∆HF0) in one clause —
+  the recorded reads are closed through calls by name at link, so the order is exact
+  for reads through a `lem-fn` too, and only a call through a value stays a load error
+  at the read
+- **Backlog item:** ∆iCW, ∆HF0
 - **Normative text:** `docs/language.md` § Schemas, § Ambient types;
   `docs/architecture.md` § WASM API (`loadData`, as it grows), § VM
 
@@ -31,15 +34,26 @@ document value, which a default may not read since it is bound to the record onl
 the record is built. A `by` index is an expression of type `{string: R}` for the field's
 record `R`, checked where it is declared. No fact carries any of this: a default is not
 part of a type's shape (D32), so a consumer's unit is byte-identical whatever the
-default says (invariant 11). The reads recorded are the ones written in the function
-itself — what a called `lem-fn` reads is its own body, which invariant 11 keeps out of
-reach — so the order is exact for lexical reads and silent about reads through a call; a
-step that reaches a field the loader has not computed is a load error at the read
-(invariant 10). A field's steps come from the nearest declaration in its chain that
-gives it any: a redeclaration changes the default (D32), and one that gives none leaves
-the ancestor's in force.
+default says (invariant 11). The reads recorded with a function are the ones written in
+its body — what a called `lem-fn` reads is its own body, which invariant 11 keeps out of
+the compiler's reach — so every unit records, for each function the loader may run, its
+own reads and the project functions it calls, with the root it handed each parameter:
+`self`, a parameter of its own, or an ambient value, whole. _(Revised by ∆HF0: the
+first reading recorded a default's lexical reads only, and was silent about reads
+through a call.)_ The link step, the first place every unit is in hand, closes those
+reads through the calls written as `f(…)`, however deep — a callee's read off a
+parameter becomes the caller's read off the root it handed, or nothing when it handed
+a field, a literal, or a result — so the order is exact for the reads written off
+`self`, a parameter, or an ambient value by name, in a callee as in a default. A
+function named as a value is stored or handed on, not called, so nothing it reads is
+followed — `layout = article` orders nothing, whatever `article` reads of `page`. A
+call through a value names no function to open, a field read off a local bound to a
+root is counted in neither, and a step that reaches a field the loader has not
+computed either way is a load error at the read (invariant 10). A field's steps come
+from the nearest declaration in its chain that gives it any: a redeclaration changes
+the default (D32), and one that gives none leaves the ancestor's in force.
 
-**The link step orders the work and refuses a cycle.** From the recorded reads it builds,
+**The link step orders the work and refuses a cycle.** From the closed reads it builds,
 per declared record, the steps of its nearest declarations in an order that computes
 every field before the fields that read it, and for the bindings file the bindings in an
 order that has each computed one after the siblings it reads and each `from` binding
@@ -107,8 +121,9 @@ document's record, so the core never sees it.
   `body` and `site`, which a template cannot supply and a render should not compute;
   D35 had already settled that a literal never fills a default.
 - **Inferring order at load from the values as they arrive.** Rejected: the reads are
-  lexical and known at compile time, so a cycle can be refused before any data is loaded,
-  and the loader stays a walk over plain tables.
+  recorded as each function compiles and closed at link, so they are known before any
+  data is loaded — a cycle is refused then, and the loader stays a walk over plain
+  tables.
 - **Ordering at compile time, per file.** Rejected: a subtype's inherited default is
   another file's body, which a unit may not depend on (invariant 11); the link step is
   the first place every unit is in hand.
@@ -131,6 +146,12 @@ document's record, so the core never sees it.
 
 ## Consequences
 
+- `Unit` carries `uses` — per function the loader may run, what it reads and which
+  project functions it calls — beside `defaults` and `bindings`; the link step's
+  `ReadClosure` closes them to a fixpoint, and a cycle message names the call a read
+  came through and, for a `from` binding, the record field that made the read. A
+  default or binding that reaches the host's document value through a call is a link
+  error at the field, in the compiler's words for the direct read (∆HF0).
 - `Unit` carries `defaults` and `bindings`; `Module` carries `records`, `bindings`, and
   `exports`, all plain data. `Op` gained nothing: a loader-run function is an ordinary
   function the loader invokes — with the arguments its own declaration takes, so a

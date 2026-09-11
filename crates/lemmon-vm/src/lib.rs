@@ -9,6 +9,7 @@
 
 mod builtins;
 mod bytecode;
+mod closure;
 mod compile;
 mod decls;
 mod document;

@@ -1,0 +1,14 @@
+<lem-type Note extends Page>
+  topic: string
+  layout: (Note, html): html = note
+</lem-type>
+
+<lem-fn note(n: Note, body: html)>
+  <h1><lem.n.topic></h1>
+  <p><lem.page.url></p>
+  <lem.body>
+</lem-fn>
+
+A `layout` default names a function; it does not call it. `note` reads `page`, which
+the render binds and the loader never does — and that is the render's business, not the
+load order's, so the schema links.

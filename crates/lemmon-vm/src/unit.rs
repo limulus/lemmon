@@ -15,7 +15,8 @@ use lemmon_syntax::Span;
 
 use crate::Value;
 use crate::bytecode::{Declared, Document, Exported, Function, Module, Op};
-use crate::compile::{Compiled, Diagnostic, index_u32};
+use crate::closure::{self, Closed, ReadClosure};
+use crate::compile::{Compiled, Diagnostic, document_unavailable, index_u32};
 use crate::decls::{Declaration, Decls, Kind, Shape, TypeFact};
 use crate::exports::ExportIndex;
 use crate::host::Host;
@@ -141,8 +142,9 @@ pub enum Access {
     Whole(Rc<str>),
 }
 
-/// One call of a project function by name — or a naming of it as a value, which may
-/// call it with anything, so hands it nothing the caller can vouch for.
+/// One call of a project function by name, written `f(…)`. A function named as a
+/// value is not one: stored in a field or handed to a builtin, it is a value like any
+/// other, and what it reads is not followed.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Call {
     /// The function's project-flat name.
@@ -164,28 +166,6 @@ pub enum Root {
     Param(u32),
     /// A value the host binds, by name.
     Ambient(Rc<str>),
-}
-
-impl Uses {
-    /// What a step's function reads, as the plan orders it: its own fields and the
-    /// ambient fields. A step has no parameter to read off, and a whole ambient value
-    /// orders nothing.
-    fn reads(&self) -> Vec<Read> {
-        self.reads
-            .iter()
-            .filter_map(|access| match access {
-                Access::Own(field) => Some(Read::Own(field.clone())),
-                Access::Ambient { value, field } => Some(Read::Ambient {
-                    value: value.clone(),
-                    field: field.clone(),
-                }),
-                Access::Whole(_) => None,
-                Access::Param { .. } => {
-                    unreachable!("a step reads off `self`, not a parameter")
-                }
-            })
-            .collect()
-    }
 }
 
 /// A foreign type a unit was compiled against: where this file first reached it, and
@@ -416,14 +396,24 @@ pub fn link(units: &[Unit], index: &ExportIndex, host: &Host) -> Compiled<Module
             decl: export.decl.clone(),
         })
         .collect();
+    let closure = ReadClosure::new(units, index, &positions);
     let places = Places {
         units,
         index,
+        host,
         positions: &positions,
         function_offsets: &function_offsets,
+        closure: &closure,
     };
-    let records = places.record_plans(&mut diagnostics);
-    let bindings = places.bindings_plans(host, &records, &mut diagnostics);
+    let planned = places.record_plans(&mut diagnostics);
+    let bindings = places.bindings_plans(&planned, &mut diagnostics);
+    let records = planned
+        .into_iter()
+        .map(|record| RecordPlan {
+            name: record.name,
+            steps: record.steps.into_iter().map(|step| step.step).collect(),
+        })
+        .collect();
     // A cycle among what the loader runs is as fatal as an unresolved import: the
     // program could never load.
     if diagnostics.iter().any(Diagnostic::is_error) {
@@ -540,8 +530,43 @@ fn add_u32(a: u32, b: u32) -> u32 {
 struct Places<'a> {
     units: &'a [Unit],
     index: &'a ExportIndex,
+    host: &'a Host,
     positions: &'a BTreeMap<&'a str, usize>,
     function_offsets: &'a [u32],
+    /// Every project function's reads closed through its calls, for the steps' own
+    /// closing (∆HF0).
+    closure: &'a ReadClosure,
+}
+
+/// A step with its reads closed through its calls — kept together until the plan is
+/// ordered, so that a cycle can name the call a read came through.
+#[derive(Clone)]
+struct Planned<T> {
+    step: T,
+    closed: Vec<Closed>,
+}
+
+/// A record's plan before its steps are projected into the module's.
+struct PlannedRecord {
+    name: Rc<str>,
+    steps: Vec<Planned<Step>>,
+}
+
+/// One dependency of a binding on a sibling: for a computed binding, a read of its
+/// own, through a call or not; for a `from` binding, a read a record its value may
+/// hold makes while it loads, which is where the read stands.
+struct Edge {
+    to: usize,
+    via: Option<Rc<str>>,
+    through: Option<Through>,
+}
+
+/// The record step a `from` binding's dependency comes from.
+struct Through {
+    record: Rc<str>,
+    field: Rc<str>,
+    file: u32,
+    span: Span,
 }
 
 impl Places<'_> {
@@ -555,16 +580,18 @@ impl Places<'_> {
     /// the nearest declaration in the chain that gives it any: a redeclaration changes
     /// the default (D32), and one that gives none leaves the ancestor's in force. The
     /// steps are relocated into the module and ordered by what each reads through
-    /// `self`; a field that reads itself through others is a link error at the field,
-    /// since no order could run it.
-    fn record_plans(&self, diagnostics: &mut Vec<Diagnostic>) -> Vec<RecordPlan> {
+    /// `self`, the calls it makes followed (∆HF0); a field that reads itself through
+    /// others is a link error at the field, since no order could run it, and so is
+    /// one that reaches the host's document value through a call, since no page is
+    /// bound while a record loads (D37).
+    fn record_plans(&self, diagnostics: &mut Vec<Diagnostic>) -> Vec<PlannedRecord> {
         let mut plans = Vec::new();
         for export in self.index.types() {
             let name = &export.decl.name;
             if export.decl.kind() != Kind::Record {
                 continue;
             }
-            let mut steps: Vec<Step> = Vec::new();
+            let mut steps: Vec<Planned<Step>> = Vec::new();
             let mut seen: Vec<Rc<str>> = Vec::new();
             for decl in self.index.chain(name) {
                 let Shape::Record { fields, .. } = &decl.shape else {
@@ -590,19 +617,27 @@ impl Places<'_> {
                     }
                     seen.push(field.name.clone());
                     for row in rows {
-                        steps.push(Step {
-                            field: row.field.clone(),
-                            kind: row.kind,
-                            func: self.func(position, row.func),
-                            reads: unit.uses[&row.func].reads(),
-                            file: index_u32(position),
-                            span: row.span,
+                        let closed = self.closure.step(&unit.uses[&row.func]);
+                        diagnostics.extend(self.refuse_document(
+                            &closed, &unit.path, row.span, &row.field, true,
+                        ));
+                        steps.push(Planned {
+                            step: Step {
+                                field: row.field.clone(),
+                                kind: row.kind,
+                                func: self.func(position, row.func),
+                                reads: closure::reads(&closed),
+                                file: index_u32(position),
+                                span: row.span,
+                            },
+                            closed,
                         });
                     }
                 }
             }
             let deps = |i: usize| -> Vec<usize> {
                 steps[i]
+                    .step
                     .reads
                     .iter()
                     .flat_map(|read| {
@@ -612,25 +647,32 @@ impl Places<'_> {
                         steps
                             .iter()
                             .enumerate()
-                            .filter(|(_, step)| step.field == *field)
+                            .filter(|(_, planned)| planned.step.field == *field)
                             .map(|(j, _)| j)
                             .collect()
                     })
                     .collect()
             };
             let steps = ordered(&steps, deps, |cycle| {
-                let first = &steps[cycle[0]];
+                let first = &steps[cycle[0]].step;
                 diagnostics.push(Diagnostic::error(
                     &self.units[first.file as usize].path,
                     first.span,
                     format!(
                         "`{}` depends on itself: {}",
                         first.field,
-                        chain(cycle, |i| steps[i].field.clone(), "reads")
+                        chain(cycle, |a, b| {
+                            let (a, b) = (&steps[a], &steps[b].step.field);
+                            let via = closure::via(
+                                &a.closed,
+                                |access| matches!(access, Access::Own(field) if field == b),
+                            );
+                            edge(&a.step.field, "reads", b, via)
+                        })
                     ),
                 ));
             });
-            plans.push(RecordPlan {
+            plans.push(PlannedRecord {
                 name: name.clone(),
                 steps,
             });
@@ -638,15 +680,43 @@ impl Places<'_> {
         plans
     }
 
+    /// The refusal of a loader-run function that reaches the host's document value
+    /// through a call — a field of it, or the value whole — at `span` in `path`, for
+    /// the field or binding `subject`, `in_record` for a record's step. Read directly,
+    /// the compiler refused it where it stood, in the same words (∆iCW); through a
+    /// call, only the link step can see it (∆HF0).
+    fn refuse_document(
+        &self,
+        closed: &[Closed],
+        path: &str,
+        span: Span,
+        subject: &str,
+        in_record: bool,
+    ) -> Option<Diagnostic> {
+        let document = self.host.document()?;
+        let via = closure::via(closed, |access| match access {
+            Access::Ambient { value, .. } | Access::Whole(value) => **value == *document,
+            Access::Own(_) | Access::Param { .. } => false,
+        })?;
+        Some(Diagnostic::error(
+            path,
+            span,
+            format!(
+                "`{subject}` reaches `{document}` through `{via}`, but {}",
+                document_unavailable(document, in_record)
+            ),
+        ))
+    }
+
     /// A plan per ambient value the host reads from a file the program has, in the
     /// host's order.
     fn bindings_plans(
         &self,
-        host: &Host,
-        records: &[RecordPlan],
+        records: &[PlannedRecord],
         diagnostics: &mut Vec<Diagnostic>,
     ) -> Vec<Bindings> {
-        let plans: Vec<Bindings> = host
+        let plans: Vec<Bindings> = self
+            .host
             .bindings_files()
             .filter_map(|(value, file)| {
                 self.bindings_plan(value, file, records, diagnostics)
@@ -686,80 +756,152 @@ impl Places<'_> {
     }
 
     /// The plan for the bindings file `file`, read as `value`: its bindings in load
-    /// order. A computed binding follows the siblings it reads; a `from` binding
-    /// follows every sibling the records its value may hold read while they load —
-    /// through `extends` and through field types, since a subtype's or a nested
-    /// record's default runs too. A binding that needs itself is a link error at the
-    /// binding. `None` when the file is not in the program.
+    /// order. A computed binding follows the siblings it reads, the calls it makes
+    /// followed (∆HF0); a `from` binding follows every sibling the records its value
+    /// may hold read while they load — through `extends` and through field types,
+    /// since a subtype's or a nested record's default runs too. A binding that needs
+    /// itself is a link error at the binding, and so is a computed one that reaches
+    /// the host's document value through a call. `None` when the file is not in the
+    /// program.
     fn bindings_plan(
         &self,
         value: &str,
         file: &str,
-        records: &[RecordPlan],
+        records: &[PlannedRecord],
         diagnostics: &mut Vec<Diagnostic>,
     ) -> Option<Bindings> {
         let &position = self.positions.get(file)?;
         let unit = &self.units[position];
-        let steps: Vec<BindingStep> = unit
+        let steps: Vec<Planned<BindingStep>> = unit
             .bindings
             .iter()
-            .map(|binding| BindingStep {
-                name: binding.name.clone(),
-                fulfilled: match &binding.supplied {
-                    Supplied::ByFunction(func) => Fulfilled::Computed {
-                        func: self.func(position, *func),
-                        reads: unit.uses[func].reads(),
+            .map(|binding| {
+                let (fulfilled, closed) = match &binding.supplied {
+                    Supplied::ByFunction(func) => {
+                        let closed = self.closure.step(&unit.uses[func]);
+                        diagnostics.extend(self.refuse_document(
+                            &closed,
+                            &unit.path,
+                            binding.span,
+                            &binding.name,
+                            false,
+                        ));
+                        let fulfilled = Fulfilled::Computed {
+                            func: self.func(position, *func),
+                            reads: closure::reads(&closed),
+                        };
+                        (fulfilled, closed)
+                    }
+                    Supplied::ByHost(kind) => (Fulfilled::ByHost(kind.clone()), Vec::new()),
+                };
+                Planned {
+                    step: BindingStep {
+                        name: binding.name.clone(),
+                        fulfilled,
+                        span: binding.span,
                     },
-                    Supplied::ByHost(kind) => Fulfilled::ByHost(kind.clone()),
-                },
-                span: binding.span,
+                    closed,
+                }
             })
             .collect();
-        let sibling = |field: &str| steps.iter().position(|step| &*step.name == field);
+        let sibling = |field: &str| {
+            steps
+                .iter()
+                .position(|planned| &*planned.step.name == field)
+        };
         // Only a read of this value's own field orders its bindings. A record step's
         // `Own` read names a field of that record, which a binding's name may happen
         // to match and has nothing to do with.
-        let of_value = |read: &Read| match read {
-            Read::Ambient { value: read, field } if **read == *value => sibling(field),
-            Read::Own(_) | Read::Ambient { .. } => None,
+        let of_value = |closed: &Closed| match &closed.access {
+            Access::Ambient { value: read, field } if **read == *value => sibling(field),
+            Access::Own(_) | Access::Param { .. } | Access::Ambient { .. } => None,
+            Access::Whole(_) => None,
         };
-        let deps = |i: usize| -> Vec<usize> {
-            match &steps[i].fulfilled {
-                Fulfilled::Computed { reads, .. } => {
-                    reads.iter().filter_map(of_value).collect()
-                }
+        let edges: Vec<Vec<Edge>> = steps
+            .iter()
+            .map(|planned| match &planned.step.fulfilled {
+                Fulfilled::Computed { .. } => planned
+                    .closed
+                    .iter()
+                    .filter_map(|closed| {
+                        Some(Edge {
+                            to: of_value(closed)?,
+                            via: closed.via.clone(),
+                            through: None,
+                        })
+                    })
+                    .collect(),
                 Fulfilled::ByHost(_) => {
-                    let Some(ty) = self.index.field(file, &steps[i].name) else {
+                    let Some(ty) = self.index.field(file, &planned.step.name) else {
                         return Vec::new();
                     };
                     self.records_reachable(&ty)
                         .iter()
-                        .filter_map(|record| {
-                            records.iter().find(|plan| plan.name == *record)
+                        .filter_map(|record| records.iter().find(|r| r.name == *record))
+                        .flat_map(|record| {
+                            record.steps.iter().flat_map(move |planned| {
+                                planned.closed.iter().filter_map(move |closed| {
+                                    Some(Edge {
+                                        to: of_value(closed)?,
+                                        via: closed.via.clone(),
+                                        through: Some(Through {
+                                            record: record.name.clone(),
+                                            field: planned.step.field.clone(),
+                                            file: planned.step.file,
+                                            span: planned.step.span,
+                                        }),
+                                    })
+                                })
+                            })
                         })
-                        .flat_map(|plan| plan.steps.iter().flat_map(|step| &step.reads))
-                        .filter_map(of_value)
                         .collect()
                 }
-            }
-        };
+            })
+            .collect();
+        let deps =
+            |i: usize| -> Vec<usize> { edges[i].iter().map(|edge| edge.to).collect() };
         let steps = ordered(&steps, deps, |cycle| {
-            let first = &steps[cycle[0]];
-            diagnostics.push(Diagnostic::error(
+            let first = &steps[cycle[0]].step;
+            let mut diagnostic = Diagnostic::error(
                 &unit.path,
                 first.span,
                 format!(
                     "`{}` cannot be loaded before itself: {}",
                     first.name,
-                    chain(cycle, |i| steps[i].name.clone(), "needs")
+                    chain(cycle, |a, b| {
+                        let edge = edges[a]
+                            .iter()
+                            .find(|edge| edge.to == b)
+                            .expect("a cycle runs along dependencies");
+                        needs(&steps[a].step.name, &steps[b].step.name, edge)
+                    })
                 ),
-            ));
+            );
+            // The first read a record makes on the cycle is where the author looks.
+            let through =
+                cycle
+                    .iter()
+                    .zip(cycle.iter().cycle().skip(1))
+                    .find_map(|(&a, &b)| {
+                        edges[a]
+                            .iter()
+                            .find(|edge| edge.to == b)
+                            .and_then(|edge| edge.through.as_ref())
+                    });
+            if let Some(through) = through {
+                diagnostic = diagnostic.with_label(
+                    &self.units[through.file as usize].path,
+                    through.span,
+                    "read here",
+                );
+            }
+            diagnostics.push(diagnostic);
         });
         Some(Bindings {
             value: Rc::from(value),
             record: Rc::from(file),
             file: index_u32(position),
-            steps,
+            steps: steps.into_iter().map(|planned| planned.step).collect(),
         })
     }
 
@@ -807,13 +949,40 @@ fn ordered<T: Clone>(
 }
 
 /// A cycle as a sentence, one link per member: "`a` reads `b`, `b` reads `a`".
-fn chain(cycle: &[usize], name: impl Fn(usize) -> Rc<str>, verb: &str) -> String {
+fn chain(cycle: &[usize], link: impl Fn(usize, usize) -> String) -> String {
     let links: Vec<String> = cycle
         .iter()
         .zip(cycle.iter().cycle().skip(1))
-        .map(|(&a, &b)| format!("`{}` {verb} `{}`", name(a), name(b)))
+        .map(|(&a, &b)| link(a, b))
         .collect();
     links.join(", ")
+}
+
+/// One link of a cycle: "`a` reads `b`", naming the call the read came through when
+/// it came through one, since that is the line the author has to look at.
+fn edge(a: &str, verb: &str, b: &str, via: Option<&Rc<str>>) -> String {
+    match via {
+        Some(via) => format!("`{a}` {verb} `{b}` through `{via}`"),
+        None => format!("`{a}` {verb} `{b}`"),
+    }
+}
+
+/// One link of a cycle among bindings: what `a` needs `b` for — a read of its own,
+/// or one a record its value holds makes while `a` loads, which names that record's
+/// field, since the binding itself says nothing of `b`.
+fn needs(a: &str, b: &str, edge: &Edge) -> String {
+    let via = edge
+        .via
+        .as_ref()
+        .map(|via| format!(" through `{via}`"))
+        .unwrap_or_default();
+    match &edge.through {
+        Some(through) => format!(
+            "`{a}` needs `{b}`, which `{}.{}` reads{via} while `{a}` loads",
+            through.record, through.field
+        ),
+        None => format!("`{a}` needs `{b}`{via}"),
+    }
 }
 
 /// What a caller is told when the function it was compiled against has changed shape
@@ -1276,6 +1445,9 @@ mod tests {
     }
 
     /// A host shaped like the standard shell's, reading `site` from `site.lem`.
+    /// The host's document type, as every test against `shell_host` declares it.
+    const PAGE: &str = "<lem-type Page>\n  url: url\n</lem-type>";
+
     fn shell_host() -> Host {
         Host::new()
             .bind("page", Ambient::named("Page"))
@@ -1445,7 +1617,7 @@ mod tests {
         let module = linked(
             &shell_host(),
             &[
-                ("ambient.lem", "<lem-type Page>\n  url: url\n</lem-type>"),
+                ("ambient.lem", PAGE),
                 (
                     "site.lem",
                     "<lem-let posts: [Article] from \"feed/*.md\" />\n\
@@ -1476,18 +1648,17 @@ mod tests {
         const SITE: &str = "<lem-let posts: [Article] from \"feed/*.md\" />\n\
                             <lem-let latest: [Article] = posts.filter(|p| true) />";
         // A default on `Article` reads `site.posts`, the collection the article is
-        // being loaded into.
+        // being loaded into — which the binding itself says nothing of, so the
+        // message names the field and points at it.
+        const SCHEMA: &str = "<lem-type Article extends Page>\n  \
+                              related: [Article] = site.posts.filter(|p| p != self)\n  \
+                              layout: (Article, html): html\n</lem-type>";
         let linked = linked(
             &shell_host(),
             &[
-                ("ambient.lem", "<lem-type Page>\n  url: url\n</lem-type>"),
+                ("ambient.lem", PAGE),
                 ("site.lem", SITE),
-                (
-                    "schema.lem",
-                    "<lem-type Article extends Page>\n  \
-                     related: [Article] = site.posts.filter(|p| p != self)\n  \
-                     layout: (Article, html): html\n</lem-type>",
-                ),
+                ("schema.lem", SCHEMA),
             ],
         );
         assert!(linked.output.is_none());
@@ -1495,8 +1666,10 @@ mod tests {
             shown_all(&linked.diagnostics),
             [format!(
                 "site.lem:{}: `posts` cannot be loaded before itself: `posts` needs \
-                 `posts`",
-                at(SITE, "«posts»: [Article] from")
+                 `posts`, which `Article.related` reads while `posts` loads\n  \
+                 schema.lem:{}: read here",
+                at(SITE, "«posts»: [Article] from"),
+                at(SCHEMA, "related")
             )]
         );
     }
@@ -1554,7 +1727,7 @@ mod tests {
         let module = linked(
             &shell_host(),
             &[
-                ("ambient.lem", "<lem-type Page>\n  url: url\n</lem-type>"),
+                ("ambient.lem", PAGE),
                 (
                     "site.lem",
                     "<lem-let posts: [Article] from \"feed/*.md\" />\n\
@@ -1700,13 +1873,10 @@ mod tests {
 
     #[test]
     fn refuses_to_link_a_unit_the_host_rebound_an_ambient_name_under() {
-        const PAGE: &str = "<lem.page.url>";
+        const TEMPLATE: &str = "<lem.page.url>";
         // page.lem read `page.url` as a `Page`'s field; a host that now calls `page`
         // something else checked that read against a declaration this unit never saw.
-        let files = [
-            ("ambient.lem", "<lem-type Page>\n  url: url\n</lem-type>"),
-            ("page.lem", PAGE),
-        ];
+        let files = [("ambient.lem", PAGE), ("page.lem", TEMPLATE)];
         let host = Host::new().bind("page", Ambient::named("Page"));
         let unit = unit_against(&host, "page.lem", &files);
         let ambient = unit_against(&host, "ambient.lem", &files);
@@ -1716,14 +1886,14 @@ mod tests {
                 format!(
                     "page.lem:{}: the host binds `page` as a `Photo` now, and this file \
                      was compiled against `Page`",
-                    at(PAGE, "«page».url")
+                    at(TEMPLATE, "«page».url")
                 ),
             ),
             (
                 Host::new(),
                 format!(
                     "page.lem:{}: the host no longer binds `page`",
-                    at(PAGE, "«page».url")
+                    at(TEMPLATE, "«page».url")
                 ),
             ),
         ] {
@@ -1747,7 +1917,7 @@ mod tests {
         // declares for it is not what this unit was compiled against — and comparing
         // the two would call every document stale.
         let files = [
-            ("ambient.lem", "<lem-type Page>\n  url: url\n</lem-type>"),
+            ("ambient.lem", PAGE),
             (
                 "schema.lem",
                 "<lem-type Post extends Page>\n  title: string\n  \
@@ -1804,5 +1974,280 @@ mod tests {
                 at(SITE, "«motto»: string")
             )]
         );
+    }
+
+    // --- Reads through calls (∆HF0) --------------------------------------------------
+
+    #[test]
+    fn orders_a_default_after_the_fields_a_called_function_reads() {
+        // `a` hands `self` to `f`, which reads `b`: the loader computes `b` first.
+        let module = linked(
+            &untyped_host(),
+            &[(
+                "types.lem",
+                "<lem-type A>\n  a: string = f(self)\n  b: string = \"B\"\n</lem-type>\n\
+                 <lem-fn f(x: A): string = x.b />",
+            )],
+        )
+        .expect_output();
+        assert_eq!(steps_of(&module, "A"), ["b", "a"]);
+    }
+
+    #[test]
+    fn closes_reads_through_a_chain_of_calls_across_files_and_through_recursion() {
+        // `a` → `f` → `g` → `h`, where `h` reads `c` off what `g` passed on, and `g`
+        // calls itself; a read `f` makes off `site` closes too, since it is not off
+        // any parameter.
+        let module = linked(
+            &untyped_host(),
+            &[
+                (
+                    "types.lem",
+                    "<lem-type A>\n  a: string = f(self)\n  b: string = \"B\"\n  \
+                     c: string = \"C\"\n</lem-type>",
+                ),
+                (
+                    "lib.lem",
+                    "<lem-fn f(x: A): string = g(x, \"\") + site.name />\n\
+                     <lem-fn g(y: A, s: string): string = s + h(y) + g(y, s) />\n\
+                     <lem-fn h(z: A): string = z.c />",
+                ),
+            ],
+        )
+        .expect_output();
+        assert_eq!(steps_of(&module, "A"), ["b", "c", "a"]);
+        let a = &module.records[0].steps[2];
+        assert_eq!(
+            a.reads,
+            [
+                Read::Ambient {
+                    value: Rc::from("site"),
+                    field: Rc::from("name"),
+                },
+                Read::Own(Rc::from("c")),
+            ]
+        );
+    }
+
+    #[test]
+    fn drops_a_callees_read_off_a_parameter_handed_something_other_than_a_root() {
+        // `f(self.hero)` hands a field, so `f`'s reads off it are the photo's own
+        // business; `a` waits for `hero` and not for the `alt` of its own.
+        let module = linked(
+            &untyped_host(),
+            &[(
+                "types.lem",
+                "<lem-type Photo>\n  alt: string = \"x\"\n</lem-type>\n\
+                 <lem-type A>\n  a: string = f(self.hero)\n  \
+                 hero: Photo = {alt: \"h\"}\n  alt: string = \"A\"\n</lem-type>\n\
+                 <lem-fn f(p: Photo): string = p.alt />",
+            )],
+        )
+        .expect_output();
+        assert_eq!(steps_of(&module, "A"), ["hero", "a", "alt"]);
+    }
+
+    #[test]
+    fn refuses_a_cycle_through_a_call_and_names_the_call() {
+        const CYCLE: &str = "<lem-type A>\n  a: string = f(self)\n  b: string = self.a\n\
+                             </lem-type>\n\
+                             <lem-fn f(x: A): string = x.b />";
+        let linked = linked(&untyped_host(), &[("types.lem", CYCLE)]);
+        assert!(linked.output.is_none());
+        assert_eq!(
+            shown_all(&linked.diagnostics),
+            [format!(
+                "types.lem:{}: `a` depends on itself: `a` reads `b` through `f`, `b` \
+                 reads `a`",
+                at(CYCLE, "«a»: string")
+            )]
+        );
+    }
+
+    #[test]
+    fn orders_a_computed_binding_after_the_siblings_a_called_function_reads() {
+        let module = linked(
+            &shell_host(),
+            &[
+                ("ambient.lem", PAGE),
+                (
+                    "site.lem",
+                    "<lem-fn all(): [string] = site.posts />\n\
+                     <lem-let articles: [string] = all() />\n\
+                     <lem-let posts: [string] from \"feed/*.md\" />",
+                ),
+            ],
+        )
+        .expect_output();
+        assert_eq!(binding_names(&module), ["posts", "articles"]);
+    }
+
+    #[test]
+    fn refuses_a_binding_that_needs_itself_through_a_call_and_names_the_call() {
+        const SITE: &str = "<lem-fn all(): [string] = site.articles />\n\
+                            <lem-let articles: [string] = all() />";
+        let linked = linked(&shell_host(), &[("ambient.lem", PAGE), ("site.lem", SITE)]);
+        assert!(linked.output.is_none());
+        assert_eq!(
+            shown_all(&linked.diagnostics),
+            [format!(
+                "site.lem:{}: `articles` cannot be loaded before itself: `articles` \
+                 needs `articles` through `all`",
+                at(SITE, "«articles»: [string] =")
+            )]
+        );
+    }
+
+    #[test]
+    fn plans_a_loaded_binding_after_what_its_records_read_through_calls() {
+        // A default on `Article` reads `site.captions` inside `caption()`: `posts`
+        // still waits for `captions`.
+        let module = linked(
+            &shell_host(),
+            &[
+                ("ambient.lem", PAGE),
+                (
+                    "site.lem",
+                    "<lem-let posts: [Article] from \"feed/*.md\" />\n\
+                     <lem-let captions: {string: string} from \"captions.json\" />",
+                ),
+                (
+                    "schema.lem",
+                    "<lem-type Article extends Page>\n  caption: string = caption()\n  \
+                     layout: (Article, html): html\n</lem-type>\n\
+                     <lem-fn caption(): string = site.captions[\"x\"] />",
+                ),
+            ],
+        )
+        .expect_output();
+        assert_eq!(binding_names(&module), ["captions", "posts"]);
+    }
+
+    #[test]
+    fn refuses_a_default_that_reaches_the_document_value_through_a_call() {
+        // Read directly, `page` is refused where it stands (∆iCW); reached through
+        // `where` or `here` — a field of it, or the value whole — only the link step
+        // can see it, and it says so at the field.
+        const SCHEMA: &str = "<lem-type Post extends Page>\n  at: url = where()\n  \
+                              origin: Page = here()\n  layout: (Post, html): html\n\
+                              </lem-type>";
+        const FNS: &str = "<lem-fn where(): url = page.url />\n\
+                           <lem-fn here(): Page = page />";
+        let linked = linked(
+            &shell_host(),
+            &[
+                ("ambient.lem", PAGE),
+                ("schema.lem", SCHEMA),
+                ("fns.lem", FNS),
+            ],
+        );
+        assert!(linked.output.is_none());
+        let refused = |field: &str, via: &str| {
+            format!(
+                "schema.lem:{}: `{field}` reaches `page` through `{via}`, but `page` is \
+                 not bound while a record loads: the record so far is `self`",
+                at(SCHEMA, &format!("«{field}»:"))
+            )
+        };
+        assert_eq!(
+            shown_all(&linked.diagnostics),
+            [refused("at", "where"), refused("origin", "here")]
+        );
+    }
+
+    #[test]
+    fn refuses_a_computed_binding_that_reaches_the_document_value_through_a_call() {
+        const SITE: &str = "<lem-let home: url = where() />";
+        let linked = linked(
+            &shell_host(),
+            &[
+                ("ambient.lem", PAGE),
+                ("site.lem", SITE),
+                ("fns.lem", "<lem-fn where(): url = page.url />"),
+            ],
+        );
+        assert!(linked.output.is_none());
+        assert_eq!(
+            shown_all(&linked.diagnostics),
+            [format!(
+                "site.lem:{}: `home` reaches `page` through `where`, but `page` is bound \
+                 per page, and a binding here is computed once, at load",
+                at(SITE, "home")
+            )]
+        );
+    }
+
+    #[test]
+    fn refuses_a_binding_its_records_need_through_a_call_and_names_the_field_and_call() {
+        const SITE: &str = "<lem-let posts: [Post] from \"feed/*.md\" />";
+        const SCHEMA: &str = "<lem-type Post extends Page>\n  siblings: [Post] = all()\n  \
+                              layout: (Post, html): html\n</lem-type>\n\
+                              <lem-fn all(): [Post] = site.posts />";
+        let linked = linked(
+            &shell_host(),
+            &[
+                ("ambient.lem", PAGE),
+                ("site.lem", SITE),
+                ("schema.lem", SCHEMA),
+            ],
+        );
+        assert!(linked.output.is_none());
+        assert_eq!(
+            shown_all(&linked.diagnostics),
+            [format!(
+                "site.lem:{}: `posts` cannot be loaded before itself: `posts` needs \
+                 `posts`, which `Post.siblings` reads through `all` while `posts` \
+                 loads\n  schema.lem:{}: read here",
+                at(SITE, "posts"),
+                at(SCHEMA, "siblings")
+            )]
+        );
+    }
+
+    #[test]
+    fn leaves_a_function_named_as_a_value_out_of_the_order() {
+        // `layout = post` stores `post` for the render to call, when `page` is bound
+        // and `site` is whole: what it reads is no part of the load order, however
+        // much of `page` and `site` it reads, and `posts` does not need itself.
+        const SCHEMA: &str = "<lem-type Post extends Page>\n  title: string\n  \
+                              layout: (Post, html): html = post\n</lem-type>\n\
+                              <lem-fn post(p: Post, body: html)>\
+                              <lem.page.url><lem.site.posts[0].title><lem.p.title>\
+                              <lem.body></lem-fn>";
+        let module = linked(
+            &shell_host(),
+            &[
+                ("ambient.lem", PAGE),
+                ("site.lem", "<lem-let posts: [Post] from \"feed/*.md\" />"),
+                ("schema.lem", SCHEMA),
+            ],
+        )
+        .expect_output();
+        assert_eq!(steps_of(&module, "Post"), ["layout"]);
+        let post = module.records.iter().find(|p| &*p.name == "Post").unwrap();
+        assert!(post.steps[0].reads.is_empty());
+    }
+
+    #[test]
+    fn reorders_a_plan_when_a_callee_body_changes_leaving_the_caller_unit_as_it_was() {
+        // Invariant 11 with the closure in play: `f`'s body decides the order, and it
+        // is the link step, not the schema's unit, that changes when the body does.
+        let types = (
+            "types.lem",
+            "<lem-type A>\n  a: string = f(self)\n  b: string = \"B\"\n</lem-type>",
+        );
+        let plan_against = |lib: &str| {
+            let files = [types, ("lib.lem", lib)];
+            let schema = unit_of("types.lem", &files);
+            let lib = unit_of("lib.lem", &files);
+            let units = [schema.clone(), lib];
+            let module =
+                link(&units, &ExportIndex::of(&units), &untyped_host()).expect_output();
+            (schema, steps_of(&module, "A").join(","))
+        };
+        let (unit, plan) = plan_against("<lem-fn f(x: A): string = \"f\" />");
+        let (edited, replanned) = plan_against("<lem-fn f(x: A): string = x.b />");
+        assert_eq!(unit, edited);
+        assert_eq!((plan.as_str(), replanned.as_str()), ("a,b", "b,a"));
     }
 }

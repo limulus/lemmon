@@ -122,6 +122,14 @@ moved it. Newest last. An entry is removed when its change has been applied.
   that becomes one; and that a page-backed record is loaded from a document of its own
   only — never from a data file or nested in another document's front matter (D37,
   ∆iCW).
+- **Schemas, defaults through calls** — where the entry above says a default's reads are
+  recorded and a cycle is a link error, add that the reads are closed through the
+  `lem-fn`s the default calls by name, however deep — a function handed `self` whole
+  reads its fields on the default's behalf — so the order is exact for those too and a
+  cycle through a call is refused with the call named; that a call through a value is
+  not followed and a field reached through one before the loader computed it stays a
+  load error at the read; and that a default or computed binding reaching the host's
+  document value through a call is a link error at the field (D37 revised, ∆HF0).
 - **Ambient types, load order** — say the host fulfils a `from` binding by its name
   alone, so no two bindings files may load one of the same name (a link error); that the
   host's own values load first, in the host's declaration order, then each bindings

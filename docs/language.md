@@ -232,13 +232,24 @@ the checker's question, not the parser's.
   rendered prose as `html`; on any other record those names are undefined. It sees the
   ambient values as any expression does, except the host's document value, which is
   bound to the record only once it is built — read `self`. What a default reads through
-  `self` and off an ambient value is recorded with it: a field whose default reads
-  itself through others is refused at link, and the loader has an order before it runs
-  anything. Only reads written in the default itself count — a field a called function
-  reads, or one reached through `self` handed to a function whole, is not part of the
-  order, and a default that reaches a field the loader has not computed yet is a load
-  error at the read, never a guess. A `layout` default names a function:
-  `layout: (Article, html): html = article`.
+  `self` and off an ambient value is recorded with it, and so is what it reads through
+  the `lem-fn`s it calls by name, however deep: a function handed `self` whole reads
+  its fields on the default's behalf, and the link step follows every such call before
+  it orders anything (∆HF0). So a field whose default reads itself through others,
+  through a call or not, is refused at link — the message names the call — and the
+  loader has an order before it runs anything. Only a call written as `f(…)` is
+  followed, and only reads written off `self`, a parameter, or an ambient value by
+  name count, in the callee as in the default. A call through a value — a field
+  holding a function, a lambda's parameter, a method on `any` — names no function the
+  link step could open; a field read off a local bound to `self` or a parameter is
+  outside the order the same way; and a default that reaches a field the loader has
+  not computed yet through either is a load error at the read, never a guess. A
+  default that reaches the host's document value through a call is refused at link
+  as it is refused where the read stands. Naming a `lem-fn` as a value is not a call:
+  `layout: (Article, html): html = article` stores the function for the render to
+  call, so what `article` reads — `page` included — is no part of the load order, and
+  the same holds for a function handed to a builtin, `map(f)`. A `layout` default
+  names a function that way: `layout: (Article, html): html = article`.
 - **Extra front-matter keys are errors.** A record has exactly its declared fields.
 - **The loader reads data by declared type.** A field's value is checked against the
   field's type as a literal's would be, and an omitted field is filled with `null`
@@ -306,9 +317,12 @@ D19's flag — a draft is skipped and left out of collections unless `--drafts`.
   order, and declare their type as a `from` binding does — see **Declared, not
   inferred** below. At this file's top level a sibling binding is read by its bare name
   — `concat(posts, links, tils)` below — and that is the same read as `site.posts`,
-  recorded for the loader's order; a `lem-fn` or a default in the file reads
-  `site.posts` as every other file does. A binding here may not read the host's
-  document value: it is computed once, before any page is bound. The host fulfils a
+  recorded for the loader's order and closed at link through the `lem-fn`s the binding
+  calls by name, as a default's reads are (∆HF0); a `lem-fn` or a default in the file
+  reads `site.posts` as every other file does. A binding here may not read the host's
+  document value: it is computed once, before any page is bound, and reaching it
+  through a call is refused at link as reading it directly is refused where the read
+  stands. The host fulfils a
   `from` binding by its name alone, so no two files it reads bindings from may load one
   of the same name. The host's own values — `build` — load first, in the host's
   declaration order, and a bindings file's after them; so a binding may read `build`,

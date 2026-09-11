@@ -1,0 +1,11 @@
+<lem-type Note extends Page>
+  title: string = titleOf(self)
+  slug: string = self.title
+  layout: (Note, html): html
+</lem-type>
+
+<lem-fn titleOf(n: Note): string = n.slug />
+
+The link step follows the call, so it sees what the loader would: `title` waits on
+`slug`, which waits on `title`. No order could run them, and the message names the
+call the read came through.

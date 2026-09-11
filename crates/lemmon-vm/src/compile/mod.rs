@@ -53,6 +53,7 @@ use crate::unit::{
 use crate::{SourceFile, Value};
 
 pub use diagnostics::{Compiled, Diagnostic, Label};
+pub(crate) use expr::document_unavailable;
 pub(crate) use names::duplicate_named;
 use names::{BindingKind, Frame, Names, Resolved};
 pub(crate) use rules::omittable;
@@ -1137,26 +1138,26 @@ mod tests {
     }
 
     #[test]
-    fn records_a_function_named_as_a_value_as_a_call_handed_nothing() {
-        // `self.words.map(loud)` may call `loud` with anything: what `loud` reads
-        // still counts for the order, off no root the default can vouch for.
+    fn records_no_call_for_a_function_named_as_a_value() {
+        // `layout = card` stores `card` for the render to call, and `map(loud)` hands
+        // `loud` to a builtin: neither is a call written here, so neither is followed
+        // — what `card` reads of `page` is the render's business, and what `loud`
+        // reads at load is an error at the read, never a guess (invariant 10).
         let unit = unit_with(
             &untyped_host(),
             "types.lem",
             &[SourceFile::new(
                 "types.lem",
                 "<lem-type A>\n  words: [string]\n  \
-                 shouted: [string] = self.words.map(loud)\n</lem-type>\n\
-                 <lem-fn loud(w: string): string = w + site.name />",
+                 shouted: [string] = self.words.map(loud)\n  \
+                 layout: (A, html): html = card\n</lem-type>\n\
+                 <lem-fn loud(w: string): string = w + site.name />\n\
+                 <lem-fn card(a: A, body: html)><lem.page.url><lem.body></lem-fn>",
             )],
         );
-        assert_eq!(
-            unit.uses[&unit.defaults[0].func].calls,
-            [Call {
-                name: Rc::from("loud"),
-                args: vec![None],
-            }]
-        );
+        for row in &unit.defaults {
+            assert!(unit.uses[&row.func].calls.is_empty(), "{}", row.field);
+        }
     }
 
     #[test]

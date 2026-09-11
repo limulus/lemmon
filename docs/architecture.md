@@ -196,7 +196,9 @@ the declarations of every foreign type the checking reached, each at the use tha
 it — so a callee whose type changed under a caller, or a type whose shape changed under a
 consumer, is a link diagnostic naming the file to recompile, in that file's own order. Invariant 11 is a test:
 editing a callee's body, or a declaration's default, leaves the consumer's unit
-byte-identical. `∆RGQ` makes the reported facts cross the boundary and the serialized
+byte-identical. What the link step derives from every unit at once does change: since
+∆HF0 it closes each unit's recorded reads through the calls they write, project-wide, so
+a callee's body edit can reorder the loader's plans while changing no unit. `∆RGQ` makes the reported facts cross the boundary and the serialized
 form (`exportModule`) first-class.
 
 ## VM
@@ -205,7 +207,8 @@ Stack machine; serializable
 `Module { files, documents, constants, functions, declarations, exports, records, bindings }`
 — the code, the project's type declarations, its project-flat functions by name, and
 the loader's plans: each record's default and `by` functions and the bindings file's
-computed bindings, in the order their recorded reads dictate (D37) — linked from
+computed bindings, in the order their recorded reads, closed through calls, dictate
+(D37, ∆HF0) — linked from
 per-file units (above). Values are immutable and Rc'd:
 `Null | Bool | Int | Float | Str | Html | DateTime | Duration | Url | Asset | List | Map | Fn | Record`.
 Records carry their declared name, and the module the declaration table that
