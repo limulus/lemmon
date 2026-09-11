@@ -1,0 +1,7 @@
+<lem-type Note extends Page>
+  banner: string = site.name
+  layout: (Note, html): html
+</lem-type>
+
+A default reads only the record it builds. `site` is read in a layout, which takes the
+record once it is loaded; a record's plan depends on nothing outside its declaration.

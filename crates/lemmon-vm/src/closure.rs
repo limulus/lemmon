@@ -1,20 +1,21 @@
 //! Closing what a loader-run function reads through the calls it makes (∆HF0, D37).
 //!
-//! For the loader's order, a default that calls a `lem-fn` reads whatever that function
-//! reads: off the record it was handed, off ambient values, and through its own calls,
-//! however deep. The compiler cannot know that — a callee's body is another file's
-//! (invariant 11) — so the link step, the first place every unit is in hand, works it
-//! out here: per project function, the reads its body makes closed through its calls;
-//! then per step, its own reads plus each callee's, with a read off a parameter
-//! translated through what the step handed that parameter. Only a call written as
-//! `f(…)` is followed. A function named as a value — stored in a field, handed to a
-//! builtin — is a value like any other, and a call through a value names nothing.
+//! For the loader's order, a default or a computed binding that calls a `lem-fn` reads
+//! whatever that function reads: off the record it was handed, off ambient values, and
+//! through its own calls, however deep. The compiler cannot know that — a callee's body
+//! is another file's (invariant 11) — so the link step, the first place every unit is
+//! in hand, works it out here: per project function, the reads its body makes closed
+//! through its calls; then per step, its own reads plus each callee's, with a read off
+//! a parameter translated through what the step handed that parameter. What a default
+//! may not read at all — any ambient value (∆eag) — the link step refuses when it
+//! arrives this way. Only a call written as `f(…)` is followed. A function named as a
+//! value — stored in a field, handed to a builtin — is a value like any other, and a
+//! call through a value names nothing.
 
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
 use crate::exports::ExportIndex;
-use crate::plan::Read;
 use crate::unit::{Access, Root, Unit, Uses};
 
 /// One read a step makes once its calls are followed, with the call it arrived
@@ -133,24 +134,41 @@ fn through<'a>(
     })
 }
 
-/// What a step's plan carries of its closed reads: the fields of `self` and of
-/// ambient values. A whole ambient value orders nothing — a binding may read the site
-/// so far — and a step has no parameter to have read off.
-pub(crate) fn reads(closed: &[Closed]) -> Vec<Read> {
+/// What a record step's plan carries of its closed reads: the fields of `self`. An
+/// ambient value, a field of one or the whole, is no part of a default's scope
+/// (∆eag) — the link step has refused it — and a step has no parameter to have read
+/// off.
+pub(crate) fn own_reads(closed: &[Closed]) -> Vec<Rc<str>> {
     closed
         .iter()
         .filter_map(|closed| match &closed.access {
-            Access::Own(field) => Some(Read::Own(field.clone())),
-            Access::Ambient { value, field } => Some(Read::Ambient {
-                value: value.clone(),
-                field: field.clone(),
-            }),
-            Access::Whole(_) => None,
+            Access::Own(field) => Some(field.clone()),
+            Access::Ambient { .. } | Access::Whole(_) => None,
             Access::Param { .. } => {
                 unreachable!("a step reads off `self`, not a parameter")
             }
         })
         .collect()
+}
+
+/// What a computed binding's plan carries of its closed reads: the ambient values it
+/// reads, a field of them or whole, each once — what the loader must have loaded
+/// before it runs the binding. A binding has no `self` and no parameter to have read
+/// off.
+pub(crate) fn ambient_values(closed: &[Closed]) -> Vec<Rc<str>> {
+    let mut values: Vec<Rc<str>> = Vec::new();
+    for closed in closed {
+        let value = match &closed.access {
+            Access::Ambient { value, .. } | Access::Whole(value) => value,
+            Access::Own(_) | Access::Param { .. } => {
+                unreachable!("a binding reads off ambient values alone")
+            }
+        };
+        if !values.contains(value) {
+            values.push(value.clone());
+        }
+    }
+    values
 }
 
 /// The call the first read `matches` arrived through, if it arrived through one —

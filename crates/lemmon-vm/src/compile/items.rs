@@ -14,7 +14,7 @@ use lemmon_syntax::{Span, SyntaxToken};
 use super::expr::{decode_string, unparen};
 use super::names::{BindingKind, already_bound};
 use super::whitespace::{Arm, Body, Case, Kind, Piece};
-use super::{Compiler, Diagnostic, TokenSpan, required, rules};
+use super::{Compiler, Diagnostic, Runs, TokenSpan, required, rules};
 use crate::bytecode::Op;
 use crate::decls::Decls;
 use crate::plan::SourceKind;
@@ -436,9 +436,10 @@ impl Compiler<'_> {
         lower: impl FnOnce(&mut Self, bool),
     ) {
         let admitted = self.admit_exported(name);
-        let func = self.function_for_loader(name.text(), &[], None, span, |c| {
-            lower(c, admitted);
-        });
+        let func =
+            self.function_for_loader(name.text(), &[], Runs::Binding, None, span, |c| {
+                lower(c, admitted);
+            });
         if admitted {
             self.unit.bindings.push(BindingFn {
                 name: Rc::from(name.text()),

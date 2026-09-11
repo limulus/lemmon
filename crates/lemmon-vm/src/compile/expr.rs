@@ -232,26 +232,50 @@ impl Compiler<'_> {
         }
     }
 
-    /// Why the ambient value `name` cannot be read by the function being compiled for
-    /// the loader, if it cannot: the host's document value is bound per page, and a
-    /// default or a computed binding runs before any page is (∆iCW).
+    /// Why the ambient value `name` cannot be read by the function being compiled, if
+    /// the loader runs it and it cannot ([`refused_at_load`]).
     fn unavailable_at_load(&self, name: &str) -> Option<String> {
-        let collecting = self.uses.as_ref()?;
-        if !collecting.at_load || self.host.document() != Some(name) {
-            return None;
-        }
-        Some(document_unavailable(name, collecting.self_binder.is_some()))
+        let runs = self.uses.as_ref()?.runs?;
+        refused_at_load(runs, self.host.document(), name)
     }
 }
 
-/// Why the host's document value `name` is not there for a function the loader runs:
-/// `in_record` for a default or `by` index, else for a computed binding. Said here
-/// where the read stands, and by the link step when a call reaches it (∆HF0).
-pub(crate) fn document_unavailable(name: &str, in_record: bool) -> String {
-    if in_record {
-        format!("`{name}` is not bound while a record loads: the record so far is `self`")
-    } else {
-        format!("`{name}` is bound per page, and a binding here is computed once, at load")
+/// The function the loader runs a read stands in: a field's default, of a record that
+/// extends the host's document type or not, or a computed binding of the bindings
+/// file. What decides which ambient values the function may read.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Runs {
+    Default { page_backed: bool },
+    Binding,
+}
+
+/// Why the ambient value `name` is not there for a function the loader runs as
+/// `runs`, if it is not — `document` being the host's document value: a default reads
+/// only the record it builds, since a record's plan depends on its own declarations
+/// alone (∆eag), and the document value is bound per page, so a computed binding,
+/// which runs before any page is, may not read that one (∆iCW). One rule and one
+/// sentence, said by the compiler where the read stands and by the link step when a
+/// call reaches it (∆HF0).
+pub(crate) fn refused_at_load(
+    runs: Runs,
+    document: Option<&str>,
+    name: &str,
+) -> Option<String> {
+    match runs {
+        Runs::Default { page_backed } => Some(format!(
+            "`{name}` is out of scope in a default: a default reads only the record it \
+             builds — `self`{}",
+            if page_backed {
+                ", and `path` and `body` on a page"
+            } else {
+                ""
+            }
+        )),
+        Runs::Binding => (document == Some(name)).then(|| {
+            format!(
+                "`{name}` is bound per page, and a binding here is computed once, at load"
+            )
+        }),
     }
 }
 

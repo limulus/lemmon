@@ -3,4 +3,5 @@
   layout: (Gallery, html): html
 </lem-type>
 
-A record loads before `page` is bound to it, so an index cannot name a field of it.
+`page` is bound to a record once it is loaded, so an index cannot name a field of it —
+it names a field of `site`, or of another value the host loads first.

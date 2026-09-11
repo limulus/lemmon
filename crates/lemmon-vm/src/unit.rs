@@ -16,12 +16,12 @@ use lemmon_syntax::Span;
 use crate::Value;
 use crate::bytecode::{Declared, Document, Exported, Function, Module, Op};
 use crate::closure::{self, Closed, ReadClosure};
-use crate::compile::{Compiled, Diagnostic, document_unavailable, index_u32};
+use crate::compile::{Compiled, Diagnostic, Runs, index_u32, refused_at_load};
 use crate::decls::{Declaration, Decls, Kind, Shape, TypeFact};
 use crate::exports::ExportIndex;
 use crate::host::Host;
 use crate::plan::{
-    BindingStep, Bindings, Fulfilled, Index, Read, RecordPlan, SourceKind, Step, order,
+    BindingStep, Bindings, Fulfilled, Index, RecordPlan, SourceKind, Step, order,
 };
 use crate::types::Type;
 
@@ -140,7 +140,8 @@ pub struct Uses {
 }
 
 /// One thing a function reads, as its own body has it — before the link step has
-/// closed it through the calls that reach it, into the [`Read`]s a plan carries.
+/// closed it through the calls that reach it, into what a plan carries: the fields
+/// of `self` a step reads, the ambient values a computed binding reads.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Access {
     /// A field of `self`, the record a default is building.
@@ -151,9 +152,9 @@ pub enum Access {
     Param { index: u32, field: Rc<str> },
     /// A field of an ambient value: `site.photos`.
     Ambient { value: Rc<str>, field: Rc<str> },
-    /// An ambient value read whole: `page`, handed on or returned. Orders nothing —
-    /// a binding may read the site so far — but is how a default that reaches the
-    /// host's document value through a call is found (D37).
+    /// An ambient value read whole: `page`, handed on or returned. Orders a binding
+    /// after the value like a field read does, and is how a default that reaches an
+    /// ambient value through a call is found (D37, ∆eag).
     Whole(Rc<str>),
 }
 
@@ -420,16 +421,8 @@ pub fn link(units: &[Unit], index: &ExportIndex, host: &Host) -> Compiled<Module
         function_offsets: &function_offsets,
         closure: &closure,
     };
-    let planned = places.record_plans(&mut diagnostics);
-    let bindings = places.bindings_plans(&planned, &mut diagnostics);
-    let records = planned
-        .into_iter()
-        .map(|record| RecordPlan {
-            name: record.name,
-            steps: record.steps.into_iter().map(|step| step.step).collect(),
-            indexes: record.indexes,
-        })
-        .collect();
+    let records = places.record_plans(&mut diagnostics);
+    let bindings = places.bindings_plans(&records, &mut diagnostics);
     // A cycle among what the loader runs is as fatal as an unresolved import: the
     // program could never load.
     if diagnostics.iter().any(Diagnostic::is_error) {
@@ -562,57 +555,14 @@ struct Planned<T> {
     closed: Vec<Closed>,
 }
 
-/// A record's plan before its steps are projected into the module's.
-struct PlannedRecord {
-    name: Rc<str>,
-    steps: Vec<Planned<Step>>,
-    indexes: Vec<Index>,
-}
-
 /// One dependency of a binding on a sibling: for a computed binding, a read of its
-/// own, through a call or not; for a `from` binding, a read or a lookup a record its
-/// value may hold makes while it loads, which is where the read stands.
-struct Edge {
+/// own, `via` the call it came through if it did; for a `from` binding, a lookup a
+/// record its value may hold makes while it loads, `through` that record's index
+/// naming the sibling. One or the other, never both.
+struct Edge<'a> {
     to: usize,
     via: Option<Rc<str>>,
-    through: Option<Through>,
-}
-
-/// The record field a `from` binding's dependency comes from, and what that field
-/// does with the sibling.
-struct Through {
-    record: Rc<str>,
-    field: Rc<str>,
-    because: Because,
-    file: u32,
-    span: Span,
-}
-
-/// What a record's field does with a binding while the binding loads: a default
-/// reads it, or a `by` index looks a string up in it.
-#[derive(Clone, Copy)]
-enum Because {
-    Reads,
-    LooksUp,
-}
-
-impl Because {
-    /// The verb of a cycle's sentence: "`posts` needs `photos`, which `Article.hero`
-    /// looks up while `posts` loads".
-    const fn verb(self) -> &'static str {
-        match self {
-            Self::Reads => "reads",
-            Self::LooksUp => "looks up",
-        }
-    }
-
-    /// The label on the field itself.
-    const fn label(self) -> &'static str {
-        match self {
-            Self::Reads => "read here",
-            Self::LooksUp => "looked up here",
-        }
-    }
+    through: Option<(&'a Rc<str>, &'a Index)>,
 }
 
 impl Places<'_> {
@@ -628,9 +578,9 @@ impl Places<'_> {
     /// ancestor's in force. The steps are relocated into the module and ordered by
     /// what each reads through `self`, the calls it makes followed (∆HF0); a field
     /// that reads itself through others is a link error at the field, since no order
-    /// could run it, and so is one that reaches the host's document value through a
-    /// call, since no page is bound while a record loads (D37).
-    fn record_plans(&self, diagnostics: &mut Vec<Diagnostic>) -> Vec<PlannedRecord> {
+    /// could run it, and so is one that reaches an ambient value through a call,
+    /// since a default reads only the record it builds (∆eag).
+    fn record_plans(&self, diagnostics: &mut Vec<Diagnostic>) -> Vec<RecordPlan> {
         let mut plans = Vec::new();
         for export in self.index.types() {
             let name = &export.decl.name;
@@ -649,6 +599,12 @@ impl Places<'_> {
                     .expect("a chain walks declared types");
                 let position = self.positions[owner.path.as_str()];
                 let unit = &self.units[position];
+                // A default is refused once, where it is declared; a subtype inherits
+                // a default already refused.
+                let refuse = decl.name == *name;
+                let page_backed = self.host.document_type().is_some_and(|document| {
+                    document == decl.name || self.index.extends(&decl.name, &document)
+                });
                 for field in fields {
                     let of_field = |record: &Rc<str>, name: &Rc<str>| {
                         *record == decl.name && *name == field.name
@@ -660,14 +616,20 @@ impl Places<'_> {
                             .find(|row| of_field(&row.record, &row.field))
                     {
                         let closed = self.closure.step(&unit.uses[&row.func]);
-                        diagnostics.extend(self.refuse_document(
-                            &closed, &unit.path, row.span, &row.field, true,
-                        ));
+                        if refuse {
+                            diagnostics.extend(self.refuse_reach(
+                                &closed,
+                                &unit.path,
+                                row.span,
+                                &row.field,
+                                Runs::Default { page_backed },
+                            ));
+                        }
                         steps.push(Planned {
                             step: Step {
                                 field: row.field.clone(),
                                 func: self.func(position, row.func),
-                                reads: closure::reads(&closed),
+                                reads: closure::own_reads(&closed),
                                 file: index_u32(position),
                                 span: row.span,
                             },
@@ -695,17 +657,7 @@ impl Places<'_> {
                     .step
                     .reads
                     .iter()
-                    .flat_map(|read| {
-                        let Read::Own(field) = read else {
-                            return Vec::new();
-                        };
-                        steps
-                            .iter()
-                            .enumerate()
-                            .filter(|(_, planned)| planned.step.field == *field)
-                            .map(|(j, _)| j)
-                            .collect()
-                    })
+                    .filter_map(|field| steps.iter().position(|p| p.step.field == *field))
                     .collect()
             };
             let steps = ordered(&steps, deps, |cycle| {
@@ -727,48 +679,60 @@ impl Places<'_> {
                     ),
                 ));
             });
-            plans.push(PlannedRecord {
+            plans.push(RecordPlan {
                 name: name.clone(),
-                steps,
+                steps: steps.into_iter().map(|planned| planned.step).collect(),
                 indexes,
             });
         }
         plans
     }
 
-    /// The refusal of a loader-run function that reaches the host's document value
-    /// through a call — a field of it, or the value whole — at `span` in `path`, for
-    /// the field or binding `subject`, `in_record` for a record's step. Read directly,
-    /// the compiler refused it where it stood, in the same words (∆iCW); through a
-    /// call, only the link step can see it (∆HF0).
-    fn refuse_document(
+    /// The refusals of a function the loader runs as `runs` that reaches an ambient
+    /// value it may not read ([`refused_at_load`]) — a field of it, or the value whole
+    /// — one per value, at `span` in `path`, for the field or binding `subject`. Read
+    /// directly, the compiler refused it where it stood, in the same words, and no
+    /// program with that error links; through a call, only the link step can see it,
+    /// and names the call (∆HF0).
+    fn refuse_reach(
         &self,
         closed: &[Closed],
         path: &str,
         span: Span,
         subject: &str,
-        in_record: bool,
-    ) -> Option<Diagnostic> {
-        let document = self.host.document()?;
-        let via = closure::via(closed, |access| match access {
-            Access::Ambient { value, .. } | Access::Whole(value) => **value == *document,
-            Access::Own(_) | Access::Param { .. } => false,
-        })?;
-        Some(Diagnostic::error(
-            path,
-            span,
-            format!(
-                "`{subject}` reaches `{document}` through `{via}`, but {}",
-                document_unavailable(document, in_record)
-            ),
-        ))
+        runs: Runs,
+    ) -> Vec<Diagnostic> {
+        let mut refused: Vec<&Rc<str>> = Vec::new();
+        closed
+            .iter()
+            .filter_map(|closed| {
+                let (Access::Ambient { value, .. } | Access::Whole(value)) = &closed.access
+                else {
+                    return None;
+                };
+                let why = refused_at_load(runs, self.host.document(), value)?;
+                if refused.contains(&value) {
+                    return None;
+                }
+                refused.push(value);
+                let how = match &closed.via {
+                    Some(via) => format!("reaches `{value}` through `{via}`"),
+                    None => format!("reads `{value}`"),
+                };
+                Some(Diagnostic::error(
+                    path,
+                    span,
+                    format!("`{subject}` {how}, but {why}"),
+                ))
+            })
+            .collect()
     }
 
     /// A plan per ambient value the host reads from a file the program has, in the
     /// host's order.
     fn bindings_plans(
         &self,
-        records: &[PlannedRecord],
+        records: &[RecordPlan],
         diagnostics: &mut Vec<Diagnostic>,
     ) -> Vec<Bindings> {
         let plans: Vec<Bindings> = self
@@ -814,16 +778,16 @@ impl Places<'_> {
     /// The plan for the bindings file `file`, read as `value`: its bindings in load
     /// order. A computed binding follows the siblings it reads, the calls it makes
     /// followed (∆HF0); a `from` binding follows every sibling the records its value
-    /// may hold read or look a string up in while they load — through `extends` and
-    /// through field types, since a subtype's or a nested record's default runs too.
-    /// A binding that needs itself is a link error at the binding, and so is a
+    /// may hold look a string up in while they load — through `extends` and through
+    /// field types, since a subtype's or a nested record's index resolves too. A
+    /// binding that needs itself is a link error at the binding, and so is a
     /// computed one that reaches the host's document value through a call. `None`
     /// when the file is not in the program.
     fn bindings_plan(
         &self,
         value: &str,
         file: &str,
-        records: &[PlannedRecord],
+        records: &[RecordPlan],
         diagnostics: &mut Vec<Diagnostic>,
     ) -> Option<Bindings> {
         let &position = self.positions.get(file)?;
@@ -835,16 +799,16 @@ impl Places<'_> {
                 let (fulfilled, closed) = match &binding.supplied {
                     Supplied::ByFunction(func) => {
                         let closed = self.closure.step(&unit.uses[func]);
-                        diagnostics.extend(self.refuse_document(
+                        diagnostics.extend(self.refuse_reach(
                             &closed,
                             &unit.path,
                             binding.span,
                             &binding.name,
-                            false,
+                            Runs::Binding,
                         ));
                         let fulfilled = Fulfilled::Computed {
                             func: self.func(position, *func),
-                            reads: closure::reads(&closed),
+                            reads: closure::ambient_values(&closed),
                         };
                         (fulfilled, closed)
                     }
@@ -865,15 +829,16 @@ impl Places<'_> {
                 .iter()
                 .position(|planned| &*planned.step.name == field)
         };
-        // Only a read of this value's own field orders its bindings. A record step's
-        // `Own` read names a field of that record, which a binding's name may happen
-        // to match and has nothing to do with.
+        // Only a read of this value's own field orders its bindings; the value whole
+        // is the record so far, and another value's field is the loader's order.
         let of_value = |closed: &Closed| match &closed.access {
             Access::Ambient { value: read, field } if **read == *value => sibling(field),
-            Access::Own(_) | Access::Param { .. } | Access::Ambient { .. } => None,
-            Access::Whole(_) => None,
+            Access::Ambient { .. } | Access::Whole(_) => None,
+            Access::Own(_) | Access::Param { .. } => {
+                unreachable!("a binding reads off ambient values alone")
+            }
         };
-        let edges: Vec<Vec<Edge>> = steps
+        let edges: Vec<Vec<Edge<'_>>> = steps
             .iter()
             .map(|planned| match &planned.step.fulfilled {
                 Fulfilled::Computed { .. } => planned
@@ -895,38 +860,16 @@ impl Places<'_> {
                         .iter()
                         .filter_map(|record| records.iter().find(|r| r.name == *record))
                         .flat_map(|record| {
-                            let reads = record.steps.iter().flat_map(move |planned| {
-                                planned.closed.iter().filter_map(move |closed| {
-                                    Some(Edge {
-                                        to: of_value(closed)?,
-                                        via: closed.via.clone(),
-                                        through: Some(Through {
-                                            record: record.name.clone(),
-                                            field: planned.step.field.clone(),
-                                            because: Because::Reads,
-                                            file: planned.step.file,
-                                            span: planned.step.span,
-                                        }),
-                                    })
-                                })
-                            });
-                            let lookups = record.indexes.iter().filter_map(move |index| {
+                            record.indexes.iter().filter_map(move |index| {
                                 if *index.value != *value {
                                     return None;
                                 }
                                 Some(Edge {
                                     to: sibling(&index.key)?,
                                     via: None,
-                                    through: Some(Through {
-                                        record: record.name.clone(),
-                                        field: index.field.clone(),
-                                        because: Because::LooksUp,
-                                        file: index.file,
-                                        span: index.span,
-                                    }),
+                                    through: Some((&record.name, index)),
                                 })
-                            });
-                            reads.chain(lookups)
+                            })
                         })
                         .collect()
                 }
@@ -951,7 +894,7 @@ impl Places<'_> {
                     })
                 ),
             );
-            // The first read a record makes on the cycle is where the author looks.
+            // The first lookup a record makes on the cycle is where the author looks.
             let through =
                 cycle
                     .iter()
@@ -962,11 +905,11 @@ impl Places<'_> {
                             .find(|edge| edge.to == b)
                             .and_then(|edge| edge.through.as_ref())
                     });
-            if let Some(through) = through {
+            if let Some((_, index)) = through {
                 diagnostic = diagnostic.with_label(
-                    &self.units[through.file as usize].path,
-                    through.span,
-                    through.because.label(),
+                    &self.units[index.file as usize].path,
+                    index.span,
+                    "looked up here",
                 );
             }
             diagnostics.push(diagnostic);
@@ -1042,22 +985,17 @@ fn edge(a: &str, verb: &str, b: &str, via: Option<&Rc<str>>) -> String {
 }
 
 /// One link of a cycle among bindings: what `a` needs `b` for — a read of its own,
-/// or a read or lookup a record its value holds makes while `a` loads, which names
-/// that record's field, since the binding itself says nothing of `b`.
-fn needs(a: &str, b: &str, edge: &Edge) -> String {
-    let via = edge
-        .via
-        .as_ref()
-        .map(|via| format!(" through `{via}`"))
-        .unwrap_or_default();
-    match &edge.through {
-        Some(through) => format!(
-            "`{a}` needs `{b}`, which `{}.{}` {}{via} while `{a}` loads",
-            through.record,
-            through.field,
-            through.because.verb()
+/// through a call or not, or a lookup a record its value holds makes while `a`
+/// loads, which names that record's field, since the binding itself says nothing of
+/// `b`.
+fn needs(a: &str, b: &str, edge: &Edge<'_>) -> String {
+    match (&edge.through, &edge.via) {
+        (Some((record, index)), _) => format!(
+            "`{a}` needs `{b}`, which `{record}.{}` looks up while `{a}` loads",
+            index.field
         ),
-        None => format!("`{a}` needs `{b}`{via}"),
+        (None, Some(via)) => format!("`{a}` needs `{b}` through `{via}`"),
+        (None, None) => format!("`{a}` needs `{b}`"),
     }
 }
 
@@ -1685,40 +1623,6 @@ mod tests {
     }
 
     #[test]
-    fn plans_a_loaded_binding_after_the_fields_its_records_read_while_loading() {
-        // `posts` holds `Article`s and their subtypes, and an `Article` holds a
-        // `Photo`: a default on any of them that reads `site.captions` or
-        // `site.authors` puts `posts` after both, however the file orders them.
-        let module = linked(
-            &shell_host(),
-            &[
-                ("ambient.lem", PAGE),
-                (
-                    "site.lem",
-                    "<lem-let posts: [Article] from \"feed/*.md\" />\n\
-                     <lem-let authors: {string: string} from \"authors.json\" />\n\
-                     <lem-let captions: {string: string} from \"captions.json\" />\n\
-                     <lem-let count: int = 1 />",
-                ),
-                (
-                    "schema.lem",
-                    "<lem-type Photo>\n  caption: string = site.captions[\"x\"]\n\
-                     </lem-type>\n\
-                     <lem-type Article extends Page>\n  hero: Photo?\n  \
-                     layout: (Article, html): html\n</lem-type>\n\
-                     <lem-type LinkPost extends Article>\n  \
-                     via: string = site.authors[\"e\"]\n</lem-type>",
-                ),
-            ],
-        )
-        .expect_output();
-        assert_eq!(
-            binding_names(&module),
-            ["authors", "captions", "posts", "count"]
-        );
-    }
-
-    #[test]
     fn plans_a_loaded_binding_after_the_map_its_records_index() {
         // `Article.hero` names `site.photos`: `posts` waits for `photos`, declared
         // after it, on the strength of the pair alone (∆eag).
@@ -1824,37 +1728,6 @@ mod tests {
     }
 
     #[test]
-    fn refuses_to_link_a_binding_that_needs_itself() {
-        const SITE: &str = "<lem-let posts: [Article] from \"feed/*.md\" />\n\
-                            <lem-let latest: [Article] = posts.filter(|p| true) />";
-        // A default on `Article` reads `site.posts`, the collection the article is
-        // being loaded into — which the binding itself says nothing of, so the
-        // message names the field and points at it.
-        const SCHEMA: &str = "<lem-type Article extends Page>\n  \
-                              related: [Article] = site.posts.filter(|p| p != self)\n  \
-                              layout: (Article, html): html\n</lem-type>";
-        let linked = linked(
-            &shell_host(),
-            &[
-                ("ambient.lem", PAGE),
-                ("site.lem", SITE),
-                ("schema.lem", SCHEMA),
-            ],
-        );
-        assert!(linked.output.is_none());
-        assert_eq!(
-            shown_all(&linked.diagnostics),
-            [format!(
-                "site.lem:{}: `posts` cannot be loaded before itself: `posts` needs \
-                 `posts`, which `Article.related` reads while `posts` loads\n  \
-                 schema.lem:{}: read here",
-                at(SITE, "«posts»: [Article] from"),
-                at(SCHEMA, "related")
-            )]
-        );
-    }
-
-    #[test]
     fn plans_no_bindings_without_a_bindings_file_in_the_program() {
         let module = linked(&untyped_host(), &[("a.lem", "x")]).expect_output();
         assert!(module.bindings.is_empty());
@@ -1897,32 +1770,6 @@ mod tests {
                 ("data", "data.lem", vec!["n", "m"]),
             ]
         );
-    }
-
-    #[test]
-    fn orders_a_loaded_binding_by_its_records_ambient_reads_alone() {
-        // `Article.slug` reads `self.title`, and the bindings file has a binding named
-        // `title` too: a record's own field is not a sibling, so `posts` does not wait
-        // for `title` — which itself reads `posts`, and would otherwise make a cycle.
-        let module = linked(
-            &shell_host(),
-            &[
-                ("ambient.lem", PAGE),
-                (
-                    "site.lem",
-                    "<lem-let posts: [Article] from \"feed/*.md\" />\n\
-                     <lem-let title: string = posts.filter(|p| true)[0].title />",
-                ),
-                (
-                    "schema.lem",
-                    "<lem-type Article extends Page>\n  title: string\n  \
-                     slug: string = self.title\n  layout: (Article, html): html\n\
-                     </lem-type>",
-                ),
-            ],
-        )
-        .expect_output();
-        assert_eq!(binding_names(&module), ["posts", "title"]);
     }
 
     #[test]
@@ -2176,8 +2023,7 @@ mod tests {
     #[test]
     fn closes_reads_through_a_chain_of_calls_across_files_and_through_recursion() {
         // `a` → `f` → `g` → `h`, where `h` reads `c` off what `g` passed on, and `g`
-        // calls itself; a read `f` makes off `site` closes too, since it is not off
-        // any parameter.
+        // calls itself.
         let module = linked(
             &untyped_host(),
             &[
@@ -2188,7 +2034,7 @@ mod tests {
                 ),
                 (
                     "lib.lem",
-                    "<lem-fn f(x: A): string = g(x, \"\") + site.name />\n\
+                    "<lem-fn f(x: A): string = g(x, \"\") />\n\
                      <lem-fn g(y: A, s: string): string = s + h(y) + g(y, s) />\n\
                      <lem-fn h(z: A): string = z.c />",
                 ),
@@ -2197,16 +2043,7 @@ mod tests {
         .expect_output();
         assert_eq!(steps_of(&module, "A"), ["b", "c", "a"]);
         let a = &module.records[0].steps[2];
-        assert_eq!(
-            a.reads,
-            [
-                Read::Ambient {
-                    value: Rc::from("site"),
-                    field: Rc::from("name"),
-                },
-                Read::Own(Rc::from("c")),
-            ]
-        );
+        assert_eq!(a.reads, [Rc::from("c")]);
     }
 
     #[test]
@@ -2279,10 +2116,14 @@ mod tests {
     }
 
     #[test]
-    fn plans_a_loaded_binding_after_what_its_records_read_through_calls() {
-        // A default on `Article` reads `site.captions` inside `caption()`: `posts`
-        // still waits for `captions`.
-        let module = linked(
+    fn refuses_a_default_that_reaches_an_ambient_value_through_a_call() {
+        // Read directly, `site` is refused where it stands; inside `caption()`, only
+        // the link step can see it, and it says so at the field, naming the call.
+        const SCHEMA: &str = "<lem-type Article extends Page>\n  \
+                              caption: string = caption()\n  \
+                              layout: (Article, html): html\n</lem-type>\n\
+                              <lem-fn caption(): string = site.captions[\"x\"] />";
+        let linked = linked(
             &shell_host(),
             &[
                 ("ambient.lem", PAGE),
@@ -2291,16 +2132,58 @@ mod tests {
                     "<lem-let posts: [Article] from \"feed/*.md\" />\n\
                      <lem-let captions: {string: string} from \"captions.json\" />",
                 ),
-                (
-                    "schema.lem",
-                    "<lem-type Article extends Page>\n  caption: string = caption()\n  \
-                     layout: (Article, html): html\n</lem-type>\n\
-                     <lem-fn caption(): string = site.captions[\"x\"] />",
-                ),
+                ("schema.lem", SCHEMA),
             ],
-        )
-        .expect_output();
-        assert_eq!(binding_names(&module), ["captions", "posts"]);
+        );
+        assert!(linked.output.is_none());
+        assert_eq!(
+            shown_all(&linked.diagnostics),
+            [format!(
+                "schema.lem:{}: `caption` reaches `site` through `caption`, but `site` \
+                 is out of scope in a default: a default reads only the record it \
+                 builds — `self`, and `path` and `body` on a page",
+                at(SCHEMA, "«caption»: string")
+            )]
+        );
+    }
+
+    #[test]
+    fn refuses_every_ambient_value_a_default_reaches_and_once_per_declaration() {
+        // `banner` reaches `site` and `build` through two calls: both are said, in
+        // one link. `LinkPost` inherits the default and repeats nothing.
+        const SCHEMA: &str = "<lem-type Article extends Page>\n  \
+                              banner: string = brand() + year()\n  \
+                              layout: (Article, html): html\n</lem-type>\n\
+                              <lem-type LinkPost extends Article>\n  via: string\n\
+                              </lem-type>\n\
+                              <lem-fn brand(): string = site.name />\n\
+                              <lem-fn year(): string = build.generator />";
+        let host = shell_host().bind("build", Ambient::named("Build"));
+        let linked = linked(
+            &host,
+            &[
+                (
+                    "ambient.lem",
+                    "<lem-type Page>\n  url: url\n</lem-type>\n\
+                     <lem-type Build>\n  generator: string\n</lem-type>",
+                ),
+                ("site.lem", "<lem-let name: string = \"n\" />"),
+                ("schema.lem", SCHEMA),
+            ],
+        );
+        assert!(linked.output.is_none());
+        let refused = |value: &str, via: &str| {
+            format!(
+                "schema.lem:{}: `banner` reaches `{value}` through `{via}`, but `{value}` \
+                 is out of scope in a default: a default reads only the record it \
+                 builds — `self`, and `path` and `body` on a page",
+                at(SCHEMA, "«banner»:")
+            )
+        };
+        assert_eq!(
+            shown_all(&linked.diagnostics),
+            [refused("site", "brand"), refused("build", "year")]
+        );
     }
 
     #[test]
@@ -2325,7 +2208,8 @@ mod tests {
         let refused = |field: &str, via: &str| {
             format!(
                 "schema.lem:{}: `{field}` reaches `page` through `{via}`, but `page` is \
-                 not bound while a record loads: the record so far is `self`",
+                 out of scope in a default: a default reads only the record it builds \
+                 — `self`, and `path` and `body` on a page",
                 at(SCHEMA, &format!("«{field}»:"))
             )
         };
@@ -2353,33 +2237,6 @@ mod tests {
                 "site.lem:{}: `home` reaches `page` through `where`, but `page` is bound \
                  per page, and a binding here is computed once, at load",
                 at(SITE, "home")
-            )]
-        );
-    }
-
-    #[test]
-    fn refuses_a_binding_its_records_need_through_a_call_and_names_the_field_and_call() {
-        const SITE: &str = "<lem-let posts: [Post] from \"feed/*.md\" />";
-        const SCHEMA: &str = "<lem-type Post extends Page>\n  siblings: [Post] = all()\n  \
-                              layout: (Post, html): html\n</lem-type>\n\
-                              <lem-fn all(): [Post] = site.posts />";
-        let linked = linked(
-            &shell_host(),
-            &[
-                ("ambient.lem", PAGE),
-                ("site.lem", SITE),
-                ("schema.lem", SCHEMA),
-            ],
-        );
-        assert!(linked.output.is_none());
-        assert_eq!(
-            shown_all(&linked.diagnostics),
-            [format!(
-                "site.lem:{}: `posts` cannot be loaded before itself: `posts` needs \
-                 `posts`, which `Post.siblings` reads through `all` while `posts` \
-                 loads\n  schema.lem:{}: read here",
-                at(SITE, "posts"),
-                at(SCHEMA, "siblings")
             )]
         );
     }

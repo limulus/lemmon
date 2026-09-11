@@ -1,0 +1,10 @@
+<lem-type Note extends Page>
+  banner: string = brand()
+  layout: (Note, html): html
+</lem-type>
+
+<lem-fn brand(): string = site.name />
+
+`brand` reads `site`, which is fine where it stands — a layout may call it — but a
+default reads only the record it builds, and the link step names the call that reaches
+out of it.

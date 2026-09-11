@@ -137,6 +137,12 @@ moved it. Newest last. An entry is removed when its change has been applied.
   string up in the map as loaded, before the record's defaults run, and a `from`
   binding loads after the siblings its records index; a map in another bindings file
   or a later host value is a load error at the field (D37 revised, ∆eag).
+- **Schemas, default scope** — where the entries above say a default sees the ambient
+  values except the host's document value, say it sees none: `self`, and `path` and
+  `body` on a page-backed record, and nothing else, directly or through a call, which
+  is a link error naming the call; what a page needs of the site its layout reads. A
+  `from` binding is then ordered by its records' `by` indexes alone, and a default on
+  the host's own record reads nothing of the site (D37 revised, ∆eag).
 - **Ambient types, load order** — say the host fulfils a `from` binding by its name
   alone, so no two bindings files may load one of the same name (a link error); that the
   host's own values load first, in the host's declaration order, then each bindings

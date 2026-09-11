@@ -355,20 +355,6 @@ impl Loader<'_> {
         doc: Option<&Doc<'_>>,
         at: &At<'_>,
     ) -> Option<Value> {
-        if let Some(value) = self.unloaded(&step.reads) {
-            let file = &self.module.files[step.file as usize];
-            self.diagnostics.push(Diagnostic::error(
-                file,
-                step.span,
-                format!(
-                    "`{}` reads `{value}`, which is not loaded yet: the host's own values \
-                     load before the bindings files, so a `{record}` may read only the \
-                     host's other values here",
-                    step.field
-                ),
-            ));
-            return None;
-        }
         let mut args = vec![self.assembled(record, fields)];
         // What the function takes is what the compiler gave it: a default declared on
         // a page-backed record takes the document, one declared on a record above the
@@ -1387,52 +1373,6 @@ mod tests {
             [format!(
                 "site.lem:{}: `hero` looks `data.photos` up, but `data` holds no map there",
                 at(site, "«hero»: Photo?")
-            )]
-        );
-    }
-
-    #[test]
-    fn reports_a_default_that_reads_a_value_not_loaded_yet_before_running_it() {
-        // The host's own values load first, so a `Build` default cannot read `site`.
-        let ambient = "<lem-type Page>\n  url: string\n</lem-type>\n\
-                       <lem-type Build>\n  generator: string\n  banner: string = site.name\n</lem-type>";
-        let site = "<lem-let name: string = \"limulus.net\" />";
-        let module = module(&shell(), &[("ambient.lem", ambient), ("site.lem", site)]);
-        let data = Data {
-            ambient: vec![build()],
-            sources: Vec::new(),
-        };
-        assert_eq!(
-            errors(&module, &shell(), data),
-            [format!(
-                "ambient.lem:{}: `banner` reads `site`, which is not loaded yet: the \
-                 host's own values load before the bindings files, so a `Build` may \
-                 read only the host's other values here",
-                at(ambient, "banner")
-            )]
-        );
-    }
-
-    #[test]
-    fn reports_a_default_that_reads_a_value_not_loaded_yet_through_a_call() {
-        // The same rule, with the read inside `motto()`: the link step closed it into
-        // the step's reads, so the loader refuses the step before running it (∆HF0).
-        let ambient = "<lem-type Page>\n  url: string\n</lem-type>\n\
-                       <lem-type Build>\n  generator: string\n  banner: string = motto()\n</lem-type>";
-        let site = "<lem-let name: string = \"limulus.net\" />\n\
-                    <lem-fn motto(): string = site.name />";
-        let module = module(&shell(), &[("ambient.lem", ambient), ("site.lem", site)]);
-        let data = Data {
-            ambient: vec![build()],
-            sources: Vec::new(),
-        };
-        assert_eq!(
-            errors(&module, &shell(), data),
-            [format!(
-                "ambient.lem:{}: `banner` reads `site`, which is not loaded yet: the \
-                 host's own values load before the bindings files, so a `Build` may \
-                 read only the host's other values here",
-                at(ambient, "banner")
             )]
         );
     }

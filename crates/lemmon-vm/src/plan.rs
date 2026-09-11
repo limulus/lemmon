@@ -31,17 +31,6 @@ pub enum SourceKind {
     Env(Rc<str>),
 }
 
-/// One thing a loader-run function reads that decides when it can run.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Read {
-    /// A field of the record being built, read through `self`. A computed binding
-    /// never makes one: a sibling read there, by bare name or as `site.x`, is an
-    /// [`Ambient`](Self::Ambient) read of the value it is a field of.
-    Own(Rc<str>),
-    /// A field of an ambient value: `site.photos`.
-    Ambient { value: Rc<str>, field: Rc<str> },
-}
-
 /// One field's `= default`: the function the loader runs when the loaded data omits
 /// the field. Its parameters are `self` and, on a record that extends the host's
 /// document type, `path` and `body`.
@@ -50,8 +39,9 @@ pub struct Step {
     pub field: Rc<str>,
     /// The function, in the module.
     pub func: u32,
-    /// Everything the function reads that the loader must have ready first.
-    pub reads: Vec<Read>,
+    /// The fields of `self` the function reads, its calls followed, which the loader
+    /// must have computed first.
+    pub reads: Vec<Rc<str>>,
     /// The file the field is declared in, as a module file index — what an error in
     /// the step names.
     pub file: u32,
@@ -90,8 +80,11 @@ pub struct RecordPlan {
 pub enum Fulfilled {
     /// A `from` binding: the host loads it.
     ByHost(SourceKind),
-    /// An `= expr` or capture binding: the loader runs the function.
-    Computed { func: u32, reads: Vec<Read> },
+    /// An `= expr` or capture binding: the loader runs the function, once every
+    /// ambient value it reads — a field of one, or the value whole, its calls
+    /// followed — is loaded. A default makes no such read: it reads only the record
+    /// it builds (∆eag), so a step's reads are field names of `self`.
+    Computed { func: u32, reads: Vec<Rc<str>> },
 }
 
 /// One top-level binding of the bindings file.
@@ -104,8 +97,8 @@ pub struct BindingStep {
 }
 
 /// The bindings file's plan: the record the ambient value is, and its bindings in an
-/// order that has everything a computed one reads — and every ambient field the
-/// records a loaded one holds may read while they load — ready first.
+/// order that has everything a computed one reads — and every sibling the records a
+/// loaded one holds look a string up in while they load — ready first.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Bindings {
     /// The ambient name the host reads the bindings as: `site`.
@@ -121,7 +114,7 @@ pub struct Bindings {
 /// on, keeping declaration order wherever the dependencies allow it. `deps(i)` lists
 /// the nodes `i` must follow; an index out of range is ignored, and a node that lists
 /// itself is a cycle of one — a default that reads the field it computes, a collection
-/// whose records read the collection while it loads.
+/// whose records look a string up in the collection while it loads.
 ///
 /// # Errors
 ///

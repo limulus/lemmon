@@ -53,7 +53,7 @@ use crate::unit::{
 use crate::{SourceFile, Value};
 
 pub use diagnostics::{Compiled, Diagnostic, Label};
-pub(crate) use expr::document_unavailable;
+pub(crate) use expr::{Runs, refused_at_load};
 pub(crate) use names::duplicate_named;
 use names::{BindingKind, Frame, Names, Resolved};
 pub(crate) use rules::omittable;
@@ -293,9 +293,10 @@ struct Compiler<'a> {
 
 /// The reads and calls of a function the loader may run, being collected.
 struct Collecting {
-    /// Whether the loader itself runs this function — a default or a computed
-    /// binding — which is when the host's document value is refused (∆iCW).
-    at_load: bool,
+    /// What the loader runs this function as, when it runs it itself — which decides
+    /// the ambient values it may read ([`refused_at_load`]); `None` for a `lem-fn`,
+    /// which runs at render too and may read them all.
+    runs: Option<Runs>,
     /// The `self` of a default, by its binder — what tells a read of the record
     /// being built from any other.
     self_binder: Option<Span>,
@@ -375,7 +376,7 @@ impl<'a> Compiler<'a> {
             // A `lem-fn` runs at render as much as at load, so its body may read the
             // host's document value; what it reads is noted for the link step to
             // close through the calls that reach it from a loader-run function (∆HF0).
-            let uses = self.collecting(false, None, binders, |c| match &item {
+            let uses = self.collecting(None, None, binders, |c| match &item {
                 Item::FnBlock(f) => {
                     let body = required(f.body());
                     c.emit(Op::Capture, f.span());
@@ -532,7 +533,14 @@ impl<'a> Compiler<'a> {
             }
         };
         if self.host.document() == Some(value.text()) {
-            self.error(value.span(), document_unavailable(value.text(), true));
+            self.error(
+                value.span(),
+                format!(
+                    "`{}` is bound to a record once it is loaded, so an index cannot \
+                     name a field of it",
+                    value.text()
+                ),
+            );
             return None;
         }
         let ty = self.ambient_type(value.text(), ty, value.span());
@@ -573,7 +581,14 @@ impl<'a> Compiler<'a> {
             params.push(("path", Type::String, Span::new(span.start, span.start)));
             params.push(("body", Type::Html, Span::new(span.end, span.end)));
         }
-        self.function_for_loader(name, &params, Some(span), span, lower)
+        self.function_for_loader(
+            name,
+            &params,
+            Runs::Default { page_backed },
+            Some(span),
+            span,
+            lower,
+        )
     }
 
     /// Compiles a function of `params` the loader calls, returning what `lower` leaves
@@ -583,6 +598,7 @@ impl<'a> Compiler<'a> {
         &mut self,
         name: &str,
         params: &[(&str, Type, Span)],
+        runs: Runs,
         self_binder: Option<Span>,
         span: Span,
         lower: impl FnOnce(&mut Self),
@@ -592,7 +608,7 @@ impl<'a> Compiler<'a> {
             self.names
                 .bind_local(param, *binder, BindingKind::Implicit, ty.clone());
         }
-        let uses = self.collecting(true, self_binder, Vec::new(), lower);
+        let uses = self.collecting(Some(runs), self_binder, Vec::new(), lower);
         self.emit(Op::Return, span);
         let (ctx, frame) = self.pop_frame();
         let func = self.reserve(name);
@@ -609,19 +625,19 @@ impl<'a> Compiler<'a> {
         func
     }
 
-    /// Runs `lower` with a collector open for the function it lowers — `at_load` when
+    /// Runs `lower` with a collector open for the function it lowers — `runs` set when
     /// the loader itself runs that function — and returns what was collected. Nested
     /// under an outer collector, which is restored after: a lambda is its enclosing
     /// function's, so nothing opens one for it.
     fn collecting(
         &mut self,
-        at_load: bool,
+        runs: Option<Runs>,
         self_binder: Option<Span>,
         params: Vec<Span>,
         lower: impl FnOnce(&mut Self),
     ) -> Uses {
         let outer = self.uses.replace(Collecting {
-            at_load,
+            runs,
             self_binder,
             params,
             uses: Uses::default(),
@@ -694,8 +710,8 @@ impl<'a> Compiler<'a> {
     /// Compiles the file's top level into its entry function. `fields_of` is the
     /// ambient value this file's top-level bindings are the fields of, when it is the
     /// bindings file: only here do those bindings answer to their bare names — a
-    /// `lem-fn` or a default in the file, compiled before this, reads them as `site.x`
-    /// like every other file.
+    /// `lem-fn` in the file, compiled before this, reads them as `site.x` like every
+    /// other file, and a default there is refused as anywhere.
     fn compile_entry(
         &mut self,
         source: &Source,
@@ -1292,20 +1308,72 @@ mod tests {
     }
 
     #[test]
-    fn refuses_the_document_value_inside_a_default() {
-        const SCHEMA: &str = "<lem-type Post extends Page>\n  title: string = page.url\n  \
-                              layout: (Post, html): html\n</lem-type>";
+    fn refuses_every_ambient_value_inside_a_default() {
+        // A record's plan depends on its own declarations alone (∆eag): every ambient
+        // value is out of scope, whole or a field of it.
+        for (ty, default, name) in [
+            ("url", "page.url", "page"),
+            ("string", "site.name", "site"),
+            ("url", "show(page)", "page"),
+        ] {
+            let schema = format!(
+                "<lem-type Post extends Page>\n  title: {ty} = {default}\n  \
+                 layout: (Post, html): html\n</lem-type>\n\
+                 <lem-fn show(p: Page): url = p.url />"
+            );
+            let files = [
+                SourceFile::new("ambient.lem", PAGE),
+                SourceFile::new("site.lem", "<lem-let name: string = \"n\" />"),
+                SourceFile::new("schema.lem", schema.clone()),
+            ];
+            assert_eq!(
+                shown_with(&shell_host(), &files),
+                [format!(
+                    "schema.lem:{}: `{name}` is out of scope in a default: a default \
+                     reads only the record it builds — `self`, and `path` and `body` \
+                     on a page",
+                    at(&schema, &format!("«{name}»"))
+                )],
+                "{default}"
+            );
+        }
+    }
+
+    #[test]
+    fn tells_a_data_records_default_only_of_self() {
+        // A record above the document type has no `path` or `body` to be told of.
+        const SRC: &str = "<lem-type Photo>\n  caption: string = site.name\n</lem-type>";
         let files = [
-            SourceFile::new("ambient.lem", PAGE),
-            SourceFile::new("schema.lem", SCHEMA),
+            SourceFile::new("site.lem", "<lem-let name: string = \"n\" />"),
+            SourceFile::new("photo.lem", SRC),
         ];
         assert_eq!(
             shown_with(&shell_host(), &files),
             [format!(
-                "schema.lem:{}: `page` is not bound while a record loads: the record so \
-                 far is `self`",
-                at(SCHEMA, "page")
+                "photo.lem:{}: `site` is out of scope in a default: a default reads \
+                 only the record it builds — `self`",
+                at(SRC, "«site».name")
             )]
+        );
+    }
+
+    #[test]
+    fn refuses_the_bindings_value_inside_a_default_declared_in_the_bindings_file() {
+        // The bindings file's own records get no special reach: a default there reads
+        // `site.x` as any file would, and is refused as any file would be.
+        const SITE: &str = "<lem-type Tag>\n  label: string = site.name\n  \
+                            bare: string = name\n</lem-type>\n\
+                            <lem-let name: string = \"n\" />";
+        assert_eq!(
+            shown_with(&shell_host(), &[SourceFile::new("site.lem", SITE)]),
+            [
+                format!(
+                    "site.lem:{}: `site` is out of scope in a default: a default reads \
+                     only the record it builds — `self`",
+                    at(SITE, "«site».name")
+                ),
+                format!("site.lem:{}: undefined name `name`", at(SITE, "= «name»")),
+            ]
         );
     }
 
@@ -1362,7 +1430,8 @@ mod tests {
             ),
             (
                 "hero: Photo? by page.photos",
-                "`page` is not bound while a record loads: the record so far is `self`",
+                "`page` is bound to a record once it is loaded, so an index cannot name a \
+                 field of it",
             ),
             ("hero: Photo? by ste.photos", "undefined name `ste`"),
             (

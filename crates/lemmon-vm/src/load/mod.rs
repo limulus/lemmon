@@ -26,7 +26,7 @@ use crate::bytecode::Module;
 use crate::compile::{Compiled, Diagnostic, repeated_path};
 use crate::decls::Decls;
 use crate::host::{Ambient, Host};
-use crate::plan::{Fulfilled, Read, SourceKind};
+use crate::plan::{Fulfilled, SourceKind};
 use crate::types::Type;
 use crate::value::{Map, Value};
 use crate::vm::invoke;
@@ -321,17 +321,13 @@ struct Doc<'a> {
 }
 
 impl Loader<'_> {
-    /// The first ambient value among `reads` that is not loaded yet — a read no
+    /// The first of the ambient values `reads` that is not loaded yet — a read no
     /// function should be run over, since the loader has an order and this is not it.
-    fn unloaded(&self, reads: &[Read]) -> Option<Rc<str>> {
-        reads.iter().find_map(|read| match read {
-            Read::Ambient { value, .. }
-                if !self.ambient.iter().any(|(bound, _)| bound == value) =>
-            {
-                Some(value.clone())
-            }
-            Read::Ambient { .. } | Read::Own(_) => None,
-        })
+    fn unloaded(&self, reads: &[Rc<str>]) -> Option<Rc<str>> {
+        reads
+            .iter()
+            .find(|value| !self.ambient.iter().any(|(bound, _)| bound == *value))
+            .cloned()
     }
 
     /// The ambient values as the VM takes them.
@@ -432,17 +428,16 @@ impl Loader<'_> {
                 // A value that failed stops a computed binding as it stops a record's
                 // plan: the function could only fault after the real error.
                 Fulfilled::Computed { .. } if self.incomplete => None,
-                Fulfilled::Computed { reads, .. } if self.unloaded(reads).is_some() => {
-                    let value = self.unloaded(reads).expect("checked");
-                    self.diagnostics.push(declared.error(format!(
-                        "`{}` reads `{value}`, which is not loaded yet: the files the host \
-                         reads bindings from load in its declaration order",
-                        step.name
-                    )));
-                    None
-                }
-                Fulfilled::Computed { func, .. } => {
-                    match invoke(self.module, *func, Vec::new(), &self.globals()) {
+                Fulfilled::Computed { func, reads } => match self.unloaded(reads) {
+                    Some(value) => {
+                        self.diagnostics.push(declared.error(format!(
+                            "`{}` reads `{value}`, which is not loaded yet: the files the \
+                             host reads bindings from load in its declaration order",
+                            step.name
+                        )));
+                        None
+                    }
+                    None => match invoke(self.module, *func, Vec::new(), &self.globals()) {
                         Ok(value) => Some(value),
                         Err(error) => {
                             self.diagnostics.push(
@@ -455,8 +450,8 @@ impl Loader<'_> {
                             );
                             None
                         }
-                    }
-                }
+                    },
+                },
             };
             match value {
                 Some(value) => fields.push((step.name.clone(), value)),
@@ -699,6 +694,35 @@ pub(crate) mod tests {
         };
         let store = load(&bare, &untyped, data).unwrap().expect_output();
         assert_eq!(store.ambient, [(Rc::from("site"), Value::Int(1))]);
+    }
+
+    #[test]
+    fn reports_a_computed_binding_that_reads_a_later_bindings_file_before_running_it() {
+        // The files the host reads bindings from load in its declaration order; a
+        // read of a later one, through a call or not, is refused before the function
+        // could fault over the value's absence.
+        let host = Host::new()
+            .bind("site", Ambient::bindings("site.lem"))
+            .bind("data", Ambient::bindings("data.lem"));
+        let site = "<lem-let tag: string = motto() />\n\
+                    <lem-fn motto(): string = data.motto />";
+        let files = [
+            ("site.lem", site),
+            ("data.lem", "<lem-let motto: string = \"m\" />"),
+        ];
+        let module = module(&host, &files);
+        let data = Data {
+            ambient: Vec::new(),
+            sources: Vec::new(),
+        };
+        assert_eq!(
+            errors(&module, &host, data),
+            [format!(
+                "site.lem:{}: `tag` reads `data`, which is not loaded yet: the files the \
+                 host reads bindings from load in its declaration order",
+                at(site, "tag")
+            )]
+        );
     }
 
     #[test]

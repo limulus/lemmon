@@ -3,5 +3,5 @@
   layout: (Note, html): html
 </lem-type>
 
-A default runs while the record is being built — before `page` is bound to it. The
-record so far is `self`.
+A default reads only the record it builds, `self`: `page` is bound to that record
+once it is loaded, and so is every other ambient value out of a default's reach.

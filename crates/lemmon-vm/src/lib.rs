@@ -39,9 +39,7 @@ pub use decls::{Declaration, Decls, FieldDecl, Kind, Shape, ShapeFact, TypeFact}
 pub use exports::{Export, ExportIndex, TypeExport};
 pub use host::{Ambient, Host};
 pub use load::{Data, HostSpan, Loaded, Source, Spans, Store, collects, field_path, load};
-pub use plan::{
-    BindingStep, Bindings, Fulfilled, Index, Read, RecordPlan, SourceKind, Step,
-};
+pub use plan::{BindingStep, Bindings, Fulfilled, Index, RecordPlan, SourceKind, Step};
 pub use types::Type;
 pub use unit::{
     Access, BindingFn, Call, DefaultFn, ExportedSignature, ImportRef, ImportedSignature,
