@@ -31,11 +31,6 @@ refactor priority: reshaping is cheapest before more code is built on what it re
 Seed items for the next phase (architecture doc 3, phase 1); expect these to be split
 further at claim time.
 
-- ∆HF0 Order defaults through calls — each unit records the reads of every function it
-  defines, and the link step closes reads through calls before ordering a record's defaults
-  and the bindings file's computed bindings, so a default that calls a `lem-fn` reading a
-  not-yet-computed sibling is ordered instead of faulting at load. Removes the "only reads
-  written in the default itself count" clause from D37 and docs/language.md
 - ∆Q6L Stdlib — strings/lists/maps, `datetime("…")` (compile-time checked on a literal
   argument; there is no datetime literal) + rfc3339/rfc822 formatting, `slugify`,
   `readingTime`, `url()`, `asset()`, `raw()`, `uniqueId()`, with typed signatures the
