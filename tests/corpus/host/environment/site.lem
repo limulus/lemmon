@@ -20,6 +20,7 @@
   title: string = "TIL: " + self.topic
   slug: string = path
   excerpt: html = body
+  readingTime: duration = body.readingTime()
   hero: Photo? by site.photos
   layout: (Til, html): html = til
 </lem-type>

@@ -21,6 +21,8 @@ mod lists;
 mod maps;
 mod numbers;
 mod strings;
+mod text;
+mod time;
 mod values;
 
 use crate::types::Type;
@@ -444,6 +446,76 @@ pub const BUILTINS: &[Builtin] = &[
         yields_string,
         numbers::fixed,
     ),
+    // `datetime`
+    method(
+        Kind::Datetime,
+        "rfc3339",
+        1,
+        unshaped,
+        yields_string,
+        time::rfc3339,
+    ),
+    method(
+        Kind::Datetime,
+        "rfc822",
+        1,
+        unshaped,
+        yields_string,
+        time::rfc822,
+    ),
+    method(
+        Kind::Datetime,
+        "format",
+        2,
+        wants_string,
+        yields_string,
+        time::format,
+    ),
+    method(Kind::Datetime, "year", 1, unshaped, yields_int, time::year),
+    method(
+        Kind::Datetime,
+        "month",
+        1,
+        unshaped,
+        yields_int,
+        time::month,
+    ),
+    method(Kind::Datetime, "day", 1, unshaped, yields_int, time::day),
+    // `duration`
+    method(
+        Kind::Duration,
+        "seconds",
+        1,
+        unshaped,
+        yields_int,
+        time::seconds,
+    ),
+    method(
+        Kind::Duration,
+        "minutes",
+        1,
+        unshaped,
+        yields_int,
+        time::minutes,
+    ),
+    // `url`
+    method(
+        Kind::Url,
+        "text",
+        1,
+        unshaped,
+        yields_string,
+        text::url_text,
+    ),
+    // `html`
+    method(
+        Kind::Html,
+        "readingTime",
+        1,
+        unshaped,
+        yields_duration,
+        text::reading_time,
+    ),
 ];
 
 /// The typing rule of an entry whose result type is fixed, whatever it was called on.
@@ -457,6 +529,10 @@ fn yields_int(_args: &[Type]) -> Result<Type, String> {
 
 fn yields_bool(_args: &[Type]) -> Result<Type, String> {
     Ok(Type::Bool)
+}
+
+fn yields_duration(_args: &[Type]) -> Result<Type, String> {
+    Ok(Type::Duration)
 }
 
 /// The typing rule of an entry that gives back a value of the receiver's own type:

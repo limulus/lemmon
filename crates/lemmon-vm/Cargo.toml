@@ -10,6 +10,7 @@ publish.workspace = true
 lemmon-syntax = { path = "../lemmon-syntax" }
 comrak = { workspace = true }
 deunicode = { workspace = true }
+unicode-segmentation = { workspace = true }
 jiff = { workspace = true }
 percent-encoding = { workspace = true }
 

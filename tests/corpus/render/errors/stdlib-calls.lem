@@ -10,3 +10,9 @@
 <p><lem.title.trim(1)></p>
 <p><lem.title.slugfy()></p>
 <p><lem.counts.first().fixed(2)></p>
+<lem-let published = datetime("2026-04-04T10:30:00-07:00") />
+<p><lem.published.format("%Q%")></p>
+<p><lem.published.format(2026)></p>
+<p><lem.published.rfc822("%Y")></p>
+<p><lem.raw("a word").readingTime()></p>
+<p><lem.published.text()></p>

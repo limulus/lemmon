@@ -44,6 +44,10 @@ jiff = { version = "0.2.35", default-features = false, features = ["alloc"] }
 # was the alternative and is the wrong shape — it refuses a relative reference like
 # `/feed/` without a base, and pulls `idna`'s tables into the .wasm (D38).
 percent-encoding = { version = "2.3.2", default-features = false, features = ["alloc"] }
+# Behind `readingTime`'s word count: UAX #29 word boundaries, so a script that does not
+# separate words with spaces is counted rather than read as one long word. From
+# `unicode-rs`, the same maintainers as the Unicode crates the toolchain itself uses.
+unicode-segmentation = "1.13.3"
 # Behind `slugify`'s ASCII folding, so that `Dürer` and `Hawaiʻi` give URL segments a
 # reader can type. A transliteration table and nothing else — no host capability, and
 # `alloc` alone keeps it that way.

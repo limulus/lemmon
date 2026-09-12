@@ -4,3 +4,7 @@
 <a href="<lem.photo>">the photo</a>
 <a href="<lem.feed>">rust tils</a>
 <lem-if photo == again><p>encoding what is encoded changes nothing</p></lem-if>
+<lem-let siteUrl = url("https://limulus.net") />
+<lem-let path = url("/tils/rust/") />
+<lem-let absolute = url(siteUrl.text() + path.text()) />
+<meta property="og:url" content="<lem.absolute>" />

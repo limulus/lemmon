@@ -1,0 +1,10 @@
+<lem-let published = datetime("2026-04-04T23:30:00-07:00") />
+<lem-let launched = datetime("2024-11-24") />
+
+<time datetime="<lem.published.rfc3339()>"><lem.published.format("%B %-d, %Y")></time>
+<p>filed under <lem.published.year()>/<lem.published.month()>/<lem.published.day()></p>
+<p>the site is <lem.published.year() - launched.year()> years old</p>
+<item>
+  <pubDate><lem.published.rfc822()></pubDate>
+  <updated><lem.launched.rfc3339()></updated>
+</item>

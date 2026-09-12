@@ -201,15 +201,15 @@ the checker's question, not the parser's.
   than assumed, and so is a named time zone: the core carries no time-zone database
   (D38).
 - `duration` is a span of time in whole seconds, and an `int` where one is declared in
-  data. It has no printed form: how long something takes is shown as a site words it,
-  never as a bare count of seconds.
+  data. It has no printed form: how long something takes is shown as a site words it —
+  through `seconds()` or `minutes()` — never as a bare count of seconds.
 - `asset` resolves against the esbuild manifest at compile/load; printing yields the
   hashed URL; unknown path = error with span. Created by `asset("…")` or `[asset]`
   fields.
 - `url` is text percent-encoded once, by `url("…")` or by standing where the type is
   declared; attribute-escaped on emit, since encoding leaves `&` and `'` alone.
-  Encoding again changes nothing, so a URL composed from one already encoded is safe
-  (D38).
+  Encoding again changes nothing, so a URL composed from one already encoded is safe —
+  `text()` gives the encoded text back to compose with (D38).
 - Optionals are the only nullable type; the checker forces `?.`, `??`, or narrowing.
 - `{K: V}` is always keyed by `string`; any other `K` is an error at the annotation.
   `map`, `list`, and `function` are not type names, and an author who writes one is told
@@ -226,12 +226,34 @@ is a compile error naming the nearest it has.
 | `{string: V}` | `keys() values() has(key)` |
 | `int` | `abs()` |
 | `float` | `abs() round() floor() fixed(places)` |
+| `datetime` | `rfc3339() rfc822() format(pattern)` · `year() month() day()` |
+| `duration` | `seconds() minutes()` |
+| `url` | `text()` |
+| `html` | `readingTime()` |
 
 `first`, `last`, and `find` give a `T?`, which is how an empty list answers without an
 error; `length` counts characters rather than bytes, and elements rather than entries.
 `slugify` folds to ASCII (`Dürer` → `durer`) and drops apostrophes rather than breaking a
 word on one. `round` and `floor` refuse a `float` no `int` holds instead of saturating,
 and `fixed` writes exactly the decimals asked for, a half going to the even digit.
+
+A datetime's methods all read it through the offset it was written in, never through
+UTC: the last half-hour of a day on the west coast is already tomorrow in UTC, and
+`day()` gives the day its author meant. `rfc3339()` is what printing gives, as a string
+to pass on; `rfc822()` is the form an RSS `pubDate` wants, and refuses a year before 1,
+for which that format has no spelling. `format(pattern)` is strftime —
+`format("%B %-d, %Y")` is
+`April 4, 2026` — and a literal pattern is read at compile time, as `datetime("…")`'s
+argument is. There is no datetime arithmetic: the number model is a deferred question
+and adding a duration to a moment would settle it by accident.
+
+`minutes()` drops the remainder rather than rounding it, so a site that counts a part
+minute words that rule itself. `readingTime()` counts the text between tags at two
+hundred words a minute and rounds up; a tag separates words the way whitespace does,
+which is what never building a DOM costs (invariant 2). `text()` gives a URL's encoded
+text back, which is how two are joined: `url(site.siteUrl.text() + page.url.text())` —
+`+` puts two strings together and nothing else, and encoding what is encoded changes
+nothing, so the `url()` marks where encoding happens without doing it twice.
 
 ### Schemas
 
@@ -245,7 +267,7 @@ and `fixed` writes exactly the decimals asked for, a half going to the even digi
   vod: Vod?
   layout: (Article, html): html = article
   scripts: [asset] = []
-  readingTime: duration = readingTime(body)
+  readingTime: duration = body.readingTime()
 </lem-type>
 ```
 
@@ -539,8 +561,9 @@ hierarchies and `T?`. Diagnostics carry a primary span plus secondary spans wher
   time, and an error inside it points at the lambda, not at the call.
   `x.f(…)` lowers `x` first and its type decides (D34): a builtin type's method `f`, or
   a record's field `f` called as its value. A name that is neither is an error naming
-  the methods that receiver does carry, and the indexing a map wanted instead. Only `any`
-  defers the question to the VM, which tries the field and then the method for the value
+  the nearest method that receiver does carry — the whole inventory only when nothing is
+  near — and the indexing a map wanted instead. Only `any` defers the question to the
+  VM, which tries the field and then the method for the value
   it finds, and errors with the span if neither answers; a receiver known to be null is
   refused where it stands, as reading its field is. A method's receiver is its first argument, so an arity message counts
   as the author wrote it — `xs.first(1)` gives one argument to something that takes none.

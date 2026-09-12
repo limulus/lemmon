@@ -18,10 +18,10 @@ use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::fmt;
 
-use jiff::Timestamp;
-use jiff::civil;
 use jiff::fmt::temporal::Pieces;
+use jiff::fmt::{rfc2822, strtime};
 use jiff::tz::Offset;
+use jiff::{Timestamp, Zoned, civil};
 
 /// A moment, and the offset the source wrote it in.
 ///
@@ -88,22 +88,93 @@ impl Datetime {
         })
     }
 
+    /// The year the civil calendar shows, read through the written offset.
+    #[must_use]
+    pub fn year(&self) -> i64 {
+        i64::from(self.civil().year())
+    }
+
+    /// The month, `1` through `12`.
+    #[must_use]
+    pub fn month(&self) -> i64 {
+        i64::from(self.civil().month())
+    }
+
+    /// The day of the month, `1` through `31`.
+    #[must_use]
+    pub fn day(&self) -> i64 {
+        i64::from(self.civil().day())
+    }
+
+    /// The RFC 2822 date an RSS `pubDate` wants — `Sat, 4 Apr 2026 10:30:00 -0700` —
+    /// in the offset this was written in. RFC 822 itself allows a two-digit year and
+    /// RFC 2822 narrowed it to four, which is what a feed reader expects today.
+    ///
+    /// # Errors
+    ///
+    /// When the year is before 1. A timestamp reaches back to -9999 and the format has
+    /// no way to write those years, so the refusal is a real one rather than an
+    /// assertion — a `datetime("-000500-01-01")` is a string a template can hold.
+    pub fn rfc2822(&self) -> Result<String, String> {
+        let mut out = String::new();
+        rfc2822::DateTimePrinter::new()
+            .print_zoned(&self.zoned(), &mut out)
+            .map_err(|_| format!("`{self}` is before year 1 and has no RFC 822 form"))?;
+        Ok(out)
+    }
+
+    /// `pattern` filled in from this datetime, read through the written offset.
+    ///
+    /// # Errors
+    ///
+    /// When `pattern` holds something strftime has no conversion for. The refusal
+    /// names the pattern rather than the character, because jiff words which character
+    /// and this module words its own refusals.
+    pub fn format(&self, pattern: &str) -> Result<String, String> {
+        strtime::format(pattern, &self.zoned()).map_err(|_| {
+            format!(
+                "`{pattern}` is not a datetime pattern: write one strftime understands, \
+                 like `%B %-d, %Y` or `%Y-%m-%d`"
+            )
+        })
+    }
+
+    /// Whether `pattern` is one strftime can fill in, asked with no datetime to fill it
+    /// from: what the compiler holds a literal pattern to (`compile/calls.rs`).
+    ///
+    /// A pattern either has a conversion for every `%` in it or has not, whatever
+    /// moment it is filled in from, so any moment answers for all of them.
+    ///
+    /// # Errors
+    ///
+    /// The same refusal [`format`](Self::format) would give at render.
+    pub fn check_pattern(pattern: &str) -> Result<(), String> {
+        Self::parse("2026-01-01T00:00:00Z")
+            .expect("a datetime written by this module")
+            .format(pattern)
+            .map(drop)
+    }
+
     /// The offset this was written in, as the civil calendar sees the instant through
     /// it: what a year, a month, or a day is to the site that wrote it.
-    #[must_use]
-    pub fn civil(&self) -> civil::DateTime {
+    fn civil(&self) -> civil::DateTime {
         self.offset().to_datetime(self.timestamp())
     }
 
+    /// The instant in a time zone fixed at the written offset, which is the shape
+    /// jiff's printers and `strftime` take. Fixed because there is no zone to name
+    /// (module docs): the offset is all the source said.
+    fn zoned(&self) -> Zoned {
+        self.timestamp().to_zoned(self.offset().to_time_zone())
+    }
+
     /// The offset this was written in.
-    #[must_use]
-    pub fn offset(&self) -> Offset {
+    fn offset(&self) -> Offset {
         Offset::from_seconds(self.offset_seconds).expect("an offset this was built from")
     }
 
     /// The instant, which is what equality and ordering read.
-    #[must_use]
-    pub fn timestamp(&self) -> Timestamp {
+    fn timestamp(&self) -> Timestamp {
         Timestamp::new(self.seconds, self.nanoseconds)
             .expect("a timestamp this was built from")
     }
@@ -239,15 +310,6 @@ mod tests {
     }
 
     #[test]
-    fn reads_the_civil_calendar_through_the_written_offset() {
-        // Late enough in the evening that UTC has turned the page and the site has not.
-        let evening = parse("2026-04-04T23:30:00-07:00");
-        assert_eq!(evening.civil().day(), 4);
-        assert_eq!(evening.timestamp().to_string(), "2026-04-05T06:30:00Z");
-        assert_eq!(evening.offset(), Offset::from_hours(-7).unwrap());
-    }
-
-    #[test]
     fn refuses_a_time_with_no_offset_by_naming_the_offset_it_wants() {
         assert_eq!(
             refusal("2026-04-04T10:30:00"),
@@ -290,6 +352,82 @@ mod tests {
         assert_eq!(here.cmp(&there), Ordering::Equal);
         assert!(parse("2024-11-24") < here);
         assert!(here > parse("2024-11-24T00:00:00Z"));
+    }
+
+    #[test]
+    fn reads_the_year_month_and_day_in_the_written_offset() {
+        // Late enough in the evening that UTC has turned the page and the site has not:
+        // the accessors answer for the calendar the author wrote in.
+        let evening = parse("2026-04-04T23:30:00-07:00");
+        assert_eq!(
+            (evening.year(), evening.month(), evening.day()),
+            (2026, 4, 4)
+        );
+        assert_eq!(evening.timestamp().to_string(), "2026-04-05T06:30:00Z");
+        assert_eq!(evening.offset(), Offset::from_hours(-7).unwrap());
+        assert_eq!(parse("1969-07-20").year(), 1969);
+    }
+
+    #[test]
+    fn writes_the_rfc_822_date_a_feed_wants() {
+        assert_eq!(
+            parse("2026-04-04T10:30:00-07:00").rfc2822(),
+            Ok("Sat, 4 Apr 2026 10:30:00 -0700".to_owned())
+        );
+        assert_eq!(
+            parse("2026-01-01").rfc2822(),
+            Ok("Thu, 1 Jan 2026 00:00:00 +0000".to_owned())
+        );
+    }
+
+    #[test]
+    fn refuses_an_rfc_822_date_for_a_year_the_format_cannot_write() {
+        // Reachable from a template — `datetime("-000500-01-01")` parses — so the
+        // format's one limit is a refusal with a span rather than a panic (invariant 8).
+        assert_eq!(
+            parse("-000500-01-01").rfc2822(),
+            Err(
+                "`-000500-01-01T00:00:00Z` is before year 1 and has no RFC 822 form"
+                    .to_owned()
+            )
+        );
+    }
+
+    #[test]
+    fn fills_in_a_strftime_pattern_from_the_written_offset() {
+        let published = parse("2026-04-04T10:30:00-07:00");
+        assert_eq!(
+            published.format("%B %-d, %Y"),
+            Ok("April 4, 2026".to_owned())
+        );
+        assert_eq!(
+            published.format("%Y-%m-%dT%H:%M:%S%z"),
+            Ok("2026-04-04T10:30:00-0700".to_owned())
+        );
+        assert_eq!(published.format(""), Ok(String::new()));
+    }
+
+    #[test]
+    fn refuses_a_pattern_strftime_has_no_conversion_for() {
+        for pattern in ["%Q%", "%", "100%"] {
+            assert_eq!(
+                parse("2026-04-04").format(pattern),
+                Err(format!(
+                    "`{pattern}` is not a datetime pattern: write one strftime \
+                     understands, like `%B %-d, %Y` or `%Y-%m-%d`"
+                )),
+                "{pattern}"
+            );
+        }
+    }
+
+    #[test]
+    fn answers_for_a_pattern_with_no_datetime_to_fill_it_from() {
+        assert_eq!(Datetime::check_pattern("%B %-d, %Y"), Ok(()));
+        assert_eq!(
+            Datetime::check_pattern("%Q%"),
+            Err(parse("2026-04-04").format("%Q%").unwrap_err())
+        );
     }
 
     #[test]

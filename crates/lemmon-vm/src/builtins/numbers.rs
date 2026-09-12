@@ -66,10 +66,12 @@ pub(super) fn floor(_host: &mut dyn Host, args: &[Value]) -> Result<Value, Fault
 /// `x.fixed(n)`: the number written with exactly `n` digits after the point — `ƒ/2.80`
 /// before a site trims the zero off it.
 ///
-/// A half rounds to the even digit (`0.5` written with no decimals is `0`, `1.5` is
-/// `2`), which is what Rust's formatter does and what IEEE 754 calls the default. It is
-/// not what JavaScript's `toFixed` does, so a page that shows a number landing exactly
-/// on a half can differ from the Eleventy build by one in the last digit.
+/// A tie rounds to the even digit (`0.5` with no decimals is `0`, `0.125` with two is
+/// `0.12`), which is Rust's formatter doing what IEEE 754 calls the default. JavaScript's
+/// `toFixed` rounds a tie away from zero instead, so the two disagree — but only on a
+/// value that is *exactly* a tie in binary, which is rarer than it sounds. The famous
+/// `toFixed` surprises are not ties at all: `1.005` is really `1.00499…`, and both
+/// languages round it down. No f-number a photo carries is a tie.
 pub(super) fn fixed(_host: &mut dyn Host, args: &[Value]) -> Result<Value, Fault> {
     let value = float("fixed", args)?;
     let places = match &args[1] {

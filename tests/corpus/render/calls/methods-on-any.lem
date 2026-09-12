@@ -10,3 +10,5 @@
 <lem-let untypedRecord: any = r />
 <lem.untypedRecord.keys("shadow")>
 <lem.page.title.slugify()>
+<lem-let when: any = datetime("2026-04-04T23:30:00-07:00") />
+<lem.when.year()> <lem.when.format("%Y-%m-%d")>

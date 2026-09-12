@@ -1,0 +1,4 @@
+<lem-let front: any = "2026-04-04" />
+<lem-let published: datetime = front />
+<p>an annotation is not a conversion — what the host sent is still a string:
+<lem.published.year()></p>

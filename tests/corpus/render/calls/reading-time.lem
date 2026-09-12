@@ -1,0 +1,21 @@
+<lem-fn chip(span: duration)>
+  <span class="chip">
+    <lem-if span.minutes() gt 0>
+      <lem.span.minutes()> min read
+    <lem-else />
+      under a minute — <lem.span.seconds()> seconds
+    </lem-if>
+  </span>
+</lem-fn>
+
+<lem-let post>
+  <h2>Compiling a template once</h2>
+  <p>Lemmon compiles a file into a unit and renders it many times. The core is
+  pure: no clock, no filesystem, no network, and the same inputs give the same
+  bytes every time.</p>
+  <p>An <em>emphasised</em> word is two runs of text to the counter, which is
+  what never building a DOM costs.</p>
+</lem-let>
+
+<lem.chip(post.readingTime())>
+<p><lem.post.readingTime().seconds()> seconds, and <lem.raw("").readingTime().seconds()> for nothing at all</p>

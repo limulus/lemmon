@@ -18,7 +18,7 @@ use lemmon_syntax::ast::{
 use lemmon_syntax::{Span, SyntaxToken};
 
 use crate::Value;
-use crate::builtins::{BUILTINS, Expected};
+use crate::builtins::{BUILTINS, Expected, Kind, Reach};
 use crate::bytecode::Op;
 use crate::datetime::Datetime;
 use crate::types::Type;
@@ -221,27 +221,38 @@ impl Compiler<'_> {
             };
             types.push(ty);
         }
-        if builtin.name == "datetime" {
-            self.check_datetime_literal(positional);
+        // Two entries read a literal argument a second time, here rather than only in
+        // the VM. The reach is matched beside the name so that a later `.format()` on
+        // another receiver cannot quietly inherit this.
+        match (builtin.reach, builtin.name) {
+            (Reach::Ambient, "datetime") => {
+                self.check_literal(positional, |text| Datetime::parse(text).map(drop));
+            }
+            (Reach::Method(Kind::Datetime), "format") => {
+                self.check_literal(positional, Datetime::check_pattern);
+            }
+            _ => {}
         }
         let argc = u16::try_from(arity).expect("fewer than 65536 arguments");
         self.emit(Op::CallBuiltin { id, argc }, span);
         self.rule(span, (BUILTINS[id as usize].ty)(&types))
     }
 
-    /// Reports a `datetime("…")` whose literal argument is no datetime, at the literal.
+    /// Reports a first argument written as a literal that `read` refuses, at the
+    /// literal rather than at the render that would have hit it.
     ///
-    /// The call is lowered and runs like any other — the VM reads the string again — and
-    /// this is only the second reading, the one that makes a fixed date a compile-time
-    /// mistake. It is what the language has instead of a datetime literal (D21, revised
-    /// 2026-08-20): the constructor is checked where a literal would have been.
+    /// `datetime("…")` is what the language has instead of a datetime literal (D21,
+    /// revised 2026-08-20), so the constructor is checked where a literal would have
+    /// been; `.format("…")` is a strftime pattern, and a typo in one should not wait
+    /// for the one page that uses it. Both calls still lower and run like any other —
+    /// the VM reads the string again — and this is only the earlier reading.
     ///
     /// What counts as the literal's text is [`decode_string`]'s answer, which is the
     /// whole of it while string interpolation is unimplemented. When interpolation
     /// lands, a literal holding a `{…}` is no longer a fixed string and this must let
     /// it through to run — refusing `datetime("{year}-01-01")` here would refuse a
     /// template that renders.
-    fn check_datetime_literal(&mut self, positional: &[Expr]) {
+    fn check_literal(&mut self, positional: &[Expr], read: fn(&str) -> Result<(), String>) {
         let Some(argument) = positional.first() else {
             return;
         };
@@ -252,7 +263,7 @@ impl Compiler<'_> {
             return;
         }
         let token = required(literal.token());
-        if let Err(message) = Datetime::parse(&decode_string(token.text())) {
+        if let Err(message) = read(&decode_string(token.text())) {
             self.error(token.span(), message);
         }
     }
