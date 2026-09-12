@@ -324,6 +324,12 @@ moved it. Newest last. An entry is removed when its change has been applied.
   `any_ascii` 582 KB — and that the `url` crate was rejected for refusing relative
   references (D38).
 
+- **VM, the native stack** — where the text (and the ∆Q6L entry above) says native
+  re-entry has a cap of its own, say both that cap and the parser's nesting cap are sized
+  against a megabyte of stack, which the boundary crate pins when it links the `.wasm`
+  rather than leaving it to the toolchain's default, and which the ABI tests run on
+  (∆vnI).
+
 ## From Eleventy to Lemmon
 
 _No pending changes._

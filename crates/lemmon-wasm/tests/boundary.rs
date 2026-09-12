@@ -69,10 +69,11 @@ fn throws_a_js_error_for_a_caller_bug() {
 
 /// A builtin taking a function re-enters the VM natively, once per nesting level
 /// (`map` → `invoke` → the loop again). That recursion costs the machine's own stack,
-/// and the `.wasm` is linked with whatever `wasm-ld` gave it (∆vnI), so this is where
-/// the native cap must be shown to be reached before the stack runs out: a `lem-fn`
-/// that maps itself over a one-element list nests as deep as the VM allows, and the
-/// diagnostic proves it got there rather than trapping on the way.
+/// which `build.rs` pins for this test binary as for the shipped `.wasm`, so this is
+/// where the native cap must be shown to be reached before the stack runs out: a
+/// `lem-fn` that maps itself over a one-element list nests as deep as the VM allows, and
+/// the diagnostic proves it got there rather than trapping on the way. It is also what
+/// fails if the pinned stack ever shrinks under what the cap needs.
 #[wasm_bindgen_test]
 fn reaches_the_depth_cap_through_nested_invokes_without_trapping() {
     let mut core = Core::new();
@@ -88,6 +89,40 @@ fn reaches_the_depth_cap_through_nested_invokes_without_trapping() {
     assert!(
         result.contains("builtins nested more than 64 deep"),
         "{result}"
+    );
+}
+
+/// The parser recurses once per nested block, and checking, lowering, and rendering what
+/// it built recurse as deep again, all on the stack `build.rs` pins. Blocks cost more
+/// stack per level than nested parentheses, lists, or negations, so the parser's cap is
+/// shown to hold with them: two hundred `lem-if`s, the most it accepts, compile and render
+/// without trapping. One level more is refused, which ties this test to the cap: raising
+/// the cap fails it until it nests to the new one.
+#[wasm_bindgen_test]
+fn renders_blocks_nested_to_the_parser_cap_without_trapping() {
+    let nested = |levels: usize| {
+        let text = format!(
+            "{}a{}",
+            "<lem-if true>".repeat(levels),
+            "</lem-if>".repeat(levels)
+        );
+        serde_json::json!([{"path": "deep.lem", "text": text}]).to_string()
+    };
+    let mut core = Core::new();
+    let diagnostics = core
+        .compile(&nested(200), Some(UNTYPED.to_owned()))
+        .expect("a well-formed compile payload");
+    assert_eq!(diagnostics, "[]");
+    let result = core
+        .render(r#"{"path": "deep.lem"}"#)
+        .expect("a runtime failure is a diagnostic, not a throw");
+    assert!(result.contains(r#""html":"a""#), "{result}");
+    let diagnostics = core
+        .compile(&nested(201), Some(UNTYPED.to_owned()))
+        .expect("a well-formed compile payload");
+    assert!(
+        diagnostics.contains("`lem-if` is nested too deeply"),
+        "{diagnostics}"
     );
 }
 

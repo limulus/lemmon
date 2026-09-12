@@ -230,7 +230,10 @@ resolved at page end), `Track` (dependency recording), `Return`. Runtime errors 
 via the pc→span table. A builtin that takes a function (`map`, `filter`) runs it through a
 re-entrant invoke inside its `CallBuiltin` step — the VM pushes the frame and runs its loop
 again until that frame returns — so an error inside the closure keeps the closure's own
-span, and the frame cap bounds the native recursion (∆987).
+span (∆987). That re-entry costs native stack rather than heap, so it has a cap of its
+own beside the frame count, sized against the megabyte of stack `crates/lemmon-wasm`'s
+build script links the `.wasm` with; the parser's nesting cap is sized against the same
+megabyte, and the boundary's ABI tests show both fit (D38, ∆vnI).
 
 What ∆c8h built is the untyped subset of that: `Value` without the stdlib types, which
 ∆Q6L added, and no `Channel`/`Track`, which arrive with the side channels (∆RGQ).

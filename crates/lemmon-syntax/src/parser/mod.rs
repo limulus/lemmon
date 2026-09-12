@@ -158,9 +158,10 @@ struct Parser<'src> {
     depth: u32,
 }
 
-/// How deeply blocks and expressions may nest before the parser stops recursing. Well
-/// inside the default wasm32 stack for both debug and release frames; real templates
-/// nest a few dozen levels at most.
+/// How deeply blocks and expressions may nest before the parser stops recursing. Sized
+/// against the `.wasm`'s megabyte of stack, pinned in `crates/lemmon-wasm/build.rs`,
+/// which checking, lowering, and rendering a nesting this deep use as well; the
+/// boundary's ABI tests show it fits. Real templates nest a few dozen levels at most.
 const MAX_DEPTH: u32 = 200;
 
 impl<'src> Parser<'src> {

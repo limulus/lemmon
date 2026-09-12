@@ -34,8 +34,9 @@ const MAX_DEPTH: usize = 256;
 /// `map` has called the VM's loop from inside its own `CallBuiltin` step, which costs
 /// the machine's own stack — `step` → the entry → [`Host::invoke`] → `run_until` →
 /// `step` again (∆987). One cap cannot do both jobs: a page nesting components deeply
-/// wants a generous frame count, while the native stack is a megabyte in the `.wasm`
-/// with no way to ask for more and no diagnostic if it runs out (∆vnI).
+/// wants a generous frame count, while the `.wasm` has a megabyte of native stack,
+/// pinned in `crates/lemmon-wasm/build.rs`, with no way to ask for more and no
+/// diagnostic if it runs out.
 ///
 /// Sized against that megabyte: a level costs about a kilobyte and a half compiled for
 /// release and eight in a debug build, so sixty-four levels leaves the debug build —
@@ -1179,11 +1180,6 @@ mod tests {
         assert_eq!(err.span.start, 20);
     }
 
-    /// The cap is a stack budget, so the test that matters runs it on the stack it was
-    /// budgeted against: the megabyte the `.wasm` gets from the linker, which is the
-    /// smallest stack the core runs on and the one it cannot ask to grow. Overflowing
-    /// aborts rather than failing, which is loud enough — and is what a browser would
-    /// do with no diagnostic at all (∆vnI).
     #[test]
     fn counts_ids_from_zero_again_at_every_render() {
         // What makes `uniqueId` safe to have at all: the VM remembers between calls,
@@ -1208,6 +1204,11 @@ mod tests {
         assert_eq!(program().unwrap(), "desc-0desc-1");
     }
 
+    /// The cap is a stack budget, so the test that matters runs it on the stack it was
+    /// budgeted against: the `.wasm`'s megabyte, pinned in `crates/lemmon-wasm/build.rs`,
+    /// which is the smallest stack the core runs on and the one it cannot ask to grow.
+    /// Overflowing aborts rather than failing, which is loud enough — and is what a
+    /// browser would do with no diagnostic at all.
     #[test]
     fn nests_to_the_cap_within_the_stack_the_wasm_is_given() {
         const A_MEGABYTE: usize = 1024 * 1024;

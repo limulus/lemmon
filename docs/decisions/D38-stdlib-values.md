@@ -119,7 +119,8 @@ deferred question.
   `sortBy`.
 - Native recursion got a cap of its own, separate from the frame count: `sortBy` and
   `groupBy` call back into the VM, and sixty-four such levels is what a megabyte of stack
-  holds (∆vnI covers pinning that megabyte).
+  holds. `crates/lemmon-wasm/build.rs` pins that megabyte as the stack the `.wasm` is
+  linked with (∆vnI).
 - `Unit` gained `asset_refs`, a fourth kind of compile-time fact beside signatures, type
   references, and ambient bindings.
 - `Host` (the builtins' trait) gained `next_id`, the only state a builtin may ask for.
