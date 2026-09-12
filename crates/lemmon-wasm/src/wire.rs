@@ -120,9 +120,15 @@ fn each_once<V, E: de::Error>(entries: &[(String, V)]) -> Result<(), E> {
     }
 }
 
-/// The host's declaration as `compile` receives it: `{ambient, document?, entry?}`,
-/// where each ambient name is bound to a declared type, to the top-level bindings of a
-/// file, or to nothing at all — a name without a type (D30).
+/// The host's declaration as `compile` receives it: `{ambient, document?, entry?,
+/// assets?}`, where each ambient name is bound to a declared type, to the top-level
+/// bindings of a file, or to nothing at all — a name without a type (D30).
+///
+/// `assets` is the manifest the host's build produced, logical path to the URL it
+/// shipped at. It rides here rather than on `loadData` because `asset("…")` is answered
+/// while compiling (D10, D38), and being part of the declaration is what makes a
+/// rebuild that re-hashes an asset a change to the declaration — which is what the
+/// resident `Core` compares.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct HostInput {
@@ -133,6 +139,10 @@ pub(crate) struct HostInput {
     document: Option<String>,
     #[serde(default)]
     pub(crate) entry: Option<String>,
+    /// In declaration order, like `ambient`: what a did-you-mean lists a near miss
+    /// from, and the order a diagnostic shows.
+    #[serde(default, deserialize_with = "ordered")]
+    pub(crate) assets: Vec<(String, String)>,
 }
 
 /// What one ambient name is bound to: a declared type by name, or the top-level
@@ -169,7 +179,12 @@ impl From<HostInput> for Host {
         if let Some(entry) = input.entry {
             host = host.rendered_through(&entry);
         }
-        host
+        host.with_assets(
+            input
+                .assets
+                .iter()
+                .map(|(path, url)| (path.as_str(), url.as_str())),
+        )
     }
 }
 
@@ -178,8 +193,7 @@ impl From<HostInput> for Host {
 /// bindings files by name — a list of entries, one per document, for a glob, and one
 /// entry for a data file, a plugin, or an environment value. Which names may appear,
 /// and which must, is the program's to say, so the loader checks them; what an entry
-/// may hold is the wire's, so `deny_unknown_fields` does. The asset manifest is an
-/// additive field that is not here yet (∆d1N).
+/// may hold is the wire's, so `deny_unknown_fields` does.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct DataInput {

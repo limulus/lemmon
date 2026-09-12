@@ -14,6 +14,7 @@
 //! the invoked function is placed there, at its own instruction, and passes through the
 //! builtin untouched as a [`Fault::Placed`].
 
+use std::collections::BTreeMap;
 use std::rc::Rc;
 
 use crate::builtins::{self, BUILTINS, Fault, Host};
@@ -66,6 +67,7 @@ pub fn render(
         stack: Vec::new(),
         frames: Vec::new(),
         native_depth: 0,
+        ids: BTreeMap::new(),
         iters: Vec::new(),
         out: vec![String::new()],
     };
@@ -104,6 +106,7 @@ pub fn invoke(
         stack: args,
         frames: Vec::new(),
         native_depth: 0,
+        ids: BTreeMap::new(),
         iters: Vec::new(),
         out: vec![String::new()],
     };
@@ -136,6 +139,12 @@ struct Vm<'a> {
     /// How many builtins are part-way through a call of their own, each holding a
     /// native stack frame this VM is running inside of.
     native_depth: usize,
+    /// How many ids `uniqueId` has given out under each prefix. A `BTreeMap` and not a
+    /// hash map: nothing here iterates it, but a deterministic order costs nothing and
+    /// is one less thing to have to argue about when a render has to be reproducible
+    /// (invariant 1). Empty at the start of every render, which is what makes two
+    /// renders of one page agree.
+    ids: BTreeMap<Rc<str>, u64>,
     iters: Vec<Iter>,
     out: Vec<String>,
 }
@@ -562,6 +571,19 @@ impl Host for Vm<'_> {
         self.native_depth -= 1;
         ran.map_err(Fault::Placed)?;
         Ok(self.pop())
+    }
+
+    fn next_id(&mut self, prefix: &str) -> u64 {
+        match self.ids.get_mut(prefix) {
+            Some(next) => {
+                *next += 1;
+                *next - 1
+            }
+            None => {
+                self.ids.insert(Rc::from(prefix), 1);
+                0
+            }
+        }
     }
 }
 
@@ -1162,6 +1184,30 @@ mod tests {
     /// smallest stack the core runs on and the one it cannot ask to grow. Overflowing
     /// aborts rather than failing, which is loud enough — and is what a browser would
     /// do with no diagnostic at all (∆vnI).
+    #[test]
+    fn counts_ids_from_zero_again_at_every_render() {
+        // What makes `uniqueId` safe to have at all: the VM remembers between calls,
+        // and forgets between renders, so a page rendered twice is byte-identical
+        // (invariant 1). Two runs of one program, not two calls in one.
+        let program = || {
+            let id = ambient("uniqueId");
+            // Index 1: `run` puts the null it returns at 0 and shifts the rest along.
+            run(
+                vec![Value::str("desc")],
+                vec![
+                    Op::Const { index: 1 },
+                    Op::CallBuiltin { id, argc: 1 },
+                    Op::Emit,
+                    Op::Const { index: 1 },
+                    Op::CallBuiltin { id, argc: 1 },
+                    Op::Emit,
+                ],
+            )
+        };
+        assert_eq!(program().unwrap(), "desc-0desc-1");
+        assert_eq!(program().unwrap(), "desc-0desc-1");
+    }
+
     #[test]
     fn nests_to_the_cap_within_the_stack_the_wasm_is_given() {
         const A_MEGABYTE: usize = 1024 * 1024;

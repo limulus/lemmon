@@ -2,7 +2,8 @@
 
 - **Status:** Accepted 2026-09-07 (∆495); dispatch and UFCS's removal implemented
   2026-09-07 (∆495), the argument-shaping rule and higher-order methods (`map`, `filter`,
-  over a re-entrant invoke) 2026-09-07 (∆987)
+  over a re-entrant invoke) 2026-09-07 (∆987); the inventory this record deferred written
+  2026-09-12 (∆Q6L, D38)
 - **Backlog item:** ∆495, ∆987
 - **Normative text:** `docs/language.md` § Expressions (Access, Calls), § Names &
   namespaces (Ambient), § Checking (Calls, Fields)

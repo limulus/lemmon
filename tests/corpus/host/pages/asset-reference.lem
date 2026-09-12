@@ -1,0 +1,4 @@
+<link rel="stylesheet" href="<lem.asset("styles/site.css")>" />
+<p>the hashed URL ships, not the path this file asked for</p>
+<lem-let script = asset("scripts/gallery.js") />
+<a href="<lem.script>">the gallery script</a>

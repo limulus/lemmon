@@ -258,6 +258,12 @@ text back, which is how two are joined: `url(site.siteUrl.text() + page.url.text
 `+` puts two strings together and nothing else, and encoding what is encoded changes
 nothing, so the `url()` marks where encoding happens without doing it twice.
 
+Of the ambient functions, `uniqueId(prefix)` is the one that remembers: it gives
+`prefix-0`, then `prefix-1`, counting separately per prefix and starting again at every
+render. An `id` has to be unique on the page it is written on, and a component writing
+one cannot see the rest of the page, so the count is the VM's. It is still deterministic
+— two renders of a page give the same ids, which invariant 1 requires.
+
 ### Schemas
 
 ```
@@ -329,8 +335,6 @@ nothing, so the `url()` marks where encoding happens without doing it twice.
   declaration that gives one. So `layout: (Article, html): html` is declared once, on
   `Article`, and a `LinkPost extends Article` inherits it: a layout that only a link
   post needs takes an `Article` and narrows inside.
-- _Not yet (∆Q6L): `asset` has no run-time value, because no manifest reaches the core
-  yet; an `asset` field cannot be loaded at all until one does._
 - Schemas are the source of truth; JSON Schema is derived output (`lem schema export`),
   never authored (rationale: the same types statically check template expressions —
   subtyping, function types, `html`/`asset` semantics, reference fields).
@@ -612,7 +616,8 @@ nothing.
   brings favourites (and types) into the flat namespace. Promotion collisions are the
   same duplicate error.
 - **Ambient:** the stdlib functions that make or vouch for a value (`raw`, `datetime`,
-  `url`; `asset` and `uniqueId` once they exist) need no import — an entry that works on a value is
+  `url`, `asset`, `uniqueId` — the whole of the namespace the stdlib occupies) need no
+  import — an entry that works on a value is
   that value's method instead, `heading.slugify()`, `d.rfc3339()`, and occupies no
   namespace (D34); a `lem-fn` or `lem-let` may shadow an ambient name, with a warning at
   the definition when the name it displaces is the stdlib's — a parameter or loop

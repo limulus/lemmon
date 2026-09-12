@@ -53,7 +53,20 @@ fn declared_host() -> Host {
         .bind("site", Ambient::bindings(SITE))
         .documents("page")
         .rendered_through("layout")
+        // The harness plays esbuild: a real shell bundles, hashes, and hands the map
+        // over at `compile` (D38). Two entries are enough to show a hit, a near miss,
+        // and that the URL a page carries is the hashed one and not the path asked for.
+        .with_assets(ASSETS.iter().copied())
 }
+
+/// The manifest the `host/` corpus compiles against.
+const ASSETS: &[(&str, &str)] = &[
+    ("styles/site.css", "/assets/immutable/site.3f9a1c72.css"),
+    (
+        "scripts/gallery.js",
+        "/assets/immutable/gallery.8b20d4e1.js",
+    ),
+];
 
 const AMBIENT: &str = "host/environment/ambient.lem";
 const SITE: &str = "host/environment/site.lem";

@@ -26,7 +26,7 @@ class Core {
   compile(files: {path, text, record?}[], host?: HostDecl): Diagnostic[]
       // changed files only; per-file units, cached (D25). `record` names a document's
       // schema; `host` names the ambient values and their types (D30)
-  loadData(input: DataInput): Diagnostic[]            // records, data files, asset manifest, build info
+  loadData(input: DataInput): Diagnostic[]            // records, data files, build info
   upsertRecord(collection, record) / removeRecord(id) // dev server + future on-demand
   plan(): PageRef[]                                   // static pages + expanded generators
   render(page: PageRef): { html, channels, deps }
@@ -35,7 +35,8 @@ class Core {
   format(path): string
 }
 // HostDecl = {ambient: {[name]: TypeName | {bindingsOf: path} | null},
-//              document?: AmbientName, entry?: FieldName}   (D36)
+//              document?: AmbientName, entry?: FieldName,
+//              assets?: {[logicalPath]: url}}   (D36, the manifest D38)
 // reserved optional host import (D08): renderMarkdown?(text: string): string
 ```
 
@@ -81,7 +82,9 @@ not a break:
   the program cannot be loaded from — a name the host does not bind, a source no `from`
   binding asked for, a document never compiled, a load before any compile has succeeded
   or after the declaration changed without one succeeding — is a thrown caller bug. The
-  asset manifest is the one additive field not yet here (∆d1N). A file passed to
+  asset manifest rides on the declaration, not on the envelope: `asset("…")` is answered
+  while compiling (D10, D38), so it has to be there by then, and a rebuild that re-hashes
+  an asset is a change to the declaration. A file passed to
   `compile` may carry `recordSpan`, the byte offsets of the `type:` key's value, so a
   diagnostic about the record points at the key; offsets that are not a span of the
   file's text are refused as a caller bug, since a line index panics on them.
@@ -128,8 +131,9 @@ not a break:
 1. **Discover** (shell) — walk input, classify (document/template/data/passthrough), parse
    front matter with positions, load `lemmon.config.ts`.
 2. **Providers** (shell) — plugin data hooks, document transforms (e.g. link-post reference
-   appender), asset pipeline: esbuild → manifest (before compile, because `asset()` is
-   compile-checked).
+   appender), asset pipeline: esbuild → manifest, which is handed to `compile` on the
+   host declaration because `asset()` is answered there (D10, D38) — its values the URLs
+   assets shipped at, since the core does no path arithmetic.
 3. **Compile** (core) — every changed `.lem`/`.md` → its own bytecode unit, then a link step
    joins the units into the module (D25, §Separate compilation); document prose rendered by
    comrak here and stored in the document's unit (markdown never runs at render time).
@@ -139,8 +143,9 @@ not a break:
    Templates compile first: the shell matches documents against the `from` globs that
    `site.lem` reports, then compiles each document with its `record` (D30).
 4. **Load** (core) — validate records against schemas, run the defaults and computed
-   bindings, resolve reference fields (D37) and, later, assets. Failures point at the
-   YAML positions the shell sent with the data.
+   bindings, resolve reference fields (D37) and `[asset]` fields, the latter against the
+   manifest the declaration carried into step 3. Failures point at the YAML positions
+   the shell sent with the data.
 5. **Plan** (core) — expand generators → full output list (url, entry, deps); `entry` is
    the page's `layout`, the field the host named (D30).
 6. **Render × N** (core) — body → the entry function → html + channels (styles/
@@ -227,8 +232,8 @@ re-entrant invoke inside its `CallBuiltin` step — the VM pushes the frame and 
 again until that frame returns — so an error inside the closure keeps the closure's own
 span, and the frame cap bounds the native recursion (∆987).
 
-What ∆c8h built is the untyped subset of that: `Value` without the stdlib types, and no
-`Channel`/`Track` — those arrive with the stdlib (∆Q6L) and side channels (∆RGQ).
+What ∆c8h built is the untyped subset of that: `Value` without the stdlib types, which
+∆Q6L added, and no `Channel`/`Track`, which arrive with the side channels (∆RGQ).
 Records are checked by declaration since ∆cea, and since ∆PCK a record value is tagged
 with its declared name (`Value::Record`, made by a map literal where a record is expected
 and, later, by the loader at the boundary), which `TypeTest` reads; an enum value is its

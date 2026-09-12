@@ -159,6 +159,7 @@ pub fn compile_unit(
             facts: Vec::new(),
             type_refs: Vec::new(),
             ambient_refs: Vec::new(),
+            asset_refs: Vec::new(),
             record: prepared.record.clone(),
             defaults: Vec::new(),
             indexes: Vec::new(),

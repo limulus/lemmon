@@ -13,6 +13,8 @@
 
 use std::rc::Rc;
 
+use lemmon_syntax::nearest;
+
 use crate::types::Type;
 
 /// What a host binds one ambient name to.
@@ -52,6 +54,25 @@ impl Ambient {
     }
 }
 
+/// Why `path` is no asset of `host`: the nearest one it declared, or that it declared
+/// none at all.
+///
+/// A message rather than a fact, and here for the reason [`no_field`](crate::decls) is
+/// in `decls`: refusing a path means knowing every path the manifest holds, so the one
+/// refusal the compiler and the loader share is built where that knowledge lives. The
+/// two must agree — a path is one mistake whether a template named it or a document's
+/// front matter did.
+#[must_use]
+pub fn no_asset(host: &Host, path: &str) -> String {
+    let mut out = format!("the manifest has no asset `{path}`");
+    if let Some(near) = nearest(path, host.asset_paths()) {
+        out.push_str(&format!("; did you mean `{near}`?"));
+    } else if host.asset_paths().next().is_none() {
+        out.push_str("; the host declares none");
+    }
+    out
+}
+
 /// Everything a host declares about the environment its programs compile in — and,
 /// in the view [`for_file`](Host::for_file) makes, what one file of them sees.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -71,6 +92,20 @@ pub struct Host {
     /// declaration itself, which is why the type a page schema extends stays the
     /// host's however a file was compiled.
     document_binding: Option<Ambient>,
+    /// Every asset the host's build produced, as `(logical path, the URL it shipped
+    /// at)`, in the order the host listed them.
+    ///
+    /// The value is the finished URL and not a hash, because the core does no path
+    /// arithmetic: where an asset ends up is the shell's question, and a core that
+    /// assembled a URL from parts would be deciding it (D38).
+    ///
+    /// It rides on the declaration rather than arriving with the data because
+    /// `asset("…")` is answered while compiling (D10): the URL is folded into the
+    /// bytecode, and the entry it was folded from is a compile-time fact the link step
+    /// compares (D25, invariant 11). Being a field of the declaration is also what
+    /// makes a manifest change a *declaration* change to the derived `PartialEq`, which
+    /// is what the resident `Core` compares to decide whether a recompile is needed.
+    assets: Vec<(Rc<str>, Rc<str>)>,
 }
 
 impl Host {
@@ -112,6 +147,38 @@ impl Host {
     pub fn rendered_through(mut self, field: &str) -> Self {
         self.entry = Some(Rc::from(field));
         self
+    }
+
+    /// Declares the assets the host's build produced, as `(logical path, URL)` pairs.
+    ///
+    /// Replaces any already declared rather than adding to them: a manifest is one
+    /// build's whole answer, and merging two would let a stale entry outlive the build
+    /// that made it.
+    #[must_use]
+    pub fn with_assets<'a>(
+        mut self,
+        assets: impl IntoIterator<Item = (&'a str, &'a str)>,
+    ) -> Self {
+        self.assets = assets
+            .into_iter()
+            .map(|(path, url)| (Rc::from(path), Rc::from(url)))
+            .collect();
+        self
+    }
+
+    /// The URL the asset at `path` shipped at, if the host's build made one.
+    #[must_use]
+    pub fn asset(&self, path: &str) -> Option<&str> {
+        self.assets
+            .iter()
+            .find(|(logical, _)| &**logical == path)
+            .map(|(_, url)| &**url)
+    }
+
+    /// Every logical path the host declared, in declaration order — what a miss is
+    /// offered a did-you-mean from, and listed by.
+    pub fn asset_paths(&self) -> impl Iterator<Item = &str> {
+        self.assets.iter().map(|(path, _)| &**path)
     }
 
     /// How `name` is bound where this is read, if the host names it at all: the
@@ -233,6 +300,65 @@ mod tests {
             .bind("site", Ambient::bindings("site.lem"))
             .documents("page")
             .rendered_through("layout")
+    }
+
+    fn built() -> Host {
+        Host::new().with_assets([
+            ("styles/site.css", "/site.abc123.css"),
+            ("scripts/gallery.js", "/gallery.def456.js"),
+        ])
+    }
+
+    #[test]
+    fn reads_an_asset_url_out_of_the_manifest_and_nothing_out_of_a_path_it_has_not_got() {
+        assert_eq!(built().asset("styles/site.css"), Some("/site.abc123.css"));
+        assert_eq!(built().asset("styles/other.css"), None);
+        assert_eq!(Host::new().asset("styles/site.css"), None);
+    }
+
+    #[test]
+    fn lists_the_asset_paths_in_the_order_the_host_declared_them() {
+        assert_eq!(
+            built().asset_paths().collect::<Vec<_>>(),
+            ["styles/site.css", "scripts/gallery.js"]
+        );
+        assert_eq!(Host::new().asset_paths().count(), 0);
+    }
+
+    #[test]
+    fn replaces_the_manifest_rather_than_adding_to_it() {
+        // A manifest is one build's whole answer. Merging would let an asset the last
+        // build dropped go on resolving, which is the stale URL this exists to catch.
+        let rebuilt = built().with_assets([("styles/site.css", "/site.999.css")]);
+        assert_eq!(rebuilt.asset("styles/site.css"), Some("/site.999.css"));
+        assert_eq!(rebuilt.asset("scripts/gallery.js"), None);
+    }
+
+    #[test]
+    fn makes_a_manifest_change_a_change_to_the_declaration() {
+        // What the resident `Core` compares to decide whether to recompile (D38).
+        assert_ne!(
+            built(),
+            built().with_assets([("styles/site.css", "/x.css")])
+        );
+        assert_eq!(built(), built());
+    }
+
+    #[test]
+    fn says_why_a_path_is_no_asset_and_offers_the_nearest_when_there_is_one() {
+        assert_eq!(
+            no_asset(&built(), "styles/sight.css"),
+            "the manifest has no asset `styles/sight.css`; did you mean \
+             `styles/site.css`?"
+        );
+        assert_eq!(
+            no_asset(&built(), "vendor/analytics.js"),
+            "the manifest has no asset `vendor/analytics.js`"
+        );
+        assert_eq!(
+            no_asset(&Host::new(), "styles/site.css"),
+            "the manifest has no asset `styles/site.css`; the host declares none"
+        );
     }
 
     #[test]

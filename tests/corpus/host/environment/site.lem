@@ -10,6 +10,7 @@
   subhead: string?
   date: datetime = datetime("2026-01-01")
   runtime: duration?
+  scripts: [asset] = []
   hero: Photo? by site.photos
   layout: (Article, html): html = article
 </lem-type>

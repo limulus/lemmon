@@ -57,6 +57,11 @@ pub struct Unit {
     /// first read it. The declaration behind such a type is a `TypeRef` like any
     /// other; this is the binding itself — that the host called `page` a `Page` (D30).
     pub ambient_refs: Vec<AmbientRef>,
+    /// The fourth: every `asset("…")` this file resolved, with the URL the manifest
+    /// gave it. `asset()` is answered while compiling (D10) and the URL folded into the
+    /// bytecode, so a build that re-hashes that asset leaves this unit stale and every
+    /// unit that never named it untouched — which is invariant 11 stated as a test.
+    pub asset_refs: Vec<AssetRef>,
     /// The record the host compiled this file as, which types its document value: a
     /// fact of the unit like the rest, and the reason two documents of different
     /// schemas cannot share one.
@@ -202,6 +207,15 @@ pub struct AmbientRef {
     pub ty: Type,
 }
 
+/// A manifest entry a file was compiled against: the logical path it asked for, the URL
+/// it was given, and the literal it asked at.
+#[derive(Clone, Debug, PartialEq)]
+pub struct AssetRef {
+    pub path: Rc<str>,
+    pub url: Rc<str>,
+    pub span: Span,
+}
+
 /// A symbolic reference to a function or type another file defines.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ImportRef {
@@ -319,6 +333,29 @@ pub fn link(units: &[Unit], index: &ExportIndex, host: &Host) -> Compiled<Module
                         &unit.path,
                         reference.span,
                         format!("the host no longer binds `{}`", reference.name),
+                    )),
+                }
+            }
+            // A manifest entry is the same kind of fact, and the one that moves most
+            // often: every rebuild of an asset re-hashes its URL, and the URL is inside
+            // this unit's bytecode. Compared against the declaration rather than the
+            // file's view, since an asset is the host's and no file retypes one.
+            for reference in &unit.asset_refs {
+                match host.asset(&reference.path) {
+                    Some(url) if url == &*reference.url => {}
+                    Some(url) => diagnostics.push(Diagnostic::error(
+                        &unit.path,
+                        reference.span,
+                        format!(
+                            "the manifest maps `{}` to `{url}` now, and this file was \
+                             compiled against `{}`",
+                            reference.path, reference.url
+                        ),
+                    )),
+                    None => diagnostics.push(Diagnostic::error(
+                        &unit.path,
+                        reference.span,
+                        format!("`{}` is no longer in the manifest", reference.path),
                     )),
                 }
             }
@@ -1896,6 +1933,78 @@ mod tests {
             starts,
             [at(PAGE, "Article").start, at(PAGE, "f(a.title)").start]
         );
+    }
+
+    /// A host with one asset built, which is what the asset tests compile against.
+    fn built() -> Host {
+        Host::new().with_assets([("styles/site.css", "/site.abc123.css")])
+    }
+
+    #[test]
+    fn compiles_a_unit_that_names_an_asset_to_the_same_bytes_under_the_same_manifest() {
+        // Invariant 11's first half: the fact is only worth recording if consuming it
+        // is stable. Two compiles against one manifest are one unit.
+        const TEMPLATE: &str = "<lem.asset(\"styles/site.css\")>";
+        let files = [("page.lem", TEMPLATE)];
+        let once = unit_against(&built(), "page.lem", &files);
+        let twice = unit_against(&built(), "page.lem", &files);
+        assert_eq!(once.constants, twice.constants);
+        assert_eq!(once.functions, twice.functions);
+        assert_eq!(
+            once.asset_refs
+                .iter()
+                .map(|reference| (&*reference.path, &*reference.url))
+                .collect::<Vec<_>>(),
+            [("styles/site.css", "/site.abc123.css")]
+        );
+    }
+
+    #[test]
+    fn refuses_to_link_a_unit_the_manifest_has_moved_the_asset_under() {
+        // The other half, and the one that earns the fact: the URL is inside this
+        // unit's bytecode, so a rebuild that re-hashes the asset leaves it stale. A
+        // file that named no asset is untouched by the same rebuild.
+        const TEMPLATE: &str = "<lem.asset(\"styles/site.css\")>";
+        let files = [("page.lem", TEMPLATE)];
+        let unit = unit_against(&built(), "page.lem", &files);
+        for (rebuilt, expect) in [
+            (
+                Host::new().with_assets([("styles/site.css", "/site.def456.css")]),
+                format!(
+                    "page.lem:{}: the manifest maps `styles/site.css` to \
+                     `/site.def456.css` now, and this file was compiled against \
+                     `/site.abc123.css`",
+                    at(TEMPLATE, "\"styles/site.css\"")
+                ),
+            ),
+            (
+                Host::new(),
+                format!(
+                    "page.lem:{}: `styles/site.css` is no longer in the manifest",
+                    at(TEMPLATE, "\"styles/site.css\"")
+                ),
+            ),
+        ] {
+            let units = [unit.clone()];
+            let linked = link(&units, &ExportIndex::of(&units), &rebuilt);
+            assert_eq!(
+                linked
+                    .diagnostics
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>(),
+                [expect]
+            );
+            assert!(linked.output.is_none());
+        }
+    }
+
+    #[test]
+    fn records_one_fact_however_many_times_a_file_names_the_same_asset() {
+        const TEMPLATE: &str =
+            "<lem.asset(\"styles/site.css\")><lem.asset(\"styles/site.css\")>";
+        let unit = unit_against(&built(), "page.lem", &[("page.lem", TEMPLATE)]);
+        assert_eq!(unit.asset_refs.len(), 1);
     }
 
     #[test]

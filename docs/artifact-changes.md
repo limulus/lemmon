@@ -152,6 +152,36 @@ moved it. Newest last. An entry is removed when its change has been applied.
   document value is bound as sent, untyped, since the envelope carries it only for a
   document no collection matched (D37, ∆iCW).
 
+- **Types, the stdlib's values** — where the text lists the builtin types, say what each
+  one now *is*. A `datetime` is an instant plus the offset it was written in, printing
+  RFC 3339 in that offset and comparing by the instant alone, with no time-zone database
+  and a named zone refused rather than read for its offset; a `duration` is whole seconds
+  with no printed form; a `url` is text percent-encoded once, idempotently, with `text()`
+  to compose another from; an `asset` is a path resolved against the manifest the host
+  declares at `compile`. Add the per-receiver method inventory D34 deferred — string,
+  list, map, int, float, datetime, duration, url, html — and say that `slugify` folds
+  Latin marks rather than transliterating, carrying a script it cannot fold through
+  unchanged, and that a character is a grapheme cluster throughout (D38, ∆Q6L).
+
+- **Names, the ambient inventory** — where the text says the stdlib's ambient functions
+  are `raw`, `datetime` and `url` with others to come, say the namespace is closed at
+  five: `raw`, `datetime`, `url`, `asset`, `uniqueId`. Everything else the stdlib offers
+  is a method on the type it works on and occupies no namespace (D34, D38).
+
+- **Checking, printing and calls** — where printing is described, add `datetime`, `url`
+  and `asset` to what prints and `duration` to what does not. Where a builtin's typing
+  rule is described, say that `datetime("…")` and `.format("…")` are read a second time
+  at compile when their argument is a literal, and that `asset("…")` takes only a literal
+  and is answered entirely at compile — it emits no call (D10, D38).
+
+- **Schemas, the computed example** — the `readingTime` line is
+  `readingTime: duration = body.readingTime()`, a method on the document's `html`, not an
+  ambient function over it (D34, ∆Q6L).
+
+- **Fields, the did-you-mean** — a misspelled method *read* now names the call it meant
+  (`s.slugfy` → "did you mean `.slugify()`?"), as a misspelled call already did; a call
+  lists the receiver's whole inventory only when no name is near (∆eHR).
+
 ## Shell & Core
 
 - **WASM API, `compile` and `loadData`** — a file may carry `recordSpan`, the byte
@@ -263,6 +293,36 @@ moved it. Newest last. An entry is removed when its change has been applied.
 - **VM, the module's plans** — where the text gives `RecordPlan` as a record's ordered
   steps, add `indexes` beside them: each a field with the ambient value and field its
   strings resolve through; a step is a default only, with no kind (∆eag).
+
+- **WASM API, `compile` and the manifest** — where `HostDecl` is given as
+  `{ambient, document?, entry?}`, add `assets?: {[logicalPath]: url}`: the manifest the
+  host's build produced, its values the URLs assets shipped at rather than content
+  hashes, since the core does no path arithmetic. Say it rides on the declaration and not
+  on `loadData`'s envelope because `asset("…")` is answered while compiling, and that a
+  rebuild re-hashing an asset is therefore a change to the declaration (D10, D38).
+
+- **Build pipeline, steps 2 and 4** — step 2's esbuild manifest is handed to `compile` on
+  the host declaration rather than to `loadData`; step 4 resolves `[asset]` fields against
+  that same manifest, reporting a miss at the YAML position the shell sent (D38).
+
+- **Separate compilation, the facts a unit records** — add the manifest entries a file
+  resolved to the signatures, type references and ambient bindings it already lists. A
+  file that named an asset is recompiled when that asset's URL changes, and a file that
+  named none is not (D25, D38).
+
+- **VM, the stdlib's values and the id counter** — `Value` carries `Datetime`, `Duration`,
+  `Url` and `Asset` beside the rest, and stays twenty-four bytes: a datetime is packed
+  into sixteen rather than held as a timestamp beside an offset. Ordering lives in
+  `Value::order` so one rule serves `lt` and `sortBy`. Native re-entry has a cap of its
+  own, separate from the frame count, because a builtin that calls back into the VM costs
+  the machine's stack rather than the heap. The VM carries a per-prefix counter behind
+  `uniqueId`, cleared at the start of every render (D38, ∆Q6L).
+
+- **Crates** — `jiff` (`alloc` only: no clock, no system zone, no tzdb),
+  `percent-encoding`, `unicode-normalization` and `unicode-segmentation`. Say that
+  transliteration was measured and rejected — `deunicode` cost 479 KB of the artifact and
+  `any_ascii` 582 KB — and that the `url` crate was rejected for refusing relative
+  references (D38).
 
 ## From Eleventy to Lemmon
 

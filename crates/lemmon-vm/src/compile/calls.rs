@@ -28,6 +28,15 @@ use super::names::Resolved;
 use super::rules::{self, Arg};
 use super::{Compiler, TokenSpan, required};
 
+/// `expr` as the token of the string literal it is, parentheses aside — what both the
+/// entries that read an argument at compile time need, and nothing else is.
+fn string_literal(expr: Expr) -> Option<SyntaxToken> {
+    let Expr::Literal(literal) = unparen(expr) else {
+        return None;
+    };
+    (literal.kind() == Some(LiteralKind::String)).then(|| required(literal.token()))
+}
+
 impl Compiler<'_> {
     pub(super) fn call(&mut self, call: &CallExpr) -> Type {
         let span = call.span();
@@ -207,6 +216,12 @@ impl Compiler<'_> {
             self.discard(positional, &[]);
             return Type::Any;
         }
+        // `asset()` is not a call at run time at all — the manifest is a compile-time
+        // fact, so the whole thing folds to the URL it resolved to (D10). Intercepted
+        // before the loop below, because there is no argument to lower.
+        if (builtin.reach, builtin.name) == (Reach::Ambient, "asset") {
+            return self.call_asset(positional);
+        }
         // Arguments lower left to right, each under what the builtin's rule expects of
         // it given the types so far (D34) — how `xs.map(|a| …)` types `a` from `xs`.
         let mut types = Vec::with_capacity(arity);
@@ -238,6 +253,40 @@ impl Compiler<'_> {
         self.rule(span, (BUILTINS[id as usize].ty)(&types))
     }
 
+    /// Lowers `asset("…")` to the URL the manifest gives its path, as a constant.
+    ///
+    /// Only a literal path is accepted. The alternative — resolving at render — would
+    /// make a typo a broken link on one page instead of a compile error with a span
+    /// (D10), and would make every unit depend on the whole manifest rather than on the
+    /// entries it actually named, which is the dependency invariant 11 exists to keep
+    /// narrow. So a computed path is refused where it stands rather than deferred.
+    ///
+    /// A path the manifest has not got is reported by [`asset_ref`](Self::asset_ref) and
+    /// a null stands in its place. The file has an error and so yields no unit; what is
+    /// emitted past one is unbalanced and never runs, as [`discard`](Self::discard)'s
+    /// is, and exists only so the rest of the walk has something to check against.
+    fn call_asset(&mut self, positional: &[Expr]) -> Type {
+        let argument = positional.first().expect("arity is checked above");
+        let url = match string_literal(argument.clone()) {
+            Some(token) => self.asset_ref(&decode_string(token.text()), token.span()),
+            None => {
+                self.error(
+                    argument.span(),
+                    "`asset()` needs a path written as a literal: the manifest is read \
+                     while this file compiles, and a path a render computes cannot be \
+                     looked up then"
+                        .to_owned(),
+                );
+                self.discard(positional, &[]);
+                None
+            }
+        };
+        let value = url.map_or(Value::Null, Value::Asset);
+        let index = self.constant(value);
+        self.emit(Op::Const { index }, argument.span());
+        Type::Asset
+    }
+
     /// Reports a first argument written as a literal that `read` refuses, at the
     /// literal rather than at the render that would have hit it.
     ///
@@ -256,13 +305,9 @@ impl Compiler<'_> {
         let Some(argument) = positional.first() else {
             return;
         };
-        let Expr::Literal(literal) = unparen(argument.clone()) else {
+        let Some(token) = string_literal(argument.clone()) else {
             return;
         };
-        if literal.kind() != Some(LiteralKind::String) {
-            return;
-        }
-        let token = required(literal.token());
         if let Err(message) = read(&decode_string(token.text())) {
             self.error(token.span(), message);
         }

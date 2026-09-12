@@ -1,6 +1,8 @@
 # D37 — Schemas at load
 
-- **Status:** Accepted 2026-09-08 (∆iCW); revised 2026-09-09 (∆HF0) in one clause —
+- **Status:** Accepted 2026-09-08 (∆iCW); revised 2026-09-12 (∆Q6L) — a string in
+  data also resolves as a `datetime`, a `url`, or an `asset` by its declared type
+  (D38); revised 2026-09-09 (∆HF0) in one clause —
   the recorded reads are closed through calls by name at link, so the order is exact
   for reads through a `lem-fn` too, and only a call through a value stays a load error
   at the read; revised 2026-09-10 (∆eag) — a `by` index names one field of one
@@ -90,8 +92,9 @@ rule a record literal follows too; an omitted field of any other type without a 
 an error; an unknown key an error with no opt-out. A string resolves by its expected
 type: an enum's variant, a project function of an assignable type where a function type
 is expected (`layout: article`), the value a `by` index maps it to where a reference
-field is — and never `html`, since `raw()` is the only string that becomes one
-(invariant 7). A whole number is a `float` where one is declared, because a shell
+field is, a `datetime` parsed, a `url` percent-encoded, an `asset` looked up in the
+manifest the host declared (D38) — and never `html`, since `raw()` is the only string
+that becomes one (invariant 7). A whole number is a `float` where one is declared, because a shell
 serialising JSON cannot tell `2` from `2.0`; the checker's rule that an `int` is not a
 `float` stands, and a whole number a float cannot hold exactly is an error. A document in
 a glob binding is validated as the record it was compiled as, which must extend the

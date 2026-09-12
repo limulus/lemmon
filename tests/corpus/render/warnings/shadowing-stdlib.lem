@@ -8,4 +8,6 @@
 <lem-fn url(path: string): string = "/blog/" + path />
 <lem-let datetime = "a name an author may well reach for" />
 <lem-let urls = ["/a/"] />
-<lem.url("a")><lem.datetime><lem.urls[0]>
+<lem-fn asset(path: string): string = "/static/" + path />
+<lem-let uniqueId = "and one an author would not, but the warning is the same" />
+<lem.url("a")><lem.datetime><lem.urls[0]><lem.asset("x")><lem.uniqueId>

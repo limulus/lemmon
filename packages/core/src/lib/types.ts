@@ -48,13 +48,25 @@ export interface HostDecl {
    * every record that extends the document value's type.
    */
   entry?: string
+  /**
+   * The manifest the host's build produced: each asset's logical path mapped to the URL
+   * it shipped at, in the order a diagnostic should list them.
+   *
+   * The value is the finished URL and not a content hash — the core does no path
+   * arithmetic, since where an asset lands is the shell's question (D38). It belongs to
+   * the declaration rather than to {@link DataInput} because `asset("…")` is answered
+   * while compiling (D10): the URL is folded into the bytecode, and the entry it came
+   * from is a compile-time fact the link step compares. A rebuild that re-hashes an
+   * asset is therefore a change to this declaration, and recompiles the files that
+   * named it — and only those.
+   */
+  assets?: Record<string, string>
 }
 
 /**
  * What {@link Core.loadData} takes (D37): the host's own ambient values, and what
  * fulfils each `from` binding of the program's bindings files. Which names must be
- * present is the program's to say, so an empty envelope is a well-formed one. The
- * asset manifest is an additive field not yet here (∆d1N).
+ * present is the program's to say, so an empty envelope is a well-formed one.
  */
 export interface DataInput {
   /**

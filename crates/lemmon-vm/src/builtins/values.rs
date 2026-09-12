@@ -72,9 +72,57 @@ pub(super) fn url(_host: &mut dyn Host, args: &[Value]) -> Result<Value, Fault> 
     }
 }
 
+/// `asset(path: string): asset` — the type is fixed, since the path is a literal the
+/// compiler has already read.
+pub(super) fn asset_type(_args: &[Type]) -> Result<Type, String> {
+    Ok(Type::Asset)
+}
+
+/// `asset(path)` never runs.
+///
+/// The entry is in the table so that the name resolves, the arity is checked, and the
+/// shadowing warning fires as it does for every other ambient function — but
+/// `compile/calls.rs` folds the call to the URL the manifest gave it and emits no
+/// `CallBuiltin` at all (D10). Reaching here would mean that folding was skipped, which
+/// is a bug in the compiler rather than a mistake in a template.
+pub(super) fn asset(_host: &mut dyn Host, _args: &[Value]) -> Result<Value, Fault> {
+    Err(Fault::from(
+        "asset() is resolved while compiling and should never run",
+    ))
+}
+
+/// `uniqueId(prefix: string): string` — an id is text a template puts in an attribute.
+pub(super) fn unique_id_type(args: &[Type]) -> Result<Type, String> {
+    match &args[0] {
+        Type::String | Type::Any => Ok(Type::String),
+        other => Err(format!("uniqueId() takes a string, got `{other}`")),
+    }
+}
+
+/// `uniqueId(prefix)`: `prefix-0`, then `prefix-1`, counting separately for each prefix
+/// and starting again at every render.
+///
+/// An `id` has to be unique within the page it is written on, and a component that
+/// writes one cannot see the rest of the page — so the count is the VM's rather than the
+/// template's, which is the only thing in the stdlib that remembers anything between
+/// calls. It remembers deterministically: the same page rendered twice gives the same
+/// ids, because the counter starts at zero and the walk order is the document's
+/// (invariant 1).
+pub(super) fn unique_id(host: &mut dyn Host, args: &[Value]) -> Result<Value, Fault> {
+    match &args[0] {
+        Value::Str(prefix) => {
+            let n = host.next_id(prefix);
+            Ok(Value::str(format!("{prefix}-{n}")))
+        }
+        other => {
+            Err(format!("uniqueId() takes a string, got {}", other.type_name()).into())
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::super::tests::{ambient, call};
+    use super::super::tests::{Apply, ambient, call, itself};
     use super::*;
 
     #[test]
@@ -146,6 +194,50 @@ mod tests {
         );
         assert_eq!(url_type(&[Type::String]), Ok(Type::Url));
         assert_eq!(url_type(&[Type::Any]), Ok(Type::Url));
+    }
+
+    #[test]
+    fn asset_refuses_to_run_because_the_compiler_answered_it() {
+        // The entry exists so the name resolves, the arity is checked, and the
+        // shadowing warning fires; `compile/calls.rs` emits no call at all (D10).
+        assert_eq!(asset_type(&[Type::String]), Ok(Type::Asset));
+        assert_eq!(
+            call(ambient("asset"), &[Value::str("styles/site.css")]).unwrap_err(),
+            Fault::from("asset() is resolved while compiling and should never run")
+        );
+    }
+
+    #[test]
+    fn unique_id_counts_from_zero_and_keeps_a_prefix_to_itself() {
+        let entry = ambient("uniqueId");
+        let mut host = Apply::new(itself);
+        let ids: Vec<Value> = ["desc", "desc", "field", "desc"]
+            .iter()
+            .map(|prefix| (entry.call)(&mut host, &[Value::str(*prefix)]).unwrap())
+            .collect();
+        assert_eq!(
+            ids,
+            [
+                Value::str("desc-0"),
+                Value::str("desc-1"),
+                Value::str("field-0"),
+                Value::str("desc-2")
+            ]
+        );
+        assert_eq!(unique_id_type(&[Type::String]), Ok(Type::String));
+        assert_eq!(unique_id_type(&[Type::Any]), Ok(Type::String));
+    }
+
+    #[test]
+    fn unique_id_refuses_anything_that_is_not_a_string() {
+        assert_eq!(
+            unique_id_type(&[Type::Int]),
+            Err("uniqueId() takes a string, got `int`".to_owned())
+        );
+        assert_eq!(
+            call(ambient("uniqueId"), &[Value::Int(1)]).unwrap_err(),
+            Fault::from("uniqueId() takes a string, got int")
+        );
     }
 
     #[test]

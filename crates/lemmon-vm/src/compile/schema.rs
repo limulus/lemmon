@@ -19,8 +19,9 @@ use lemmon_syntax::Span;
 use lemmon_syntax::ast::TypeExpr;
 
 use crate::decls::{Declaration, Decls, FieldDecl, Kind, Shape};
+use crate::host::no_asset;
 use crate::types::Type;
-use crate::unit::{AmbientRef, ImportRef, TypeRef};
+use crate::unit::{AmbientRef, AssetRef, ImportRef, TypeRef};
 
 use super::surfaces::PreparedFile;
 use super::{Compiler, Diagnostic, annotations, duplicate_named};
@@ -54,6 +55,39 @@ impl Compiler<'_> {
                 self.note_type(&reference.name, reference.span);
             }
         }
+    }
+
+    /// The URL `asset("path")` resolves to, recorded as a fact of this unit the first
+    /// time the file asks for that path (D25, D10).
+    ///
+    /// The lookup is the whole of `asset()`: the URL becomes a constant in the bytecode
+    /// and nothing is looked up at render. That is why the entry has to be recorded —
+    /// a rebuild that re-hashes the asset must leave this unit stale, and the link step
+    /// has nothing else to notice it by (invariant 11).
+    ///
+    /// A path the manifest has not got is an error naming the nearest it has, or saying
+    /// there are none — a host with no build declares no assets, and `asset()` under one
+    /// is a mistake worth its own sentence rather than a did-you-mean over nothing.
+    pub(super) fn asset_ref(&mut self, path: &str, span: Span) -> Option<Rc<str>> {
+        if let Some(reference) = self
+            .unit
+            .asset_refs
+            .iter()
+            .find(|reference| &*reference.path == path)
+        {
+            return Some(reference.url.clone());
+        }
+        let Some(url) = self.host.asset(path) else {
+            self.error(span, no_asset(self.host, path));
+            return None;
+        };
+        let url: Rc<str> = Rc::from(url);
+        self.unit.asset_refs.push(AssetRef {
+            path: Rc::from(path),
+            url: url.clone(),
+            span,
+        });
+        Some(url)
     }
 
     /// The type an ambient value has here, recorded as a fact of this unit the first

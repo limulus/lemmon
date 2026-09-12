@@ -188,6 +188,17 @@ describe('Core', () => {
       expect(wrong.message).toBe('`Post` has no field `byline`')
     })
 
+    it('should resolve an asset against the manifest the declaration carries', async () => {
+      const core = await loadCore()
+      const page = { path: 'page.lem', text: '<lem.asset("styles/site.css")>' }
+      const built = { ...untyped, assets: { 'styles/site.css': '/site.abc123.css' } }
+      expect(core.compile([page], built)).toEqual([])
+      const [missing] = core.compile([page], untyped)
+      expect(missing.message).toBe(
+        'the manifest has no asset `styles/site.css`; the host declares none'
+      )
+    })
+
     it('should keep the declaration for calls that carry none', async () => {
       const core = await loadCore()
       core.compile(schema, declared)

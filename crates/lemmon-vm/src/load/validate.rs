@@ -13,6 +13,7 @@ use std::rc::Rc;
 use crate::compile::{Diagnostic, omittable};
 use crate::datetime::Datetime;
 use crate::decls::{Decls, Kind, no_field};
+use crate::host::no_asset;
 use crate::plan::{Index, Step};
 use crate::types::{Type, assignable};
 use crate::url;
@@ -103,6 +104,17 @@ impl Loader<'_> {
                 }
             },
             (Type::Url, Value::Str(text)) => Some(Value::url(url::encode(&text))),
+            // An `[asset]` field resolves against the manifest the host declared, which
+            // is the same map `asset("…")` was compiled against — so a path is one
+            // asset whether a template named it or a document's front matter did. The
+            // refusal is worded as the compiler words it, for the same reason.
+            (Type::Asset, Value::Str(path)) => match self.host.asset(&path) {
+                Some(url) => Some(Value::asset(url)),
+                None => {
+                    self.diagnostics.push(at.error(no_asset(self.host, &path)));
+                    None
+                }
+            },
             // A duration is a count of seconds, which is what a shell serialising a
             // front-matter `duration: 1490` sends.
             (Type::Duration, Value::Int(seconds)) if seconds >= 0 => {
@@ -1066,8 +1078,11 @@ mod tests {
                     "site.lem:{}: expected `url` for `scalars.u`, got `bool`",
                     at(site, "«u»: url")
                 ),
+                // Not the generic mismatch any more: an `asset` field resolves
+                // against the manifest, and this host declared none.
                 format!(
-                    "site.lem:{}: expected `asset?` for `scalars.a`, got `string`",
+                    "site.lem:{}: the manifest has no asset `styles/site.css`; the \
+                     host declares none",
                     at(site, "«a»: asset?")
                 ),
                 format!(

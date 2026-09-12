@@ -114,6 +114,12 @@ pub trait Host {
     /// the wrong arity, the depth cap — and a [`Fault::Placed`] when the call ran and
     /// failed inside, already pointing at the source that failed.
     fn invoke(&mut self, callee: &Value, args: Vec<Value>) -> Result<Value, Fault>;
+
+    /// The next number for `prefix`, counting from zero and separately per prefix —
+    /// what `uniqueId` is built on. The only state a builtin may ask the VM to keep,
+    /// and it starts again at every render so that two renders of a page agree
+    /// (invariant 1).
+    fn next_id(&mut self, prefix: &str) -> u64;
 }
 
 /// How a builtin fails.
@@ -207,6 +213,8 @@ pub const BUILTINS: &[Builtin] = &[
     ambient("raw", 1, values::raw_type, values::raw),
     ambient("datetime", 1, values::datetime_type, values::datetime),
     ambient("url", 1, values::url_type, values::url),
+    ambient("asset", 1, values::asset_type, values::asset),
+    ambient("uniqueId", 1, values::unique_id_type, values::unique_id),
     // `string`
     method(
         Kind::String,
@@ -649,11 +657,16 @@ pub(crate) mod tests {
     pub(crate) struct Apply {
         apply: fn(&Value) -> Result<Value, Fault>,
         pub(crate) calls: usize,
+        ids: std::collections::BTreeMap<String, u64>,
     }
 
     impl Apply {
         pub(crate) fn new(apply: fn(&Value) -> Result<Value, Fault>) -> Self {
-            Self { apply, calls: 0 }
+            Self {
+                apply,
+                calls: 0,
+                ids: std::collections::BTreeMap::new(),
+            }
         }
     }
 
@@ -661,6 +674,13 @@ pub(crate) mod tests {
         fn invoke(&mut self, _callee: &Value, args: Vec<Value>) -> Result<Value, Fault> {
             self.calls += 1;
             (self.apply)(&args[0])
+        }
+
+        /// Counts as the VM's does, so that `uniqueId` can be tested without one.
+        fn next_id(&mut self, prefix: &str) -> u64 {
+            let next = self.ids.entry(prefix.to_owned()).or_default();
+            *next += 1;
+            *next - 1
         }
     }
 

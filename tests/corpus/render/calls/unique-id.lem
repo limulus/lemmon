@@ -1,0 +1,16 @@
+<lem-fn field(label: string)>
+  <lem-let id = uniqueId("field") />
+  <label for="<lem.id>"><lem.label></label>
+  <input id="<lem.id>" />
+</lem-fn>
+
+<lem.field("Name")>
+<lem.field("Email")>
+
+<lem-let icons = ["scroll", "film"] />
+<lem-for name in icons>
+  <svg aria-labelledby="<lem.uniqueId("desc")>"><use href="#<lem.name>" /></svg>
+</lem-for>
+
+<p><lem.icons.map(|n| uniqueId(n)).join(", ")></p>
+<p>and the counters are separate: <lem.uniqueId("field")> <lem.uniqueId("desc")></p>
