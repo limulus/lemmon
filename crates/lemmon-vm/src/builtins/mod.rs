@@ -7,7 +7,7 @@
 //! [`method`], which reads no namespace at all. A method's receiver is its first
 //! argument, so `s.slugify()` and a one-argument ambient function push the same stack.
 //!
-//! A builtin runs against a [`Host`] — the VM — so that one taking a function, `map` or
+//! A builtin runs against a [`Machine`] — the VM — so that one taking a function, `map` or
 //! `filter`, can invoke it and get the value back mid-instruction; and its typing rule
 //! has a companion, [`Builtin::expect`], that shapes each argument from the ones before
 //! it, which is what types `xs.map(|a| …)`'s parameter from the receiver's element type.
@@ -30,9 +30,9 @@ use crate::{RuntimeError, Value};
 
 /// A builtin type as a method's receiver: [`Type`] with its element types dropped,
 /// which is all dispatch needs — every `[T]` carries the same methods, and what `T` is
-/// belongs to the entry's [typing rule](Builtin::ty).
+/// belongs to the entry's [typing rule](Builtin::rule).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Kind {
+pub enum ReceiverKind {
     String,
     Int,
     Float,
@@ -46,7 +46,7 @@ pub enum Kind {
     Map,
 }
 
-impl Kind {
+impl ReceiverKind {
     /// The receiver kind of `ty`, when it has one. `any` has no type to dispatch on; an
     /// optional is unwrapped by the caller of `?.` before it asks; and a function, a
     /// declared type, and `null` carry no methods at all.
@@ -101,11 +101,11 @@ pub enum Reach {
     Ambient,
     /// As a method on a receiver of this kind: `s.slugify()`. The name is the type's,
     /// not the namespace's, so nothing an author binds can shadow or collide with it.
-    Method(Kind),
+    Method(ReceiverKind),
 }
 
 /// What a builtin may ask of the VM running it.
-pub trait Host {
+pub trait Machine {
     /// Calls `callee` with `args`, runs it to completion, and hands back its value.
     ///
     /// # Errors
@@ -176,9 +176,9 @@ pub struct Builtin {
     /// signature says that. A method's rule is asked only about receivers dispatch has
     /// already matched, so it types the result and does not re-check what kind the
     /// receiver was.
-    pub ty: fn(&[Type]) -> Result<Type, String>,
+    pub rule: fn(&[Type]) -> Result<Type, String>,
     /// The implementation, with the VM to invoke a function argument through.
-    pub call: fn(&mut dyn Host, &[Value]) -> Result<Value, Fault>,
+    pub call: fn(&mut dyn Machine, &[Value]) -> Result<Value, Fault>,
 }
 
 impl Builtin {
@@ -217,7 +217,7 @@ pub const BUILTINS: &[Builtin] = &[
     ambient("uniqueId", 1, values::unique_id_type, values::unique_id),
     // `string`
     method(
-        Kind::String,
+        ReceiverKind::String,
         "trim",
         1,
         unshaped,
@@ -225,7 +225,7 @@ pub const BUILTINS: &[Builtin] = &[
         strings::trim,
     ),
     method(
-        Kind::String,
+        ReceiverKind::String,
         "lower",
         1,
         unshaped,
@@ -233,7 +233,7 @@ pub const BUILTINS: &[Builtin] = &[
         strings::lower,
     ),
     method(
-        Kind::String,
+        ReceiverKind::String,
         "upper",
         1,
         unshaped,
@@ -241,7 +241,7 @@ pub const BUILTINS: &[Builtin] = &[
         strings::upper,
     ),
     method(
-        Kind::String,
+        ReceiverKind::String,
         "slugify",
         1,
         unshaped,
@@ -249,7 +249,7 @@ pub const BUILTINS: &[Builtin] = &[
         strings::slugify,
     ),
     method(
-        Kind::String,
+        ReceiverKind::String,
         "length",
         1,
         unshaped,
@@ -257,7 +257,7 @@ pub const BUILTINS: &[Builtin] = &[
         strings::length,
     ),
     method(
-        Kind::String,
+        ReceiverKind::String,
         "split",
         2,
         wants_string,
@@ -265,7 +265,7 @@ pub const BUILTINS: &[Builtin] = &[
         strings::split,
     ),
     method(
-        Kind::String,
+        ReceiverKind::String,
         "replace",
         3,
         wants_string,
@@ -273,7 +273,7 @@ pub const BUILTINS: &[Builtin] = &[
         strings::replace,
     ),
     method(
-        Kind::String,
+        ReceiverKind::String,
         "startsWith",
         2,
         wants_string,
@@ -281,7 +281,7 @@ pub const BUILTINS: &[Builtin] = &[
         strings::starts_with,
     ),
     method(
-        Kind::String,
+        ReceiverKind::String,
         "endsWith",
         2,
         wants_string,
@@ -289,7 +289,7 @@ pub const BUILTINS: &[Builtin] = &[
         strings::ends_with,
     ),
     method(
-        Kind::String,
+        ReceiverKind::String,
         "contains",
         2,
         wants_string,
@@ -298,7 +298,7 @@ pub const BUILTINS: &[Builtin] = &[
     ),
     // `[T]`
     method(
-        Kind::List,
+        ReceiverKind::List,
         "first",
         1,
         unshaped,
@@ -306,16 +306,23 @@ pub const BUILTINS: &[Builtin] = &[
         lists::first,
     ),
     method(
-        Kind::List,
+        ReceiverKind::List,
         "last",
         1,
         unshaped,
         lists::element_or_null,
         lists::last,
     ),
-    method(Kind::List, "length", 1, unshaped, yields_int, lists::length),
     method(
-        Kind::List,
+        ReceiverKind::List,
+        "length",
+        1,
+        unshaped,
+        yields_int,
+        lists::length,
+    ),
+    method(
+        ReceiverKind::List,
         "reverse",
         1,
         unshaped,
@@ -323,7 +330,7 @@ pub const BUILTINS: &[Builtin] = &[
         lists::reverse,
     ),
     method(
-        Kind::List,
+        ReceiverKind::List,
         "contains",
         2,
         lists::wants_element,
@@ -331,7 +338,7 @@ pub const BUILTINS: &[Builtin] = &[
         lists::contains,
     ),
     method(
-        Kind::List,
+        ReceiverKind::List,
         "take",
         2,
         wants_count,
@@ -339,7 +346,7 @@ pub const BUILTINS: &[Builtin] = &[
         lists::take,
     ),
     method(
-        Kind::List,
+        ReceiverKind::List,
         "drop",
         2,
         wants_count,
@@ -347,7 +354,7 @@ pub const BUILTINS: &[Builtin] = &[
         lists::drop,
     ),
     method(
-        Kind::List,
+        ReceiverKind::List,
         "join",
         2,
         wants_string,
@@ -355,7 +362,7 @@ pub const BUILTINS: &[Builtin] = &[
         lists::join,
     ),
     method(
-        Kind::List,
+        ReceiverKind::List,
         "map",
         2,
         lists::wants_mapper,
@@ -363,7 +370,7 @@ pub const BUILTINS: &[Builtin] = &[
         lists::map,
     ),
     method(
-        Kind::List,
+        ReceiverKind::List,
         "filter",
         2,
         lists::wants_predicate,
@@ -371,7 +378,7 @@ pub const BUILTINS: &[Builtin] = &[
         lists::filter,
     ),
     method(
-        Kind::List,
+        ReceiverKind::List,
         "find",
         2,
         lists::wants_predicate,
@@ -379,7 +386,7 @@ pub const BUILTINS: &[Builtin] = &[
         lists::find,
     ),
     method(
-        Kind::List,
+        ReceiverKind::List,
         "any",
         2,
         lists::wants_predicate,
@@ -387,7 +394,7 @@ pub const BUILTINS: &[Builtin] = &[
         lists::any,
     ),
     method(
-        Kind::List,
+        ReceiverKind::List,
         "sortBy",
         2,
         lists::wants_mapper,
@@ -395,7 +402,7 @@ pub const BUILTINS: &[Builtin] = &[
         lists::sort_by,
     ),
     method(
-        Kind::List,
+        ReceiverKind::List,
         "groupBy",
         2,
         lists::wants_key,
@@ -403,19 +410,33 @@ pub const BUILTINS: &[Builtin] = &[
         lists::group_by,
     ),
     // `{string: V}`
-    method(Kind::Map, "keys", 1, unshaped, maps::keys_type, maps::keys),
     method(
-        Kind::Map,
+        ReceiverKind::Map,
+        "keys",
+        1,
+        unshaped,
+        maps::keys_type,
+        maps::keys,
+    ),
+    method(
+        ReceiverKind::Map,
         "values",
         1,
         unshaped,
         maps::values_type,
         maps::values,
     ),
-    method(Kind::Map, "has", 2, wants_string, yields_bool, maps::has),
+    method(
+        ReceiverKind::Map,
+        "has",
+        2,
+        wants_string,
+        yields_bool,
+        maps::has,
+    ),
     // `int` and `float`
     method(
-        Kind::Int,
+        ReceiverKind::Int,
         "abs",
         1,
         unshaped,
@@ -423,7 +444,7 @@ pub const BUILTINS: &[Builtin] = &[
         numbers::int_abs,
     ),
     method(
-        Kind::Float,
+        ReceiverKind::Float,
         "abs",
         1,
         unshaped,
@@ -431,7 +452,7 @@ pub const BUILTINS: &[Builtin] = &[
         numbers::float_abs,
     ),
     method(
-        Kind::Float,
+        ReceiverKind::Float,
         "round",
         1,
         unshaped,
@@ -439,7 +460,7 @@ pub const BUILTINS: &[Builtin] = &[
         numbers::round,
     ),
     method(
-        Kind::Float,
+        ReceiverKind::Float,
         "floor",
         1,
         unshaped,
@@ -447,7 +468,7 @@ pub const BUILTINS: &[Builtin] = &[
         numbers::floor,
     ),
     method(
-        Kind::Float,
+        ReceiverKind::Float,
         "fixed",
         2,
         wants_count,
@@ -456,7 +477,7 @@ pub const BUILTINS: &[Builtin] = &[
     ),
     // `datetime`
     method(
-        Kind::Datetime,
+        ReceiverKind::Datetime,
         "rfc3339",
         1,
         unshaped,
@@ -464,7 +485,7 @@ pub const BUILTINS: &[Builtin] = &[
         time::rfc3339,
     ),
     method(
-        Kind::Datetime,
+        ReceiverKind::Datetime,
         "rfc822",
         1,
         unshaped,
@@ -472,26 +493,40 @@ pub const BUILTINS: &[Builtin] = &[
         time::rfc822,
     ),
     method(
-        Kind::Datetime,
+        ReceiverKind::Datetime,
         "format",
         2,
         wants_string,
         yields_string,
         time::format,
     ),
-    method(Kind::Datetime, "year", 1, unshaped, yields_int, time::year),
     method(
-        Kind::Datetime,
+        ReceiverKind::Datetime,
+        "year",
+        1,
+        unshaped,
+        yields_int,
+        time::year,
+    ),
+    method(
+        ReceiverKind::Datetime,
         "month",
         1,
         unshaped,
         yields_int,
         time::month,
     ),
-    method(Kind::Datetime, "day", 1, unshaped, yields_int, time::day),
+    method(
+        ReceiverKind::Datetime,
+        "day",
+        1,
+        unshaped,
+        yields_int,
+        time::day,
+    ),
     // `duration`
     method(
-        Kind::Duration,
+        ReceiverKind::Duration,
         "seconds",
         1,
         unshaped,
@@ -499,7 +534,7 @@ pub const BUILTINS: &[Builtin] = &[
         time::seconds,
     ),
     method(
-        Kind::Duration,
+        ReceiverKind::Duration,
         "minutes",
         1,
         unshaped,
@@ -508,7 +543,7 @@ pub const BUILTINS: &[Builtin] = &[
     ),
     // `url`
     method(
-        Kind::Url,
+        ReceiverKind::Url,
         "text",
         1,
         unshaped,
@@ -517,7 +552,7 @@ pub const BUILTINS: &[Builtin] = &[
     ),
     // `html`
     method(
-        Kind::Html,
+        ReceiverKind::Html,
         "readingTime",
         1,
         unshaped,
@@ -564,34 +599,34 @@ fn wants_count(_so_far: &[Type]) -> Option<Expected> {
 const fn ambient(
     name: &'static str,
     arity: usize,
-    ty: fn(&[Type]) -> Result<Type, String>,
-    call: fn(&mut dyn Host, &[Value]) -> Result<Value, Fault>,
+    rule: fn(&[Type]) -> Result<Type, String>,
+    call: fn(&mut dyn Machine, &[Value]) -> Result<Value, Fault>,
 ) -> Builtin {
     Builtin {
         name,
         reach: Reach::Ambient,
         arity,
         expect: unshaped,
-        ty,
+        rule,
         call,
     }
 }
 
 /// An entry `kind` carries, whose first argument is the receiver.
 const fn method(
-    kind: Kind,
+    kind: ReceiverKind,
     name: &'static str,
     arity: usize,
     expect: fn(&[Type]) -> Option<Expected>,
-    ty: fn(&[Type]) -> Result<Type, String>,
-    call: fn(&mut dyn Host, &[Value]) -> Result<Value, Fault>,
+    rule: fn(&[Type]) -> Result<Type, String>,
+    call: fn(&mut dyn Machine, &[Value]) -> Result<Value, Fault>,
 ) -> Builtin {
     Builtin {
         name,
         reach: Reach::Method(kind),
         arity,
         expect,
-        ty,
+        rule,
         call,
     }
 }
@@ -604,12 +639,12 @@ pub fn lookup(name: &str) -> Option<u32> {
 
 /// The id of the method `kind` carries under `name`, if it carries one.
 #[must_use]
-pub fn method_id(kind: Kind, name: &str) -> Option<u32> {
+pub fn method_id(kind: ReceiverKind, name: &str) -> Option<u32> {
     id_of(|b| b.reach == Reach::Method(kind) && b.name == name)
 }
 
 /// Every method name `kind` carries, for a diagnostic that lists what was available.
-pub fn methods_of(kind: Kind) -> impl Iterator<Item = &'static str> {
+pub fn methods_of(kind: ReceiverKind) -> impl Iterator<Item = &'static str> {
     BUILTINS
         .iter()
         .filter(move |b| b.reach == Reach::Method(kind))
@@ -650,7 +685,7 @@ pub(crate) mod tests {
     use super::*;
     use crate::Closure;
 
-    /// A host that stands in for the VM: `invoke` ignores the callee and applies a Rust
+    /// A machine that stands in for the VM: `invoke` ignores the callee and applies a Rust
     /// function to the one argument, so an entry taking a function can be tested alone.
     /// It counts what it was asked, which is how `sortBy` is held to one key per
     /// element rather than one per comparison.
@@ -670,7 +705,7 @@ pub(crate) mod tests {
         }
     }
 
-    impl Host for Apply {
+    impl Machine for Apply {
         fn invoke(&mut self, _callee: &Value, args: Vec<Value>) -> Result<Value, Fault> {
             self.calls += 1;
             (self.apply)(&args[0])
@@ -710,7 +745,7 @@ pub(crate) mod tests {
     }
 
     /// The entry `kind` carries under `name`.
-    pub(crate) fn of(kind: Kind, name: &str) -> &'static Builtin {
+    pub(crate) fn of(kind: ReceiverKind, name: &str) -> &'static Builtin {
         &BUILTINS[method_id(kind, name).expect("a method") as usize]
     }
 
@@ -745,11 +780,11 @@ pub(crate) mod tests {
     #[test]
     fn finds_a_method_by_its_receivers_kind() {
         for (kind, name) in [
-            (Kind::String, "slugify"),
-            (Kind::List, "first"),
-            (Kind::Map, "keys"),
-            (Kind::List, "map"),
-            (Kind::Float, "round"),
+            (ReceiverKind::String, "slugify"),
+            (ReceiverKind::List, "first"),
+            (ReceiverKind::Map, "keys"),
+            (ReceiverKind::List, "map"),
+            (ReceiverKind::Float, "round"),
         ] {
             assert_eq!(of(kind, name).reach, Reach::Method(kind), "{name}");
         }
@@ -757,17 +792,17 @@ pub(crate) mod tests {
 
     #[test]
     fn offers_a_kind_only_its_own_methods_and_never_an_ambient_function() {
-        assert_eq!(method_id(Kind::List, "slugify"), None);
-        assert_eq!(method_id(Kind::Int, "first"), None);
-        assert_eq!(method_id(Kind::String, "raw"), None);
+        assert_eq!(method_id(ReceiverKind::List, "slugify"), None);
+        assert_eq!(method_id(ReceiverKind::Int, "first"), None);
+        assert_eq!(method_id(ReceiverKind::String, "raw"), None);
         // `round` is a `float`'s question: an `int` is already round.
-        assert_eq!(method_id(Kind::Int, "round"), None);
+        assert_eq!(method_id(ReceiverKind::Int, "round"), None);
     }
 
     #[test]
     fn lists_the_methods_a_kind_carries_in_the_tables_order() {
         assert_eq!(
-            methods_of(Kind::String).collect::<Vec<_>>(),
+            methods_of(ReceiverKind::String).collect::<Vec<_>>(),
             [
                 "trim",
                 "lower",
@@ -782,10 +817,10 @@ pub(crate) mod tests {
             ]
         );
         assert_eq!(
-            methods_of(Kind::Map).collect::<Vec<_>>(),
+            methods_of(ReceiverKind::Map).collect::<Vec<_>>(),
             ["keys", "values", "has"]
         );
-        assert_eq!(methods_of(Kind::Bool).count(), 0);
+        assert_eq!(methods_of(ReceiverKind::Bool).count(), 0);
     }
 
     #[test]
@@ -805,49 +840,88 @@ pub(crate) mod tests {
 
     #[test]
     fn reads_a_receiver_kind_off_a_type_and_off_nothing_that_dispatches_elsewhere() {
-        assert_eq!(Kind::of(&Type::String), Some(Kind::String));
-        assert_eq!(Kind::of(&Type::list(Type::Int)), Some(Kind::List));
-        assert_eq!(Kind::of(&Type::map(Type::Int)), Some(Kind::Map));
-        assert_eq!(Kind::of(&Type::Datetime), Some(Kind::Datetime));
-        assert_eq!(Kind::of(&Type::Duration), Some(Kind::Duration));
-        assert_eq!(Kind::of(&Type::Url), Some(Kind::Url));
-        assert_eq!(Kind::of(&Type::Html), Some(Kind::Html));
-        assert_eq!(Kind::of(&Type::Asset), Some(Kind::Asset));
-        assert_eq!(Kind::of(&Type::Float), Some(Kind::Float));
-        assert_eq!(Kind::of(&Type::Bool), Some(Kind::Bool));
-        assert_eq!(Kind::of(&Type::Any), None);
-        assert_eq!(Kind::of(&Type::Null), None);
-        assert_eq!(Kind::of(&Type::optional(Type::String)), None);
-        assert_eq!(Kind::of(&Type::function(vec![], Type::Int)), None);
-        assert_eq!(Kind::of(&Type::Named(Rc::from("Article"))), None);
+        assert_eq!(ReceiverKind::of(&Type::String), Some(ReceiverKind::String));
+        assert_eq!(
+            ReceiverKind::of(&Type::list(Type::Int)),
+            Some(ReceiverKind::List)
+        );
+        assert_eq!(
+            ReceiverKind::of(&Type::map(Type::Int)),
+            Some(ReceiverKind::Map)
+        );
+        assert_eq!(
+            ReceiverKind::of(&Type::Datetime),
+            Some(ReceiverKind::Datetime)
+        );
+        assert_eq!(
+            ReceiverKind::of(&Type::Duration),
+            Some(ReceiverKind::Duration)
+        );
+        assert_eq!(ReceiverKind::of(&Type::Url), Some(ReceiverKind::Url));
+        assert_eq!(ReceiverKind::of(&Type::Html), Some(ReceiverKind::Html));
+        assert_eq!(ReceiverKind::of(&Type::Asset), Some(ReceiverKind::Asset));
+        assert_eq!(ReceiverKind::of(&Type::Float), Some(ReceiverKind::Float));
+        assert_eq!(ReceiverKind::of(&Type::Bool), Some(ReceiverKind::Bool));
+        assert_eq!(ReceiverKind::of(&Type::Any), None);
+        assert_eq!(ReceiverKind::of(&Type::Null), None);
+        assert_eq!(ReceiverKind::of(&Type::optional(Type::String)), None);
+        assert_eq!(ReceiverKind::of(&Type::function(vec![], Type::Int)), None);
+        assert_eq!(ReceiverKind::of(&Type::Named(Rc::from("Article"))), None);
     }
 
     #[test]
     fn reads_a_receiver_kind_off_a_runtime_value() {
-        assert_eq!(Kind::of_value(&Value::str("s")), Some(Kind::String));
-        assert_eq!(Kind::of_value(&Value::html("<b>")), Some(Kind::Html));
-        assert_eq!(Kind::of_value(&Value::Int(1)), Some(Kind::Int));
-        assert_eq!(Kind::of_value(&Value::Float(1.0)), Some(Kind::Float));
-        assert_eq!(Kind::of_value(&Value::Bool(true)), Some(Kind::Bool));
-        assert_eq!(Kind::of_value(&Value::Duration(1)), Some(Kind::Duration));
-        assert_eq!(Kind::of_value(&Value::url("/")), Some(Kind::Url));
-        assert_eq!(Kind::of_value(&Value::asset("/a.css")), Some(Kind::Asset));
-        assert_eq!(Kind::of_value(&Value::list(vec![])), Some(Kind::List));
         assert_eq!(
-            Kind::of_value(&Value::map(crate::Map::default())),
-            Some(Kind::Map)
+            ReceiverKind::of_value(&Value::str("s")),
+            Some(ReceiverKind::String)
         );
-        assert_eq!(Kind::of_value(&Value::Null), None);
-        assert_eq!(Kind::of_value(&func(Value::Null)), None);
+        assert_eq!(
+            ReceiverKind::of_value(&Value::html("<b>")),
+            Some(ReceiverKind::Html)
+        );
+        assert_eq!(
+            ReceiverKind::of_value(&Value::Int(1)),
+            Some(ReceiverKind::Int)
+        );
+        assert_eq!(
+            ReceiverKind::of_value(&Value::Float(1.0)),
+            Some(ReceiverKind::Float)
+        );
+        assert_eq!(
+            ReceiverKind::of_value(&Value::Bool(true)),
+            Some(ReceiverKind::Bool)
+        );
+        assert_eq!(
+            ReceiverKind::of_value(&Value::Duration(1)),
+            Some(ReceiverKind::Duration)
+        );
+        assert_eq!(
+            ReceiverKind::of_value(&Value::url("/")),
+            Some(ReceiverKind::Url)
+        );
+        assert_eq!(
+            ReceiverKind::of_value(&Value::asset("/a.css")),
+            Some(ReceiverKind::Asset)
+        );
+        assert_eq!(
+            ReceiverKind::of_value(&Value::list(vec![])),
+            Some(ReceiverKind::List)
+        );
+        assert_eq!(
+            ReceiverKind::of_value(&Value::map(crate::Map::default())),
+            Some(ReceiverKind::Map)
+        );
+        assert_eq!(ReceiverKind::of_value(&Value::Null), None);
+        assert_eq!(ReceiverKind::of_value(&func(Value::Null)), None);
     }
 
     #[test]
     fn counts_a_methods_receiver_out_of_the_arity_an_author_writes() {
         assert_eq!(ambient("raw").written_arity(), 1);
-        assert_eq!(of(Kind::String, "slugify").written_arity(), 0);
-        assert_eq!(of(Kind::String, "replace").written_arity(), 2);
+        assert_eq!(of(ReceiverKind::String, "slugify").written_arity(), 0);
+        assert_eq!(of(ReceiverKind::String, "replace").written_arity(), 2);
         assert_eq!(ambient("raw").written(), "`raw`");
-        assert_eq!(of(Kind::String, "slugify").written(), "`.slugify`");
+        assert_eq!(of(ReceiverKind::String, "slugify").written(), "`.slugify`");
     }
 
     #[test]
@@ -870,7 +944,12 @@ pub(crate) mod tests {
         }
         let xs = Value::list(vec![Value::Int(1)]);
         assert_eq!(
-            call_with(of(Kind::List, "map"), fail, &[xs, func(Value::Null)]).unwrap_err(),
+            call_with(
+                of(ReceiverKind::List, "map"),
+                fail,
+                &[xs, func(Value::Null)]
+            )
+            .unwrap_err(),
             Fault::Placed(placed)
         );
     }

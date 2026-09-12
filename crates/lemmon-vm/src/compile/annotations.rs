@@ -128,7 +128,9 @@ mod tests {
     use lemmon_syntax::ast::Item;
 
     use super::*;
+    use crate::builtins::ReceiverKind;
     use crate::testing::at;
+    use crate::{Datetime, Value};
 
     /// `src` as a parameter's annotation, which is the text every span below is into.
     fn annotated(src: &str) -> String {
@@ -171,6 +173,54 @@ mod tests {
                 "{name}"
             );
             assert_eq!(reserved(name), Some(Reserved::Builtin), "{name}");
+        }
+    }
+
+    /// A value of `ty`. The match has no catch-all, so a new type has to be answered
+    /// here before the test below compiles.
+    fn value_of(ty: &Type) -> Value {
+        match ty {
+            Type::Null => Value::Null,
+            Type::String => Value::str(""),
+            Type::Int => Value::Int(0),
+            Type::Float => Value::Float(0.0),
+            Type::Bool => Value::Bool(false),
+            Type::Datetime => {
+                Value::Datetime(Datetime::parse("2024-11-24").expect("a date"))
+            }
+            Type::Duration => Value::Duration(0),
+            Type::Url => Value::url("/"),
+            Type::Html => Value::html(""),
+            Type::Asset => Value::asset("/site.css"),
+            Type::Any
+            | Type::List(_)
+            | Type::Map(_)
+            | Type::Optional(_)
+            | Type::Fn(..)
+            | Type::Named(_) => unreachable!("`{ty}` is no name a value answers to"),
+        }
+    }
+
+    /// A builtin type's name is spelled three times — in the table above, in `Type`'s
+    /// `Display`, which diagnostics print, and in `Value::type_name`, which runtime
+    /// errors print — and the receiver kind is read twice, off the type by the checker
+    /// and off the value by the VM when the receiver was `any`. Each is tested against
+    /// its own list elsewhere; this holds them to one another.
+    #[test]
+    fn spells_every_builtin_type_name_one_way_for_types_and_values() {
+        let null = ("null", Type::Null);
+        for (name, ty) in BUILTIN_TYPES.iter().chain([&null]) {
+            assert_eq!(ty.to_string(), *name);
+            if *ty == Type::Any {
+                continue;
+            }
+            let value = value_of(ty);
+            assert_eq!(value.type_name(), *name);
+            assert_eq!(
+                ReceiverKind::of_value(&value),
+                ReceiverKind::of(ty),
+                "{name}"
+            );
         }
     }
 

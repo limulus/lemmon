@@ -30,7 +30,7 @@ use super::rules::{self, LambdaShape, Rule};
 use super::{Compiler, TokenSpan, required};
 use crate::Value;
 use crate::bytecode::Op;
-use crate::decls::Kind;
+use crate::decls::DeclKind;
 use crate::types::{Type, join};
 use crate::unit::Access;
 
@@ -285,8 +285,8 @@ impl Compiler<'_> {
     /// where its variant belonged.
     pub(super) fn undefined(&self, name: &str) -> String {
         match self.decls().kind(name) {
-            Some(Kind::Enum) => format!("`{name}` is an enum, not a value"),
-            Some(Kind::Record) => format!("`{name}` is a record, not a value"),
+            Some(DeclKind::Enum) => format!("`{name}` is an enum, not a value"),
+            Some(DeclKind::Record) => format!("`{name}` is a record, not a value"),
             None => format!("undefined name `{name}`"),
         }
     }
@@ -307,7 +307,7 @@ impl Compiler<'_> {
             return None;
         };
         let token = required(name.name());
-        (self.decls().kind(token.text()) == Some(Kind::Enum))
+        (self.decls().kind(token.text()) == Some(DeclKind::Enum))
             .then(|| Rc::from(token.text()))
     }
 

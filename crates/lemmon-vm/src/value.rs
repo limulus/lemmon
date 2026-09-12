@@ -116,8 +116,8 @@ pub struct Closure {
 /// reads yet (D35).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Record {
-    /// The declared type — the most specific one the value was made as.
-    pub ty: Rc<str>,
+    /// The declared type's name — the most specific type the value was made as.
+    pub name: Rc<str>,
     /// Every field the declaration and its ancestors have, an omitted optional as null.
     pub fields: Map,
 }
@@ -190,11 +190,11 @@ impl Value {
         Self::Map(Rc::new(map))
     }
 
-    /// A record of the declared type `ty`.
+    /// A record of the declared type `name`.
     #[must_use]
-    pub fn record(ty: impl AsRef<str>, fields: Map) -> Self {
+    pub fn record(name: impl AsRef<str>, fields: Map) -> Self {
         Self::Record(Rc::new(Record {
-            ty: Rc::from(ty.as_ref()),
+            name: Rc::from(name.as_ref()),
             fields,
         }))
     }
@@ -217,7 +217,7 @@ impl Value {
             Self::List(_) => "list",
             Self::Map(_) => "map",
             Self::Fn(_) => "function",
-            Self::Record(record) => return Cow::Owned(format!("`{}` record", record.ty)),
+            Self::Record(record) => return Cow::Owned(format!("`{}` record", record.name)),
         })
     }
 
@@ -286,7 +286,7 @@ impl Value {
             }
             (Self::Map(a), Self::Map(b)) => maps_equal(a, b),
             (Self::Record(a), Self::Record(b)) => {
-                if a.ty != b.ty {
+                if a.name != b.name {
                     return Ok(false);
                 }
                 maps_equal(&a.fields, &b.fields)

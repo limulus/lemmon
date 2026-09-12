@@ -209,7 +209,7 @@ mod tests {
         index.offer_types("b.lem", &[record("Article", Some("Page"), &[])]);
         assert!(index.defined_in("Article", "a.lem"));
         assert_eq!(index.lookup_type("Article").unwrap().path, "a.lem");
-        assert_eq!(index.kind("Article"), Some(crate::decls::Kind::Record));
+        assert_eq!(index.kind("Article"), Some(crate::decls::DeclKind::Record));
         assert!(!index.extends("Article", "Page"));
         assert_eq!(index.lookup_type("Nope"), None);
         let names: Vec<&str> = index.types().map(|t| &*t.decl.name).collect();

@@ -8,7 +8,7 @@
 //! Every error leaves through [`Vm::fail`], which looks the failing instruction's span up
 //! in the function's parallel span table — so a runtime error cannot exist without one.
 //!
-//! A builtin that takes a function (`map`, `filter`) runs it through [`Host::invoke`]:
+//! A builtin that takes a function (`map`, `filter`) runs it through [`Machine::invoke`]:
 //! the VM pushes the call's frame and runs the loop again, nested, until that frame has
 //! returned, then hands the value back to the builtin mid-instruction. An error inside
 //! the invoked function is placed there, at its own instruction, and passes through the
@@ -17,7 +17,7 @@
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
-use crate::builtins::{self, BUILTINS, Fault, Host};
+use crate::builtins::{self, BUILTINS, Fault, Machine, ReceiverKind};
 use crate::bytecode::{Function, Module, Op};
 use crate::value::{Closure, Map};
 use crate::{RuntimeError, Value};
@@ -32,7 +32,7 @@ const MAX_DEPTH: usize = 256;
 ///
 /// [`MAX_DEPTH`] counts frames, which cost heap; this counts the times an entry like
 /// `map` has called the VM's loop from inside its own `CallBuiltin` step, which costs
-/// the machine's own stack — `step` → the entry → [`Host::invoke`] → `run_until` →
+/// the machine's own stack — `step` → the entry → [`Machine::invoke`] → `run_until` →
 /// `step` again (∆987). One cap cannot do both jobs: a page nesting components deeply
 /// wants a generous frame count, while the `.wasm` has a megabyte of native stack,
 /// pinned in `crates/lemmon-wasm/build.rs`, with no way to ask for more and no
@@ -152,7 +152,7 @@ struct Vm<'a> {
 
 impl<'a> Vm<'a> {
     /// Runs until only `depth` frames remain: the whole render from `0`, or — inside
-    /// [`Host::invoke`] — until the frame it pushed has returned.
+    /// [`Machine::invoke`] — until the frame it pushed has returned.
     fn run_until(&mut self, depth: usize) -> Result<(), RuntimeError> {
         while self.frames.len() > depth {
             let frame = self.frames.last_mut().expect("a running frame");
@@ -257,7 +257,7 @@ impl<'a> Vm<'a> {
             self.stack.remove(at);
             return Ok(self.call_value(callee, argc)?);
         }
-        let found = builtins::Kind::of_value(receiver)
+        let found = ReceiverKind::of_value(receiver)
             .and_then(|kind| builtins::method_id(kind, name));
         let Some(id) = found else {
             return Err(
@@ -358,7 +358,7 @@ impl<'a> Vm<'a> {
                 let name = self.constant_str(name);
                 let value = self.pop();
                 let holds = match &value {
-                    Value::Record(record) => self.module.is_a(&record.ty, name),
+                    Value::Record(record) => self.module.is_a(&record.name, name),
                     Value::Null => false,
                     other => {
                         return Err(format!(
@@ -553,7 +553,7 @@ impl<'a> Vm<'a> {
     }
 }
 
-impl Host for Vm<'_> {
+impl Machine for Vm<'_> {
     fn invoke(&mut self, callee: &Value, args: Vec<Value>) -> Result<Value, Fault> {
         let depth = self.frames.len();
         let base = self.stack.len();
@@ -737,7 +737,7 @@ mod tests {
     }
 
     /// The id of a method, by the kind that carries it.
-    fn method_of(kind: builtins::Kind, name: &str) -> u32 {
+    fn method_of(kind: ReceiverKind, name: &str) -> u32 {
         builtins::method_id(kind, name).expect("a method")
     }
 
@@ -1058,11 +1058,11 @@ mod tests {
             Op::Const { index: 0 },
             Op::Global { func: 1 },
             Op::CallBuiltin {
-                id: method_of(builtins::Kind::List, "map"),
+                id: method_of(ReceiverKind::List, "map"),
                 argc: 2,
             },
             Op::CallBuiltin {
-                id: method_of(builtins::Kind::List, "first"),
+                id: method_of(ReceiverKind::List, "first"),
                 argc: 1,
             },
             Op::Emit,
@@ -1164,7 +1164,7 @@ mod tests {
                 k(1),
                 k(2),
                 Op::CallBuiltin {
-                    id: method_of(builtins::Kind::List, "map"),
+                    id: method_of(ReceiverKind::List, "map"),
                     argc: 2,
                 },
                 Op::Emit,
@@ -1235,7 +1235,7 @@ mod tests {
                 Op::Const { index: 0 },
                 Op::Global { func: 1 },
                 Op::CallBuiltin {
-                    id: method_of(builtins::Kind::List, "map"),
+                    id: method_of(ReceiverKind::List, "map"),
                     argc: 2,
                 },
                 Op::Return,
@@ -1249,7 +1249,7 @@ mod tests {
                 Op::Const { index: 0 },
                 Op::Global { func: 1 },
                 Op::CallBuiltin {
-                    id: method_of(builtins::Kind::List, "map"),
+                    id: method_of(ReceiverKind::List, "map"),
                     argc: 2,
                 },
                 Op::Return,

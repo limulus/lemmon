@@ -31,14 +31,14 @@ use super::{Compiler, TokenSpan, required};
 /// construction, and nothing else reads a stable place.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct Path {
-    root: Root,
+    root: PathRoot,
     fields: Vec<Rc<str>>,
 }
 
 /// Where a path starts. Both are immutable for the whole render, which is what lets a
 /// narrowing hold for the arm it guards (D35).
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(super) enum Root {
+pub(super) enum PathRoot {
     /// A local binding, by the span of its name token: one binding, one span, so an
     /// inner shadow is a different path.
     Local(Span),
@@ -51,7 +51,7 @@ impl Path {
     /// The path of the binding itself.
     pub(super) const fn local(binder: Span) -> Self {
         Self {
-            root: Root::Local(binder),
+            root: PathRoot::Local(binder),
             fields: Vec::new(),
         }
     }
@@ -59,7 +59,7 @@ impl Path {
     /// The path of the ambient value itself.
     pub(super) fn ambient(name: &str) -> Self {
         Self {
-            root: Root::Ambient(Rc::from(name)),
+            root: PathRoot::Ambient(Rc::from(name)),
             fields: Vec::new(),
         }
     }
@@ -68,7 +68,7 @@ impl Path {
     /// bare name at the bindings file's top level is (D36).
     pub(super) fn ambient_field(value: &Rc<str>, field: &str) -> Self {
         Self {
-            root: Root::Ambient(value.clone()),
+            root: PathRoot::Ambient(value.clone()),
             fields: vec![Rc::from(field)],
         }
     }
@@ -121,14 +121,14 @@ impl Compiler<'_> {
     /// — the one shape whose fields decide when the loader may run a function, and
     /// the one shape a call hands a root whole (∆HF0). Peeked, as [`Self::path_of`]
     /// peeks, and cheaper: nothing about the value is wanted, only its root.
-    pub(super) fn bare_root(&self, expr: &Expr) -> Option<Root> {
+    pub(super) fn bare_root(&self, expr: &Expr) -> Option<PathRoot> {
         let Expr::Name(name) = unparen(expr.clone()) else {
             return None;
         };
         let name = required(name.name());
         match self.names.peek(name.text())? {
-            Resolved::Local { binder, .. } => Some(Root::Local(binder)),
-            Resolved::Ambient(_) => Some(Root::Ambient(Rc::from(name.text()))),
+            Resolved::Local { binder, .. } => Some(PathRoot::Local(binder)),
+            Resolved::Ambient(_) => Some(PathRoot::Ambient(Rc::from(name.text()))),
             Resolved::Field { .. } | Resolved::Function | Resolved::Builtin(_) => None,
         }
     }

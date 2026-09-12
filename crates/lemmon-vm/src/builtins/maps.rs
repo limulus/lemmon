@@ -10,7 +10,7 @@ use crate::Value;
 use crate::types::Type;
 use crate::value::Map;
 
-use super::{Fault, Host, method_receiver};
+use super::{Fault, Machine, method_receiver};
 
 /// The receiver's entries, or the refusal for a value only an `any` call could have
 /// handed a map method.
@@ -40,7 +40,7 @@ pub(super) fn values_type(args: &[Type]) -> Result<Type, String> {
 }
 
 /// `m.keys()`: the keys in insertion order.
-pub(super) fn keys(_host: &mut dyn Host, args: &[Value]) -> Result<Value, Fault> {
+pub(super) fn keys(_vm: &mut dyn Machine, args: &[Value]) -> Result<Value, Fault> {
     Ok(Value::list(
         entries("keys", args)?
             .iter()
@@ -50,7 +50,7 @@ pub(super) fn keys(_host: &mut dyn Host, args: &[Value]) -> Result<Value, Fault>
 }
 
 /// `m.values()`: the values in insertion order, beside what `keys()` gives.
-pub(super) fn values(_host: &mut dyn Host, args: &[Value]) -> Result<Value, Fault> {
+pub(super) fn values(_vm: &mut dyn Machine, args: &[Value]) -> Result<Value, Fault> {
     Ok(Value::list(
         entries("values", args)?
             .iter()
@@ -62,7 +62,7 @@ pub(super) fn values(_host: &mut dyn Host, args: &[Value]) -> Result<Value, Faul
 /// `m.has(key)`: whether the map holds an entry under `key`, which is what
 /// `key in m` asks too. Indexing a key a map has not got is a render error, so this is
 /// how a template asks before it indexes.
-pub(super) fn has(_host: &mut dyn Host, args: &[Value]) -> Result<Value, Fault> {
+pub(super) fn has(_vm: &mut dyn Machine, args: &[Value]) -> Result<Value, Fault> {
     let map = entries("has", args)?;
     match &args[1] {
         Value::Str(key) => Ok(Value::Bool(map.get(key).is_some())),
@@ -74,7 +74,7 @@ pub(super) fn has(_host: &mut dyn Host, args: &[Value]) -> Result<Value, Fault> 
 mod tests {
     use super::super::tests::{call, of};
     use super::*;
-    use crate::builtins::Kind;
+    use crate::builtins::ReceiverKind;
 
     fn map(entries: &[(&str, i64)]) -> Value {
         Value::map(Map::from_unique(
@@ -88,11 +88,11 @@ mod tests {
     fn reads_keys_and_values_in_insertion_order() {
         let m = map(&[("b", 1), ("a", 2)]);
         assert_eq!(
-            call(of(Kind::Map, "keys"), std::slice::from_ref(&m)).unwrap(),
+            call(of(ReceiverKind::Map, "keys"), std::slice::from_ref(&m)).unwrap(),
             Value::list(vec![Value::str("b"), Value::str("a")])
         );
         assert_eq!(
-            call(of(Kind::Map, "values"), &[m]).unwrap(),
+            call(of(ReceiverKind::Map, "values"), &[m]).unwrap(),
             Value::list(vec![Value::Int(1), Value::Int(2)])
         );
     }
@@ -112,7 +112,7 @@ mod tests {
     #[test]
     fn answers_whether_a_map_holds_a_key() {
         let m = map(&[("a", 1)]);
-        let has = of(Kind::Map, "has");
+        let has = of(ReceiverKind::Map, "has");
         assert_eq!(
             call(has, &[m.clone(), Value::str("a")]).unwrap(),
             Value::Bool(true)
@@ -130,7 +130,7 @@ mod tests {
     #[test]
     fn refuses_a_receiver_only_an_any_call_could_have_handed_it() {
         for name in ["keys", "values", "has"] {
-            let entry = of(Kind::Map, name);
+            let entry = of(ReceiverKind::Map, name);
             let args = [Value::Bool(true), Value::str("a")];
             assert_eq!(
                 call(entry, &args[..entry.arity]).unwrap_err(),

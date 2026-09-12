@@ -11,7 +11,7 @@ use unicode_segmentation::UnicodeSegmentation;
 use crate::Value;
 use crate::types::Type;
 
-use super::{Fault, Host, method_receiver};
+use super::{Fault, Machine, method_receiver};
 
 /// The receiver as text, or the refusal for a value only an `any` call could have
 /// handed a string method.
@@ -33,17 +33,17 @@ fn arg<'a>(name: &str, args: &'a [Value], at: usize) -> Result<&'a str, Fault> {
 }
 
 /// `s.trim()`: the same text without the whitespace at either end.
-pub(super) fn trim(_host: &mut dyn Host, args: &[Value]) -> Result<Value, Fault> {
+pub(super) fn trim(_vm: &mut dyn Machine, args: &[Value]) -> Result<Value, Fault> {
     Ok(Value::str(text("trim", args)?.trim()))
 }
 
 /// `s.lower()`: lower-cased, by Unicode's rules rather than ASCII's.
-pub(super) fn lower(_host: &mut dyn Host, args: &[Value]) -> Result<Value, Fault> {
+pub(super) fn lower(_vm: &mut dyn Machine, args: &[Value]) -> Result<Value, Fault> {
     Ok(Value::str(text("lower", args)?.to_lowercase()))
 }
 
 /// `s.upper()`: upper-cased, by Unicode's rules rather than ASCII's.
-pub(super) fn upper(_host: &mut dyn Host, args: &[Value]) -> Result<Value, Fault> {
+pub(super) fn upper(_vm: &mut dyn Machine, args: &[Value]) -> Result<Value, Fault> {
     Ok(Value::str(text("upper", args)?.to_uppercase()))
 }
 
@@ -51,7 +51,7 @@ pub(super) fn upper(_host: &mut dyn Host, args: &[Value]) -> Result<Value, Fault
 /// code points — `"café"` is four however its `é` was spelled, and an emoji family is
 /// one. A character is an extended grapheme cluster (UAX #29): the unit a cursor steps
 /// over and a backspace deletes.
-pub(super) fn length(_host: &mut dyn Host, args: &[Value]) -> Result<Value, Fault> {
+pub(super) fn length(_vm: &mut dyn Machine, args: &[Value]) -> Result<Value, Fault> {
     let count = text("length", args)?.graphemes(true).count();
     Ok(Value::Int(
         i64::try_from(count).expect("a string shorter than 2^63"),
@@ -70,7 +70,7 @@ pub(super) fn split_type(_args: &[Type]) -> Result<Type, String> {
 /// Characters, again, are grapheme clusters and not code points. Splitting by code point
 /// would hand back pieces that are not text: a combining accent with no letter under it,
 /// half of an emoji, a zero-width joiner on its own.
-pub(super) fn split(_host: &mut dyn Host, args: &[Value]) -> Result<Value, Fault> {
+pub(super) fn split(_vm: &mut dyn Machine, args: &[Value]) -> Result<Value, Fault> {
     let text = text("split", args)?;
     let separator = arg("split", args, 1)?;
     let pieces: Vec<Value> = if separator.is_empty() {
@@ -82,27 +82,27 @@ pub(super) fn split(_host: &mut dyn Host, args: &[Value]) -> Result<Value, Fault
 }
 
 /// `s.replace(from, to)`: every occurrence, not just the first.
-pub(super) fn replace(_host: &mut dyn Host, args: &[Value]) -> Result<Value, Fault> {
+pub(super) fn replace(_vm: &mut dyn Machine, args: &[Value]) -> Result<Value, Fault> {
     let text = text("replace", args)?;
     let (from, to) = (arg("replace", args, 1)?, arg("replace", args, 2)?);
     Ok(Value::str(text.replace(from, to)))
 }
 
 /// `s.startsWith(prefix)`.
-pub(super) fn starts_with(_host: &mut dyn Host, args: &[Value]) -> Result<Value, Fault> {
+pub(super) fn starts_with(_vm: &mut dyn Machine, args: &[Value]) -> Result<Value, Fault> {
     let text = text("startsWith", args)?;
     Ok(Value::Bool(text.starts_with(arg("startsWith", args, 1)?)))
 }
 
 /// `s.endsWith(suffix)`.
-pub(super) fn ends_with(_host: &mut dyn Host, args: &[Value]) -> Result<Value, Fault> {
+pub(super) fn ends_with(_vm: &mut dyn Machine, args: &[Value]) -> Result<Value, Fault> {
     let text = text("endsWith", args)?;
     Ok(Value::Bool(text.ends_with(arg("endsWith", args, 1)?)))
 }
 
 /// `s.contains(part)`. A list answers the same question through `in`; a string cannot,
 /// since `in` on a string would have to choose between characters and substrings.
-pub(super) fn contains(_host: &mut dyn Host, args: &[Value]) -> Result<Value, Fault> {
+pub(super) fn contains(_vm: &mut dyn Machine, args: &[Value]) -> Result<Value, Fault> {
     let text = text("contains", args)?;
     Ok(Value::Bool(text.contains(arg("contains", args, 1)?)))
 }
@@ -162,7 +162,7 @@ fn unmarked(ch: char) -> Option<char> {
 /// name. limulus.net's photo slugs were minted by that library and are stored beside
 /// their photos, so the port reads them rather than asking for them again; the one that
 /// differs, `lynx-after-duerer-…`, owes a redirect and not a change here.
-pub(super) fn slugify(_host: &mut dyn Host, args: &[Value]) -> Result<Value, Fault> {
+pub(super) fn slugify(_vm: &mut dyn Machine, args: &[Value]) -> Result<Value, Fault> {
     let lowered = text("slugify", args)?.to_lowercase();
     let mut out = String::with_capacity(lowered.len());
     for ch in lowered.chars() {
@@ -191,10 +191,10 @@ pub(super) fn slugify(_host: &mut dyn Host, args: &[Value]) -> Result<Value, Fau
 mod tests {
     use super::super::tests::{call, of};
     use super::*;
-    use crate::builtins::Kind;
+    use crate::builtins::ReceiverKind;
 
     fn on(name: &'static str, args: &[Value]) -> Value {
-        call(of(Kind::String, name), args).expect("a string method")
+        call(of(ReceiverKind::String, name), args).expect("a string method")
     }
 
     fn s(text: &str) -> Value {
@@ -385,7 +385,7 @@ mod tests {
             "contains",
         ] {
             let args = [Value::Int(1), s(""), s("")];
-            let entry = of(Kind::String, name);
+            let entry = of(ReceiverKind::String, name);
             let refusal = call(entry, &args[..entry.arity]).unwrap_err();
             assert_eq!(
                 refusal,
@@ -399,7 +399,7 @@ mod tests {
     fn refuses_an_argument_only_an_any_call_could_have_handed_it() {
         for name in ["split", "startsWith", "endsWith", "contains"] {
             let refusal =
-                call(of(Kind::String, name), &[s("a"), Value::Int(1)]).unwrap_err();
+                call(of(ReceiverKind::String, name), &[s("a"), Value::Int(1)]).unwrap_err();
             assert_eq!(
                 refusal,
                 Fault::from(format!("`.{name}()` needs a string, got int")),
@@ -407,7 +407,7 @@ mod tests {
             );
         }
         let refusal = call(
-            of(Kind::String, "replace"),
+            of(ReceiverKind::String, "replace"),
             &[s("a"), s("b"), Value::Int(1)],
         );
         assert_eq!(

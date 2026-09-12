@@ -647,7 +647,7 @@ pub(crate) mod tests {
         let Value::Record(build) = &store.ambient[0].1 else {
             panic!("a tagged record");
         };
-        assert_eq!(&*build.ty, "Build");
+        assert_eq!(&*build.name, "Build");
         assert_eq!(build.fields.get("generator"), Some(&Value::str("lemmon")));
     }
 
@@ -961,7 +961,7 @@ pub(crate) mod tests {
         let Value::Record(site) = &store.ambient[1].1 else {
             panic!("site is a record");
         };
-        assert_eq!(&*site.ty, "site.lem");
+        assert_eq!(&*site.name, "site.lem");
         let fields: Vec<&str> = site.fields.iter().map(|(k, _)| &**k).collect();
         assert_eq!(fields, ["posts", "motto", "count"]);
         assert_eq!(site.fields.get("count"), Some(&Value::Int(1)));
@@ -973,7 +973,7 @@ pub(crate) mod tests {
         let Value::Record(article) = &posts[0] else {
             panic!("a tagged record");
         };
-        assert_eq!(&*article.ty, "Article");
+        assert_eq!(&*article.name, "Article");
         assert_eq!(article.fields.get("draft"), Some(&Value::Bool(false)));
         assert!(matches!(article.fields.get("layout"), Some(Value::Fn(_))));
     }

@@ -21,7 +21,7 @@ use crate::types::Type;
 
 /// Whether a declared name is a record or an enum.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Kind {
+pub enum DeclKind {
     Record,
     Enum,
 }
@@ -80,10 +80,10 @@ impl Declaration {
 
     /// Whether this is a record or an enum.
     #[must_use]
-    pub const fn kind(&self) -> Kind {
+    pub const fn kind(&self) -> DeclKind {
         match self.shape {
-            Shape::Record { .. } => Kind::Record,
-            Shape::Enum { .. } => Kind::Enum,
+            Shape::Record { .. } => DeclKind::Record,
+            Shape::Enum { .. } => DeclKind::Enum,
         }
     }
 }
@@ -140,7 +140,7 @@ pub trait Decls {
     fn declaration(&self, name: &str) -> Option<&Declaration>;
 
     /// Whether `name` is a record or an enum.
-    fn kind(&self, name: &str) -> Option<Kind> {
+    fn kind(&self, name: &str) -> Option<DeclKind> {
         self.declaration(name).map(Declaration::kind)
     }
 
@@ -429,8 +429,8 @@ pub(crate) mod tests {
     #[test]
     fn tells_records_from_enums_and_lists_variants() {
         let table = table();
-        assert_eq!(table.kind("Article"), Some(Kind::Record));
-        assert_eq!(table.kind("Placement"), Some(Kind::Enum));
+        assert_eq!(table.kind("Article"), Some(DeclKind::Record));
+        assert_eq!(table.kind("Placement"), Some(DeclKind::Enum));
         assert_eq!(table.kind("Nope"), None);
         let variants: Vec<&str> = table
             .variants("Placement")

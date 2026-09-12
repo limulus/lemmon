@@ -8,7 +8,7 @@ use unicode_segmentation::UnicodeSegmentation;
 
 use crate::Value;
 
-use super::{Fault, Host, method_receiver};
+use super::{Fault, Machine, method_receiver};
 
 /// How fast a page is read, which is the rate every such estimate quotes and the one
 /// the Eleventy build's `reading-time` uses.
@@ -26,7 +26,7 @@ const WORDS_PER_MINUTE: u64 = 200;
 /// its URL and a fenced block is its code. A page near a rounding boundary can
 /// therefore differ by a minute, which is a parity-harness question (∆hyz) and not a
 /// bug here: counting what a reader sees is the better answer.
-pub(super) fn reading_time(_host: &mut dyn Host, args: &[Value]) -> Result<Value, Fault> {
+pub(super) fn reading_time(_vm: &mut dyn Machine, args: &[Value]) -> Result<Value, Fault> {
     let markup = match &args[0] {
         Value::Html(markup) => markup,
         other => return Err(method_receiver("readingTime", "html", other)),
@@ -70,7 +70,7 @@ fn words(markup: &str) -> usize {
 /// a site's base and a page's path is therefore written
 /// `url(site.siteUrl.text() + page.url.text())` — the `url()` says where encoding
 /// happens, and encoding what is already encoded changes nothing (D38).
-pub(super) fn url_text(_host: &mut dyn Host, args: &[Value]) -> Result<Value, Fault> {
+pub(super) fn url_text(_vm: &mut dyn Machine, args: &[Value]) -> Result<Value, Fault> {
     match &args[0] {
         Value::Url(text) => Ok(Value::Str(text.clone())),
         other => Err(method_receiver("text", "a url", other)),
@@ -81,10 +81,14 @@ pub(super) fn url_text(_host: &mut dyn Host, args: &[Value]) -> Result<Value, Fa
 mod tests {
     use super::super::tests::{call, of};
     use super::*;
-    use crate::builtins::Kind;
+    use crate::builtins::ReceiverKind;
 
     fn reading_time_of(markup: &str) -> Value {
-        call(of(Kind::Html, "readingTime"), &[Value::html(markup)]).expect("a reading time")
+        call(
+            of(ReceiverKind::Html, "readingTime"),
+            &[Value::html(markup)],
+        )
+        .expect("a reading time")
     }
 
     #[test]
@@ -136,7 +140,7 @@ mod tests {
     #[test]
     fn gives_a_urls_text_back_for_composing_another() {
         assert_eq!(
-            call(of(Kind::Url, "text"), &[Value::url("/a%20b/")]).unwrap(),
+            call(of(ReceiverKind::Url, "text"), &[Value::url("/a%20b/")]).unwrap(),
             Value::str("/a%20b/")
         );
     }
@@ -144,11 +148,15 @@ mod tests {
     #[test]
     fn refuses_a_receiver_only_an_any_call_could_have_handed_it() {
         assert_eq!(
-            call(of(Kind::Html, "readingTime"), &[Value::str("<p>a</p>")]).unwrap_err(),
+            call(
+                of(ReceiverKind::Html, "readingTime"),
+                &[Value::str("<p>a</p>")]
+            )
+            .unwrap_err(),
             Fault::from("`.readingTime()` needs html, got string")
         );
         assert_eq!(
-            call(of(Kind::Url, "text"), &[Value::str("/a/")]).unwrap_err(),
+            call(of(ReceiverKind::Url, "text"), &[Value::str("/a/")]).unwrap_err(),
             Fault::from("`.text()` needs a url, got string")
         );
     }

@@ -21,8 +21,8 @@ use std::rc::Rc;
 use lemmon_syntax::ast::{BinaryOp, UnaryOp};
 use lemmon_syntax::{Span, nearest};
 
-use crate::builtins::{self, Builtin};
-use crate::decls::{Decls, Kind, no_field};
+use crate::builtins::{self, Builtin, ReceiverKind};
+use crate::decls::{DeclKind, Decls, no_field};
 use crate::types::{Type, assignable, join};
 use crate::unit::Param;
 
@@ -179,7 +179,7 @@ pub(super) fn member(object: &Type, name: &str, optional: bool, decls: &dyn Decl
 /// type's method is named here too: it is not a field, and reading one without calling
 /// it is the mistake worth naming, since a method is called and never read (D34).
 fn field(ty: &Type, name: &str, decls: &dyn Decls) -> Rule {
-    if let Some(kind) = builtins::Kind::of(ty)
+    if let Some(kind) = ReceiverKind::of(ty)
         && builtins::method_id(kind, name).is_some()
     {
         return Err(format!(
@@ -193,10 +193,10 @@ fn field(ty: &Type, name: &str, decls: &dyn Decls) -> Rule {
         )),
         Type::Null => Err(format!("cannot read field `{name}` of null")),
         Type::Named(record) => match decls.kind(record) {
-            Some(Kind::Record) => decls
+            Some(DeclKind::Record) => decls
                 .field(record, name)
                 .ok_or_else(|| no_field(record, name, decls)),
-            Some(Kind::Enum) => Err(format!("a `{ty}` is an enum and has no fields")),
+            Some(DeclKind::Enum) => Err(format!("a `{ty}` is an enum and has no fields")),
             None => unreachable!("an undeclared name is read as `any` before any rule"),
         },
         other => Err(no_field_but_maybe_a_method(other, name)),
@@ -208,7 +208,7 @@ fn field(ty: &Type, name: &str, decls: &dyn Decls) -> Rule {
 /// spelling, so the only reading of `s.slugfy` worth offering is a method (∆eHR).
 fn no_field_but_maybe_a_method(ty: &Type, name: &str) -> String {
     let mut out = format!("a `{ty}` has no field `{name}`");
-    if let Some(kind) = builtins::Kind::of(ty)
+    if let Some(kind) = ReceiverKind::of(ty)
         && let Some(near) = nearest(name, builtins::methods_of(kind))
     {
         out.push_str(&format!("; did you mean `.{near}()`?"));
@@ -243,7 +243,7 @@ pub(super) fn callable_member(
 /// [`callable_member`] with the optionality settled: what a receiver of exactly this
 /// type carries under `name`.
 fn callable(ty: &Type, name: &str, decls: &dyn Decls) -> Rule<Callable> {
-    match builtins::Kind::of(ty) {
+    match ReceiverKind::of(ty) {
         Some(kind) => match builtins::method_id(kind, name) {
             Some(id) => Ok(Callable::Method(id)),
             None => Err(no_method(ty, kind, name)),
@@ -268,7 +268,7 @@ pub(super) enum Callable {
 /// "a `[int]` has no method `frobnicate`", plus what it does have — and, for a map,
 /// the indexing its field read would have suggested, since `m.foo()` for `m["foo"]` is
 /// the mistake a map receiver invites.
-fn no_method(ty: &Type, kind: builtins::Kind, name: &str) -> String {
+fn no_method(ty: &Type, kind: ReceiverKind, name: &str) -> String {
     let mut out = format!("a `{ty}` has no method `{name}`");
     // One name when one is close, the inventory when none is: a type carrying ten
     // methods would otherwise answer a typo with a list to read rather than a fix.
@@ -292,7 +292,7 @@ fn no_method(ty: &Type, kind: builtins::Kind, name: &str) -> String {
 /// as it is for a literal.
 fn expected_enum<'a>(expected: Option<&'a Type>, decls: &dyn Decls) -> Option<&'a str> {
     match expectation(expected) {
-        Some(Type::Named(name)) if decls.kind(name) == Some(Kind::Enum) => Some(name),
+        Some(Type::Named(name)) if decls.kind(name) == Some(DeclKind::Enum) => Some(name),
         _ => None,
     }
 }
@@ -304,7 +304,7 @@ pub(super) fn expected_record<'a>(
     decls: &dyn Decls,
 ) -> Option<&'a str> {
     match expectation(expected) {
-        Some(Type::Named(name)) if decls.kind(name) == Some(Kind::Record) => Some(name),
+        Some(Type::Named(name)) if decls.kind(name) == Some(DeclKind::Record) => Some(name),
         _ => None,
     }
 }
@@ -370,15 +370,15 @@ pub(super) enum TestForm {
 /// an unknown name is the unknown type it is.
 pub(super) fn tested_type(name: &str, form: TestForm, decls: &dyn Decls) -> Rule<()> {
     match decls.kind(name) {
-        Some(Kind::Record) => Ok(()),
-        Some(Kind::Enum) if form == TestForm::Case => {
+        Some(DeclKind::Record) => Ok(()),
+        Some(DeclKind::Enum) if form == TestForm::Case => {
             let hint = decls
                 .variants(name)
                 .and_then(<[(Rc<str>, Span)]>::first)
                 .map_or(String::new(), |(variant, _)| format!(" as `.{variant}`"));
             Err(format!("`{name}` is an enum: match its variants{hint}"))
         }
-        Some(Kind::Enum) => Err(format!("`{name}` is an enum: compare it with `==`")),
+        Some(DeclKind::Enum) => Err(format!("`{name}` is an enum: compare it with `==`")),
         None if super::annotations::reserved(name).is_some() => {
             Err(format!("a type test names a record type, got `{name}`"))
         }
@@ -424,7 +424,7 @@ pub(super) fn exhaustive(
     }
     let optional = matches!(subject, Type::Optional(_));
     match subject.strip_optional() {
-        Type::Named(name) if decls.kind(name) == Some(Kind::Enum) => {
+        Type::Named(name) if decls.kind(name) == Some(DeclKind::Enum) => {
             let variants = decls.variants(name).expect("an enum has variants");
             let mut missing: Vec<String> = variants
                 .iter()
@@ -443,7 +443,7 @@ pub(super) fn exhaustive(
                 ))
             }
         }
-        Type::Named(name) if decls.kind(name) == Some(Kind::Record) => Err(format!(
+        Type::Named(name) if decls.kind(name) == Some(DeclKind::Record) => Err(format!(
             "`lem-match` over `{subject}` needs a `lem-default`: a record is matched by \
              its subtypes, and that set is open"
         )),
@@ -465,7 +465,7 @@ pub(super) fn type_test(subject: &Type, name: &str, decls: &dyn Decls) -> Rule {
     let optional = matches!(subject, Type::Optional(_));
     match subject.strip_optional() {
         Type::Any => Ok(narrowed),
-        Type::Named(record) if decls.kind(record) == Some(Kind::Record) => {
+        Type::Named(record) if decls.kind(record) == Some(DeclKind::Record) => {
             if **record == *name {
                 if optional {
                     Ok(narrowed)
@@ -534,7 +534,7 @@ pub(super) fn operand_expectation(
     let enum_lhs = lhs
         .strip_optional()
         .named()
-        .is_some_and(|name| decls.kind(name) == Some(Kind::Enum));
+        .is_some_and(|name| decls.kind(name) == Some(DeclKind::Enum));
     if !enum_lhs {
         return None;
     }
@@ -595,7 +595,7 @@ pub(super) fn printable(ty: &Type, decls: &dyn Decls) -> Rule<()> {
         | Type::Url
         | Type::Asset
         | Type::Any => Ok(()),
-        Type::Named(name) if decls.kind(name) == Some(Kind::Enum) => Ok(()),
+        Type::Named(name) if decls.kind(name) == Some(DeclKind::Enum) => Ok(()),
         Type::Optional(_) => Err(format!(
             "cannot print a `{ty}`: narrow it with `lem-if`, or give it a default with `??`"
         )),
@@ -1088,12 +1088,12 @@ mod tests {
 
     /// The id of the method `kind` carries under `name`, so a test names the entry it
     /// is about and the table's order stays the table's business.
-    fn method(kind: builtins::Kind, name: &str) -> u32 {
+    fn method(kind: ReceiverKind, name: &str) -> u32 {
         builtins::method_id(kind, name).expect("a method")
     }
 
     /// The entry an ambient builtin or a method is, for a rule that takes one.
-    fn entry(reach: Option<builtins::Kind>, name: &str) -> &'static Builtin {
+    fn entry(reach: Option<ReceiverKind>, name: &str) -> &'static Builtin {
         let id = match reach {
             Some(kind) => method(kind, name),
             None => builtins::lookup(name).expect("an ambient function"),
@@ -1106,15 +1106,15 @@ mod tests {
         let table = table();
         assert_eq!(
             callable_member(&Type::String, "slugify", false, &()),
-            Ok(Callable::Method(method(builtins::Kind::String, "slugify")))
+            Ok(Callable::Method(method(ReceiverKind::String, "slugify")))
         );
         assert_eq!(
             callable_member(&Type::list(Type::Int), "first", false, &()),
-            Ok(Callable::Method(method(builtins::Kind::List, "first")))
+            Ok(Callable::Method(method(ReceiverKind::List, "first")))
         );
         assert_eq!(
             callable_member(&Type::map(Type::Int), "keys", false, &()),
-            Ok(Callable::Method(method(builtins::Kind::Map, "keys")))
+            Ok(Callable::Method(method(ReceiverKind::Map, "keys")))
         );
         assert_eq!(
             callable_member(&named("Article"), "layout", false, &table),
@@ -1134,7 +1134,7 @@ mod tests {
         );
         assert_eq!(
             callable_member(&Type::optional(Type::String), "slugify", true, &()),
-            Ok(Callable::Method(method(builtins::Kind::String, "slugify")))
+            Ok(Callable::Method(method(ReceiverKind::String, "slugify")))
         );
         assert_eq!(
             callable_member(&Type::optional(Type::String), "slugify", false, &()),
@@ -1202,7 +1202,7 @@ mod tests {
             builtin(raw, 2),
             Err("`raw` takes 1 argument, got 2".to_owned())
         );
-        let slugify = entry(Some(builtins::Kind::String), "slugify");
+        let slugify = entry(Some(ReceiverKind::String), "slugify");
         assert_eq!(builtin(slugify, 1), Ok(()));
         assert_eq!(
             builtin(slugify, 2),

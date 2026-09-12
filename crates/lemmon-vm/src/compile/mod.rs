@@ -42,7 +42,7 @@ use lemmon_syntax::ast::{Expr, Item, Spanned};
 use lemmon_syntax::{Parse, Span, SyntaxToken};
 
 use crate::bytecode::{Function, Module, Op};
-use crate::decls::{Decls, Kind, Shape};
+use crate::decls::{DeclKind, Decls, Shape};
 use crate::exports::{Export, ExportIndex};
 use crate::host::Host;
 use crate::types::Type;
@@ -57,8 +57,9 @@ pub(crate) use expr::{Runs, refused_at_load};
 pub(crate) use names::duplicate_named;
 use names::{BindingKind, Frame, Names, Resolved};
 pub(crate) use rules::omittable;
-use surfaces::Source;
+use surfaces::ParsedFile;
 pub use surfaces::{PreparedFile, prepare};
+use whitespace::BodyKind;
 
 /// Compiles every file of a site into one module: each file [`prepare`]d and compiled
 /// into its own [`Unit`] against the index of every file's signatures, then [`link`]ed.
@@ -381,7 +382,7 @@ impl<'a> Compiler<'a> {
                 Item::FnBlock(f) => {
                     let body = required(f.body());
                     c.emit(Op::Capture, f.span());
-                    c.lower_block(body.items().collect(), whitespace::Kind::Value);
+                    c.lower_block(body.items().collect(), BodyKind::Value);
                     c.emit(Op::EndCapture, f.span());
                 }
                 Item::FnVoid(f) => {
@@ -468,7 +469,7 @@ impl<'a> Compiler<'a> {
                 }
                 if let Some(index) = field.index() {
                     if let Type::Named(record) = ty.strip_optional()
-                        && self.decls().kind(record) == Some(Kind::Record)
+                        && self.decls().kind(record) == Some(DeclKind::Record)
                     {
                         let record = record.clone();
                         if let Some((value, key)) = self.index_field(&index, &record) {
@@ -666,11 +667,11 @@ impl<'a> Compiler<'a> {
             return;
         };
         let read = match self.bare_root(object) {
-            Some(narrowing::Root::Ambient(value)) => Access::Ambient {
+            Some(narrowing::PathRoot::Ambient(value)) => Access::Ambient {
                 value,
                 field: Rc::from(field),
             },
-            Some(narrowing::Root::Local(binder)) => match collecting.root(binder) {
+            Some(narrowing::PathRoot::Local(binder)) => match collecting.root(binder) {
                 Some(Root::Own) => Access::Own(Rc::from(field)),
                 Some(Root::Param(index)) => Access::Param {
                     index,
@@ -703,8 +704,8 @@ impl<'a> Compiler<'a> {
     fn root_of(&self, expr: &lemmon_syntax::ast::Expr) -> Option<Root> {
         let collecting = self.uses.as_ref()?;
         match self.bare_root(expr)? {
-            narrowing::Root::Local(binder) => collecting.root(binder),
-            narrowing::Root::Ambient(value) => Some(Root::Ambient(value)),
+            narrowing::PathRoot::Local(binder) => collecting.root(binder),
+            narrowing::PathRoot::Ambient(value) => Some(Root::Ambient(value)),
         }
     }
 
@@ -715,7 +716,7 @@ impl<'a> Compiler<'a> {
     /// other file, and a default there is refused as anywhere.
     fn compile_entry(
         &mut self,
-        source: &Source,
+        source: &ParsedFile,
         chunks: Option<&[String]>,
         fields_of: Option<Rc<str>>,
     ) {
@@ -726,11 +727,11 @@ impl<'a> Compiler<'a> {
         let parse = source.parse();
         let items = parse.root().items().collect();
         match (source, chunks) {
-            (Source::Document(doc), Some(chunks)) => {
+            (ParsedFile::Document(doc), Some(chunks)) => {
                 self.lower_document(items, &doc.prose, chunks);
             }
-            (Source::Template(_), None) => {
-                self.lower_block(items, whitespace::Kind::File);
+            (ParsedFile::Template(_), None) => {
+                self.lower_block(items, BodyKind::File);
             }
             _ => unreachable!("a document has its chunks and a template has none"),
         }

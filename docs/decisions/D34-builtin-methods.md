@@ -58,12 +58,13 @@ or casts, is an ambient function — `asset()`, `url()`, `datetime()`, `uniqueId
 `lem-fn map(…)` displaces nothing and warns about nothing; the ambient value namespace
 holds only the functions above.
 
-**A builtin rule may shape the arguments after it.** `Builtin::ty` is already a rule
-rather than a signature, for exactly this reason; it gains a companion that says what the
-*n*th argument is expected to be given the types already in hand, and arguments lower left
-to right. That is what makes `xs.map(|a| a.date)` take the lambda's parameter from the
-receiver's element type. It needed one more thing nothing had when this was decided: a
-builtin could not call a `Value::Fn`, so a re-entrant invoke arrived with it (∆987).
+**A builtin rule may shape the arguments after it.** A builtin is already typed by a rule
+(`Builtin::rule`) rather than a signature, for exactly this reason; it gains a companion
+that says what the *n*th argument is expected to be given the types already in hand, and
+arguments lower left to right. That is what makes `xs.map(|a| a.date)` take the lambda's
+parameter from the receiver's element type. It needed one more thing nothing had when this
+was decided: a builtin could not call a `Value::Fn`, so a re-entrant invoke arrived with
+it (∆987).
 
 **Through `?.` a method call propagates null**, as a field read does: `xs?.filter(…)` is
 optional in whatever `filter` returns.

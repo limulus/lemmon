@@ -1,12 +1,12 @@
 //! What a `[T]` carries.
 //!
-//! These are the generic entries — the reason [`Builtin::ty`](super::Builtin::ty) is a
+//! These are the generic entries — the reason [`Builtin::rule`](super::Builtin::rule) is a
 //! rule and not a signature (D34). Each one's result is computed from the element type
 //! the receiver was built over, and the entries taking a function shape it from that
 //! same element type, which is what lets `xs.map(|a| a.date)` type `a` without an
 //! annotation.
 //!
-//! An entry that takes a function runs it through the VM mid-instruction ([`Host`]), so
+//! An entry that takes a function runs it through the VM mid-instruction ([`Machine`]), so
 //! an error inside the function keeps the function's own span (invariant 8, ∆987).
 
 use std::rc::Rc;
@@ -15,7 +15,7 @@ use crate::Value;
 use crate::types::Type;
 use crate::value::Map;
 
-use super::{Expected, Fault, Host, element_of, method_receiver};
+use super::{Expected, Fault, Machine, element_of, method_receiver};
 
 /// The receiver's elements, or the refusal for a value only an `any` call could have
 /// handed a list method.
@@ -45,12 +45,12 @@ fn count(name: &str, args: &[Value], len: usize) -> Result<usize, Fault> {
 
 /// Calls a predicate on `item` and reads its answer as a `bool`.
 fn holds(
-    host: &mut dyn Host,
+    vm: &mut dyn Machine,
     name: &str,
     predicate: &Value,
     item: &Value,
 ) -> Result<bool, Fault> {
-    match host.invoke(predicate, vec![item.clone()])? {
+    match vm.invoke(predicate, vec![item.clone()])? {
         Value::Bool(answer) => Ok(answer),
         other => Err(format!(
             "`.{name}()` needs a predicate that returns a bool, got {}",
@@ -146,7 +146,7 @@ pub(super) fn join_type(args: &[Type]) -> Result<Type, String> {
 
 /// `[T].length()` and `.any(p)` say nothing about the element type, but still have to
 /// be dispatched on a list at run time.
-pub(super) fn length(_host: &mut dyn Host, args: &[Value]) -> Result<Value, Fault> {
+pub(super) fn length(_vm: &mut dyn Machine, args: &[Value]) -> Result<Value, Fault> {
     let count = items("length", args)?.len();
     Ok(Value::Int(
         i64::try_from(count).expect("a list shorter than 2^63"),
@@ -154,7 +154,7 @@ pub(super) fn length(_host: &mut dyn Host, args: &[Value]) -> Result<Value, Faul
 }
 
 /// `xs.first()`: the first element, or null when there is none.
-pub(super) fn first(_host: &mut dyn Host, args: &[Value]) -> Result<Value, Fault> {
+pub(super) fn first(_vm: &mut dyn Machine, args: &[Value]) -> Result<Value, Fault> {
     Ok(items("first", args)?
         .first()
         .cloned()
@@ -162,19 +162,19 @@ pub(super) fn first(_host: &mut dyn Host, args: &[Value]) -> Result<Value, Fault
 }
 
 /// `xs.last()`: the last element, or null when there is none.
-pub(super) fn last(_host: &mut dyn Host, args: &[Value]) -> Result<Value, Fault> {
+pub(super) fn last(_vm: &mut dyn Machine, args: &[Value]) -> Result<Value, Fault> {
     Ok(items("last", args)?.last().cloned().unwrap_or(Value::Null))
 }
 
 /// `xs.reverse()`: the same elements, back to front.
-pub(super) fn reverse(_host: &mut dyn Host, args: &[Value]) -> Result<Value, Fault> {
+pub(super) fn reverse(_vm: &mut dyn Machine, args: &[Value]) -> Result<Value, Fault> {
     let mut out = items("reverse", args)?.to_vec();
     out.reverse();
     Ok(Value::list(out))
 }
 
 /// `xs.contains(x)`: whether any element equals `x`, which is what `x in xs` asks too.
-pub(super) fn contains(_host: &mut dyn Host, args: &[Value]) -> Result<Value, Fault> {
+pub(super) fn contains(_vm: &mut dyn Machine, args: &[Value]) -> Result<Value, Fault> {
     for item in items("contains", args)?.iter() {
         if item.equals(&args[1]).map_err(Fault::from)? {
             return Ok(Value::Bool(true));
@@ -185,21 +185,21 @@ pub(super) fn contains(_host: &mut dyn Host, args: &[Value]) -> Result<Value, Fa
 
 /// `xs.take(n)`: the first `n`, or all of them when there are fewer. Asking for more
 /// than a list holds is how a feed says "the newest five", not a mistake.
-pub(super) fn take(_host: &mut dyn Host, args: &[Value]) -> Result<Value, Fault> {
+pub(super) fn take(_vm: &mut dyn Machine, args: &[Value]) -> Result<Value, Fault> {
     let items = items("take", args)?;
     let n = count("take", args, items.len())?;
     Ok(Value::list(items[..n].to_vec()))
 }
 
 /// `xs.drop(n)`: all but the first `n`, and none of them when there are fewer.
-pub(super) fn drop(_host: &mut dyn Host, args: &[Value]) -> Result<Value, Fault> {
+pub(super) fn drop(_vm: &mut dyn Machine, args: &[Value]) -> Result<Value, Fault> {
     let items = items("drop", args)?;
     let n = count("drop", args, items.len())?;
     Ok(Value::list(items[n..].to_vec()))
 }
 
 /// `xs.join(sep)`: the strings with `sep` between them.
-pub(super) fn join(_host: &mut dyn Host, args: &[Value]) -> Result<Value, Fault> {
+pub(super) fn join(_vm: &mut dyn Machine, args: &[Value]) -> Result<Value, Fault> {
     let items = items("join", args)?;
     let Value::Str(separator) = &args[1] else {
         return Err(
@@ -223,21 +223,21 @@ pub(super) fn join(_host: &mut dyn Host, args: &[Value]) -> Result<Value, Fault>
 }
 
 /// `xs.map(f)`: the list of `f` applied to each element, in order.
-pub(super) fn map(host: &mut dyn Host, args: &[Value]) -> Result<Value, Fault> {
+pub(super) fn map(vm: &mut dyn Machine, args: &[Value]) -> Result<Value, Fault> {
     let items = items("map", args)?.clone();
     let mut out = Vec::with_capacity(items.len());
     for item in items.iter() {
-        out.push(host.invoke(&args[1], vec![item.clone()])?);
+        out.push(vm.invoke(&args[1], vec![item.clone()])?);
     }
     Ok(Value::list(out))
 }
 
 /// `xs.filter(p)`: the elements `p` answers `true` for, in order.
-pub(super) fn filter(host: &mut dyn Host, args: &[Value]) -> Result<Value, Fault> {
+pub(super) fn filter(vm: &mut dyn Machine, args: &[Value]) -> Result<Value, Fault> {
     let items = items("filter", args)?.clone();
     let mut out = Vec::new();
     for item in items.iter() {
-        if holds(host, "filter", &args[1], item)? {
+        if holds(vm, "filter", &args[1], item)? {
             out.push(item.clone());
         }
     }
@@ -246,10 +246,10 @@ pub(super) fn filter(host: &mut dyn Host, args: &[Value]) -> Result<Value, Fault
 
 /// `xs.find(p)`: the first element `p` answers `true` for, or null. `p` is not asked
 /// about the elements past it, which is what makes this different from `filter().first()`.
-pub(super) fn find(host: &mut dyn Host, args: &[Value]) -> Result<Value, Fault> {
+pub(super) fn find(vm: &mut dyn Machine, args: &[Value]) -> Result<Value, Fault> {
     let items = items("find", args)?.clone();
     for item in items.iter() {
-        if holds(host, "find", &args[1], item)? {
+        if holds(vm, "find", &args[1], item)? {
             return Ok(item.clone());
         }
     }
@@ -258,10 +258,10 @@ pub(super) fn find(host: &mut dyn Host, args: &[Value]) -> Result<Value, Fault> 
 
 /// `xs.any(p)`: whether `p` answers `true` for any element, asking no further once one
 /// does.
-pub(super) fn any(host: &mut dyn Host, args: &[Value]) -> Result<Value, Fault> {
+pub(super) fn any(vm: &mut dyn Machine, args: &[Value]) -> Result<Value, Fault> {
     let items = items("any", args)?.clone();
     for item in items.iter() {
-        if holds(host, "any", &args[1], item)? {
+        if holds(vm, "any", &args[1], item)? {
             return Ok(Value::Bool(true));
         }
     }
@@ -276,11 +276,11 @@ pub(super) fn any(host: &mut dyn Host, args: &[Value]) -> Result<Value, Fault> {
 /// ordered — against the first, which is enough, since what orders with one number
 /// orders with every number — so the sort itself cannot meet a pair it has no answer
 /// for. That check is what a mixed list reached through `any` runs into.
-pub(super) fn sort_by(host: &mut dyn Host, args: &[Value]) -> Result<Value, Fault> {
+pub(super) fn sort_by(vm: &mut dyn Machine, args: &[Value]) -> Result<Value, Fault> {
     let items = items("sortBy", args)?.clone();
     let mut keyed = Vec::with_capacity(items.len());
     for item in items.iter() {
-        keyed.push((host.invoke(&args[1], vec![item.clone()])?, item.clone()));
+        keyed.push((vm.invoke(&args[1], vec![item.clone()])?, item.clone()));
     }
     if let Some((first, _)) = keyed.first() {
         for (key, _) in &keyed {
@@ -311,11 +311,11 @@ pub(super) fn sort_by(host: &mut dyn Host, args: &[Value]) -> Result<Value, Faul
 
 /// `xs.groupBy(f)`: the elements under the key `f` gives each, keys in the order they
 /// were first seen and elements in the order they were written.
-pub(super) fn group_by(host: &mut dyn Host, args: &[Value]) -> Result<Value, Fault> {
+pub(super) fn group_by(vm: &mut dyn Machine, args: &[Value]) -> Result<Value, Fault> {
     let items = items("groupBy", args)?.clone();
     let mut groups: Vec<(Rc<str>, Vec<Value>)> = Vec::new();
     for item in items.iter() {
-        let key = match host.invoke(&args[1], vec![item.clone()])? {
+        let key = match vm.invoke(&args[1], vec![item.clone()])? {
             Value::Str(key) => key,
             other => {
                 return Err(format!(
@@ -343,10 +343,10 @@ mod tests {
         Apply, call, call_with, double, func, is_positive, itself, of,
     };
     use super::*;
-    use crate::builtins::Kind;
+    use crate::builtins::ReceiverKind;
 
     fn on(name: &'static str, args: &[Value]) -> Value {
-        call(of(Kind::List, name), args).expect("a list method")
+        call(of(ReceiverKind::List, name), args).expect("a list method")
     }
 
     fn ints(items: &[i64]) -> Value {
@@ -411,11 +411,13 @@ mod tests {
     fn refuses_a_count_that_runs_backwards() {
         for name in ["take", "drop"] {
             assert_eq!(
-                call(of(Kind::List, name), &[ints(&[1]), Value::Int(-1)]).unwrap_err(),
+                call(of(ReceiverKind::List, name), &[ints(&[1]), Value::Int(-1)])
+                    .unwrap_err(),
                 Fault::from(format!("`.{name}()` needs a count of 0 or more, got -1"))
             );
             assert_eq!(
-                call(of(Kind::List, name), &[ints(&[1]), Value::str("2")]).unwrap_err(),
+                call(of(ReceiverKind::List, name), &[ints(&[1]), Value::str("2")])
+                    .unwrap_err(),
                 Fault::from(format!("`.{name}()` needs an int, got string"))
             );
         }
@@ -437,11 +439,19 @@ mod tests {
             Err("`.join()` needs a list of strings, got `[int]`".to_owned())
         );
         assert_eq!(
-            call(of(Kind::List, "join"), &[ints(&[1]), Value::str(",")]).unwrap_err(),
+            call(
+                of(ReceiverKind::List, "join"),
+                &[ints(&[1]), Value::str(",")]
+            )
+            .unwrap_err(),
             Fault::from("`.join()` needs every element to be a string, got int")
         );
         assert_eq!(
-            call(of(Kind::List, "join"), &[strings(&["a"]), Value::Int(1)]).unwrap_err(),
+            call(
+                of(ReceiverKind::List, "join"),
+                &[strings(&["a"]), Value::Int(1)]
+            )
+            .unwrap_err(),
             Fault::from("`.join()` needs a string, got int")
         );
     }
@@ -450,7 +460,7 @@ mod tests {
     fn finds_the_first_element_a_predicate_holds_for_and_stops_there() {
         assert_eq!(
             call_with(
-                of(Kind::List, "find"),
+                of(ReceiverKind::List, "find"),
                 is_positive,
                 &[ints(&[-1, 2, 3]), func(Value::Null)]
             )
@@ -459,7 +469,7 @@ mod tests {
         );
         assert_eq!(
             call_with(
-                of(Kind::List, "find"),
+                of(ReceiverKind::List, "find"),
                 is_positive,
                 &[ints(&[-1]), func(Value::Null)]
             )
@@ -467,15 +477,18 @@ mod tests {
             Value::Null
         );
         // The elements past the first match are never asked about.
-        let mut host = Apply::new(is_positive);
-        (of(Kind::List, "find").call)(&mut host, &[ints(&[1, 2, 3]), func(Value::Null)])
-            .unwrap();
-        assert_eq!(host.calls, 1);
+        let mut vm = Apply::new(is_positive);
+        (of(ReceiverKind::List, "find").call)(
+            &mut vm,
+            &[ints(&[1, 2, 3]), func(Value::Null)],
+        )
+        .unwrap();
+        assert_eq!(vm.calls, 1);
     }
 
     #[test]
     fn answers_whether_any_element_holds() {
-        let any = of(Kind::List, "any");
+        let any = of(ReceiverKind::List, "any");
         assert_eq!(
             call_with(any, is_positive, &[ints(&[-1, 2]), func(Value::Null)]).unwrap(),
             Value::Bool(true)
@@ -491,8 +504,12 @@ mod tests {
         for name in ["filter", "find", "any"] {
             let xs = Value::list(vec![Value::str("s")]);
             assert_eq!(
-                call_with(of(Kind::List, name), is_positive, &[xs, func(Value::Null)])
-                    .unwrap_err(),
+                call_with(
+                    of(ReceiverKind::List, name),
+                    is_positive,
+                    &[xs, func(Value::Null)]
+                )
+                .unwrap_err(),
                 Fault::from(format!(
                     "`.{name}()` needs a predicate that returns a bool, got string"
                 ))
@@ -504,14 +521,14 @@ mod tests {
     fn sorts_by_a_key_computed_once_per_element_keeping_ties_as_written() {
         // Every element's key is its own value doubled, so the order is the elements'.
         let sorted = call(
-            of(Kind::List, "sortBy"),
+            of(ReceiverKind::List, "sortBy"),
             &[ints(&[3, 1, 2]), func(Value::Null)],
         );
         assert_eq!(sorted.unwrap(), ints(&[1, 2, 3]));
-        let mut host = Apply::new(double);
-        let entry = of(Kind::List, "sortBy");
-        (entry.call)(&mut host, &[ints(&[5, 4, 3, 2, 1]), func(Value::Null)]).unwrap();
-        assert_eq!(host.calls, 5, "one key per element, not one per comparison");
+        let mut vm = Apply::new(double);
+        let entry = of(ReceiverKind::List, "sortBy");
+        (entry.call)(&mut vm, &[ints(&[5, 4, 3, 2, 1]), func(Value::Null)]).unwrap();
+        assert_eq!(vm.calls, 5, "one key per element, not one per comparison");
     }
 
     #[test]
@@ -520,7 +537,7 @@ mod tests {
         // be free to swap them, and a site's index page would reorder on each build.
         let xs = Value::list(vec![Value::str("first"), Value::str("second")]);
         let sorted = call_with(
-            of(Kind::List, "sortBy"),
+            of(ReceiverKind::List, "sortBy"),
             |_| Ok(Value::Int(2)),
             &[xs.clone(), func(Value::Null)],
         );
@@ -557,7 +574,7 @@ mod tests {
         let mixed = Value::list(vec![Value::Int(1), Value::str("a")]);
         assert_eq!(
             call_with(
-                of(Kind::List, "sortBy"),
+                of(ReceiverKind::List, "sortBy"),
                 itself,
                 &[mixed, func(Value::Null)]
             )
@@ -568,8 +585,12 @@ mod tests {
         );
         let nan = Value::list(vec![Value::Float(f64::NAN), Value::Float(1.0)]);
         assert_eq!(
-            call_with(of(Kind::List, "sortBy"), itself, &[nan, func(Value::Null)])
-                .unwrap_err(),
+            call_with(
+                of(ReceiverKind::List, "sortBy"),
+                itself,
+                &[nan, func(Value::Null)]
+            )
+            .unwrap_err(),
             Fault::from("cannot order a NaN")
         );
     }
@@ -577,8 +598,11 @@ mod tests {
     #[test]
     fn groups_by_a_key_keeping_the_first_order_of_both_keys_and_elements() {
         let xs = strings(&["rust", "swift", "rust", "css"]);
-        let grouped =
-            call_with(of(Kind::List, "groupBy"), itself, &[xs, func(Value::Null)]);
+        let grouped = call_with(
+            of(ReceiverKind::List, "groupBy"),
+            itself,
+            &[xs, func(Value::Null)],
+        );
         let Value::Map(map) = grouped.unwrap() else {
             panic!("a map");
         };
@@ -602,7 +626,7 @@ mod tests {
     fn refuses_a_group_key_that_is_no_string() {
         let xs = ints(&[1]);
         assert_eq!(
-            call(of(Kind::List, "groupBy"), &[xs, func(Value::Null)]).unwrap_err(),
+            call(of(ReceiverKind::List, "groupBy"), &[xs, func(Value::Null)]).unwrap_err(),
             Fault::from("`.groupBy()` needs a key that is a string, got int")
         );
     }
@@ -642,7 +666,7 @@ mod tests {
     fn keeps_the_elements_a_predicate_holds_for() {
         assert_eq!(
             call_with(
-                of(Kind::List, "filter"),
+                of(ReceiverKind::List, "filter"),
                 is_positive,
                 &[ints(&[-1, 2, 0, 3]), func(Value::Null)]
             )
@@ -657,7 +681,7 @@ mod tests {
             "first", "last", "length", "reverse", "contains", "take", "drop", "join",
             "map", "filter", "find", "any", "sortBy", "groupBy",
         ] {
-            let entry = of(Kind::List, name);
+            let entry = of(ReceiverKind::List, name);
             let args = [Value::str("s"), Value::Int(1)];
             assert_eq!(
                 call(entry, &args[..entry.arity]).unwrap_err(),

@@ -14,7 +14,7 @@ use crate::datetime::Datetime;
 use crate::types::Type;
 use crate::url;
 
-use super::{Fault, Host};
+use super::{Fault, Machine};
 
 /// `raw(s: string): html` — `html` in is `html` out, and `any` is the VM's to check.
 pub(super) fn raw_type(args: &[Type]) -> Result<Type, String> {
@@ -26,7 +26,7 @@ pub(super) fn raw_type(args: &[Type]) -> Result<Type, String> {
 
 /// `raw(s)`: vouches for a string as trusted markup. Already-trusted markup passes
 /// through unchanged.
-pub(super) fn raw(_host: &mut dyn Host, args: &[Value]) -> Result<Value, Fault> {
+pub(super) fn raw(_vm: &mut dyn Machine, args: &[Value]) -> Result<Value, Fault> {
     match &args[0] {
         Value::Str(s) => Ok(Value::Html(s.clone())),
         html @ Value::Html(_) => Ok(html.clone()),
@@ -45,7 +45,7 @@ pub(super) fn datetime_type(args: &[Type]) -> Result<Type, String> {
 /// `datetime(s)`: the moment `s` spells, in the offset it spells it in. A literal
 /// argument is read at compile time too (`compile/calls.rs`), so a fixed date that is
 /// not a date is a compile error rather than a render one.
-pub(super) fn datetime(_host: &mut dyn Host, args: &[Value]) -> Result<Value, Fault> {
+pub(super) fn datetime(_vm: &mut dyn Machine, args: &[Value]) -> Result<Value, Fault> {
     match &args[0] {
         Value::Str(text) => Datetime::parse(text)
             .map(Value::Datetime)
@@ -65,7 +65,7 @@ pub(super) fn url_type(args: &[Type]) -> Result<Type, String> {
 }
 
 /// `url(s)`: the composed text as a URL, percent-encoded once (`url.rs`).
-pub(super) fn url(_host: &mut dyn Host, args: &[Value]) -> Result<Value, Fault> {
+pub(super) fn url(_vm: &mut dyn Machine, args: &[Value]) -> Result<Value, Fault> {
     match &args[0] {
         Value::Str(text) => Ok(Value::url(url::encode(text))),
         other => Err(format!("url() takes a string, got {}", other.type_name()).into()),
@@ -85,7 +85,7 @@ pub(super) fn asset_type(_args: &[Type]) -> Result<Type, String> {
 /// `compile/calls.rs` folds the call to the URL the manifest gave it and emits no
 /// `CallBuiltin` at all (D10). Reaching here would mean that folding was skipped, which
 /// is a bug in the compiler rather than a mistake in a template.
-pub(super) fn asset(_host: &mut dyn Host, _args: &[Value]) -> Result<Value, Fault> {
+pub(super) fn asset(_vm: &mut dyn Machine, _args: &[Value]) -> Result<Value, Fault> {
     Err(Fault::from(
         "asset() is resolved while compiling and should never run",
     ))
@@ -108,10 +108,10 @@ pub(super) fn unique_id_type(args: &[Type]) -> Result<Type, String> {
 /// calls. It remembers deterministically: the same page rendered twice gives the same
 /// ids, because the counter starts at zero and the walk order is the document's
 /// (invariant 1).
-pub(super) fn unique_id(host: &mut dyn Host, args: &[Value]) -> Result<Value, Fault> {
+pub(super) fn unique_id(vm: &mut dyn Machine, args: &[Value]) -> Result<Value, Fault> {
     match &args[0] {
         Value::Str(prefix) => {
-            let n = host.next_id(prefix);
+            let n = vm.next_id(prefix);
             Ok(Value::str(format!("{prefix}-{n}")))
         }
         other => {
@@ -210,10 +210,10 @@ mod tests {
     #[test]
     fn unique_id_counts_from_zero_and_keeps_a_prefix_to_itself() {
         let entry = ambient("uniqueId");
-        let mut host = Apply::new(itself);
+        let mut vm = Apply::new(itself);
         let ids: Vec<Value> = ["desc", "desc", "field", "desc"]
             .iter()
-            .map(|prefix| (entry.call)(&mut host, &[Value::str(*prefix)]).unwrap())
+            .map(|prefix| (entry.call)(&mut vm, &[Value::str(*prefix)]).unwrap())
             .collect();
         assert_eq!(
             ids,

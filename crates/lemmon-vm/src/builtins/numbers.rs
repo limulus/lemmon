@@ -10,7 +10,7 @@
 
 use crate::Value;
 
-use super::{Fault, Host, method_receiver};
+use super::{Fault, Machine, method_receiver};
 
 /// The receiver as a float, or the refusal for a value only an `any` call could have
 /// handed a float method.
@@ -38,7 +38,7 @@ fn whole(name: &str, rounded: f64) -> Result<Value, Fault> {
 }
 
 /// `n.abs()` on an `int`: its magnitude.
-pub(super) fn int_abs(_host: &mut dyn Host, args: &[Value]) -> Result<Value, Fault> {
+pub(super) fn int_abs(_vm: &mut dyn Machine, args: &[Value]) -> Result<Value, Fault> {
     match &args[0] {
         Value::Int(n) => n
             .checked_abs()
@@ -49,17 +49,17 @@ pub(super) fn int_abs(_host: &mut dyn Host, args: &[Value]) -> Result<Value, Fau
 }
 
 /// `x.abs()` on a `float`: its magnitude.
-pub(super) fn float_abs(_host: &mut dyn Host, args: &[Value]) -> Result<Value, Fault> {
+pub(super) fn float_abs(_vm: &mut dyn Machine, args: &[Value]) -> Result<Value, Fault> {
     Ok(Value::Float(float("abs", args)?.abs()))
 }
 
 /// `x.round()`: the nearest whole number, halves away from zero.
-pub(super) fn round(_host: &mut dyn Host, args: &[Value]) -> Result<Value, Fault> {
+pub(super) fn round(_vm: &mut dyn Machine, args: &[Value]) -> Result<Value, Fault> {
     whole("round", float("round", args)?.round())
 }
 
 /// `x.floor()`: the whole number at or below.
-pub(super) fn floor(_host: &mut dyn Host, args: &[Value]) -> Result<Value, Fault> {
+pub(super) fn floor(_vm: &mut dyn Machine, args: &[Value]) -> Result<Value, Fault> {
     whole("floor", float("floor", args)?.floor())
 }
 
@@ -72,7 +72,7 @@ pub(super) fn floor(_host: &mut dyn Host, args: &[Value]) -> Result<Value, Fault
 /// value that is *exactly* a tie in binary, which is rarer than it sounds. The famous
 /// `toFixed` surprises are not ties at all: `1.005` is really `1.00499…`, and both
 /// languages round it down. No f-number a photo carries is a tie.
-pub(super) fn fixed(_host: &mut dyn Host, args: &[Value]) -> Result<Value, Fault> {
+pub(super) fn fixed(_vm: &mut dyn Machine, args: &[Value]) -> Result<Value, Fault> {
     let value = float("fixed", args)?;
     let places = match &args[1] {
         Value::Int(n) if (0..=17).contains(n) => {
@@ -97,18 +97,24 @@ pub(super) fn fixed(_host: &mut dyn Host, args: &[Value]) -> Result<Value, Fault
 mod tests {
     use super::super::tests::{call, of};
     use super::*;
-    use crate::builtins::Kind;
+    use crate::builtins::ReceiverKind;
 
-    fn on(kind: Kind, name: &'static str, args: &[Value]) -> Value {
+    fn on(kind: ReceiverKind, name: &'static str, args: &[Value]) -> Value {
         call(of(kind, name), args).expect("a number method")
     }
 
     #[test]
     fn takes_the_magnitude_of_an_int_and_of_a_float() {
-        assert_eq!(on(Kind::Int, "abs", &[Value::Int(-42)]), Value::Int(42));
-        assert_eq!(on(Kind::Int, "abs", &[Value::Int(42)]), Value::Int(42));
         assert_eq!(
-            on(Kind::Float, "abs", &[Value::Float(-1.5)]),
+            on(ReceiverKind::Int, "abs", &[Value::Int(-42)]),
+            Value::Int(42)
+        );
+        assert_eq!(
+            on(ReceiverKind::Int, "abs", &[Value::Int(42)]),
+            Value::Int(42)
+        );
+        assert_eq!(
+            on(ReceiverKind::Float, "abs", &[Value::Float(-1.5)]),
             Value::Float(1.5)
         );
     }
@@ -116,7 +122,7 @@ mod tests {
     #[test]
     fn refuses_the_one_int_with_no_magnitude() {
         assert_eq!(
-            call(of(Kind::Int, "abs"), &[Value::Int(i64::MIN)]).unwrap_err(),
+            call(of(ReceiverKind::Int, "abs"), &[Value::Int(i64::MIN)]).unwrap_err(),
             Fault::from("integer overflow")
         );
     }
@@ -124,23 +130,23 @@ mod tests {
     #[test]
     fn rounds_halves_away_from_zero_and_floors_downward() {
         assert_eq!(
-            on(Kind::Float, "round", &[Value::Float(2.5)]),
+            on(ReceiverKind::Float, "round", &[Value::Float(2.5)]),
             Value::Int(3)
         );
         assert_eq!(
-            on(Kind::Float, "round", &[Value::Float(2.4)]),
+            on(ReceiverKind::Float, "round", &[Value::Float(2.4)]),
             Value::Int(2)
         );
         assert_eq!(
-            on(Kind::Float, "round", &[Value::Float(-2.5)]),
+            on(ReceiverKind::Float, "round", &[Value::Float(-2.5)]),
             Value::Int(-3)
         );
         assert_eq!(
-            on(Kind::Float, "floor", &[Value::Float(2.9)]),
+            on(ReceiverKind::Float, "floor", &[Value::Float(2.9)]),
             Value::Int(2)
         );
         assert_eq!(
-            on(Kind::Float, "floor", &[Value::Float(-2.1)]),
+            on(ReceiverKind::Float, "floor", &[Value::Float(-2.1)]),
             Value::Int(-3)
         );
     }
@@ -154,7 +160,7 @@ mod tests {
             ("round", 1e30, "1000000000000000000000000000000"),
         ] {
             assert_eq!(
-                call(of(Kind::Float, name), &[Value::Float(value)]).unwrap_err(),
+                call(of(ReceiverKind::Float, name), &[Value::Float(value)]).unwrap_err(),
                 Fault::from(format!("`.{name}()` cannot make an int of {shown}")),
                 "{name} {value}"
             );
@@ -163,7 +169,7 @@ mod tests {
 
     #[test]
     fn writes_a_float_with_exactly_the_places_asked_for() {
-        let fixed = of(Kind::Float, "fixed");
+        let fixed = of(ReceiverKind::Float, "fixed");
         assert_eq!(
             call(fixed, &[Value::Float(2.8), Value::Int(2)]).unwrap(),
             Value::str("2.80")
@@ -186,7 +192,7 @@ mod tests {
 
     #[test]
     fn refuses_a_number_of_places_it_cannot_write() {
-        let fixed = of(Kind::Float, "fixed");
+        let fixed = of(ReceiverKind::Float, "fixed");
         assert_eq!(
             call(fixed, &[Value::Float(1.0), Value::Int(-1)]).unwrap_err(),
             Fault::from("`.fixed()` needs between 0 and 17 decimal places, got -1")
@@ -204,11 +210,11 @@ mod tests {
     #[test]
     fn refuses_a_receiver_only_an_any_call_could_have_handed_it() {
         assert_eq!(
-            call(of(Kind::Int, "abs"), &[Value::str("s")]).unwrap_err(),
+            call(of(ReceiverKind::Int, "abs"), &[Value::str("s")]).unwrap_err(),
             Fault::from("`.abs()` needs an int, got string")
         );
         for name in ["abs", "round", "floor", "fixed"] {
-            let entry = of(Kind::Float, name);
+            let entry = of(ReceiverKind::Float, name);
             let args = [Value::Int(1), Value::Int(2)];
             assert_eq!(
                 call(entry, &args[..entry.arity]).unwrap_err(),

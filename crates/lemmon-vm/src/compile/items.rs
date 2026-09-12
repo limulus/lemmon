@@ -13,7 +13,7 @@ use lemmon_syntax::{Span, SyntaxToken};
 
 use super::expr::{decode_string, unparen};
 use super::names::{BindingKind, already_bound};
-use super::whitespace::{Arm, Body, Case, Kind, Piece};
+use super::whitespace::{Arm, Body, BodyKind, Case, Piece};
 use super::{Compiler, Diagnostic, Runs, TokenSpan, required, rules};
 use crate::bytecode::Op;
 use crate::decls::Decls;
@@ -46,14 +46,14 @@ enum Level {
 
 impl Compiler<'_> {
     /// Lowers a body in its own scope.
-    pub(super) fn lower_block(&mut self, items: Vec<Item>, kind: Kind) {
+    pub(super) fn lower_block(&mut self, items: Vec<Item>, kind: BodyKind) {
         self.push_scope();
         self.lower_body(Body::new(items, kind));
         self.pop_scope();
     }
 
     fn lower_body(&mut self, body: Body) {
-        let level = if body.kind == Kind::File {
+        let level = if body.kind == BodyKind::File {
             Level::File
         } else {
             Level::Nested
@@ -391,7 +391,7 @@ impl Compiler<'_> {
         let name = required(tag.name());
         let body = required(tag.body());
         self.emit(Op::Capture, tag.span());
-        self.lower_block(body.items().collect(), Kind::Value);
+        self.lower_block(body.items().collect(), BodyKind::Value);
         self.emit(Op::EndCapture, tag.span());
         let slot = self.bind(&name, BindingKind::Definition, Type::Html);
         self.emit(Op::StoreLocal { slot }, name.span());
@@ -471,7 +471,7 @@ impl Compiler<'_> {
         let body = required(tag.body());
         self.lower_exported(&name, tag.span(), |c, _| {
             c.emit(Op::Capture, tag.span());
-            c.lower_block(body.items().collect(), Kind::Value);
+            c.lower_block(body.items().collect(), BodyKind::Value);
             c.emit(Op::EndCapture, tag.span());
         });
     }

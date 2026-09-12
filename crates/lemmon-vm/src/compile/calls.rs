@@ -18,7 +18,7 @@ use lemmon_syntax::ast::{
 use lemmon_syntax::{Span, SyntaxToken};
 
 use crate::Value;
-use crate::builtins::{BUILTINS, Expected, Kind, Reach};
+use crate::builtins::{BUILTINS, Expected, Reach, ReceiverKind};
 use crate::bytecode::Op;
 use crate::datetime::Datetime;
 use crate::types::Type;
@@ -243,14 +243,14 @@ impl Compiler<'_> {
             (Reach::Ambient, "datetime") => {
                 self.check_literal(positional, |text| Datetime::parse(text).map(drop));
             }
-            (Reach::Method(Kind::Datetime), "format") => {
+            (Reach::Method(ReceiverKind::Datetime), "format") => {
                 self.check_literal(positional, Datetime::check_pattern);
             }
             _ => {}
         }
         let argc = u16::try_from(arity).expect("fewer than 65536 arguments");
         self.emit(Op::CallBuiltin { id, argc }, span);
-        self.rule(span, (BUILTINS[id as usize].ty)(&types))
+        self.rule(span, (BUILTINS[id as usize].rule)(&types))
     }
 
     /// Lowers `asset("…")` to the URL the manifest gives its path, as a constant.

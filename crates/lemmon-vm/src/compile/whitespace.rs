@@ -34,7 +34,7 @@ use super::required;
 
 /// Where a body stands, which decides which rules reach it.
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(super) enum Kind {
+pub(super) enum BodyKind {
     /// A file's top level, where `lem-fn` definitions stand. Its start and end are line
     /// boundaries the way the start and end of a file are; nothing is dedented.
     File,
@@ -50,7 +50,7 @@ pub(super) enum Kind {
 /// runs of it, with the flow constructs' own bodies built in place.
 pub(super) struct Body {
     pub(super) pieces: Vec<Piece>,
-    pub(super) kind: Kind,
+    pub(super) kind: BodyKind,
 }
 
 /// One thing standing in a body.
@@ -96,11 +96,11 @@ pub(super) struct Case {
 impl Body {
     /// Builds a body: its pieces, then the line rule over them, then — for a value
     /// body — the body rule.
-    pub(super) fn new(items: Vec<Item>, kind: Kind) -> Self {
+    pub(super) fn new(items: Vec<Item>, kind: BodyKind) -> Self {
         let mut pieces: Vec<Piece> = items.into_iter().map(Piece::build).collect();
-        line_rule(&mut pieces, kind == Kind::File);
+        line_rule(&mut pieces, kind == BodyKind::File);
         let mut body = Self { pieces, kind };
-        if kind == Kind::Value {
+        if kind == BodyKind::Value {
             body.normalize();
         }
         body
@@ -167,7 +167,7 @@ impl Piece {
                     .map(|arm| Arm {
                         condition: arm.condition,
                         span: arm.span,
-                        body: Body::new(arm.items, Kind::Flow),
+                        body: Body::new(arm.items, BodyKind::Flow),
                     })
                     .collect();
                 for i in 1..arms.len() {
@@ -183,10 +183,10 @@ impl Piece {
                 Self::If { arms }
             }
             Item::For(ref tag) => {
-                let mut body = Body::new(tag.items().collect(), Kind::Flow);
+                let mut body = Body::new(tag.items().collect(), BodyKind::Flow);
                 let mut otherwise = tag
                     .else_items()
-                    .map(|items| Body::new(items.collect(), Kind::Flow));
+                    .map(|items| Body::new(items.collect(), BodyKind::Flow));
                 if let Some(otherwise) = &mut otherwise {
                     trim_statement_line(
                         body.last_text(),
@@ -210,13 +210,13 @@ impl Piece {
                     .map(|case| Case {
                         body: Body::new(
                             required(case.body()).items().collect(),
-                            Kind::Flow,
+                            BodyKind::Flow,
                         ),
                         tag: case,
                     })
                     .collect(),
                 default: tag.default().map(|default| {
-                    Body::new(required(default.body()).items().collect(), Kind::Flow)
+                    Body::new(required(default.body()).items().collect(), BodyKind::Flow)
                 }),
             },
             _ => Self::Tag {
@@ -555,7 +555,7 @@ mod tests {
             _ => panic!("the first item must be a block definition"),
         };
         let mut out = String::new();
-        write(&mut out, &Body::new(body, Kind::Value));
+        write(&mut out, &Body::new(body, BodyKind::Value));
         out
     }
 
@@ -822,7 +822,7 @@ mod tests {
     fn takes_the_lines_of_the_definitions_a_file_is_made_of() {
         let parse = parse("<lem-fn f()>x</lem-fn>\n<lem-fn g()>y</lem-fn>\n<lem.f()>\n");
         assert_eq!(parse.diagnostics, &[]);
-        let body = Body::new(parse.root().items().collect(), Kind::File);
+        let body = Body::new(parse.root().items().collect(), BodyKind::File);
         let mut out = String::new();
         write(&mut out, &body);
         assert_eq!(out, "{}\n");
@@ -833,7 +833,7 @@ mod tests {
         let parse =
             parse("<lem-let posts: [Article] from \"feed/*/index.md\" />\n<lem.posts>\n");
         assert_eq!(parse.diagnostics, &[]);
-        let body = Body::new(parse.root().items().collect(), Kind::File);
+        let body = Body::new(parse.root().items().collect(), BodyKind::File);
         let mut out = String::new();
         write(&mut out, &body);
         assert_eq!(out, "{}\n");

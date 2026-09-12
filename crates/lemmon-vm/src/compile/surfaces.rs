@@ -37,7 +37,7 @@ pub struct PreparedFile {
     pub(super) record: Option<String>,
     /// Where the host says the record was named, when it can say.
     record_span: Option<Span>,
-    pub(super) source: Source,
+    pub(super) source: ParsedFile,
     /// A document's prose, rendered by comrak here so markdown never runs later.
     pub(super) chunks: Option<Vec<String>>,
     pub(super) exports: Vec<ExportedSignature>,
@@ -81,8 +81,10 @@ impl PreparedFile {
             return span;
         }
         match &self.source {
-            Source::Document(doc) => doc.front_matter.unwrap_or_else(|| Span::new(0, 0)),
-            Source::Template(_) => Span::new(0, 0),
+            ParsedFile::Document(doc) => {
+                doc.front_matter.unwrap_or_else(|| Span::new(0, 0))
+            }
+            ParsedFile::Template(_) => Span::new(0, 0),
         }
     }
 }
@@ -96,7 +98,7 @@ impl PreparedFile {
 /// nothing to compile. Parser warnings are kept in the prepared file and reported with
 /// the unit's.
 pub fn prepare(file: &SourceFile, host: &Host) -> Result<PreparedFile, Vec<Diagnostic>> {
-    let source = Source::of(file);
+    let source = ParsedFile::of(file);
     let mut diagnostics: Vec<Diagnostic> = source
         .parse()
         .diagnostics
@@ -110,8 +112,8 @@ pub fn prepare(file: &SourceFile, host: &Host) -> Result<PreparedFile, Vec<Diagn
     // fails the file the way a parse error does: its blocks may be fine, but where
     // their output would go is not known.
     let chunks = match &source {
-        Source::Template(_) => None,
-        Source::Document(doc) => {
+        ParsedFile::Template(_) => None,
+        ParsedFile::Document(doc) => {
             match document::render_prose(&file.path, &file.text, doc) {
                 Ok(chunks) => Some(chunks),
                 Err(errors) => {
@@ -453,12 +455,12 @@ fn enum_shape(path: &str, decl: &EnumDecl, diagnostics: &mut Vec<Diagnostic>) ->
 
 /// A file as parsed: a template, or a document in document mode. Decided by the path,
 /// as it is in a site — `.md` is a document, anything else a template.
-pub(super) enum Source {
+pub(super) enum ParsedFile {
     Template(Parse),
     Document(DocumentParse),
 }
 
-impl Source {
+impl ParsedFile {
     pub(super) fn of(file: &SourceFile) -> Self {
         if crate::is_document(&file.path) {
             Self::Document(parse_document(&file.text))

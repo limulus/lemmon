@@ -12,7 +12,7 @@ use std::rc::Rc;
 
 use crate::compile::{Diagnostic, omittable};
 use crate::datetime::Datetime;
-use crate::decls::{Decls, Kind, no_field};
+use crate::decls::{DeclKind, Decls, no_field};
 use crate::host::no_asset;
 use crate::plan::{Index, Step};
 use crate::types::{Type, assignable};
@@ -157,11 +157,11 @@ impl Loader<'_> {
             }
             (Type::Fn(..), Value::Str(name)) => self.function(&name, ty, at),
             (Type::Named(name), value) => match self.module.kind(name) {
-                Some(Kind::Enum) => match value {
+                Some(DeclKind::Enum) => match value {
                     Value::Str(variant) => self.variant(variant, name, at),
                     other => mismatch(self, &other),
                 },
-                Some(Kind::Record) => match value {
+                Some(DeclKind::Record) => match value {
                     Value::Map(given) => self.record(&given, name, at, doc),
                     Value::Str(_) => {
                         self.diagnostics.push(at.error(format!(
@@ -435,7 +435,7 @@ impl Loader<'_> {
         };
         let is_record = match (&found, ty) {
             (Value::Record(record), Type::Named(name)) => {
-                self.module.is_a(&record.ty, name)
+                self.module.is_a(&record.name, name)
             }
             _ => false,
         };
@@ -672,7 +672,7 @@ mod tests {
         let Some(Value::Record(photo)) = article.fields.get("hero") else {
             panic!("a resolved record");
         };
-        assert_eq!(&*photo.ty, "Photo");
+        assert_eq!(&*photo.name, "Photo");
         assert_eq!(photo.fields.get("placement"), Some(&Value::str("left")));
     }
 

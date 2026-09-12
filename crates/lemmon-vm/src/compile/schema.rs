@@ -18,7 +18,7 @@ use std::rc::Rc;
 use lemmon_syntax::Span;
 use lemmon_syntax::ast::TypeExpr;
 
-use crate::decls::{Declaration, Decls, FieldDecl, Kind, Shape};
+use crate::decls::{DeclKind, Declaration, Decls, FieldDecl, Shape};
 use crate::host::no_asset;
 use crate::types::Type;
 use crate::unit::{AmbientRef, AssetRef, ImportRef, TypeRef};
@@ -231,7 +231,7 @@ impl Compiler<'_> {
             self.error(span, format!("unknown type `{record}`"));
             return Type::Any;
         };
-        if export.decl.kind() == Kind::Enum {
+        if export.decl.kind() == DeclKind::Enum {
             self.error(span, format!("`{record}` is an enum, not a record"));
             return Type::Any;
         }
@@ -281,7 +281,7 @@ impl Compiler<'_> {
             let Some(base_export) = self.index.lookup_type(base) else {
                 continue;
             };
-            if base_export.decl.kind() == Kind::Enum {
+            if base_export.decl.kind() == DeclKind::Enum {
                 self.error(*base_span, format!("`{base}` is an enum, not a record"));
                 continue;
             }

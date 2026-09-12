@@ -38,7 +38,7 @@ pub use compile::{
     repeated_path,
 };
 pub use datetime::Datetime;
-pub use decls::{Declaration, Decls, FieldDecl, Kind, Shape, ShapeFact, TypeFact};
+pub use decls::{DeclKind, Declaration, Decls, FieldDecl, Shape, ShapeFact, TypeFact};
 pub use exports::{Export, ExportIndex, TypeExport};
 pub use host::{Ambient, Host};
 pub use load::{Data, HostSpan, Loaded, Source, Spans, Store, collects, field_path, load};

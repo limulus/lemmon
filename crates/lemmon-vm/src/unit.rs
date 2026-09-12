@@ -17,7 +17,7 @@ use crate::Value;
 use crate::bytecode::{Declared, Document, Exported, Function, Module, Op};
 use crate::closure::{self, Closed, ReadClosure};
 use crate::compile::{Compiled, Diagnostic, Runs, index_u32, refused_at_load};
-use crate::decls::{Declaration, Decls, Kind, Shape, TypeFact};
+use crate::decls::{DeclKind, Declaration, Decls, Shape, TypeFact};
 use crate::exports::ExportIndex;
 use crate::host::Host;
 use crate::plan::{
@@ -621,7 +621,7 @@ impl Places<'_> {
         let mut plans = Vec::new();
         for export in self.index.types() {
             let name = &export.decl.name;
-            if export.decl.kind() != Kind::Record {
+            if export.decl.kind() != DeclKind::Record {
                 continue;
             }
             let mut steps: Vec<Planned<Step>> = Vec::new();
@@ -967,7 +967,7 @@ impl Places<'_> {
         ty.named_types(&mut pending);
         let mut seen: Vec<Rc<str>> = Vec::new();
         while let Some(name) = pending.pop() {
-            if seen.contains(&name) || self.index.kind(&name) != Some(Kind::Record) {
+            if seen.contains(&name) || self.index.kind(&name) != Some(DeclKind::Record) {
                 continue;
             }
             seen.push(name.clone());
