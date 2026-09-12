@@ -173,14 +173,16 @@ A unit depends on its text and on the **compile-time facts** it consumed, nothin
 
 - signatures and types of the project-flat and plugin names it references (not bodies);
 - for a document, the record type the shell compiled it with (D30);
-- the ids of any reference index it resolves a string literal through (language.md §Document
-  mode item 6);
+- what the host bound each ambient value it read to (D36);
 - the asset-manifest entries `asset()` was checked against (D10).
 
 The compiler reports those facts per file, and the shell's cache key is
 `hash(text) + hash(facts)`. That is the guarantee: a content edit re-runs comrak and codegen
 for that one document; the layouts and components it depends on are cache hits. A new photo
-id invalidates only documents whose facts named the photo index, never the layouts. Checking is part of compiling a unit (D31): a file is re-checked exactly when it is
+id changes no existing unit: a record named by id is read from its map at render, and no
+unit's facts name an id (∆Hbw). Which pages then re-render — a render-time read of the
+map, or a load-time `by` resolution — is not yet answered (∆RGQ).
+Checking is part of compiling a unit (D31): a file is re-checked exactly when it is
 recompiled, which its text or its facts changing is what triggers.
 
 ∆TNT made the split real: `lemmon-vm` compiles per file (`prepare` → `ExportIndex` →

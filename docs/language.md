@@ -47,7 +47,7 @@ Three delimitability rules (D21):
 | `<lem-name head> … </lem-name>` | Block builtin. Every block closes bare, `lem-fn` included. |
 | `<lem-name head />` | Void builtin. The ` />` is canonical (formatter writes it); parser accepts bare `>`. |
 | `<lem.expr>` | Access: print a value or call a function — the only call form (D22). Always void, never slashed. |
-| `&lt;lem` | Escape for a literal `<lem…` in a template. Code fences handle it in documents. |
+| `&lt;lem` | Escape for a literal `<lem…` in a template, and inside a block in a document. In a document's prose a code fence is enough. |
 
 Every token carries a byte span.
 
@@ -126,7 +126,7 @@ follows:
 | `lem.` | expression | Print/call. Strings HTML-escaped; `html` verbatim; other types formatted by type (datetime → ISO, asset → hashed URL…). Formatter parenthesizes non-path heads: `<lem.(a ?? b)>`. |
 | `lem-if` / `lem-else-if` / `lem-else` | `bool` or optional | No truthiness: condition must be `bool`, or an optional (non-null test — narrows a `T?` path such as `article.hero` to `T` in the branch, as `x is T` narrows `x` to `T`; § Checking, Narrowing). Separators are void. |
 | `lem-for` | `x in list` · `x, i in list` · `k, v in map` | Iteration; `<lem-else />` inside gives the empty case. Bodies cannot mutate → parallelizable later. |
-| `lem-let` | `name = expr` / `name: T = expr` / `name: T from source` → void · bare `name` → block | Immutable binding, scoped to the enclosing block. Block form binds the rendered body as `html` (the capture form; in documents the body is a document). The `from` form binds what the host loads from a glob, a data file, `plugin("…")`, or `env("…")`; it is allowed only at the top level of `site.lem` (D30). Unused bindings warn — except at the top level of the file an ambient value reads, where every binding is a field of that value's record and declares its type (§ Ambient types). |
+| `lem-let` | `name = expr` / `name: T = expr` / `name: T from source` → void · bare `name` → block | Immutable binding, scoped to the enclosing block. Block form binds the rendered body as `html` (the capture form; in a document too, the body is a template). The `from` form binds what the host loads from a glob, a data file, `plugin("…")`, or `env("…")`; it is allowed only at the top level of `site.lem` (D30). Unused bindings warn — except at the top level of the file an ambient value reads, where every binding is a field of that value's record and declares its type (§ Ambient types). |
 | `lem-match` / `lem-case` / `lem-default` | subject; patterns | Patterns: a record type (`Til`, or `Til as t` to bind it), a literal, an enum variant (dotted, `.hero`), `null`. Cases are blocks, tried in order, the optional `lem-default` last. A type case narrows the subject in its body and binds `t` to it. Exhaustive over enums (every variant, and `null` for a `T?`), else `lem-default` required — a record is matched by its subtypes, and that set is open (D35; the exact rules are a deferred question). |
 | `lem-fn` | signature | **Definition only** (calls go through `lem.`). Block body returns `html`, closes `</lem-fn>`; a `: html` on it is allowed and nothing else is. Expression body `(…): T = expr` is void and returns the declared `T` — the annotation is required, since a signature is read from the head alone (invariant 11). |
 | `lem-type` | `Name` / `Name extends Base` | Record schema (block); fields in the body, one per line, lexed in fields mode (D29). See § Schemas. |
@@ -716,13 +716,19 @@ renders prose; the VM renders Lemmon blocks; outputs are spliced.
 
 1. A **lem-block** starts on a line whose first non-whitespace is `<lem.` or `<lem-`,
    outside fenced code. It ends at its matching close (or the void tag's own `>`/`/>`),
-   possibly many lines later; fences inside a block body are respected. Nothing but
-   whitespace may follow the close on its line — a block ends its line, in the source
-   and in the output, and text after it is an error rather than a guess at prose.
-2. A block's body is itself a **document** — markdown prose plus nested blocks — so
-   `<lem-let note>Some *emphasised* text</lem-let>` captures rendered markdown.
-   _Not yet (∆Hbw): today a body is a template, as in a `.lem` file, and the fence
-   rule in item 1 has nothing to apply to inside one._
+   possibly many lines later. Nothing but whitespace may follow the close on its line —
+   a block ends its line, in the source and in the output, and text after it is an
+   error rather than a guess at prose.
+2. A block is a **template** from its opening tag to its close, body included — the
+   language of a `.lem` file, and it emits HTML (D39). Markdown stops at the opening
+   tag: `<lem-let note>Some *emphasised* text</lem-let>` captures the asterisks. The
+   document's link definitions and footnotes do not reach into a body, and a fence
+   inside one is text, so a tag in it is a tag. To put an element around prose, write
+   the element as raw HTML: CommonMark ends a raw HTML block at a blank line, so an
+   `<aside>` with a blank line on each side of the markdown renders the prose inside
+   the element, reference links and footnotes included — and a block standing between
+   those blank lines is spliced as anywhere else. Whether a capture may ever hold
+   markdown is a deferred question (§Deferred questions).
 3. Prose runs are joined with `<!--lem:N-->` sentinel lines and rendered as **one**
    markdown document (reference links and footnotes resolve document-wide). A sentinel
    line is a CommonMark type-2 HTML block, so splice points are always siblings of
@@ -735,11 +741,15 @@ renders prose; the VM renders Lemmon blocks; outputs are spliced.
    module's constants. Only lem-blocks execute at render.
 6. Front matter is a typed record — the schema of the collection whose glob matched the
    file, or the subtype a `type:` key names (D30) — and the body has `page` and `site`
-   in scope. String literals where a record is expected resolve through reference
-   indexes at compile time:
-   `<lem.photo("middle-falls-letchworth-state-park", placement: right)>` — a typo'd id
-   is a build error. _Not yet (∆Hbw): the core skips a leading `---` block without
-   reading it — the shell's YAML parser owns it — and a string literal is a string._
+   in scope. The core skips the leading `---` block without reading it: the shell
+   parses the YAML, and the loader validates the record at the positions the shell
+   sent, resolving each string in it by the field's declared type — a `by` field takes
+   the record its index maps the string to (D37, §Schemas). In prose as in a template,
+   a string literal is a string: a record named by id is read from the map that indexes
+   it, `photo(site.photos["middle-falls"], placement: .right)`, or the component takes
+   the id and looks it up, and a miss is a render error at the lookup, which fails the
+   build like any other. Nothing resolves at compile time, so no unit depends on which
+   ids a map holds (D25).
 7. A void keyword tag (`<lem-let x = … />`) takes its line with it, as in a template
    (§Tags); an access tag or a block keeps the line ending after it, so that two
    blocks' output stand on two lines.
@@ -799,3 +809,5 @@ provisional reading in this file and flag it in the PR:
 - closed-union syntax and `lem-match` exhaustiveness rules (variant spelling is settled: D32)
 - `==`/`&&` vs `eq`/`and` spelling (consistency with `lt`/`gt`)
 - inline lem tags in prose (reserved for v2; design must remain compatible)
+- markdown inside a block: a block's body is a template (D39); whether a capture may
+  ever hold markdown is open, and both forms D39 considered are additive

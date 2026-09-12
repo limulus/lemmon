@@ -45,9 +45,9 @@ pub struct Unit {
     /// may name them.
     pub types: Vec<Declaration>,
     /// The compile-time facts this unit consumed: the foreign signatures its calls were
-    /// compiled against. With the file's text and [`type_refs`](Self::type_refs),
-    /// these are the whole cache key (D25) — an edit that changes none of them leaves
-    /// this unit byte-identical.
+    /// compiled against. With the file's text and the other facts below — `type_refs`,
+    /// `ambient_refs`, `asset_refs`, and `record` — these are the whole cache key (D25):
+    /// an edit that changes none of them leaves this unit byte-identical.
     pub facts: Vec<ImportedSignature>,
     /// The second kind of fact: the foreign types this file's checking depended on,
     /// each with the declaration it was compiled against, at the first use that reached

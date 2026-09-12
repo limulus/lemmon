@@ -182,6 +182,17 @@ moved it. Newest last. An entry is removed when its change has been applied.
   (`s.slugfy` → "did you mean `.slugify()`?"), as a misspelled call already did; a call
   lists the receiver's whole inventory only when no name is near (∆eHR).
 
+- **Document mode, items 1, 2 and 6; the `lem-let` row; the escape table** — replace
+  items 1, 2 and 6 with `docs/language.md` §Document mode as it now reads: a block is a
+  template from its opening tag to its close, body included, markdown stops at the
+  opening tag, and prose inside an element is written as raw HTML with a blank line on
+  each side (D39); a string literal is a string, a record named by id is read from the
+  map that indexes it, and nothing resolves at compile time (D25 revised). In the
+  `lem-let` row drop "in documents the body is a document"; in the escape table say a
+  fence protects prose only and `&lt;lem` is the escape inside a block. Drop both
+  placeholder notes: front matter is parsed by the shell and validated by the loader
+  (D37), and that is the settled behaviour (∆Hbw).
+
 ## Shell & Core
 
 - **WASM API, `compile` and `loadData`** — a file may carry `recordSpan`, the byte
@@ -306,9 +317,13 @@ moved it. Newest last. An entry is removed when its change has been applied.
   that same manifest, reporting a miss at the YAML position the shell sent (D38).
 
 - **Separate compilation, the facts a unit records** — add the manifest entries a file
-  resolved to the signatures, type references and ambient bindings it already lists. A
-  file that named an asset is recompiled when that asset's URL changes, and a file that
-  named none is not (D25, D38).
+  resolved to the signatures, type references and ambient bindings it already lists,
+  and remove reference-index ids: nothing in a template resolves through an index at
+  compile time, since `compile` runs before `loadData`. A file that named an asset is
+  recompiled when that asset's URL changes, and a file that named none is not. Replace
+  "a new photo id invalidates only the documents whose facts named the photo index"
+  with: a new photo id changes no existing unit, and which pages re-render is ∆RGQ's
+  question (D25, D38; D25 revised, ∆Hbw).
 
 - **VM, the stdlib's values and the id counter** — `Value` carries `Datetime`, `Duration`,
   `Url` and `Asset` beside the rest, and stays twenty-four bytes: a datetime is packed

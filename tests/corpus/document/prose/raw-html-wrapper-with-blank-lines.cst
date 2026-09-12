@@ -1,0 +1,16 @@
+Root@0..193
+  Text@0..154
+    Text@0..154 "<aside class=\"callout\">\n\nSome *emphasise"…
+  AccessTag@154..170
+    OpenAccess@154..159 "<lem."
+    Head@159..169
+      MemberExpr@159..169
+        NameRef@159..163
+          Ident@159..163 "page"
+        Dot@163..164 "."
+        Ident@164..169 "title"
+    Close@169..170 ">"
+  Text@170..193
+    Text@170..193 "\n\n</aside>\n\n[link]: /x\n"
+
+--- diagnostics

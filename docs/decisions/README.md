@@ -25,7 +25,7 @@ docs, the journal, and the code.
 | D04 | Components | Typed functions returning markup, called like any function via `lem.`. |
 | D05 | Type checking | Static, schema-first, declared in the language. JSON Schema is derived output (`lem schema export`), never the source. |
 | D06 | Build-time logic | Maximal template language; no JS escape hatch at build time. Plugins cannot inject logic. |
-| D07 | Components in markdown | Segmented documents: block-level lem tags split out before markdown, rendered by the VM, spliced via `<!--lem:N-->` HTML-comment sentinels. Block-level only in v1. |
+| D07 | Components in markdown | Segmented documents: block-level lem tags split out before markdown, rendered by the VM, spliced via `<!--lem:N-->` HTML-comment sentinels. Block-level only in v1. A block is a template through its close, body included: markdown stops at the opening tag (D39). |
 | D08 | Markdown engine | comrak built into the core (footnotes, heading ids, `{#id}` attrs, syntect class-based highlighting, `render.unsafe`). Shell-side `markdown` override hook reserved, not built. |
 | D09 | Client JS bundling | esbuild via its JS API; limulus.net's entry conventions (`**/index.ts`, `**/worker.ts`, `/lib/*` external, wasm loader) port 1:1. |
 | D10 | Asset references | `asset("…")`/`[asset]` fields, compile-checked, in templates and front matter. Client TS keeps the `XXXXXXXX` hash-placeholder convention, resolved by the esbuild plugin. |
@@ -43,7 +43,7 @@ docs, the journal, and the code.
 | D22 | Calls & slots | `<lem.f(args)>` is the only call form. Bodies pass capture-then-call (`<lem-let x>…</lem-let>` → `slot: x`). No call-with-body syntax; grammar stays head-decidable. One-shot sugar would be additive later. |
 | D23 | Namespaces | One lexical value namespace: locals/params → project-flat (all site `.lem` files; duplicates = compile error; no site-file imports) → ambient (the values the host names — `site`/`page`/`build` in the shell, D30 — plus stdlib; shadowing stdlib warns). Plugins bind qualified via `lem-import` in `site.lem`, named promotion optional. Types are a namespace of their own, project-flat under the same duplicate rule; capitalization tells them apart by convention (D32). |
 | D24 | Trailing commas | One optional trailing comma is allowed in every comma-separated list — `[a, b,]`, `{k: v,}`, `f(a, b,)`, `lem-fn f(a: int,)`, `\|a, b,\| …` — so multi-line literals and signatures stay one-line-per-item and diff-friendly, as in JS and Rust. Empty slots (`[a,,b]`, `f(,)`) remain errors (2026-08-22). |
-| [D25](D25-separate-compilation.md) | Separate compilation | Each `.lem`/`.md` compiles to its own **unit**; a cheap link step joins units into the `Module` the VM runs. A unit is a function of the file's text plus the compile-time facts it consumed, which the compiler reports; no file's bytecode depends on another file's body (invariant 11). |
+| [D25](D25-separate-compilation.md) | Separate compilation | Each `.lem`/`.md` compiles to its own **unit**; a cheap link step joins units into the `Module` the VM runs. A unit is a function of the file's text plus the compile-time facts it consumed, which the compiler reports; no file's bytecode depends on another file's body (invariant 11). Reference-index ids are not a fact: a string literal in a template is a string, and a record named by id is read from its map at render (∆Hbw). |
 | [D26](D26-body-whitespace.md) | Body whitespace | `lem-fn` block bodies and `lem-let` capture bodies are normalized at compile time: one newline trimmed at each edge, then dedented by the margin the lines share. A body hugging its own tag's line keeps its margin; flow bodies and interpolated values are never touched; no element awareness. |
 | [D27](D27-statement-lines.md) | Statement lines | A `lem-let`/`lem-fn` tag, void or block, alone on its line takes the line with it. `<lem.…>`, `lem-if` and `lem-for` keep theirs. |
 | [D28](D28-whitespace-is-a-source-concern.md) | Whitespace is a source concern | Lemmon optimizes how a `.lem` file reads, not how its HTML reads. The renderer never re-indents at a boundary, and whitespace HTML renders survives byte for byte; formatting the output is a downstream tool's job. Fidelity gates compare rendered HTML, not bytes. |
@@ -57,6 +57,7 @@ docs, the journal, and the code.
 | [D36](D36-host-declarations.md) | Host declarations | The host's declaration is `{ambient, document?, entry?}`: each ambient name bound to a declared type, to a file's top-level bindings, or to nothing (named, untyped). It is resident at the boundary and a fact of every unit that read it, so rebinding a name leaves those units stale by name. `site`'s fields are a declaration synthesized from the bindings file and named by its path. Every surface one file offers another is read from heads alone — a `lem-fn`'s signature, a `lem-type`'s fields, and now the bindings file's top-level `lem-let`s, which declare their types — never inferred from a body (invariant 11). A file's `record` types the document value in it and is checked as a declared record extending that value's type; tagging loaded data stays with ∆iCW (revising D35). |
 | [D37](D37-schemas-at-load.md) | Schemas at load | A field's default and the bindings file's computed bindings compile to functions of their own unit with the fields they read recorded, closed at link through the `lem-fn`s they call by name (∆HF0); a `by` index names one field of one ambient value, `by site.photos`, a pair the head declares and the loader indexes as loaded (∆eag); the link step orders each record's steps and the bindings — a `from` binding after every sibling the records it may hold index — and refuses a cycle. A default sees `self` as the declaring type, plus `path` and `body` on a page-backed record, and no ambient value, directly or through a call (∆eag). A `from` binding stands only in the bindings file, its source a string literal, `plugin("…")`, or `env("…")`; a sibling is read by its bare name there. The loader validates loaded data by declared type, tags records, fills omitted optionals, resolves a string by its expected type (enum variant, project function, `by` index), and rejects extra keys with no opt-out; positions come from the host as complete boundary spans keyed by field path; `render` binds the document value from the store. |
 | [D38](D38-stdlib-values.md) | Stdlib values and the manifest at compile | `datetime` is an instant plus the offset it was written in, printing RFC 3339 in it and comparing by the instant, with no time-zone database and every refusal worded by the core; `duration` is whole seconds with no printed form; `url` is text percent-encoded once, idempotently, with `text()` to compose from; `asset` resolves against a manifest that rides on the **host declaration at `compile`** (correcting ∆d1N), its values finished URLs since the core does no path arithmetic — `asset("…")` takes a literal, folds to a constant, and records the entry as a compile-time fact the link step compares (D25, invariant 11), while `[asset]` fields resolve at load against the same map and share one refusal. `slugify` folds Latin marks rather than transliterating, carrying through a script it cannot fold; a character is a grapheme cluster throughout (UAX #29); `uniqueId(prefix)` counts per prefix per render and forgets between renders. No datetime arithmetic. |
+| [D39](D39-markdown-stops-at-a-block.md) | Markdown stops at a block | In a document, a block is a template from its opening tag to its close, body included, and emits HTML; markdown, link definitions, footnotes, and fences stop at the opening tag (revising D07). Prose inside an element is written as raw HTML with a blank line on each side, and a block between those blank lines splices as anywhere else. A capture whose body is markdown was considered and deferred; both forms are additive. |
 
 ## Deliberately deferred
 
@@ -69,6 +70,9 @@ in the PR when one is load-bearing:
   spelled is settled — D32, revised by ∆EN6.)
 - Operator spelling consistency: `==`/`&&`/`||` (provisional) vs `eq`/`and`/`or`.
 - Inline lem tags in prose: reserved for v2; document-mode design must stay compatible.
+- Markdown inside a block: settled narrow — a block's body is a template (D39).
+  Whether a capture may ever hold markdown is open; D39's alternatives record the two
+  forms, both additive.
 
 ## Chronology
 
@@ -88,8 +92,9 @@ revised the same day (∆Iau) for ambient-rooted narrowing and to leave tagging 
 loader; D36 2026-09-07 (∆Iau); D37 2026-09-08 (∆iCW), its recorded reads closed
 through calls at link 2026-09-09 (∆HF0), `by` narrowed to a declared field and defaults
 to the record 2026-09-10 (∆eag); D38 2026-09-11 (∆Q6L), implemented 2026-09-12 with
-transliteration measured and cut from `slugify` on the way. From D25 on, a record's
-Status line carries the history its row used to.
+transliteration measured and cut from `slugify` on the way; D39 2026-09-12 (∆Hbw),
+revising D07, with D25 revised the same day — reference-index ids are not a fact. From
+D25 on, a record's Status line carries the history its row used to.
 
 ## Record template
 

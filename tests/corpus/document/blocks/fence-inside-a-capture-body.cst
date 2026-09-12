@@ -1,0 +1,36 @@
+Root@0..150
+  LetBlock@0..59
+    OpenTag@0..8 "<lem-let"
+    Trivia@8..9 " "
+    Head@9..16
+      Ident@9..16 "example"
+    Close@16..17 ">"
+    Block@17..49
+      Text@17..26
+        Text@17..26 "\n  ```\n  "
+      AccessTag@26..42
+        OpenAccess@26..31 "<lem."
+        Head@31..41
+          MemberExpr@31..41
+            NameRef@31..35
+              Ident@31..35 "page"
+            Dot@35..36 "."
+            Ident@36..41 "title"
+        Close@41..42 ">"
+      Text@42..49
+        Text@42..49 "\n  ```\n"
+    CloseTag@49..59
+      CloseTag@49..58 "</lem-let"
+      Close@58..59 ">"
+  Text@59..136
+    Text@59..136 "\n\nA fence inside a block is text like an"…
+  AccessTag@136..149
+    OpenAccess@136..141 "<lem."
+    Head@141..148
+      NameRef@141..148
+        Ident@141..148 "example"
+    Close@148..149 ">"
+  Text@149..150
+    Text@149..150 "\n"
+
+--- diagnostics

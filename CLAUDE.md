@@ -71,10 +71,10 @@ These hold for every change. A PR that breaks one is wrong even if its tests pas
 10. **Errors over guesses.** A forgotten close tag, a lost document-mode sentinel, an
     unknown name — all hard errors with precise spans. Never recover by guessing intent.
 11. **Files compile separately.** A file's compiled unit is a function of its own text plus
-    the compile-time facts it consumed (imported signatures, reference-index ids, asset
-    manifest entries), which the compiler reports. Nothing may make one file's bytecode
-    depend on another file's body — that is what lets a content edit leave its layouts'
-    compiled units untouched (docs/decisions/README.md D25).
+    the compile-time facts it consumed (imported signatures and types, ambient bindings, a
+    document's record, asset manifest entries), which the compiler reports. Nothing may
+    make one file's bytecode depend on another file's body — that is what lets a content
+    edit leave its layouts' compiled units untouched (docs/decisions/README.md D25).
 
 ## Layout
 

@@ -1,0 +1,25 @@
+Root@0..227
+  LetBlock@0..65
+    OpenTag@0..8 "<lem-let"
+    Trivia@8..9 " "
+    Head@9..13
+      Ident@9..13 "note"
+    Close@13..14 ">"
+    Block@14..55
+      Text@14..55
+        Text@14..55 "\n  Some *emphasised* text with a [link]."…
+    CloseTag@55..65
+      CloseTag@55..64 "</lem-let"
+      Close@64..65 ">"
+  Text@65..204
+    Text@65..204 "\n\nA capture body is a template, not mark"…
+  AccessTag@204..214
+    OpenAccess@204..209 "<lem."
+    Head@209..213
+      NameRef@209..213
+        Ident@209..213 "note"
+    Close@213..214 ">"
+  Text@214..227
+    Text@214..227 "\n\n[link]: /x\n"
+
+--- diagnostics

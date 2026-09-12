@@ -25,10 +25,11 @@ refactor priority: reshaping is cheapest before more code is built on what it re
 Seed items for the next phase (architecture doc 3, phase 1); expect these to be split
 further at claim time.
 
-- ∆Hbw Document mode, full rules — nested `lem-let` capture bodies as sub-documents, and
-  string-literal reference resolution in prose calls (docs/language.md §Document mode
-  items 2 and 6) with the resolved ids reported as compile-time facts (D25); front matter
-  itself is validated by ∆iCW
+- ∆Hbw Document mode, settled rules — a block in a `.md` is a template through its close,
+  body included (D39, revising D07), and reference-index ids are not a compile-time
+  fact: a string literal is a string, and a record named by id is read from its map at
+  render (D25 revised). Docs, the register rows, and corpus cases pinning both; the
+  sub-document and compile-time-resolution readings are recorded as rejected
 - ∆BfR Syntax highlighting for code fences — comrak's `SyntaxHighlighterAdapter` wired to
   syntect with class-based output plus a generated theme stylesheet (D08,
   docs/architecture.md §Crates). Deferred out of document mode: it adds ~1 MB to the .wasm
@@ -36,8 +37,8 @@ further at claim time.
 - ∆RGQ Side channels + generators — `lem-style`/`lem-script`/`lem-head`/`lem-emit`
   collection and dedup, `lem-page` generators (prev/next), `plan()` filling each page's
   entry from the host-named field (D30), serializable modules, render-reported deps, and
-  compile-reported facts (signatures, reference ids, manifest entries, a document's record)
-  keying the unit cache so a content edit never recompiles its layouts (D25)
+  compile-reported facts (signatures, ambient bindings, manifest entries, a document's
+  record) keying the unit cache so a content edit never recompiles its layouts (D25)
 - ∆5MM tree-sitter-lemmon + LSP skeleton — embedded-template grammar with HTML/markdown
   injections, corpus agreement test wired into CI, `@limulus/lemmon-lsp` serving diagnostics
   and schema completions from `core.analyze()`; editor tooling is a day-one commitment
