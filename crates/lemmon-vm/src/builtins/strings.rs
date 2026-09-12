@@ -1,9 +1,12 @@
 //! What a `string` carries.
 //!
-//! Every entry works in `char`s rather than bytes, so `length` counts what an author
-//! sees and `slugify` may fold one character into several. The receiver refusals here
-//! are reachable only through `any`: the checker matched every other receiver before
-//! the call was emitted.
+//! Every entry counts what an author sees rather than what the encoding holds: a
+//! character is a grapheme cluster, so `length` is the number of times a cursor would
+//! step and `split("")` gives pieces that are each still text. `slugify` may fold one
+//! of them into several. The receiver refusals here are reachable only through `any`:
+//! the checker matched every other receiver before the call was emitted.
+
+use unicode_segmentation::UnicodeSegmentation;
 
 use crate::Value;
 use crate::types::Type;
@@ -44,9 +47,12 @@ pub(super) fn upper(_host: &mut dyn Host, args: &[Value]) -> Result<Value, Fault
     Ok(Value::str(text("upper", args)?.to_uppercase()))
 }
 
-/// `s.length()`: how many characters, not how many bytes — `"café"` is four.
+/// `s.length()`: how many characters a reader sees, not how many bytes and not how many
+/// code points — `"café"` is four however its `é` was spelled, and an emoji family is
+/// one. A character is an extended grapheme cluster (UAX #29): the unit a cursor steps
+/// over and a backspace deletes.
 pub(super) fn length(_host: &mut dyn Host, args: &[Value]) -> Result<Value, Fault> {
-    let count = text("length", args)?.chars().count();
+    let count = text("length", args)?.graphemes(true).count();
     Ok(Value::Int(
         i64::try_from(count).expect("a string shorter than 2^63"),
     ))
@@ -60,11 +66,15 @@ pub(super) fn split_type(_args: &[Type]) -> Result<Type, String> {
 /// `s.split(sep)`: the pieces between each occurrence of `sep`, in order. An empty
 /// separator gives the characters, which is what an author asking for "every letter"
 /// means — Rust's own `split("")` would hand back an empty piece at either end.
+///
+/// Characters, again, are grapheme clusters and not code points. Splitting by code point
+/// would hand back pieces that are not text: a combining accent with no letter under it,
+/// half of an emoji, a zero-width joiner on its own.
 pub(super) fn split(_host: &mut dyn Host, args: &[Value]) -> Result<Value, Fault> {
     let text = text("split", args)?;
     let separator = arg("split", args, 1)?;
     let pieces: Vec<Value> = if separator.is_empty() {
-        text.chars().map(|c| Value::str(c.to_string())).collect()
+        text.graphemes(true).map(Value::str).collect()
     } else {
         text.split(separator).map(Value::str).collect()
     };
@@ -249,6 +259,39 @@ mod tests {
         );
         assert_eq!(on("contains", &[s("a b c"), s("b")]), Value::Bool(true));
         assert_eq!(on("contains", &[s("a b c"), s("z")]), Value::Bool(false));
+    }
+
+    #[test]
+    fn counts_a_character_a_reader_sees_and_not_a_code_point() {
+        // The same word composed and decomposed is the same length; an emoji built out
+        // of four people joined by zero-width joiners is one character, not seven.
+        assert_eq!(on("length", &[s("café")]), Value::Int(4));
+        assert_eq!(on("length", &[s("cafe\u{301}")]), Value::Int(4));
+        assert_eq!(
+            on(
+                "length",
+                &[s("\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}")]
+            ),
+            Value::Int(1)
+        );
+    }
+
+    #[test]
+    fn splits_into_pieces_that_are_each_still_text() {
+        // Splitting by code point would hand back a combining accent with no letter
+        // under it, and a zero-width joiner on its own — neither is a character an
+        // author asked for.
+        assert_eq!(
+            on("split", &[s("cafe\u{301}"), s("")]),
+            Value::list(vec![s("c"), s("a"), s("f"), s("e\u{301}")])
+        );
+        assert_eq!(
+            on(
+                "split",
+                &[s("\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}"), s("")]
+            ),
+            Value::list(vec![s("\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}")])
+        );
     }
 
     #[test]

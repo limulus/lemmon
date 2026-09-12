@@ -232,7 +232,9 @@ is a compile error naming the nearest it has.
 | `html` | `readingTime()` |
 
 `first`, `last`, and `find` give a `T?`, which is how an empty list answers without an
-error; `length` counts characters rather than bytes, and elements rather than entries.
+error; `length` counts characters rather than bytes, and elements rather than entries — a
+character being what a cursor steps over, so an `é` spelled with a combining accent is one
+and so is an emoji built out of several.
 `slugify` folds Latin marks off (`Dürer` → `durer`) and drops apostrophes rather than
 breaking a word on one; it is not a transliteration, so a script it cannot fold is kept
 rather than guessed at and a Japanese title gives a Japanese slug. `round` and `floor` refuse a `float` no `int` holds instead of saturating,
