@@ -37,10 +37,6 @@ refactor priority: reshaping is cheapest before more code is built on what it re
 Seed items for the next phase (architecture doc 3, phase 1); expect these to be split
 further at claim time.
 
-- ∆Q6L Stdlib — strings/lists/maps, `datetime("…")` (compile-time checked on a literal
-  argument; there is no datetime literal) + rfc3339/rfc822 formatting, `slugify`,
-  `readingTime`, `url()`, `asset()`, `raw()`, `uniqueId()`, with typed signatures the
-  checker understands, since feeds/sitemap/layout ports all block on these
 - ∆Hbw Document mode, full rules — nested `lem-let` capture bodies as sub-documents, and
   string-literal reference resolution in prose calls (docs/language.md §Document mode
   items 2 and 6) with the resolved ids reported as compile-time facts (D25); front matter
@@ -89,11 +85,11 @@ API); the port itself lives in limulus-dot-net on a branch while 11ty stays gree
   glob (limulus.net copies `assets/**` plus png/svg/jpg/xsd/xsl/txt/pdf), and a link/asset
   integrity check. Preserving the hash conventions is what keeps CloudFront untouched at
   cutover; needs: ∆4tG, ∆RGQ
-- ∆d1N esbuild asset pipeline — bundle `**/index.ts` + `**/worker.ts` with `/lib/*`
-  external and the wasm loader (D09), resolve the `XXXXXXXX` hash placeholder in client TS
-  (D10), and hand the manifest to `loadData` before compile so `asset()` is compile-checked,
-  the entries it checked against reported as compile-time facts (D25). Ports limulus-dot-net's
-  `11ty/esbuild.ts` 1:1; needs: ∆4tG, ∆Q6L
+- ∆d1N esbuild asset pipeline — bundle `**/index.ts` + `**/worker.ts` with `/lib/*` external
+  and the wasm loader (D09), resolve the `XXXXXXXX` placeholder in client TS (D10), and hand
+  the manifest to the host declaration at `compile`, its entries reported as compile-time
+  facts (D25, D38). Not `11ty/esbuild.ts` 1:1: values are finished URLs, not the bare hashes
+  it stores, since the core does no path arithmetic; needs: ∆4tG, ∆Q6L
 - ∆PgF Plugin host — the `Plugin` hooks (data, transformDocument, assets, transformOutput,
   emit, commands, watch), plugin `.lem` bound via `lem-import` in `site.lem` (D23, D06), and
   the content API (`loadSite(config).collection('articles')`) for out-of-build tools.
