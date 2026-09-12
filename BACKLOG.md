@@ -20,12 +20,6 @@ mechanism: `delto surface` trusts these edges to decide what is eligible to work
 Standing epic for reshaping working code. It comes first so that document order gives a
 refactor priority: reshaping is cheapest before more code is built on what it reshapes.
 
-- ∆Tsy Rename `lemmon-vm`'s colliding types and fields — `builtins::Kind` and `decls::Kind` are
-  two enums under one name, and the root `pub use` hands `lemmon_vm::Kind` to the second, so the
-  first squats on a name it cannot reach; `builtins::Host` shadows the exported `host::Host`;
-  `Builtin.ty` is a typing rule, `Record.ty` a type's name. `lemmon-syntax` settled this with
-  `SyntaxKind`/`LiteralKind`. `Type` and `Value` spell the type names twice, unchecked — test that
-
 ## Phase 1 — Language complete, tooling from day one
 
 Seed items for the next phase (architecture doc 3, phase 1); expect these to be split
