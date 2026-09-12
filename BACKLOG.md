@@ -20,12 +20,6 @@ mechanism: `delto surface` trusts these edges to decide what is eligible to work
 Standing epic for reshaping working code. It comes first so that document order gives a
 refactor priority: reshaping is cheapest before more code is built on what it reshapes.
 
-- ∆vnI Pin the stack the `.wasm` is linked with — `MAX_NATIVE_DEPTH` and the parser's own
-  `MAX_DEPTH` are both budgeted against a megabyte, and `nests_to_the_cap_within_the_stack_the_wasm_is_given`
-  (`crates/lemmon-vm/src/vm.rs`) tests against one, but nothing makes the artifact have it:
-  the build takes whatever `wasm-ld` defaults to. Pass `-z stack-size` and assert it in
-  `scripts/wasm-artifact.ts`, so the number the caps were measured against is the one that ships
-
 - ∆Tsy Rename `lemmon-vm`'s colliding types and fields — `builtins::Kind` and `decls::Kind` are
   two enums under one name, and the root `pub use` hands `lemmon_vm::Kind` to the second, so the
   first squats on a name it cannot reach; `builtins::Host` shadows the exported `host::Host`;
