@@ -5,7 +5,7 @@ it (and the authoring reference it points to) so the conventions below stay enfo
 
 Organized as Initiative (`##`) → Epic (`###`) → Item (`-`); initiatives are roughly
 priority-ordered, items 5 lines max. One standing epic, Refactors, precedes the initiatives,
-and one standing section, Defects, follows them.
+and two standing sections follow them: Defects, then Someday/Maybe.
 
 Each item starts with a “deltoid” — `∆` followed by 3 alphanumerics, e.g. `∆7hy`. Deltoids
 are immutable and travel with the item into its completed-work journal entry in
@@ -170,3 +170,15 @@ reproduced cold.
   same mistake called gets `no_method`'s list of what the type has. `nearest` and
   `methods_of` are already there; undecided is how a field's refusal names a method. Both
   siblings sit in `render/errors/method-errors`; this case is the one it never asked for
+
+## Someday/Maybe
+
+Standing section for work no initiative needs — ideas kept so they are not lost, usually
+serving consumers beyond limulus.net. Nothing here is scheduled; promote an item into an
+initiative before starting it.
+
+- ∆SDN Pure wasm plugin extensions — revisit D06 ("plugins cannot inject logic") for a
+  plugin-shipped wasm module with no imports, called by the core at render time, so sites
+  other than limulus.net get what Lemmon cannot express and the stdlib should not carry
+  without breaking invariant 1: fence renderers beside syntect (Pikchr, TeX → MathML),
+  then locale formatting (plurals, collation); needs: ∆PgF, ∆BfR
