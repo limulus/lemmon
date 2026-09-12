@@ -25,11 +25,6 @@ refactor priority: reshaping is cheapest before more code is built on what it re
 Seed items for the next phase (architecture doc 3, phase 1); expect these to be split
 further at claim time.
 
-- ∆Hbw Document mode, settled rules — a block in a `.md` is a template through its close,
-  body included (D39, revising D07), and reference-index ids are not a compile-time
-  fact: a string literal is a string, and a record named by id is read from its map at
-  render (D25 revised). Docs, the register rows, and corpus cases pinning both; the
-  sub-document and compile-time-resolution readings are recorded as rejected
 - ∆BfR Syntax highlighting for code fences — comrak's `SyntaxHighlighterAdapter` wired to
   syntect with class-based output plus a generated theme stylesheet (D08,
   docs/architecture.md §Crates). Deferred out of document mode: it adds ~1 MB to the .wasm
@@ -52,7 +47,7 @@ further at claim time.
   `docs/artifact-changes.md` to the three Claude Artifacts Eric owns ("Shell & Core", "The
   Lemmon Language", "From Eleventy to Lemmon") and clear the ledger. The artifacts are the
   rationale record; changes are logged per pass and applied once, at the end of Phase 1,
-  so this is deliberately last; needs: ∆Hbw, ∆Q6L, ∆BfR, ∆RGQ, ∆5MM, ∆pXO
+  so this is deliberately last; needs: ∆Q6L, ∆BfR, ∆RGQ, ∆5MM, ∆pXO
 
 ## Phase 2 — The static site generator: limulus.net from a Lemmon port
 
@@ -119,7 +114,7 @@ API); the port itself lives in limulus-dot-net on a branch while 11ty stays gree
   schema defaults replace `links.json`), computed defaults replacing `eleventyComputed.js`
   (title from linkTitle, tilTopic from path, link/via domains, readingTime), the link-post
   reference appender as `transformDocument`, and comrak matched to markdown-it (footnote
-  markup, task lists, attrs, heading anchors, highlight classes); needs: ∆Hbw, ∆rT5, ∆BfR
+  markup, task lists, attrs, heading anchors, highlight classes); needs: ∆rT5, ∆BfR
 - ∆ePP Generated and non-HTML pages — TIL topic pages, links and photo pages via
   `lem-page` generators, the three feeds (rss + two atom, `/feed.xsl`), `sitemap.xml`
   with video entries, 404 — the last things still depending on 11ty plugins
