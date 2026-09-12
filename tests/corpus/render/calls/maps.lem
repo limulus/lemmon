@@ -1,0 +1,10 @@
+<lem-let renditions = {sm: 320, md: 640, lg: 1280} />
+
+<p>sizes: <lem.renditions.keys().join(", ")></p>
+<p>widest: <lem.renditions.values().reverse().first() ?? 0></p>
+<lem-if renditions.has("md")>
+  <img width="<lem.renditions["md"]>" alt="" />
+</lem-if>
+<lem-if !renditions.has("xl")>
+  <p>No extra-large rendition for this one.</p>
+</lem-if>

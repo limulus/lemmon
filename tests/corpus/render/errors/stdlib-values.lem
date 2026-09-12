@@ -1,0 +1,7 @@
+<lem-let launched = datetime("2024-13-01") />
+<lem-let meeting = datetime("2026-04-04T10:30:00") />
+<lem-let vague = datetime("tomorrow") />
+<lem-let zoned = datetime("2024-11-24T10:00:00-05:00[America/New_York]") />
+<lem-let counted = datetime(1) />
+<lem-let flagged = url(true) />
+<p><lem.launched> <lem.meeting> <lem.vague> <lem.zoned> <lem.counted> <lem.flagged></p>

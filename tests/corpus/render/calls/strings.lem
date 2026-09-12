@@ -1,0 +1,15 @@
+<lem-let title = "  Lynx After Dürer, by Marta Klonowska  " />
+<lem-let path = "tils/rust/index.md" />
+<lem-let host = "www.limulus.net" />
+
+<h1><lem.title.trim()></h1>
+<a href="/photos/<lem.title.slugify()>/">the photo</a>
+<p><lem.title.trim().length()> characters, <lem.title.lower().trim()></p>
+
+<lem-if path.startsWith("tils/") && path.endsWith(".md")>
+  <p>a TIL: <lem.path.split("/")[1]></p>
+</lem-if>
+<lem-if host.contains("limulus")>
+  <p>via <lem.host.replace("www.", "")></p>
+</lem-if>
+<p><lem.title.trim().upper()></p>

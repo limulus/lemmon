@@ -18,8 +18,8 @@
 
 use std::rc::Rc;
 
-use lemmon_syntax::Span;
 use lemmon_syntax::ast::{BinaryOp, UnaryOp};
+use lemmon_syntax::{Span, nearest};
 
 use crate::builtins::{self, Builtin};
 use crate::decls::{Decls, Kind, no_field};
@@ -180,7 +180,7 @@ pub(super) fn member(object: &Type, name: &str, optional: bool, decls: &dyn Decl
 /// it is the mistake worth naming, since a method is called and never read (D34).
 fn field(ty: &Type, name: &str, decls: &dyn Decls) -> Rule {
     if let Some(kind) = builtins::Kind::of(ty)
-        && builtins::method(kind, name).is_some()
+        && builtins::method_id(kind, name).is_some()
     {
         return Err(format!(
             "`{name}` is a method of `{ty}`: call it as `.{name}()`"
@@ -199,8 +199,21 @@ fn field(ty: &Type, name: &str, decls: &dyn Decls) -> Rule {
             Some(Kind::Enum) => Err(format!("a `{ty}` is an enum and has no fields")),
             None => unreachable!("an undeclared name is read as `any` before any rule"),
         },
-        other => Err(format!("a `{other}` has no field `{name}`")),
+        other => Err(no_field_but_maybe_a_method(other, name)),
     }
+}
+
+/// "a `string` has no field `slugfy`", and — when a method of that type is one typo
+/// away — the call form it was reaching for. A builtin type has fields in neither
+/// spelling, so the only reading of `s.slugfy` worth offering is a method (∆eHR).
+fn no_field_but_maybe_a_method(ty: &Type, name: &str) -> String {
+    let mut out = format!("a `{ty}` has no field `{name}`");
+    if let Some(kind) = builtins::Kind::of(ty)
+        && let Some(near) = nearest(name, builtins::methods_of(kind))
+    {
+        out.push_str(&format!("; did you mean `.{near}()`?"));
+    }
+    out
 }
 
 /// What `object.name(…)` calls (or `object?.name(…)` when `optional`), given the
@@ -231,7 +244,7 @@ pub(super) fn callable_member(
 /// type carries under `name`.
 fn callable(ty: &Type, name: &str, decls: &dyn Decls) -> Rule<Callable> {
     match builtins::Kind::of(ty) {
-        Some(kind) => match builtins::method(kind, name) {
+        Some(kind) => match builtins::method_id(kind, name) {
             Some(id) => Ok(Callable::Method(id)),
             None => Err(no_method(ty, kind, name)),
         },
@@ -257,11 +270,17 @@ pub(super) enum Callable {
 /// the mistake a map receiver invites.
 fn no_method(ty: &Type, kind: builtins::Kind, name: &str) -> String {
     let mut out = format!("a `{ty}` has no method `{name}`");
-    let mut have: Vec<&str> = builtins::methods_of(kind).collect();
-    have.sort_unstable();
-    if !have.is_empty() {
-        let list: Vec<String> = have.iter().map(|m| format!("`.{m}()`")).collect();
-        out.push_str(&format!("; it has {}", list.join(", ")));
+    // One name when one is close, the inventory when none is: a type carrying ten
+    // methods would otherwise answer a typo with a list to read rather than a fix.
+    if let Some(near) = nearest(name, builtins::methods_of(kind)) {
+        out.push_str(&format!("; did you mean `.{near}()`?"));
+    } else {
+        let mut have: Vec<&str> = builtins::methods_of(kind).collect();
+        have.sort_unstable();
+        if !have.is_empty() {
+            let list: Vec<String> = have.iter().map(|m| format!("`.{m}()`")).collect();
+            out.push_str(&format!("; it has {}", list.join(", ")));
+        }
     }
     if matches!(ty, Type::Map(_)) {
         out.push_str(&format!("; an entry is `[\"{name}\"]`"));
@@ -1067,20 +1086,35 @@ mod tests {
         );
     }
 
+    /// The id of the method `kind` carries under `name`, so a test names the entry it
+    /// is about and the table's order stays the table's business.
+    fn method(kind: builtins::Kind, name: &str) -> u32 {
+        builtins::method_id(kind, name).expect("a method")
+    }
+
+    /// The entry an ambient builtin or a method is, for a rule that takes one.
+    fn entry(reach: Option<builtins::Kind>, name: &str) -> &'static Builtin {
+        let id = match reach {
+            Some(kind) => method(kind, name),
+            None => builtins::lookup(name).expect("an ambient function"),
+        };
+        &BUILTINS[id as usize]
+    }
+
     #[test]
     fn calls_a_builtin_types_method_and_a_records_field() {
         let table = table();
         assert_eq!(
             callable_member(&Type::String, "slugify", false, &()),
-            Ok(Callable::Method(1))
+            Ok(Callable::Method(method(builtins::Kind::String, "slugify")))
         );
         assert_eq!(
             callable_member(&Type::list(Type::Int), "first", false, &()),
-            Ok(Callable::Method(2))
+            Ok(Callable::Method(method(builtins::Kind::List, "first")))
         );
         assert_eq!(
             callable_member(&Type::map(Type::Int), "keys", false, &()),
-            Ok(Callable::Method(3))
+            Ok(Callable::Method(method(builtins::Kind::Map, "keys")))
         );
         assert_eq!(
             callable_member(&named("Article"), "layout", false, &table),
@@ -1100,7 +1134,7 @@ mod tests {
         );
         assert_eq!(
             callable_member(&Type::optional(Type::String), "slugify", true, &()),
-            Ok(Callable::Method(1))
+            Ok(Callable::Method(method(builtins::Kind::String, "slugify")))
         );
         assert_eq!(
             callable_member(&Type::optional(Type::String), "slugify", false, &()),
@@ -1113,27 +1147,65 @@ mod tests {
     }
 
     #[test]
+    fn suggests_the_method_a_misspelling_meant_whether_it_was_read_or_called() {
+        // Read and called are two paths to one mistake, and used to answer differently:
+        // the call form listed what the type had, the read form offered nothing (∆eHR).
+        assert_eq!(
+            member(&Type::String, "slugfy", false, &()),
+            Err("a `string` has no field `slugfy`; did you mean `.slugify()`?".to_owned())
+        );
+        assert_eq!(
+            callable_member(&Type::String, "slugfy", false, &()),
+            Err("a `string` has no method `slugfy`; did you mean `.slugify()`?".to_owned())
+        );
+        assert_eq!(
+            member(&Type::list(Type::Int), "lenght", false, &()),
+            Err("a `[int]` has no field `lenght`; did you mean `.length()`?".to_owned())
+        );
+    }
+
+    #[test]
+    fn suggests_nothing_for_a_name_near_no_method_it_carries() {
+        // The other half: a guess offered for anything would be a guess worth nothing.
+        assert_eq!(
+            member(&Type::String, "byline", false, &()),
+            Err("a `string` has no field `byline`".to_owned())
+        );
+        assert_eq!(
+            member(&Type::Bool, "slugfy", false, &()),
+            Err("a `bool` has no field `slugfy`".to_owned())
+        );
+    }
+
+    #[test]
     fn refuses_a_method_a_builtin_type_has_not_got_and_lists_the_ones_it_has() {
         assert_eq!(
             callable_member(&Type::String, "nope", false, &()),
-            Err("a `string` has no method `nope`; it has `.slugify()`".to_owned())
+            Err(
+                "a `string` has no method `nope`; it has `.contains()`, `.endsWith()`, \
+                 `.length()`, `.lower()`, `.replace()`, `.slugify()`, `.split()`, \
+                 `.startsWith()`, `.trim()`, `.upper()`"
+                    .to_owned()
+            )
         );
         assert_eq!(
             callable_member(&Type::Int, "nope", false, &()),
-            Err("a `int` has no method `nope`".to_owned())
+            Err("a `int` has no method `nope`; it has `.abs()`".to_owned())
         );
     }
 
     #[test]
     fn counts_a_methods_receiver_out_of_the_arity_it_reports() {
-        assert_eq!(builtin(&BUILTINS[0], 1), Ok(()));
+        let raw = entry(None, "raw");
+        assert_eq!(builtin(raw, 1), Ok(()));
         assert_eq!(
-            builtin(&BUILTINS[0], 2),
+            builtin(raw, 2),
             Err("`raw` takes 1 argument, got 2".to_owned())
         );
-        assert_eq!(builtin(&BUILTINS[1], 1), Ok(()));
+        let slugify = entry(Some(builtins::Kind::String), "slugify");
+        assert_eq!(builtin(slugify, 1), Ok(()));
         assert_eq!(
-            builtin(&BUILTINS[1], 2),
+            builtin(slugify, 2),
             Err("`.slugify` takes 0 arguments, got 1".to_owned())
         );
     }
@@ -1537,7 +1609,7 @@ mod tests {
         assert_eq!(member(&opt(Type::Any), "f", true, &()), Ok(Type::Any));
         assert_eq!(
             member(&Type::String, "length", false, &()),
-            Err("a `string` has no field `length`".to_owned())
+            Err("`length` is a method of `string`: call it as `.length()`".to_owned())
         );
         assert_eq!(
             member(&Type::map(Type::Int), "a", false, &()),
@@ -1557,7 +1629,7 @@ mod tests {
         );
         assert_eq!(
             member(&opt(Type::String), "length", true, &()),
-            Err("a `string` has no field `length`".to_owned())
+            Err("`length` is a method of `string`: call it as `.length()`".to_owned())
         );
         assert_eq!(member(&Type::Null, "f", true, &()), Ok(Type::Null));
         assert_eq!(
@@ -1701,7 +1773,7 @@ mod tests {
 
     #[test]
     fn holds_a_builtin_to_its_arity() {
-        let raw = &crate::builtins::BUILTINS[0];
+        let raw = entry(None, "raw");
         assert_eq!(builtin(raw, 1), Ok(()));
         assert_eq!(
             builtin(raw, 2),

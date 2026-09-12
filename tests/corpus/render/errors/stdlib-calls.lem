@@ -1,0 +1,12 @@
+<lem-let titles = ["Tuples", "Matrices"] />
+<lem-let counts = [1, 2] />
+<lem-let title = "Tuples" />
+
+<p><lem.titles.sortBy(|t| t.startsWith("T")).join(", ")></p>
+<p><lem.titles.groupBy(|t| t.length()).keys().join(", ")></p>
+<p><lem.counts.join(", ")></p>
+<p><lem.titles.take("2").join(", ")></p>
+<lem-if titles.contains(1)>a list of strings holding an int</lem-if>
+<p><lem.title.trim(1)></p>
+<p><lem.title.slugfy()></p>
+<p><lem.counts.first().fixed(2)></p>

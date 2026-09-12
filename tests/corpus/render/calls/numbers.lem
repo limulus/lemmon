@@ -1,0 +1,8 @@
+<lem-let fNumber = 2.8 />
+<lem-let focalLength = 16.4 />
+<lem-let offset = -7 />
+
+<p>ƒ/<lem.fNumber.fixed(1)>, and padded: ƒ/<lem.fNumber.fixed(2)></p>
+<p><lem.focalLength.round()>mm, floored to <lem.focalLength.floor()>mm</p>
+<p>the offset is <lem.offset.abs()> hours from UTC</p>
+<p>and as a fraction: <lem.(1.0 / 3.0).fixed(3)></p>

@@ -8,6 +8,8 @@
 <lem-type Article extends Page>
   title: string
   subhead: string?
+  date: datetime = datetime("2026-01-01")
+  runtime: duration?
   hero: Photo? by site.photos
   layout: (Article, html): html = article
 </lem-type>

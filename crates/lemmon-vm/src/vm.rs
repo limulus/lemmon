@@ -21,9 +21,25 @@ use crate::bytecode::{Function, Module, Op};
 use crate::value::{Closure, Map};
 use crate::{RuntimeError, Value};
 
-/// Frames a render may nest before it is an error. Recursion is legal in the language;
-/// an unbounded native stack inside WebAssembly is not.
+/// Frames a render may nest before it is an error. Recursion is legal in the language,
+/// and a frame costs heap rather than stack, so this is generous: it is what stops a
+/// template calling itself forever, not a stack budget. [`MAX_NATIVE_DEPTH`] is the
+/// stack budget.
 const MAX_DEPTH: usize = 256;
+
+/// How deep a builtin may re-enter the VM before the recursion is refused.
+///
+/// [`MAX_DEPTH`] counts frames, which cost heap; this counts the times an entry like
+/// `map` has called the VM's loop from inside its own `CallBuiltin` step, which costs
+/// the machine's own stack — `step` → the entry → [`Host::invoke`] → `run_until` →
+/// `step` again (∆987). One cap cannot do both jobs: a page nesting components deeply
+/// wants a generous frame count, while the native stack is a megabyte in the `.wasm`
+/// with no way to ask for more and no diagnostic if it runs out (∆vnI).
+///
+/// Sized against that megabyte: a level costs about a kilobyte and a half compiled for
+/// release and eight in a debug build, so sixty-four levels leaves the debug build —
+/// the expensive one, and the one the tests run — using half of it.
+const MAX_NATIVE_DEPTH: usize = 64;
 
 /// Renders the file at `path` from `module`, with `globals` bound to the ambient names
 /// (`page`, `site`, `build`) the templates may read.
@@ -49,6 +65,7 @@ pub fn render(
         globals,
         stack: Vec::new(),
         frames: Vec::new(),
+        native_depth: 0,
         iters: Vec::new(),
         out: vec![String::new()],
     };
@@ -86,6 +103,7 @@ pub fn invoke(
         globals,
         stack: args,
         frames: Vec::new(),
+        native_depth: 0,
         iters: Vec::new(),
         out: vec![String::new()],
     };
@@ -115,6 +133,9 @@ struct Vm<'a> {
     globals: &'a [(&'a str, Value)],
     stack: Vec<Value>,
     frames: Vec<Frame>,
+    /// How many builtins are part-way through a call of their own, each holding a
+    /// native stack frame this VM is running inside of.
+    native_depth: usize,
     iters: Vec<Iter>,
     out: Vec<String>,
 }
@@ -227,7 +248,7 @@ impl<'a> Vm<'a> {
             return Ok(self.call_value(callee, argc)?);
         }
         let found = builtins::Kind::of_value(receiver)
-            .and_then(|kind| builtins::method(kind, name));
+            .and_then(|kind| builtins::method_id(kind, name));
         let Some(id) = found else {
             return Err(
                 format!("no method `{name}` on {}", self.stack[at].type_name()).into(),
@@ -528,11 +549,18 @@ impl Host for Vm<'_> {
         let base = self.stack.len();
         let argc = u16::try_from(args.len()).expect("a builtin passes fewer than 65536");
         self.stack.extend(args);
+        if self.native_depth >= MAX_NATIVE_DEPTH {
+            self.stack.truncate(base);
+            return Err(format!("builtins nested more than {MAX_NATIVE_DEPTH} deep").into());
+        }
         if let Err(message) = self.call_value(callee.clone(), argc) {
             self.stack.truncate(base);
             return Err(message.into());
         }
-        self.run_until(depth).map_err(Fault::Placed)?;
+        self.native_depth += 1;
+        let ran = self.run_until(depth);
+        self.native_depth -= 1;
+        ran.map_err(Fault::Placed)?;
         Ok(self.pop())
     }
 }
@@ -586,7 +614,12 @@ fn binary(op: Op, lhs: &Value, rhs: &Value) -> Result<Value, String> {
         (Op::In, Str(key), Map(map)) => Bool(map.get(key).is_some()),
         (Op::In, _, _) => return Err(mismatch()),
         (Op::Add, Str(a), Str(b)) => Value::str(format!("{a}{b}")),
-        (Op::Lt | Op::Le | Op::Gt | Op::Ge, Str(a), Str(b)) => Bool(ordered(op, a.cmp(b))),
+        // Ordering is `Value::order`'s and not this table's, so that `lt` and a sort
+        // cannot come to disagree about what has an order.
+        (Op::Lt | Op::Le | Op::Gt | Op::Ge, _, _) => match lhs.order(rhs)? {
+            Some(ordering) => Bool(ordered(op, ordering)),
+            None => return Err(mismatch()),
+        },
         (_, Int(a), Int(b)) => int_arith(op, *a, *b)?,
         (_, Int(a), Float(b)) => float_arith(op, *a as f64, *b)?,
         (_, Float(a), Int(b)) => float_arith(op, *a, *b as f64)?,
@@ -604,7 +637,7 @@ fn int_arith(op: Op, a: i64, b: i64) -> Result<Value, String> {
         Op::Div | Op::Rem if b == 0 => return Err("division by zero".to_owned()),
         Op::Div => Value::Int(checked(a.checked_div(b))?),
         Op::Rem => Value::Int(checked(a.checked_rem(b))?),
-        _ => Value::Bool(ordered(op, a.cmp(&b))),
+        _ => unreachable!("{op:?} is not arithmetic"),
     })
 }
 
@@ -616,12 +649,7 @@ fn float_arith(op: Op, a: f64, b: f64) -> Result<Value, String> {
         Op::Div | Op::Rem if b == 0.0 => return Err("division by zero".to_owned()),
         Op::Div => Value::Float(a / b),
         Op::Rem => Value::Float(a % b),
-        _ => {
-            let ordering = a
-                .partial_cmp(&b)
-                .ok_or_else(|| "cannot order a NaN".to_owned())?;
-            Value::Bool(ordered(op, ordering))
-        }
+        _ => unreachable!("{op:?} is not arithmetic"),
     })
 }
 
@@ -677,6 +705,17 @@ mod tests {
             code,
             spans,
         }
+    }
+
+    /// The id of an ambient builtin, by name: a test names what it calls, and reordering
+    /// the table cannot silently point one at a different entry.
+    fn ambient(name: &str) -> u32 {
+        builtins::lookup(name).expect("an ambient builtin")
+    }
+
+    /// The id of a method, by the kind that carries it.
+    fn method_of(kind: builtins::Kind, name: &str) -> u32 {
+        builtins::method_id(kind, name).expect("a method")
     }
 
     fn module(constants: Vec<Value>, functions: Vec<Function>) -> Module {
@@ -958,7 +997,14 @@ mod tests {
     fn calls_a_builtin() {
         let out = run(
             vec![Value::str("<b>")],
-            vec![k(1), Op::CallBuiltin { id: 0, argc: 1 }, Op::Emit],
+            vec![
+                k(1),
+                Op::CallBuiltin {
+                    id: ambient("raw"),
+                    argc: 1,
+                },
+                Op::Emit,
+            ],
         )
         .unwrap();
         assert_eq!(out, "<b>");
@@ -968,7 +1014,14 @@ mod tests {
     fn reports_a_builtin_failure_at_the_call() {
         let (pc, message) = error(run(
             vec![Value::Int(1)],
-            vec![k(1), Op::CallBuiltin { id: 0, argc: 1 }, Op::Emit],
+            vec![
+                k(1),
+                Op::CallBuiltin {
+                    id: ambient("raw"),
+                    argc: 1,
+                },
+                Op::Emit,
+            ],
         ));
         assert_eq!((pc, message.as_str()), (1, "raw() takes a string, got int"));
     }
@@ -981,8 +1034,14 @@ mod tests {
             Op::Const { index: 1 },
             Op::Const { index: 0 },
             Op::Global { func: 1 },
-            Op::CallBuiltin { id: 4, argc: 2 },
-            Op::CallBuiltin { id: 2, argc: 1 },
+            Op::CallBuiltin {
+                id: method_of(builtins::Kind::List, "map"),
+                argc: 2,
+            },
+            Op::CallBuiltin {
+                id: method_of(builtins::Kind::List, "first"),
+                argc: 1,
+            },
             Op::Emit,
             Op::Emit,
         ];
@@ -1078,16 +1137,49 @@ mod tests {
     fn refuses_to_invoke_a_value_that_is_not_a_function() {
         let (pc, message) = error(run(
             vec![Value::list(vec![Value::Int(1)]), Value::Int(3)],
-            vec![k(1), k(2), Op::CallBuiltin { id: 4, argc: 2 }, Op::Emit],
+            vec![
+                k(1),
+                k(2),
+                Op::CallBuiltin {
+                    id: method_of(builtins::Kind::List, "map"),
+                    argc: 2,
+                },
+                Op::Emit,
+            ],
         ));
         assert_eq!((pc, message.as_str()), (2, "cannot call a int"));
     }
 
     #[test]
     fn caps_the_call_depth_through_nested_invokes() {
-        // `f` maps itself over a one-element list: every invoke pushes `f` again, and
-        // the VM re-enters its loop once per level, so this also exercises the native
-        // recursion the cap bounds.
+        let err = render(&nesting_module(), "t.lem", &[]).unwrap_err();
+        assert_eq!(err.message, "builtins nested more than 64 deep");
+        assert_eq!(err.span.start, 20);
+    }
+
+    /// The cap is a stack budget, so the test that matters runs it on the stack it was
+    /// budgeted against: the megabyte the `.wasm` gets from the linker, which is the
+    /// smallest stack the core runs on and the one it cannot ask to grow. Overflowing
+    /// aborts rather than failing, which is loud enough — and is what a browser would
+    /// do with no diagnostic at all (∆vnI).
+    #[test]
+    fn nests_to_the_cap_within_the_stack_the_wasm_is_given() {
+        const A_MEGABYTE: usize = 1024 * 1024;
+        std::thread::Builder::new()
+            .stack_size(A_MEGABYTE)
+            .spawn(|| {
+                let err = render(&nesting_module(), "t.lem", &[]).unwrap_err();
+                assert_eq!(err.message, "builtins nested more than 64 deep");
+            })
+            .expect("a thread")
+            .join()
+            .expect("the deepest nesting the cap allows, on a megabyte of stack");
+    }
+
+    /// A module whose entry maps `f` over a one-element list, where `f` maps itself:
+    /// every invoke pushes `f` again and the VM re-enters its loop once per level, so
+    /// this is the native recursion [`MAX_NATIVE_DEPTH`] bounds.
+    fn nesting_module() -> Module {
         let looping = function(
             "f",
             &["x"],
@@ -1095,7 +1187,10 @@ mod tests {
             vec![
                 Op::Const { index: 0 },
                 Op::Global { func: 1 },
-                Op::CallBuiltin { id: 4, argc: 2 },
+                Op::CallBuiltin {
+                    id: method_of(builtins::Kind::List, "map"),
+                    argc: 2,
+                },
                 Op::Return,
             ],
         );
@@ -1106,15 +1201,15 @@ mod tests {
             vec![
                 Op::Const { index: 0 },
                 Op::Global { func: 1 },
-                Op::CallBuiltin { id: 4, argc: 2 },
+                Op::CallBuiltin {
+                    id: method_of(builtins::Kind::List, "map"),
+                    argc: 2,
+                },
                 Op::Return,
             ],
         );
         let constants = vec![Value::list(vec![Value::Int(1)])];
-        let err =
-            render(&module(constants, vec![entry, looping]), "t.lem", &[]).unwrap_err();
-        assert_eq!(err.message, "call depth exceeded 256 frames");
-        assert_eq!(err.span.start, 20);
+        module(constants, vec![entry, looping])
     }
 
     fn record() -> Value {

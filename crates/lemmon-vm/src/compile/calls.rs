@@ -12,15 +12,18 @@
 //! argument once, in the order the callee wants rather than the order it was written,
 //! and reporting a refusal at the argument that caused it.
 
-use lemmon_syntax::ast::{ArgList, CallExpr, Expr, MemberExpr, NamedArg, Spanned};
+use lemmon_syntax::ast::{
+    ArgList, CallExpr, Expr, LiteralKind, MemberExpr, NamedArg, Spanned,
+};
 use lemmon_syntax::{Span, SyntaxToken};
 
 use crate::Value;
 use crate::builtins::{BUILTINS, Expected};
 use crate::bytecode::Op;
+use crate::datetime::Datetime;
 use crate::types::Type;
 
-use super::expr::{lambda_params, unparen};
+use super::expr::{decode_string, lambda_params, unparen};
 use super::names::Resolved;
 use super::rules::{self, Arg};
 use super::{Compiler, TokenSpan, required};
@@ -218,9 +221,40 @@ impl Compiler<'_> {
             };
             types.push(ty);
         }
+        if builtin.name == "datetime" {
+            self.check_datetime_literal(positional);
+        }
         let argc = u16::try_from(arity).expect("fewer than 65536 arguments");
         self.emit(Op::CallBuiltin { id, argc }, span);
         self.rule(span, (BUILTINS[id as usize].ty)(&types))
+    }
+
+    /// Reports a `datetime("…")` whose literal argument is no datetime, at the literal.
+    ///
+    /// The call is lowered and runs like any other — the VM reads the string again — and
+    /// this is only the second reading, the one that makes a fixed date a compile-time
+    /// mistake. It is what the language has instead of a datetime literal (D21, revised
+    /// 2026-08-20): the constructor is checked where a literal would have been.
+    ///
+    /// What counts as the literal's text is [`decode_string`]'s answer, which is the
+    /// whole of it while string interpolation is unimplemented. When interpolation
+    /// lands, a literal holding a `{…}` is no longer a fixed string and this must let
+    /// it through to run — refusing `datetime("{year}-01-01")` here would refuse a
+    /// template that renders.
+    fn check_datetime_literal(&mut self, positional: &[Expr]) {
+        let Some(argument) = positional.first() else {
+            return;
+        };
+        let Expr::Literal(literal) = unparen(argument.clone()) else {
+            return;
+        };
+        if literal.kind() != Some(LiteralKind::String) {
+            return;
+        }
+        let token = required(literal.token());
+        if let Err(message) = Datetime::parse(&decode_string(token.text())) {
+            self.error(token.span(), message);
+        }
     }
 
     /// Lowers an argument that `written` expects a function of `params` from, its return

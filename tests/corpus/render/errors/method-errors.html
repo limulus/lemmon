@@ -1,15 +1,18 @@
 
 --- diagnostics
 render/errors/method-errors.lem:11:6..11:21: `slugify` is a method of `string`: call it as `.slugify()`
-render/errors/method-errors.lem:12:6..12:24: `.slugify` takes 0 arguments, got 1
-render/errors/method-errors.lem:12:31..12:45: `.first` takes 0 arguments, got 1
-render/errors/method-errors.lem:13:6..13:18: a `string` has no method `nope`; it has `.slugify()`
-render/errors/method-errors.lem:13:27..13:33: a `int` has no method `nope`
-render/errors/method-errors.lem:13:42..13:47: a `{string: string}` has no method `foo`; it has `.keys()`; an entry is `["foo"]`
-render/errors/method-errors.lem:14:6..14:22: `?.` needs an optional, got `string`
-render/errors/method-errors.lem:14:31..14:44: a `string?` may be null: narrow it with `lem-if`, or use `?.`
-render/errors/method-errors.lem:15:6..15:15: cannot read field `f` of null
-render/errors/method-errors.lem:15:22..15:31: cannot read field `f` of null
-render/errors/method-errors.lem:16:22..16:26: `.slugify()` does not take named arguments
-render/errors/method-errors.lem:16:34..16:39: a `{string: string}` has no method `get`; it has `.keys()`; an entry is `["get"]`
-render/errors/method-errors.lem:17:33..17:42: `Post` has no field `slugify`
+render/errors/method-errors.lem:12:6..12:20: a `string` has no field `slugfy`; did you mean `.slugify()`?
+render/errors/method-errors.lem:12:27..12:39: a `[int]` has no field `lenght`; did you mean `.length()`?
+render/errors/method-errors.lem:12:46..12:60: a `string` has no field `byline`
+render/errors/method-errors.lem:13:6..13:24: `.slugify` takes 0 arguments, got 1
+render/errors/method-errors.lem:13:31..13:45: `.first` takes 0 arguments, got 1
+render/errors/method-errors.lem:14:6..14:18: a `string` has no method `nope`; it has `.contains()`, `.endsWith()`, `.length()`, `.lower()`, `.replace()`, `.slugify()`, `.split()`, `.startsWith()`, `.trim()`, `.upper()`
+render/errors/method-errors.lem:14:27..14:33: a `int` has no method `nope`; it has `.abs()`
+render/errors/method-errors.lem:14:42..14:47: a `{string: string}` has no method `foo`; it has `.has()`, `.keys()`, `.values()`; an entry is `["foo"]`
+render/errors/method-errors.lem:15:6..15:22: `?.` needs an optional, got `string`
+render/errors/method-errors.lem:15:31..15:44: a `string?` may be null: narrow it with `lem-if`, or use `?.`
+render/errors/method-errors.lem:16:6..16:15: cannot read field `f` of null
+render/errors/method-errors.lem:16:22..16:31: cannot read field `f` of null
+render/errors/method-errors.lem:17:22..17:26: `.slugify()` does not take named arguments
+render/errors/method-errors.lem:17:34..17:39: a `{string: string}` has no method `get`; it has `.has()`, `.keys()`, `.values()`; an entry is `["get"]`
+render/errors/method-errors.lem:18:33..18:42: `Post` has no field `slugify`

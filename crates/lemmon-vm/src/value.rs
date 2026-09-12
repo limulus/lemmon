@@ -16,8 +16,11 @@
 //! entries are never fields to the checker. A record has no printed form.
 
 use std::borrow::Cow;
+use std::cmp::Ordering;
 use std::fmt::Write as _;
 use std::rc::Rc;
+
+use crate::datetime::Datetime;
 
 /// An insertion-ordered string-keyed map — the shape front-matter records and map
 /// literals take. Lookup is linear; records in the spike have a handful of fields.
@@ -134,6 +137,16 @@ pub enum Value {
     Str(Rc<str>),
     /// Trusted markup; emitted verbatim.
     Html(Rc<str>),
+    /// A moment, and the offset it was written in; equal and ordered by the moment.
+    Datetime(Datetime),
+    /// A span of time, in whole seconds. Has no printed form: a site says how it wants
+    /// one read, `readingTime.minutes()`.
+    Duration(i64),
+    /// A URL, percent-encoded when it was made (`url.rs`); escaped on emit.
+    Url(Rc<str>),
+    /// An asset, holding the hashed URL the manifest gave its logical path; escaped on
+    /// emit. What an author wrote is resolved before a value exists (D38).
+    Asset(Rc<str>),
     /// An immutable list.
     List(Rc<[Value]>),
     /// An immutable insertion-ordered map.
@@ -153,6 +166,16 @@ impl Value {
     /// Trusted markup.
     pub fn html(text: impl AsRef<str>) -> Self {
         Self::Html(Rc::from(text.as_ref()))
+    }
+
+    /// A URL, already percent-encoded.
+    pub fn url(text: impl AsRef<str>) -> Self {
+        Self::Url(Rc::from(text.as_ref()))
+    }
+
+    /// An asset, holding the URL the manifest resolved it to.
+    pub fn asset(url: impl AsRef<str>) -> Self {
+        Self::Asset(Rc::from(url.as_ref()))
     }
 
     /// A list.
@@ -187,6 +210,10 @@ impl Value {
             Self::Float(_) => "float",
             Self::Str(_) => "string",
             Self::Html(_) => "html",
+            Self::Datetime(_) => "datetime",
+            Self::Duration(_) => "duration",
+            Self::Url(_) => "url",
+            Self::Asset(_) => "asset",
             Self::List(_) => "list",
             Self::Map(_) => "map",
             Self::Fn(_) => "function",
@@ -223,6 +250,12 @@ impl Value {
             Self::Float(f) => {
                 let _ = write!(out, "{f}");
             }
+            Self::Datetime(d) => {
+                let _ = write!(out, "{d}");
+            }
+            // Percent-encoding is not HTML escaping: `&` and `'` survive it, and both
+            // have to be escaped to stand in an attribute.
+            Self::Url(u) | Self::Asset(u) => escape_html(u, out),
             other => return Err(format!("cannot print a {}", other.type_name())),
         }
         Ok(())
@@ -263,7 +296,40 @@ impl Value {
                 #[allow(clippy::cast_precision_loss, reason = "numeric comparison")]
                 Ok((*a as f64) == *b)
             }
+            // A datetime among them: `Datetime`'s own equality is by instant, so two
+            // offsets naming one moment are one value here as they are to `lt`.
             _ => Ok(self == other),
+        }
+    }
+
+    /// The order `lt`, `lte`, `gt`, and `gte` read, and the one a sort reads: one rule
+    /// for what is ordered, so the two cannot drift apart.
+    ///
+    /// Numbers order numerically whatever their type, strings by code point, datetimes
+    /// by their instant. `Ok(None)` is a pair with no order between them, which the
+    /// caller words — an operator names itself, a sort names the keys it takes.
+    ///
+    /// # Errors
+    ///
+    /// For a NaN, which is a number with an order to nothing, itself included.
+    pub fn order(&self, other: &Self) -> Result<Option<Ordering>, String> {
+        let float = |a: f64, b: f64| {
+            a.partial_cmp(&b)
+                .map(Some)
+                .ok_or_else(|| "cannot order a NaN".to_owned())
+        };
+        #[allow(
+            clippy::cast_precision_loss,
+            reason = "int/float promotion is the rule"
+        )]
+        match (self, other) {
+            (Self::Str(a), Self::Str(b)) => Ok(Some(a.cmp(b))),
+            (Self::Datetime(a), Self::Datetime(b)) => Ok(Some(a.cmp(b))),
+            (Self::Int(a), Self::Int(b)) => Ok(Some(a.cmp(b))),
+            (Self::Int(a), Self::Float(b)) => float(*a as f64, *b),
+            (Self::Float(a), Self::Int(b)) => float(*a, *b as f64),
+            (Self::Float(a), Self::Float(b)) => float(*a, *b),
+            _ => Ok(None),
         }
     }
 }
@@ -346,11 +412,32 @@ mod tests {
         assert_eq!(emitted(&Value::Float(1.5)).unwrap(), "1.5");
     }
 
+    fn when(text: &str) -> Datetime {
+        Datetime::parse(text).expect("a datetime")
+    }
+
+    #[test]
+    fn prints_a_datetime_as_rfc_3339_in_the_offset_it_was_written_in() {
+        let written = "2026-04-04T10:30:00-07:00";
+        assert_eq!(emitted(&Value::Datetime(when(written))).unwrap(), written);
+    }
+
+    #[test]
+    fn escapes_a_url_and_an_asset_as_html_though_both_are_already_encoded() {
+        // Percent-encoding leaves `&` and `'` alone and an attribute cannot.
+        let composed = "/tils/?a=1&b='2'";
+        let escaped = "/tils/?a=1&amp;b=&#39;2&#39;";
+        assert_eq!(emitted(&Value::url(composed)).unwrap(), escaped);
+        assert_eq!(emitted(&Value::asset(composed)).unwrap(), escaped);
+    }
+
     #[test]
     fn refuses_to_print_a_value_with_no_printed_form() {
         for value in [
             Value::Null,
             Value::Bool(true),
+            // A duration has no one spelling a site would want: `.minutes()` says.
+            Value::Duration(90),
             Value::list(vec![]),
             Value::map(Map::default()),
             Value::Fn(Rc::new(Closure {
@@ -428,6 +515,10 @@ mod tests {
             Value::Float(1.0),
             Value::str(""),
             Value::html(""),
+            Value::Datetime(when("2024-11-24")),
+            Value::Duration(0),
+            Value::url(""),
+            Value::asset(""),
             Value::list(vec![]),
             Value::map(Map::default()),
             Value::Fn(Rc::new(Closure {
@@ -448,6 +539,10 @@ mod tests {
                 "float",
                 "string",
                 "html",
+                "datetime",
+                "duration",
+                "url",
+                "asset",
                 "list",
                 "map",
                 "function",
@@ -461,6 +556,57 @@ mod tests {
         let a: Map = [(Rc::from("k"), Value::Int(1))].into_iter().collect();
         let b: Map = [(Rc::from("j"), Value::Int(1))].into_iter().collect();
         assert!(!Value::map(a).equals(&Value::map(b)).unwrap());
+    }
+
+    #[test]
+    fn orders_strings_numbers_and_datetimes_and_nothing_else() {
+        let ordered = |a: Value, b: Value| a.order(&b).unwrap();
+        assert_eq!(
+            ordered(Value::str("a"), Value::str("b")),
+            Some(Ordering::Less)
+        );
+        assert_eq!(
+            ordered(Value::Int(2), Value::Float(2.0)),
+            Some(Ordering::Equal)
+        );
+        assert_eq!(
+            ordered(Value::Float(3.0), Value::Int(2)),
+            Some(Ordering::Greater)
+        );
+        assert_eq!(ordered(Value::Int(1), Value::Int(1)), Some(Ordering::Equal));
+        assert_eq!(
+            ordered(
+                Value::Datetime(when("2026-04-04T10:30:00-07:00")),
+                Value::Datetime(when("2026-04-04T17:30:00Z"))
+            ),
+            Some(Ordering::Equal)
+        );
+        for (a, b) in [
+            (Value::str("a"), Value::Int(1)),
+            (Value::Bool(true), Value::Bool(false)),
+            (Value::url("/a/"), Value::url("/b/")),
+            (Value::Duration(1), Value::Duration(2)),
+            (Value::Null, Value::Null),
+        ] {
+            assert_eq!(a.order(&b).unwrap(), None, "{a:?} {b:?}");
+        }
+    }
+
+    #[test]
+    fn refuses_to_order_a_nan_with_anything_itself_included() {
+        let nan = Value::Float(f64::NAN);
+        for other in [Value::Float(1.0), Value::Int(1), Value::Float(f64::NAN)] {
+            assert_eq!(nan.order(&other), Err("cannot order a NaN".to_owned()));
+            assert_eq!(other.order(&nan), Err("cannot order a NaN".to_owned()));
+        }
+    }
+
+    #[test]
+    fn compares_a_datetime_by_its_instant_and_never_by_its_offset() {
+        let here = Value::Datetime(when("2026-04-04T10:30:00-07:00"));
+        let there = Value::Datetime(when("2026-04-04T17:30:00Z"));
+        assert!(here.equals(&there).unwrap());
+        assert!(!here.equals(&Value::Datetime(when("2024-11-24"))).unwrap());
     }
 
     #[test]

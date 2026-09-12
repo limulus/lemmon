@@ -11,9 +11,11 @@
 use std::rc::Rc;
 
 use crate::compile::{Diagnostic, omittable};
+use crate::datetime::Datetime;
 use crate::decls::{Decls, Kind, no_field};
 use crate::plan::{Index, Step};
 use crate::types::{Type, assignable};
+use crate::url;
 use crate::value::{Closure, Map, Value};
 use crate::vm::invoke;
 
@@ -87,12 +89,33 @@ impl Loader<'_> {
                 )));
                 None
             }
-            // Not here yet (∆Q6L): these types have no values of their own, so a string
-            // stays a string until the stdlib gives them one.
-            (
-                Type::Datetime | Type::Duration | Type::Url | Type::Asset,
-                value @ Value::Str(_),
-            ) => Some(value),
+            // A string in data resolves by the type expected of it (D37): a datetime
+            // is parsed, a url percent-encoded. Both are the same readings `datetime()`
+            // and `url()` make in a template, so a date is one value however it
+            // arrived.
+            (Type::Datetime, Value::Str(text)) => match Datetime::parse(&text) {
+                Ok(datetime) => Some(Value::Datetime(datetime)),
+                // The refusal as `datetime()` words it, so one mistake reads the same
+                // wherever it was made — in front matter, or in a template.
+                Err(message) => {
+                    self.diagnostics.push(at.error(message));
+                    None
+                }
+            },
+            (Type::Url, Value::Str(text)) => Some(Value::url(url::encode(&text))),
+            // A duration is a count of seconds, which is what a shell serialising a
+            // front-matter `duration: 1490` sends.
+            (Type::Duration, Value::Int(seconds)) if seconds >= 0 => {
+                Some(Value::Duration(seconds))
+            }
+            (Type::Duration, Value::Int(seconds)) => {
+                self.diagnostics.push(at.error(format!(
+                    "expected `duration` for `{}`, got {seconds}: a duration is a \
+                     count of seconds and cannot be negative",
+                    at.label()
+                )));
+                None
+            }
             (Type::List(element), Value::List(items)) => {
                 let mut out = Vec::with_capacity(items.len());
                 let mut failed = false;
@@ -541,7 +564,10 @@ mod tests {
         assert_eq!(article.fields.get("subhead"), Some(&Value::Null));
         assert_eq!(article.fields.get("hero"), Some(&Value::Null));
         assert_eq!(article.fields.get("ratio"), Some(&Value::Float(2.0)));
-        assert_eq!(article.fields.get("when"), Some(&Value::str("2026-09-08")));
+        assert_eq!(
+            article.fields.get("when"),
+            Some(&Value::Datetime(Datetime::parse("2026-09-08").unwrap()))
+        );
         assert_eq!(article.fields.get("draft"), Some(&Value::Bool(false)));
     }
 
@@ -920,8 +946,45 @@ mod tests {
     }
 
     #[test]
+    fn refuses_a_string_that_is_no_datetime_and_a_duration_that_runs_backwards() {
+        let site = "<lem-type Post>\n  when: datetime\n  runtime: duration\n</lem-type>\n\
+                    <lem-let post: Post from \"_data/p.json\" />";
+        let module = module(&shell(), &[("ambient.lem", AMBIENT), ("site.lem", site)]);
+        let data = Data {
+            ambient: vec![build()],
+            sources: vec![(
+                "post".to_owned(),
+                Source::One(Loaded {
+                    value: object(&[
+                        ("when", Value::str("4 April 2026")),
+                        ("runtime", Value::Int(-1)),
+                    ]),
+                    path: None,
+                    spans: Spans::new(),
+                }),
+            )],
+        };
+        assert_eq!(
+            errors(&module, &shell(), data),
+            [
+                format!(
+                    "site.lem:{}: `4 April 2026` is not a datetime: write a date \
+                     (`2024-11-24`), or a date and time with an offset \
+                     (`2024-11-24T18:35:00Z`)",
+                    at(site, "«when»: datetime")
+                ),
+                format!(
+                    "site.lem:{}: expected `duration` for `post.runtime`, got -1: a \
+                     duration is a count of seconds and cannot be negative",
+                    at(site, "«runtime»: duration")
+                ),
+            ]
+        );
+    }
+
+    #[test]
     fn validates_every_scalar_type_and_a_null_only_for_an_optional() {
-        let site = "<lem-type Scalars>\n  s: string\n  i: int\n  f: float\n  b: bool\n  h: html\n  d: duration\n  u: url\n  a: asset\n  o: int?\n  n: int?\n</lem-type>\n\
+        let site = "<lem-type Scalars>\n  s: string\n  i: int\n  f: float\n  b: bool\n  h: html\n  d: duration\n  u: url\n  a: asset?\n  o: int?\n  n: int?\n</lem-type>\n\
                     <lem-let scalars: Scalars from \"_data/s.json\" />";
         let module = module(&shell(), &[("ambient.lem", AMBIENT), ("site.lem", site)]);
         let good = object(&[
@@ -930,9 +993,9 @@ mod tests {
             ("f", Value::Float(1.5)),
             ("b", Value::Bool(true)),
             ("h", Value::Html(Rc::from("<b>"))),
-            ("d", Value::str("PT1M")),
-            ("u", Value::str("/")),
-            ("a", Value::str("a.png")),
+            ("d", Value::Int(90)),
+            ("u", Value::str("/a b/")),
+            ("a", Value::Null),
             ("o", Value::Null),
         ]);
         let with = |value: Value| Data {
@@ -956,15 +1019,19 @@ mod tests {
         assert_eq!(scalars.fields.get("h"), Some(&Value::html("<b>")));
         assert_eq!(scalars.fields.get("n"), Some(&Value::Null));
         assert_eq!(scalars.fields.get("o"), Some(&Value::Null));
+        // A string in data resolves by the type expected of it, so what a template
+        // reads is the value, not the text the shell sent.
+        assert_eq!(scalars.fields.get("d"), Some(&Value::Duration(90)));
+        assert_eq!(scalars.fields.get("u"), Some(&Value::url("/a%20b/")));
         let bad = object(&[
             ("s", Value::Null),
             ("i", Value::Float(1.5)),
             ("f", Value::str("1")),
             ("b", Value::Int(1)),
             ("h", Value::str("<b>")),
-            ("d", Value::Int(1)),
+            ("d", Value::str("PT1M")),
             ("u", Value::Bool(false)),
-            ("a", Value::Null),
+            ("a", Value::str("styles/site.css")),
             ("o", Value::str("1")),
         ]);
         assert_eq!(
@@ -992,7 +1059,7 @@ mod tests {
                     at(site, "«h»: html")
                 ),
                 format!(
-                    "site.lem:{}: expected `duration` for `scalars.d`, got `int`",
+                    "site.lem:{}: expected `duration` for `scalars.d`, got `string`",
                     at(site, "«d»: duration")
                 ),
                 format!(
@@ -1000,8 +1067,8 @@ mod tests {
                     at(site, "«u»: url")
                 ),
                 format!(
-                    "site.lem:{}: expected `asset` for `scalars.a`, got `null`",
-                    at(site, "«a»: asset")
+                    "site.lem:{}: expected `asset?` for `scalars.a`, got `string`",
+                    at(site, "«a»: asset?")
                 ),
                 format!(
                     "site.lem:{}: expected `int?` for `scalars.o`, got `string`",

@@ -1,0 +1,2 @@
+<lem-let counted: any = 1 />
+<p><lem.counted.trim()></p>

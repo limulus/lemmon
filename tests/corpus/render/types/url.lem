@@ -1,0 +1,6 @@
+<lem-let photo = url("/photos/a café/") />
+<lem-let feed = url("/tils/?topic=rust&sort=new") />
+<lem-let again = url("/photos/a%20caf%C3%A9/") />
+<a href="<lem.photo>">the photo</a>
+<a href="<lem.feed>">rust tils</a>
+<lem-if photo == again><p>encoding what is encoded changes nothing</p></lem-if>

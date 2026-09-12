@@ -5,3 +5,7 @@
 <lem-for raw, i in ["loop"]><lem.card(raw)><lem.i></lem-for>
 <lem-let cooked = |raw| raw />
 <lem.cooked(raw)>
+<lem-fn url(path: string): string = "/blog/" + path />
+<lem-let datetime = "a name an author may well reach for" />
+<lem-let urls = ["/a/"] />
+<lem.url("a")><lem.datetime><lem.urls[0]>

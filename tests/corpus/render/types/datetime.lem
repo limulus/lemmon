@@ -1,0 +1,8 @@
+<lem-let published = datetime("2026-04-04T10:30:00-07:00") />
+<lem-let sameMoment = datetime("2026-04-04T17:30:00Z") />
+<lem-let launched = datetime("2024-11-24") />
+<time datetime="<lem.published>">when this went up</time>
+<lem-if published == sameMoment><p>one moment, two offsets</p></lem-if>
+<lem-if launched lt published><p>the site is older than the post</p></lem-if>
+<p>launched <lem.launched></p>
+<p>and again, as YAML spells it: <lem.datetime("2026-04-04 10:30:00 -07:00")></p>

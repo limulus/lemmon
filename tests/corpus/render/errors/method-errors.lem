@@ -9,6 +9,7 @@
 </lem-type>
 <lem-fn slugify(s: string): string = s + "!" />
 <lem.heading.slugify>
+<lem.heading.slugfy> <lem.words.lenght> <lem.heading.byline>
 <lem.heading.slugify(1)> <lem.words.first(1) ?? 0>
 <lem.heading.nope()> <lem.n.nope()> <lem.m.foo()>
 <lem.heading?.slugify()> <lem.maybe.slugify()>

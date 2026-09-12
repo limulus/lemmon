@@ -1,0 +1,2 @@
+<lem-let written = "4 April 2026" />
+<time datetime="<lem.datetime(written)>">when this went up</time>

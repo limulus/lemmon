@@ -192,15 +192,46 @@ the checker's question, not the parser's.
 
 - `html` is trusted markup: produced by block-bodied functions, markdown rendering, and
   `raw()`. Emitted verbatim.
+- `datetime` is a moment and the UTC offset it was written in. Printing gives RFC 3339
+  in that offset (`Z` where it is UTC); equality and ordering read the moment alone, so
+  `2026-04-04T10:30:00-07:00` and `2026-04-04T17:30:00Z` are one value. A string becomes
+  one by `datetime("…")` or by standing where the type is declared — a date
+  (`2024-11-24`, midnight UTC), or a date and time with an offset, whose separators may
+  be spaces as a YAML timestamp writes them. A time with no offset is refused rather
+  than assumed, and so is a named time zone: the core carries no time-zone database
+  (D38).
+- `duration` is a span of time in whole seconds, and an `int` where one is declared in
+  data. It has no printed form: how long something takes is shown as a site words it,
+  never as a bare count of seconds.
 - `asset` resolves against the esbuild manifest at compile/load; printing yields the
   hashed URL; unknown path = error with span. Created by `asset("…")` or `[asset]`
   fields.
-- `url` validates at load; attribute-escaped on emit; `url(...)` builtin percent-encodes
-  composed URLs.
+- `url` is text percent-encoded once, by `url("…")` or by standing where the type is
+  declared; attribute-escaped on emit, since encoding leaves `&` and `'` alone.
+  Encoding again changes nothing, so a URL composed from one already encoded is safe
+  (D38).
 - Optionals are the only nullable type; the checker forces `?.`, `??`, or narrowing.
 - `{K: V}` is always keyed by `string`; any other `K` is an error at the annotation.
   `map`, `list`, and `function` are not type names, and an author who writes one is told
   the Lemmon spelling. Neither they nor the builtin type names can be declared.
+
+Every builtin type carries its own functions, reached through the receiver's type and
+occupying no namespace (D34). The set is the core's and closed; a name a type has not got
+is a compile error naming the nearest it has.
+
+| Receiver | Methods |
+| --- | --- |
+| `string` | `trim() lower() upper() slugify() length()`, `split(sep) replace(from, to) startsWith(s) endsWith(s) contains(s)` |
+| `[T]` | `first() last() length() reverse()` · `contains(x) take(n) drop(n)` · `join(sep)` on `[string]` · `map(f) filter(p) find(p) any(p) sortBy(key) groupBy(key)` |
+| `{string: V}` | `keys() values() has(key)` |
+| `int` | `abs()` |
+| `float` | `abs() round() floor() fixed(places)` |
+
+`first`, `last`, and `find` give a `T?`, which is how an empty list answers without an
+error; `length` counts characters rather than bytes, and elements rather than entries.
+`slugify` folds to ASCII (`Dürer` → `durer`) and drops apostrophes rather than breaking a
+word on one. `round` and `floor` refuse a `float` no `int` holds instead of saturating,
+and `fixed` writes exactly the decimals asked for, a half going to the even digit.
 
 ### Schemas
 
@@ -273,9 +304,8 @@ the checker's question, not the parser's.
   declaration that gives one. So `layout: (Article, html): html` is declared once, on
   `Article`, and a `LinkPost extends Article` inherits it: a layout that only a link
   post needs takes an `Article` and narrows inside.
-- _Not yet (∆Q6L): `datetime`, `duration`, `url`, and `asset` have no run-time values;
-  a loaded field of one of those types keeps its string until the stdlib gives them
-  one._
+- _Not yet (∆Q6L): `asset` has no run-time value, because no manifest reaches the core
+  yet; an `asset` field cannot be loaded at all until one does._
 - Schemas are the source of truth; JSON Schema is derived output (`lem schema export`),
   never authored (rationale: the same types statically check template expressions —
   subtyping, function types, `html`/`asset` semantics, reference fields).
@@ -497,7 +527,12 @@ hierarchies and `T?`. Diagnostics carry a primary span plus secondary spans wher
   before it (D34): `xs.filter(|a| …)` expects `(T): bool` of its argument and yields `[T]`;
   `xs.map(|a| …)` expects a function of `(T)` and no return in particular — a lambda
   there takes `T` as its parameter and its body is inferred, a function value fits when
-  its parameters accept `T` — and yields a list of what that function returns. Calling
+  its parameters accept `T` — and yields a list of what that function returns.
+  `xs.find(p)` and `xs.any(p)` ask a predicate what `filter` does, and give a `T?` and a
+  `bool`; `xs.sortBy(f)` takes `map`'s shape and holds the key `f` returns to a number, a
+  string, or a datetime, the three things two values of can be put in an order;
+  `xs.groupBy(f)` wants `(T): string`, since the group's name is a map key; and
+  `xs.join(sep)` refuses a receiver that is not a list of strings. Calling
   `any` checks nothing. A lambda under an expected function type takes its parameter
   types from it and its body is checked against its return; one with nothing expected
   has `any` parameters (provisional). A builtin that takes a function runs it at render
@@ -550,8 +585,8 @@ nothing.
   promotion `<lem-import { picture, Photo, PhotoIndex } from plugin("photos") />`
   brings favourites (and types) into the flat namespace. Promotion collisions are the
   same duplicate error.
-- **Ambient:** the stdlib functions that make or vouch for a value (`raw`, `asset`,
-  `url`, `datetime`, `uniqueId`, …) need no import — an entry that works on a value is
+- **Ambient:** the stdlib functions that make or vouch for a value (`raw`, `datetime`,
+  `url`; `asset` and `uniqueId` once they exist) need no import — an entry that works on a value is
   that value's method instead, `heading.slugify()`, `d.rfc3339()`, and occupies no
   namespace (D34); a `lem-fn` or `lem-let` may shadow an ambient name, with a warning at
   the definition when the name it displaces is the stdlib's — a parameter or loop

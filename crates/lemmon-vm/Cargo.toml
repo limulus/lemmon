@@ -9,6 +9,9 @@ publish.workspace = true
 [dependencies]
 lemmon-syntax = { path = "../lemmon-syntax" }
 comrak = { workspace = true }
+deunicode = { workspace = true }
+jiff = { workspace = true }
+percent-encoding = { workspace = true }
 
 [dev-dependencies]
 lemmon-corpus = { workspace = true }

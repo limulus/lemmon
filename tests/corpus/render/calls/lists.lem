@@ -1,0 +1,36 @@
+<lem-type Post>
+  title: string
+  topic: string
+  date: datetime
+  draft: bool
+</lem-type>
+<lem-let posts: [Post] = [
+  {title: "Tuples", topic: "rust", date: datetime("2024-03-01"), draft: false},
+  {title: "Matrices", topic: "canvas", date: datetime("2026-01-15"), draft: false},
+  {title: "Half written", topic: "rust", date: datetime("2026-06-01"), draft: true},
+  {title: "Ray Spheres", topic: "rust", date: datetime("2025-07-04"), draft: false}
+] />
+
+<lem-let published = posts.filter(|p| !p.draft) />
+<h2>The three newest</h2>
+<ul>
+  <lem-for p in published.sortBy(|p| p.date).reverse().take(3)>
+    <li><lem.p.title> — <lem.p.date></li>
+  </lem-for>
+</ul>
+<p>All of them: <lem.published.map(|p| p.title).join(", ")></p>
+<p><lem.published.length()> published, <lem.posts.length()> written</p>
+<p>First: <lem.published.first()?.title ?? "none">, last: <lem.published.last()?.title ?? "none"></p>
+<lem-if posts.any(|p| p.draft)>
+  <p>There is a draft waiting.</p>
+</lem-if>
+<lem-let rust = posts.find(|p| p.topic == "rust") />
+<p>Oldest rust post read: <lem.rust?.title ?? "none"></p>
+<h2>By topic</h2>
+<lem-for topic, group in posts.groupBy(|p| p.topic)>
+  <p><lem.topic>: <lem.group.length()></p>
+</lem-for>
+<p>Dropping the first two leaves <lem.posts.drop(2).length()>.</p>
+<lem-if posts.map(|p| p.topic).contains("canvas")>
+  <p>Something about canvas.</p>
+</lem-if>

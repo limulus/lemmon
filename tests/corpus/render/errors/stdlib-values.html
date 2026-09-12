@@ -1,0 +1,8 @@
+
+--- diagnostics
+render/errors/stdlib-values.lem:1:30..1:42: `2024-13-01` is not a datetime: write a date (`2024-11-24`), or a date and time with an offset (`2024-11-24T18:35:00Z`)
+render/errors/stdlib-values.lem:2:29..2:50: `2026-04-04T10:30:00` has a time and no UTC offset: write `Z`, or an offset like `-07:00`, after it — a datetime is a moment, not a wall clock
+render/errors/stdlib-values.lem:3:27..3:37: `tomorrow` is not a datetime: write a date (`2024-11-24`), or a date and time with an offset (`2024-11-24T18:35:00Z`)
+render/errors/stdlib-values.lem:4:27..4:72: `2024-11-24T10:00:00-05:00[America/New_York]` names a time zone, and the core has no time-zone database: write the UTC offset the time is in
+render/errors/stdlib-values.lem:5:20..5:31: datetime() takes a string, got `int`
+render/errors/stdlib-values.lem:6:20..6:29: url() takes a string, got `bool`

@@ -11,6 +11,7 @@ mod builtins;
 mod bytecode;
 mod closure;
 mod compile;
+mod datetime;
 mod decls;
 mod document;
 mod exports;
@@ -21,6 +22,7 @@ mod plan;
 mod testing;
 mod types;
 mod unit;
+mod url;
 mod value;
 mod vm;
 
@@ -35,6 +37,7 @@ pub use compile::{
     Compiled, Diagnostic, Label, PreparedFile, compile, compile_unit, prepare,
     repeated_path,
 };
+pub use datetime::Datetime;
 pub use decls::{Declaration, Decls, FieldDecl, Kind, Shape, ShapeFact, TypeFact};
 pub use exports::{Export, ExportIndex, TypeExport};
 pub use host::{Ambient, Host};
