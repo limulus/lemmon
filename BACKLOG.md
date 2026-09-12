@@ -26,6 +26,12 @@ refactor priority: reshaping is cheapest before more code is built on what it re
   the build takes whatever `wasm-ld` defaults to. Pass `-z stack-size` and assert it in
   `scripts/wasm-artifact.ts`, so the number the caps were measured against is the one that ships
 
+- ∆Tsy Rename `lemmon-vm`'s colliding types and fields — `builtins::Kind` and `decls::Kind` are
+  two enums under one name, and the root `pub use` hands `lemmon_vm::Kind` to the second, so the
+  first squats on a name it cannot reach; `builtins::Host` shadows the exported `host::Host`;
+  `Builtin.ty` is a typing rule, `Record.ty` a type's name. `lemmon-syntax` settled this with
+  `SyntaxKind`/`LiteralKind`. `Type` and `Value` spell the type names twice, unchecked — test that
+
 ## Phase 1 — Language complete, tooling from day one
 
 Seed items for the next phase (architecture doc 3, phase 1); expect these to be split
@@ -110,7 +116,10 @@ API); the port itself lives in limulus-dot-net on a branch while 11ty stays gree
   in the parity harness; needs: ∆PgF
 - ∆pP5 Photos plugin — `photos.json` as typed data with alias resolution (today's
   `getPhoto` shortcode), and `lem photos add` wrapping `bin/process-photos.js` (resize,
-  blurhash, upload); needs: ∆PgF
+  blurhash, upload). A photo's URL is its stored `alias`, never `title.slugify()`: the
+  aliases were minted by `@sindresorhus/slugify`, whose German rule spells `Dürer`
+  `duerer` where the core's Latin fold spells it `durer`, so three live URLs move if a
+  page recomputes one; needs: ∆PgF
 - ∆shS Revisions plugin — `revisions.json` as data feeding `lastModified`, plus the
   `update-revisions` command reimplemented on the content API instead of spinning up
   Eleventy (`11ty/get-articles.ts`); needs: ∆PgF
