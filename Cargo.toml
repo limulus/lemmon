@@ -48,10 +48,11 @@ percent-encoding = { version = "2.3.2", default-features = false, features = ["a
 # separate words with spaces is counted rather than read as one long word. From
 # `unicode-rs`, the same maintainers as the Unicode crates the toolchain itself uses.
 unicode-segmentation = "1.13.3"
-# Behind `slugify`'s ASCII folding, so that `Dürer` and `Hawaiʻi` give URL segments a
-# reader can type. A transliteration table and nothing else — no host capability, and
-# `alloc` alone keeps it that way.
-deunicode = { version = "1.6.2", default-features = false, features = ["alloc"] }
+# Behind `slugify`'s Latin fold: canonical decomposition, so that a letter carrying a
+# diacritic can be reduced to the letter. Chosen over a transliteration table
+# (`deunicode`, `any_ascii`), which cost 479 KB of the `.wasm` to answer a question no
+# English-language site asks — and answered it with a German rule at that (D38).
+unicode-normalization = { version = "0.1.25", default-features = false }
 # The corpus harness's failure report, and dev-only by construction: `lemmon-corpus` is
 # never anything but a dev-dependency, so this reaches no shipped build.
 similar = "3.2.0"

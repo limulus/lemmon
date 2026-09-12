@@ -233,8 +233,9 @@ is a compile error naming the nearest it has.
 
 `first`, `last`, and `find` give a `T?`, which is how an empty list answers without an
 error; `length` counts characters rather than bytes, and elements rather than entries.
-`slugify` folds to ASCII (`Dürer` → `durer`) and drops apostrophes rather than breaking a
-word on one. `round` and `floor` refuse a `float` no `int` holds instead of saturating,
+`slugify` folds Latin marks off (`Dürer` → `durer`) and drops apostrophes rather than
+breaking a word on one; it is not a transliteration, so a script it cannot fold is kept
+rather than guessed at and a Japanese title gives a Japanese slug. `round` and `floor` refuse a `float` no `int` holds instead of saturating,
 and `fixed` writes exactly the decimals asked for, a half going to the even digit.
 
 A datetime's methods all read it through the offset it was written in, never through

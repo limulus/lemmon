@@ -169,12 +169,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "deunicode"
-version = "1.6.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "abd57806937c9cc163efc8ea3910e00a62e2aeb0b8119f1793a978088f8f6b04"
-
-[[package]]
 name = "encoding_rs"
 version = "0.8.40"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -412,13 +406,13 @@ name = "lemmon-vm"
 version = "0.0.0"
 dependencies = [
  "comrak",
- "deunicode",
  "glob",
  "jiff",
  "lemmon-corpus",
  "lemmon-syntax",
  "percent-encoding",
  "saphyr",
+ "unicode-normalization",
  "unicode-segmentation",
 ]
 
