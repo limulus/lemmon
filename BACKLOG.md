@@ -20,6 +20,12 @@ mechanism: `delto surface` trusts these edges to decide what is eligible to work
 Standing epic for reshaping working code. It comes first so that document order gives a
 refactor priority: reshaping is cheapest before more code is built on what it reshapes.
 
+- ∆vnI Pin the stack the `.wasm` is linked with — `MAX_NATIVE_DEPTH` and the parser's own
+  `MAX_DEPTH` are both budgeted against a megabyte, and `nests_to_the_cap_within_the_stack_the_wasm_is_given`
+  (`crates/lemmon-vm/src/vm.rs`) tests against one, but nothing makes the artifact have it:
+  the build takes whatever `wasm-ld` defaults to. Pass `-z stack-size` and assert it in
+  `scripts/wasm-artifact.ts`, so the number the caps were measured against is the one that ships
+
 ## Phase 1 — Language complete, tooling from day one
 
 Seed items for the next phase (architecture doc 3, phase 1); expect these to be split
