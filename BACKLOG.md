@@ -150,6 +150,11 @@ reproduced cold.
   every later call, so one such file stops a ∆4tG worker. No depth cap counts a chain, but
   the compiler's walk in `crates/lemmon-vm/src/compile/expr.rs` recurses per term, as does
   dropping rowan's tree. Decide: a length cap, or walks that do not recurse (found in ∆vnI)
+- ∆aaw `readingTime` counts markup as words — `words()` in `crates/lemmon-vm/src/builtins/
+  text.rs` counts a code block's text like prose, an entity's name as a word (its own test
+  asserts `a &gt; b` is three), and a highlighted block's `syn-` spans as breaks, so `a.b`
+  is two words and a grammar change moves a post's reading time (D40). Decide whether code
+  counts at all or by an estimate from line length; ∆hyz allowlists what then differs
 
 ## Someday/Maybe
 
