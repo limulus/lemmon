@@ -29,11 +29,6 @@ further at claim time.
   syntect with class-based output plus a generated theme stylesheet (D08,
   docs/architecture.md §Crates). Deferred out of document mode: it adds ~1 MB to the .wasm
   and the spike's page has no fences, but limulus.net's archive does, so the port needs it
-- ∆RGQ Side channels + generators — `lem-style`/`lem-script`/`lem-head`/`lem-emit`
-  collection and dedup, `lem-page` generators (prev/next), `plan()` filling each page's
-  entry from the host-named field (D30), serializable modules, render-reported deps, and
-  compile-reported facts (signatures, ambient bindings, manifest entries, a document's
-  record) keying the unit cache so a content edit never recompiles its layouts (D25)
 - ∆1Hp Side channels — `lem-style`/`lem-head`/`lem-script` collected per render and
   deduplicated, `lem-emit` recorded as a mark, `render` returning the page as bytes beside
   its marks and channels for the host to splice. D20's CSS bundles and every ported
