@@ -203,6 +203,16 @@ moved it. Newest last. An entry is removed when its change has been applied.
   unknown language or a failing grammar is a warning at the word, with a did-you-mean;
   no theme is part of the core, so the stylesheet is the site's (D40, ∆BfR).
 
+- **Tags, Names, and Ambient types: page templates** — remove the `lem-page` row. Where
+  the text describes page templates, say a `.lem` file is a page when it opens with front
+  matter, typed as a document is, and its output is the body its layout receives; a
+  generator is a page template whose front matter names a `site` list and the field each
+  item lands in, with filtering in a computed `site.lem` binding and the page's title and
+  url as defaults on its type. In the `url` sentence drop `<lem-page url = … />`: `url` is
+  given in front matter, or by a generator type's default. In Names, "Page-template
+  bindings (lem-page, lem-let at file top level)" becomes file-top-level `lem-let`
+  bindings (D41, ∆RGQ).
+
 ## Shell & Core
 
 - **WASM API, `compile` and `loadData`** — a file may carry `recordSpan`, the byte
@@ -309,7 +319,7 @@ moved it. Newest last. An entry is removed when its change has been applied.
   that `render` binds the host's document value to a loaded document's own record from
   the store, and to the envelope's value, unvalidated, where no loaded document stands:
   a template, or a document no collection matched — one value for every such render
-  until `plan()` (∆RGQ) gives each page its own (D37, ∆iCW).
+  until `plan()` (∆c9S) gives each page its own (D37, ∆iCW).
 
 - **VM, the module's plans** — where the text gives `RecordPlan` as a record's ordered
   steps, add `indexes` beside them: each a field with the ambient value and field its
@@ -332,7 +342,7 @@ moved it. Newest last. An entry is removed when its change has been applied.
   compile time, since `compile` runs before `loadData`. A file that named an asset is
   recompiled when that asset's URL changes, and a file that named none is not. Replace
   "a new photo id invalidates only the documents whose facts named the photo index"
-  with: a new photo id changes no existing unit, and which pages re-render is ∆RGQ's
+  with: a new photo id changes no existing unit, and which pages re-render is ∆xBO's
   question (D25, D38; D25 revised, ∆Hbw).
 
 - **VM, the stdlib's values and the id counter** — `Value` carries `Datetime`, `Duration`,
@@ -374,6 +384,18 @@ moved it. Newest last. An entry is removed when its change has been applied.
   core owns only the inside of `<code>`, so a host that declares no grammars gets plain
   blocks a post-render plugin or a pure wasm highlighter (∆SDN) can colour instead (D40).
 
+- **Data model, templates and generated pages** — where the text lists templates as
+  functions, "page templates with a `<lem-page>` header instead of front matter, and
+  generators", and says generated pages are "a `<lem-page for photo in
+  site.photos.gallery() …>` header", say a page template carries front matter like a
+  document, and a generator's front matter names a `site` list, each page's other fields
+  computed by its type's defaults (D41, ∆RGQ).
+
 ## From Eleventy to Lemmon
 
-_No pending changes._
+- **Template mapping and the photo page port** — the `---js pagination` row maps to a
+  generator template whose front matter names a `site` list, not to `<lem-page for … />`;
+  the index pages row becomes `.lem` templates with front matter, not `<lem-page layout =
+  page title = … />`. In the photo page port, the proposed form opens with front matter
+  (`type: PhotoPage` and the list it pages over), and `title`, `image` and the url move to
+  defaults on `PhotoPage`; the `lem-head` prev/next links and the body are unchanged (D41).

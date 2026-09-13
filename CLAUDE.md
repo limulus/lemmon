@@ -88,7 +88,7 @@ packages/shell/         @limulus/lemmon-shell — CLI, walker, plugin host, dev 
 tests/corpus/           golden inputs → expected trees + diagnostics; see its README
 scripts/                repo tooling run by npm scripts (wasm staging + check, the spike);
                         scripts/lib/ is the logic they share, covered like a package
-docs/                   language.md, architecture.md, decisions/, journal/
+docs/                   language.md, architecture.md, decisions/, journal/, plans/
 ```
 
 One npm workspace (`packages/*`) plus one Cargo workspace (`crates/*`), with a single shared
@@ -249,7 +249,9 @@ Diagnostics raised only during declaration emit surface in `npm run build`, not 
 prerequisites only. Use `npx @limulus/delto@1 surface` to find eligible work, `claim` before
 starting, `complete` (then remove the item) when Eric accepts. Completed work gets a journal
 entry in `docs/journal/`. Mint new deltoids with
-`npx @limulus/delto@1 mint --journal-dir docs/journal` — never invent them.
+`npx @limulus/delto@1 mint --journal-dir docs/journal` — never invent them. An item
+planned by an earlier session names its plan in `docs/plans/`; start from that plan, and
+fold it into the journal entry's Planning section and delete it when the item completes.
 
 ## Working agreements
 

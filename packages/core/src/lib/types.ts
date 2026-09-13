@@ -75,7 +75,7 @@ export interface DataInput {
    * whatever an untyped host names. A value the host reads from a file's bindings
    * (`{bindingsOf}`) is built by the core, never carried. The document value is bound
    * as sent, not validated: it is one value for every such render until `plan()`
-   * gives each page its own (∆RGQ).
+   * gives each page its own (∆c9S).
    */
   ambient?: Record<string, JsonValue>
   /**
@@ -177,7 +177,7 @@ export interface Diagnostic {
 
 /**
  * What a render returns: the page's HTML, or `null` with the runtime diagnostic.
- * `channels` and `deps` are additive fields that arrive with ∆RGQ.
+ * `channels` (∆1Hp) and `deps` (∆xBO) are additive fields that arrive with those items.
  */
 export interface RenderResult {
   html: string | null

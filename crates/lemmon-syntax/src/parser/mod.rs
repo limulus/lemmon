@@ -624,7 +624,7 @@ mod tests {
         assert_eq!(
             messages("<lem-style /></lem-style>"),
             vec![
-                "`lem-style` is not supported yet (∆RGQ)",
+                "`lem-style` is not supported yet (∆1Hp)",
                 "`lem-style` is a block tag and cannot be self-closed: expected `>`",
             ]
         );

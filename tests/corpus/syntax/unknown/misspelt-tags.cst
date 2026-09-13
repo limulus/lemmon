@@ -1,4 +1,4 @@
-Root@0..161
+Root@0..192
   UnknownTag@0..11
     OpenTag@0..8 "<lem-iff"
     Trivia@8..9 " "
@@ -44,28 +44,41 @@ Root@0..161
     SelfClose@100..102 "/>"
   Text@102..103
     Text@102..103 "\n"
-  UnknownTag@103..121
-    OpenTag@103..118 "<lem-frobnicate"
-    Trivia@118..119 " "
-    Head@119..119
-    SelfClose@119..121 "/>"
-  Text@121..122
-    Text@121..122 "\n"
-  IfTag@122..160
-    OpenTag@122..129 "<lem-if"
-    Trivia@129..130 " "
-    Head@130..131
-      NameRef@130..131
-        Ident@130..131 "y"
-    Close@131..132 ">"
-    Block@132..151
-      Text@132..151
-        Text@132..151 "<i>still parsed</i>"
-    CloseTag@151..160
-      CloseTag@151..159 "</lem-if"
-      Close@159..160 ">"
-  Text@160..161
-    Text@160..161 "\n"
+  UnknownTag@103..133
+    OpenTag@103..112 "<lem-page"
+    Trivia@112..113 " "
+    Head@113..130
+      Ident@113..116 "url"
+      Trivia@116..117 " "
+      Eq@117..118 "="
+      Trivia@118..119 " "
+      StringLit@119..130 "\"/feed.xml\""
+    Trivia@130..131 " "
+    SelfClose@131..133 "/>"
+  Text@133..134
+    Text@133..134 "\n"
+  UnknownTag@134..152
+    OpenTag@134..149 "<lem-frobnicate"
+    Trivia@149..150 " "
+    Head@150..150
+    SelfClose@150..152 "/>"
+  Text@152..153
+    Text@152..153 "\n"
+  IfTag@153..191
+    OpenTag@153..160 "<lem-if"
+    Trivia@160..161 " "
+    Head@161..162
+      NameRef@161..162
+        Ident@161..162 "y"
+    Close@162..163 ">"
+    Block@163..182
+      Text@163..182
+        Text@163..182 "<i>still parsed</i>"
+    CloseTag@182..191
+      CloseTag@182..190 "</lem-if"
+      Close@190..191 ">"
+  Text@191..192
+    Text@191..192 "\n"
 
 --- diagnostics
 1:1..1:9: unknown tag `lem-iff`; did you mean `lem-if`?
@@ -73,4 +86,5 @@ Root@0..161
 4:1..4:10: unknown tag `lem-lett`; did you mean `lem-let`?
 5:1..5:16: unknown tag `lem-collection`
 6:1..6:10: unknown tag `lem-data`
-7:1..7:16: unknown tag `lem-frobnicate`
+7:1..7:10: unknown tag `lem-page`; did you mean `lem-case`?
+8:1..8:16: unknown tag `lem-frobnicate`

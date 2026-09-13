@@ -4,7 +4,7 @@
   not a fact: a string literal in a template is a string, and a record named by id is
   read from its map at render; extended 2026-09-13 (∆BfR) — the grammars a document's
   code was highlighted against are a fact (D40)
-- **Backlog item:** ∆TNT (made it real); ∆RGQ (reported facts across the boundary);
+- **Backlog item:** ∆TNT (made it real); ∆Qr2 (reported facts across the boundary);
   ∆Hbw (the revision)
 - **Normative text:** `docs/architecture.md` § Separate compilation
 
@@ -56,9 +56,9 @@ input, so re-checking never requires recompiling.
   components are cache hits. A new photo id changes no existing unit: a record named by
   id is read from its map at render, and no unit's facts name an id. Which pages then
   re-render — a render-time read of the map, or a load-time `by` resolution — is a
-  dependency question that is not yet answered (∆RGQ).
+  dependency question that is not yet answered (∆xBO).
 - The VM never changed: `link` concatenates pools with offsets into the same `Module`
   shape it always ran.
 - ∆TNT's retrospective: `Unit::facts` was written and tested for content before anything
-  consumed it — a field nothing reads is not a fact, it is a comment. ∆RGQ makes the
+  consumed it — a field nothing reads is not a fact, it is a comment. ∆Qr2 makes the
   reported facts cross the boundary and the serialized form first-class.

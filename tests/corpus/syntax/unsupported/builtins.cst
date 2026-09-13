@@ -1,4 +1,4 @@
-Root@0..225
+Root@0..198
   UnsupportedTag@0..65
     OpenTag@0..10 "<lem-style"
     Head@10..10
@@ -23,53 +23,43 @@ Root@0..225
       Close@127..128 ">"
   Text@128..129
     Text@128..129 "\n"
-  UnsupportedTag@129..155
-    OpenTag@129..138 "<lem-page"
-    Trivia@138..139 " "
-    Head@139..152
-      StringLit@139..152 "\"/index.html\""
-    Trivia@152..153 " "
-    SelfClose@153..155 "/>"
-  Text@155..156
-    Text@155..156 "\n"
-  UnsupportedTag@156..177
-    OpenTag@156..167 "<lem-import"
-    Trivia@167..168 " "
-    Head@168..174
-      Ident@168..174 "photos"
-    Trivia@174..175 " "
-    SelfClose@175..177 "/>"
-  Text@177..178
-    Text@177..178 "\n"
-  UnsupportedTag@178..192
-    OpenTag@178..189 "<lem-script"
-    Trivia@189..190 " "
-    Head@190..190
-    SelfClose@190..192 "/>"
-  Text@192..193
-    Text@192..193 "\n"
-  UnsupportedTag@193..212
-    OpenTag@193..202 "<lem-emit"
-    Trivia@202..203 " "
-    Head@203..209
-      Ident@203..209 "styles"
-    Trivia@209..210 " "
-    SelfClose@210..212 "/>"
-  Text@212..213
-    Text@212..213 "\n"
-  AccessTag@213..224
-    OpenAccess@213..218 "<lem."
-    Head@218..223
-      NameRef@218..223
-        Ident@218..223 "after"
-    Close@223..224 ">"
-  Text@224..225
-    Text@224..225 "\n"
+  UnsupportedTag@129..150
+    OpenTag@129..140 "<lem-import"
+    Trivia@140..141 " "
+    Head@141..147
+      Ident@141..147 "photos"
+    Trivia@147..148 " "
+    SelfClose@148..150 "/>"
+  Text@150..151
+    Text@150..151 "\n"
+  UnsupportedTag@151..165
+    OpenTag@151..162 "<lem-script"
+    Trivia@162..163 " "
+    Head@163..163
+    SelfClose@163..165 "/>"
+  Text@165..166
+    Text@165..166 "\n"
+  UnsupportedTag@166..185
+    OpenTag@166..175 "<lem-emit"
+    Trivia@175..176 " "
+    Head@176..182
+      Ident@176..182 "styles"
+    Trivia@182..183 " "
+    SelfClose@183..185 "/>"
+  Text@185..186
+    Text@185..186 "\n"
+  AccessTag@186..197
+    OpenAccess@186..191 "<lem."
+    Head@191..196
+      NameRef@191..196
+        Ident@191..196 "after"
+    Close@196..197 ">"
+  Text@197..198
+    Text@197..198 "\n"
 
 --- diagnostics
-1:1..1:11: `lem-style` is not supported yet (∆RGQ)
-4:1..4:10: `lem-head` is not supported yet (∆RGQ)
-7:1..7:10: `lem-page` is not supported yet (∆RGQ)
-8:1..8:12: `lem-import` is not supported yet (∆PgF)
-9:1..9:12: `lem-script` is not supported yet (∆RGQ)
-10:1..10:10: `lem-emit` is not supported yet (∆RGQ)
+1:1..1:11: `lem-style` is not supported yet (∆1Hp)
+4:1..4:10: `lem-head` is not supported yet (∆1Hp)
+7:1..7:12: `lem-import` is not supported yet (∆PgF)
+8:1..8:12: `lem-script` is not supported yet (∆1Hp)
+9:1..9:10: `lem-emit` is not supported yet (∆1Hp)

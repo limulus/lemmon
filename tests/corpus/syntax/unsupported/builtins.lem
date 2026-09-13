@@ -4,7 +4,6 @@
 <lem-head>
   <meta name="description" content="x">
 </lem-head>
-<lem-page "/index.html" />
 <lem-import photos />
 <lem-script />
 <lem-emit styles />

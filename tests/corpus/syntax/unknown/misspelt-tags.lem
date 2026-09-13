@@ -4,5 +4,6 @@
 <lem-lett y = 1 />
 <lem-collection articles />
 <lem-data posts />
+<lem-page url = "/feed.xml" />
 <lem-frobnicate />
 <lem-if y><i>still parsed</i></lem-if>

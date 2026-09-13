@@ -34,6 +34,20 @@ further at claim time.
   entry from the host-named field (D30), serializable modules, render-reported deps, and
   compile-reported facts (signatures, ambient bindings, manifest entries, a document's
   record) keying the unit cache so a content edit never recompiles its layouts (D25)
+- ∆1Hp Side channels — `lem-style`/`lem-head`/`lem-script` collected per render and
+  deduplicated, `lem-emit` recorded as a mark, `render` returning the page as bytes beside
+  its marks and channels for the host to splice. D20's CSS bundles and every ported
+  component (∆rT5) carry styles this way, and ∆7Xs bundles what they collect. Planned in
+  `docs/plans/∆1Hp-side-channels.md`
+- ∆c9S Page templates and `plan()` — a `.lem` file becomes a page through front matter as a
+  document does, a generator's front matter names a `site` list with per-item values as
+  defaults on its page type (D41), `plan()` lists every output with its url, entry (D30),
+  and prev/next, and `render` binds each page's own record, closing D37's shared-envelope
+  gap. The port's index, photo, and TIL topic pages (∆ePP) are written this way
+- ∆xBO Render-reported deps — `render` reports which units and records a page read, so
+  `lem dev` (∆Vhi) re-renders only a change's dependents; answers D25's open question of
+  whether a new photo id re-renders through a render-time map read or a load-time `by`
+  resolution
 - ∆5MM tree-sitter-lemmon + LSP skeleton — embedded-template grammar with HTML/markdown
   injections, corpus agreement test wired into CI, `@limulus/lemmon-lsp` serving diagnostics
   and schema completions from `core.analyze()`; editor tooling is a day-one commitment
@@ -43,11 +57,16 @@ further at claim time.
   document mode — distilled from docs/language.md, not a copy of it. Porting limulus.net's
   layouts means writing a lot of Lemmon by agent, and rereading the whole language doc every
   time is neither reliable nor cheap
+- ∆Qr2 Facts and modules across the boundary — `compile` reports each unit's compile-time
+  facts (signatures, ambient bindings, manifest entries, grammars, a document's record) so
+  ∆4tG keys its unit cache on `hash(text) + hash(facts)` and a content edit never
+  recompiles its layouts (D25, D40), and `exportModule`/`importModule` serialize the linked
+  program (D14). Deferred from ∆TNT because a fact nothing consumes is a comment
 - ∆MlD Reconcile the architecture artifacts — apply every entry in
   `docs/artifact-changes.md` to the three Claude Artifacts Eric owns ("Shell & Core", "The
   Lemmon Language", "From Eleventy to Lemmon") and clear the ledger. The artifacts are the
   rationale record; changes are logged per pass and applied once, at the end of Phase 1,
-  so this is deliberately last; needs: ∆Q6L, ∆BfR, ∆RGQ, ∆5MM, ∆pXO
+  so this is deliberately last; needs: ∆Q6L, ∆BfR, ∆1Hp, ∆c9S, ∆Qr2, ∆xBO, ∆5MM, ∆pXO
 
 ## Phase 2 — The static site generator: limulus.net from a Lemmon port
 
@@ -61,14 +80,14 @@ API); the port itself lives in limulus-dot-net on a branch while 11ty stays gree
 
 - ∆4tG Build pipeline + CLI — `lem build` walks the input, classifies files, parses front
   matter with YAML positions, loads `lemmon.config.ts`, and drives the core across a worker
-  pool: compile `ambient.lem` + templates, match documents to the reported `from` globs and
-  compile them with their record (D30), loadData, plan, render. `lem check` prints spanned
-  diagnostics without writing. The backbone every other shell item plugs into
-- ∆7Xs Output writer — HTML to disk, per-page hashed CSS bundles collected from `lem-emit
-  styles` (`name.<8hex>.ext` under `/assets/immutable/…`, D13/D20), passthrough copy by
-  glob (limulus.net copies `assets/**` plus png/svg/jpg/xsd/xsl/txt/pdf), and a link/asset
-  integrity check. Preserving the hash conventions is what keeps CloudFront untouched at
-  cutover; needs: ∆4tG, ∆RGQ
+  pool: compile `ambient.lem` + templates without front matter, match documents and page
+  templates to the reported `from` globs and compile them with their record (D30, D41),
+  loadData, plan, render; `lem check` prints spanned diagnostics. The shell's backbone
+- ∆7Xs Output writer — HTML to disk with side channels spliced in, per-page hashed CSS
+  bundles of what `lem-style` collects (`name.<8hex>.ext` under `/assets/immutable/…`,
+  D13/D20), passthrough copy by glob (limulus.net copies `assets/**` plus
+  png/svg/jpg/xsd/xsl/txt/pdf), and a link/asset integrity check. Preserving the hash
+  conventions is what keeps CloudFront untouched at cutover; needs: ∆4tG, ∆1Hp
 - ∆d1N esbuild asset pipeline — bundle `**/index.ts` + `**/worker.ts` with `/lib/*` external
   and the wasm loader (D09), resolve the `XXXXXXXX` placeholder in client TS (D10), and hand
   the manifest to the host declaration at `compile`, its entries reported as compile-time
@@ -82,7 +101,7 @@ API); the port itself lives in limulus-dot-net on a branch while 11ty stays gree
 - ∆Vhi `lem dev` — dev server with COOP/COEP headers and live reload, incremental rebuilds
   from render-reported deps and `upsertRecord` (docs/architecture.md §Build pipeline),
   `--drafts` (D19). Replaces `eleventy --serve --incremental`, the daily authoring loop;
-  needs: ∆4tG, ∆RGQ
+  needs: ∆4tG, ∆xBO
 - ∆V7i `lem init` — scaffold a working blog as plain site code: `site.lem` with a `Post
   extends Page` schema, a `posts` glob binding, a `layout` default, and base/post layouts,
   plus an `index.lem` page. The core has no content conventions (D30), so this is where
@@ -92,8 +111,8 @@ API); the port itself lives in limulus-dot-net on a branch while 11ty stays gree
 
 - ∆F9l svg-sprite + dprint plugins — inline sprite from `assets/svg/{common,photos}` as an
   `emit`/data hook replacing `eleventy-plugin-svg-sprite`, and the dprint-markup
-  `transformOutput` (lineWidth 92) from `11ty/dprint.ts`, so formatted HTML diffs cleanly
-  in the parity harness; needs: ∆PgF
+  `transformOutput` (lineWidth 92) from `11ty/dprint.ts`, run after ∆1Hp's side-channel
+  splice, so formatted HTML diffs cleanly in the parity harness; needs: ∆PgF
 - ∆pP5 Photos plugin — `photos.json` as typed data with alias resolution (today's
   `getPhoto` shortcode), and `lem photos add` wrapping `bin/process-photos.js` (resize,
   blurhash, upload). A photo's URL is its stored `alias`, never `title.slugify()`: the
@@ -109,17 +128,17 @@ API); the port itself lives in limulus-dot-net on a branch while 11ty stays gree
 - ∆rT5 Schemas, layouts, components — `site.lem` types for articles, link posts, TILs,
   photos, vod, authors; the base/page/article/video layouts and ~20 WebC components
   rewritten as `.lem` functions with `lem-style` scoping (D20). First real exercise of the
-  language at scale; expect it to feed fixes back into Phase 1 items; needs: ∆Q6L, ∆RGQ, ∆eag
+  language at scale; expect it to feed fixes back into Phase 1 items; needs: ∆Q6L, ∆1Hp, ∆eag
 - ∆o24 Content + markdown parity — typed front matter for every `.md` (globs replace `tags`,
   schema defaults replace `links.json`), computed defaults replacing `eleventyComputed.js`
   (title from linkTitle, tilTopic from path, link/via domains, readingTime), the link-post
   reference appender as `transformDocument`, and comrak matched to markdown-it (footnote
   markup, task lists, attrs, heading anchors, highlight classes); needs: ∆rT5, ∆BfR
 - ∆ePP Generated and non-HTML pages — TIL topic pages, links and photo pages via
-  `lem-page` generators, the three feeds (rss + two atom, `/feed.xsl`), `sitemap.xml`
+  generator templates (D41), the three feeds (rss + two atom, `/feed.xsl`), `sitemap.xml`
   with video entries, 404 — the last things still depending on 11ty plugins
   (`eleventy-plugin-rss`, pagination, `sitemap.njk`). A feed reads other pages' rendered
-  bodies, which D30 left without a form (`body` is not a `Page` field); needs: ∆rT5, ∆RGQ
+  bodies, which D30 left without a form (`body` is not a `Page` field); needs: ∆rT5, ∆c9S
 
 ### Parity and cutover (D15)
 

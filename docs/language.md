@@ -131,7 +131,6 @@ follows:
 | `lem-fn` | signature | **Definition only** (calls go through `lem.`). Block body returns `html`, closes `</lem-fn>`; a `: html` on it is allowed and nothing else is. Expression body `(…): T = expr` is void and returns the declared `T` — the annotation is required, since a signature is read from the head alone (invariant 11). |
 | `lem-type` | `Name` / `Name extends Base` | Record schema (block); fields in the body, one per line, lexed in fields mode (D29). See § Schemas. |
 | `lem-enum` | `Name = a \| b \| c` | Enum (void); its variants are written bare here, and nowhere else. In an expression a variant is `.hero` where the enum is expected and `Placement.hero` anywhere; a string in front matter. |
-| `lem-page` | bindings; optional `for x in xs` | Marks a `.lem` file as a page template; its `name = expr` bindings are the page's own fields, as front matter is a document's (`layout`, `title`, `url`…), on a record that extends the host's `Page` (D30). With `for`: one page per item; `page.prev`/`page.next` are the generated neighbours. Void. |
 | `lem-import` | `name from plugin("p")` · `{ names } from plugin("p")` | Bind a plugin's shipped functions/types — qualified or promoted (D23). Site files never import each other. Void; lives in `site.lem`. |
 | `lem-style` / `lem-head` | — | Block side channels: collected per page from every function actually called, deduplicated. |
 | `lem-script` | `src=asset(…)` | Void side channel: a deduplicated module script tag. |
@@ -399,7 +398,7 @@ D19's flag — a draft is skipped and left out of collections unless `--drafts`.
   stands in for — a document no collection matched, whose `page` is unknown-typed, and
   a template, whose `page` is the declared type — so it is bound as sent, not
   validated.
-- _Not yet (∆RGQ): the envelope's document value is one value for every render no
+- _Not yet (∆c9S): the envelope's document value is one value for every render no
   loaded document stands in for, so a template's `page` is checked by the compiler and
   not by the loader; `plan()` gives each page its own, validated as the declared type._
 
@@ -421,6 +420,37 @@ D19's flag — a draft is skipped and left out of collections unless `--drafts`.
   document value has — and reports at the front matter, which is where the key that may
   have named it stands. A document no glob matches has no schema: `page` is
   unknown-typed, and it renders.
+- **A template is a page when it has front matter** (D41). A `.lem` file that opens with a
+  `---` block is typed as a document is — by the collection whose glob matched it, or by a
+  `type:` key — its front matter is its record, and the template's output is the body its
+  layout receives. A `.lem` file with no front matter is not a page: it holds definitions,
+  or it is a file the host reads bindings from. There is no page-header tag.
+- **A generator is a page template whose front matter names a list**: one page per item,
+  the item in the field the key names, the page's other fields computed by its type's
+  defaults (D37). Filtering and sorting the list is a computed binding in `site.lem`. A
+  generated page's `url` comes from its type's default, since every page of one file
+  would otherwise derive the same one, and `prev`/`next` follow the list's order.
+
+  ```
+  ---
+  type: TilTopicPage
+  for:
+    topic: site.tilTopics
+  ---
+  ```
+
+  ```
+  <lem-type TilTopicPage extends SitePage>
+    topic: string
+    title: string = "TILs: " + self.topic
+    url: url = url("/tils/" + self.topic + "/")
+  </lem-type>
+  ```
+- _Not yet (∆c9S): the scanner reads a `.lem` file's leading `---` block as text, and
+  nothing renders a template through its layout or expands a generator._
+- _Not yet (∆c9S): the generator key's name and shape — `for:` above is provisional — who
+  reads it (the shell reads only `type` and `layout` today, or the host declares the name),
+  and how a string in front matter names a field of `site`._
 - **`layout`** is a field every page schema declares, `(T, html): html` for its own `T`,
   usually with a default. At load its string value resolves to a project function of that
   type, as any string does where a function type is expected; the shell renders a page by
@@ -431,8 +461,9 @@ D19's flag — a draft is skipped and left out of collections unless `--drafts`.
   (D32), so the entry is declared once, where its self type is, and everything below
   inherits it. Its own type may stand in for `T` — `(Page, html): html` on a schema that
   extends `Page` is a layout the whole family can share.
-- **`url`** is the one `Page` field a source may provide — `<lem-page url = "/feed.xml" />`,
-  or `url:` in front matter; the shell derives it otherwise. There is no `permalink`.
+- **`url`** is the one `Page` field a source may provide — `url:` in a document's or a
+  template's front matter, as `url: /feed.xml` on a feed template — and a generator's page
+  type gives it a default; the shell derives it otherwise. There is no `permalink`.
 - A string in data resolves **by its expected type** — record → its `by` index, enum → a
   variant, `asset` → the manifest, `datetime` → parse, function type → a project function
   of that type — so `layout: article` in front matter needs no special case.
@@ -608,7 +639,7 @@ nothing.
 
 - **Project-flat:** every `.lem` file in the site shares one namespace; no imports
   between site files. Duplicate definitions are compile errors citing both spans.
-  File-top-level `lem-page`/`lem-let` bindings stay local to their file — except
+  File-top-level `lem-let` bindings stay local to their file — except
   `site.lem`'s, which are the fields of `site` (D30).
 - **Plugins qualified:** `site.lem` binds once —
   `<lem-import photos from plugin("photos") />` → `lem.photos.picture(…)`; named

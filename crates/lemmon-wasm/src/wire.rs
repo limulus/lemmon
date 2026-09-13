@@ -563,7 +563,7 @@ impl Diagnostic {
 }
 
 /// What `render` returns: the page's HTML, or the runtime diagnostic instead.
-/// `channels` and `deps` are additive fields that arrive with `∆RGQ`.
+/// `channels` (∆1Hp) and `deps` (∆xBO) are additive fields that arrive with those items.
 #[derive(Serialize)]
 pub(crate) struct RenderResult {
     pub(crate) html: Option<String>,

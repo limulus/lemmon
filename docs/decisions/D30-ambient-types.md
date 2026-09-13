@@ -5,8 +5,10 @@
   site's own record, `from` as a field clause — and revised the same day, before any of it
   was implemented, to host-declared ambient types; the `from` clause parsed and
   `lem-collection`/`lem-data` retired 2026-09-04 (∆1vS), which chose `env("…")` for
-  environment values
-- **Backlog item:** ∆1vS (the `from` binding clause, retiring `lem-collection`/`lem-data`)
+  environment values; revised 2026-09-13 (∆RGQ) — a template's page fields are its front
+  matter, as a document's are, and `lem-page` is retired (D41)
+- **Backlog item:** ∆1vS (the `from` binding clause, retiring `lem-collection`/`lem-data`);
+  ∆RGQ (retiring `lem-page`, D41)
 - **Normative text:** `docs/language.md` § Types › Ambient types
 
 ## Context
@@ -42,8 +44,9 @@ declaring `Page` (`url`, `inputPath`, `prev`, `next`, `draft`) and `Build` (`tim
   rendered body. It is neither a type nor a core concept.
 - `body` is not a `Page` field: nothing has produced it before render. It is the layout's
   second parameter and the input computed defaults see.
-- `url` is the one `Page` field a source may provide (`<lem-page url = … />`, or `url:`
-  in front matter); there is no `permalink`. `draft` (D19) is a `Page` field, not a key.
+- `url` is the one `Page` field a source may provide (`url:` in a document's or a
+  template's front matter, D41); there is no `permalink`. `draft` (D19) is a `Page`
+  field, not a key.
 - `from` binds on a `lem-let` head at the top of `site.lem`, void like `= expr`; the
   binding's type decides what the shell loads. `lem-collection`/`lem-data` stay retired,
   and the `lem-type` alias form the first reading added is withdrawn: nothing needs it.
@@ -75,9 +78,10 @@ declaring `Page` (`url`, `inputPath`, `prev`, `next`, `draft`) and `Build` (`tim
 - The shell reads two names of its own: `type`, a raw key read before a document has a
   type, and `layout`, a field required on every page schema. Everything else it knows
   about a page is a field with a span, in `ambient.lem` or `site.lem`.
-- Documents are typed per file, so the shell compiles templates first, reads the `from`
-  bindings `site.lem` reports, matches documents to those globs, and compiles each with
-  its record (∆4tG); `plan()` fills each page's entry from the host-named field (∆RGQ).
+- Documents are typed per file, so the shell compiles templates without front matter
+  first, reads the `from` bindings `site.lem` reports, matches documents and page
+  templates (D41) to those globs, and compiles each with its record (∆4tG); `plan()` fills
+  each page's entry from the host-named field (∆c9S).
 - Environment values — the first form's `Build.env` — become a `from` source on `site`:
   `<lem-let siteUrl: url from env("SITE_URL") />` (∆1vS). The same shape as
   `plugin("…")`, a call naming a host source with a literal argument, so the core
@@ -94,7 +98,7 @@ declaring `Page` (`url`, `inputPath`, `prev`, `next`, `draft`) and `Build` (`tim
   type, so `layout` is declared once, where its self type is, and inherited below it.
 - A feed reads other pages' rendered bodies (`a.body` for each article), and `body` is
   no longer a `Page` field. A rendered document body as a value needs a form of its own
-  (∆ePP, ∆RGQ).
+  (∆ePP, ∆c9S).
 - The spike is untouched: its ambient fields are ad hoc and unknown-typed, which is the
   fallback this decision keeps.
 - D19 and D23 gain a clause; D29's field order loses the `from` clause the first form

@@ -107,7 +107,7 @@ matched, whose `page` is unknown-typed (D30), and a template, whose `page` is th
 declared type — so the loader binds it as sent, one value for all of them, and
 `render` binds the document value from the store for a loaded document, else from the
 envelope. A template's `page` is therefore checked by the compiler and not by the
-loader until `plan()` (∆RGQ) gives each page a value of its own. Loading proceeds in
+loader until `plan()` (∆c9S) gives each page a value of its own. Loading proceeds in
 one order — the host's own values in its declaration order, then each bindings file —
 and no function runs over a value that is not loaded yet or that failed: a computed
 binding that reads a later file's, or a `by` index naming a map the loader reaches

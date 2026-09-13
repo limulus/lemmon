@@ -105,10 +105,10 @@ not a break:
   file's text are refused as a caller bug, since a line index panics on them.
 - `PageRef` is `{path}` until `plan()` exists to mint richer references.
 - `render` returns `{html, diagnostics}` — `html: null` plus one diagnostic when the page
-  fails at runtime. `channels` and `deps` are omitted entirely until ∆RGQ, not stubbed. A
-  loaded document renders with the host's document value bound to its own record from
-  the store; any other file — a template, a document no collection matched — reads the
-  value the envelope carried, if it did, as sent (D37).
+  fails at runtime. `channels` and `deps` are omitted entirely until ∆1Hp and ∆xBO, not
+  stubbed. A loaded document renders with the host's document value bound to its own
+  record from the store; any other file — a template, a document no collection matched —
+  reads the value the envelope carried, if it did, as sent (D37).
 - A `Diagnostic` is `{path, span: {start, end, range}, severity, message, labels}`. The
   span carries byte offsets (invariant 8) *and* `range`, the same two points as
   `{line, character}` LSP positions — zero-based, `character` in UTF-16 code units. The
@@ -155,8 +155,9 @@ not a break:
    Type checking is not a pass of its own: the walk that lowers an expression is the walk
    that types it (D31), so a type error is a compile diagnostic like any other and a file
    with one yields no unit.
-   Templates compile first: the shell matches documents against the `from` globs that
-   `site.lem` reports, then compiles each document with its `record` (D30).
+   Templates without front matter compile first, `site.lem` among them: the shell matches
+   documents and page templates — `.lem` files with front matter (D41) — against the
+   `from` globs that `site.lem` reports, then compiles each with its `record` (D30).
 4. **Load** (core) — validate records against schemas, run the defaults and computed
    bindings, resolve reference fields (D37) and `[asset]` fields, the latter against the
    manifest the declaration carried into step 3. Failures point at the YAML positions
@@ -198,7 +199,7 @@ The compiler reports those facts per file, and the shell's cache key is
 for that one document; the layouts and components it depends on are cache hits. A new photo
 id changes no existing unit: a record named by id is read from its map at render, and no
 unit's facts name an id (∆Hbw). Which pages then re-render — a render-time read of the
-map, or a load-time `by` resolution — is not yet answered (∆RGQ).
+map, or a load-time `by` resolution — is not yet answered (∆xBO).
 Checking is part of compiling a unit (D31): a file is re-checked exactly when it is
 recompiled, which its text or its facts changing is what triggers.
 
@@ -222,7 +223,7 @@ consumer, is a link diagnostic naming the file to recompile, in that file's own 
 editing a callee's body, or a declaration's default, leaves the consumer's unit
 byte-identical. What the link step derives from every unit at once does change: since
 ∆HF0 it closes each unit's recorded reads through the calls they write, project-wide, so
-a callee's body edit can reorder the loader's plans while changing no unit. `∆RGQ` makes the reported facts cross the boundary and the serialized
+a callee's body edit can reorder the loader's plans while changing no unit. `∆Qr2` makes the reported facts cross the boundary and the serialized
 form (`exportModule`) first-class.
 
 ## VM
@@ -255,7 +256,8 @@ build script links the `.wasm` with; the parser's nesting cap is sized against t
 megabyte, and the boundary's ABI tests show both fit (D38, ∆vnI).
 
 What ∆c8h built is the untyped subset of that: `Value` without the stdlib types, which
-∆Q6L added, and no `Channel`/`Track`, which arrive with the side channels (∆RGQ).
+∆Q6L added, and no `Channel` or `Track`, which arrive with the side channels (∆1Hp) and
+render-reported deps (∆xBO).
 Records are checked by declaration since ∆cea, and since ∆PCK a record value is tagged
 with its declared name (`Value::Record`, made by a map literal where a record is expected
 and, later, by the loader at the boundary), which `TypeTest` reads; an enum value is its

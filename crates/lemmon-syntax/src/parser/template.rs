@@ -25,7 +25,6 @@ enum Builtin {
     Default,
     Type,
     Enum,
-    Page,
     Import,
     Style,
     Head,
@@ -45,7 +44,6 @@ const BUILTINS: &[(&str, Builtin)] = &[
     ("default", Builtin::Default),
     ("type", Builtin::Type),
     ("enum", Builtin::Enum),
-    ("page", Builtin::Page),
     ("import", Builtin::Import),
     ("style", Builtin::Style),
     ("head", Builtin::Head),
@@ -83,7 +81,7 @@ impl Builtin {
                 unreachable!("parsed builtins are dispatched by name")
             }
             Self::Style | Self::Head => true,
-            Self::Page | Self::Import | Self::Script | Self::Emit => false,
+            Self::Import | Self::Script | Self::Emit => false,
         }
     }
 
@@ -106,8 +104,8 @@ impl Builtin {
             | Self::Enum => {
                 unreachable!("parsed builtins are dispatched by name")
             }
-            Self::Style | Self::Head | Self::Script | Self::Emit | Self::Page => {
-                "is not supported yet (∆RGQ)"
+            Self::Style | Self::Head | Self::Script | Self::Emit => {
+                "is not supported yet (∆1Hp)"
             }
             Self::Import => "is not supported yet (∆PgF)",
         }
@@ -988,7 +986,7 @@ mod tests {
 
     #[test]
     fn names_the_item_each_opaque_builtin_waits_on() {
-        assert!(Builtin::Style.unsupported().ends_with("(∆RGQ)"));
+        assert!(Builtin::Style.unsupported().ends_with("(∆1Hp)"));
         assert!(Builtin::Import.unsupported().ends_with("(∆PgF)"));
     }
 }
@@ -1135,8 +1133,8 @@ mod parse_tests {
         assert_eq!(
             messages("<lem-style><lem-head>a</lem-head></lem-style>"),
             vec![
-                "`lem-style` is not supported yet (∆RGQ)",
-                "`lem-head` is not supported yet (∆RGQ)"
+                "`lem-style` is not supported yet (∆1Hp)",
+                "`lem-head` is not supported yet (∆1Hp)"
             ]
         );
     }
@@ -1353,7 +1351,7 @@ mod parse_tests {
         assert_eq!(
             messages("<lem-style>hello"),
             vec![
-                "`lem-style` is not supported yet (∆RGQ)",
+                "`lem-style` is not supported yet (∆1Hp)",
                 "unclosed `lem-style`: expected `</lem-style>` before end of input",
             ]
         );
