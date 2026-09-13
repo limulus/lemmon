@@ -11,7 +11,7 @@ repository = "https://github.com/limulus/lemmon"
 publish = false
 
 # Only crates actually in use are pinned here. The vetted choices for the stages still to
-# come (syntect, …) are recorded in docs/architecture.md §Crates; listing
+# come (tree-sitter, …) are recorded in docs/architecture.md §Crates; listing
 # them before anything imports them would be a pin nobody is testing.
 [workspace.dependencies]
 lemmon-corpus = { path = "crates/lemmon-corpus" }
@@ -32,9 +32,24 @@ rowan = "0.17.0"
 # rust-analyzer's offset -> line:col mapping; shares rowan's `text-size` and keeps
 # line starts rather than the text, so a resident index costs almost nothing.
 line-index = "0.1.2"
-# No default features: they pull in the CLI and syntect, which the core does not use yet
-# and which would grow the .wasm by about a megabyte when it does.
+# No default features: they pull in the CLI and comrak's own syntect adapter, which the
+# core does not use — on a highlighting error that adapter writes the code unescaped, and
+# on an unknown language it guesses one from the first line (invariants 7 and 10).
 comrak = { version = "0.54.0", default-features = false, features = ["attributes"] }
+# Behind code-fence highlighting (D40), driven by the core's own adapter. The grammars
+# come from the host as `.sublime-syntax` text, so no default grammars or themes; the
+# pure-Rust `fancy-regex` engine, since Oniguruma is C. The staged .wasm grew from 2.12 MB
+# to 4.09 MB with it; embedding bat's grammars as well (`two-face`) measured 0.7 MB more.
+syntect = { version = "5.3.0", default-features = false, features = [
+  "parsing",
+  "html",
+  "regex-fancy",
+  "yaml-load",
+] }
+# The YAML loader syntect's `yaml-load` reads grammars with, used directly to read the name
+# and extensions of a grammar syntect refuses, so that a block naming its language hears
+# that it does not load. The version syntect pins, so the two read one YAML.
+yaml-rust = "0.4.5"
 # Behind `datetime`: parsing, the civil calendar, and RFC 3339/2822/strftime formatting.
 # `alloc` alone, deliberately — `std` brings a clock, `tz-system` the host's zone, and
 # the tzdb features a time-zone database. Without them invariant 1 is structural rather

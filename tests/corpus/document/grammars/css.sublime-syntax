@@ -1,0 +1,19 @@
+%YAML 1.2
+---
+# A corpus fixture, not a CSS grammar: the language the HTML fixture embeds in `<style>`
+# (tests/corpus/README.md).
+name: CSS
+file_extensions: [css]
+scope: source.css
+contexts:
+  main:
+    - match: '/\*'
+      push: comment
+    - match: '[a-z-]+(?=\s*:)'
+      scope: support.type.property-name
+    - match: '#[0-9a-fA-F]{3,6}\b'
+      scope: constant.other.color
+  comment:
+    - meta_scope: comment.block
+    - match: '\*/'
+      pop: true

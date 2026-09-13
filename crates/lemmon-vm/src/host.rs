@@ -15,6 +15,7 @@ use std::rc::Rc;
 
 use lemmon_syntax::nearest;
 
+use crate::document::Grammars;
 use crate::types::Type;
 
 /// What a host binds one ambient name to.
@@ -106,6 +107,12 @@ pub struct Host {
     /// makes a manifest change a *declaration* change to the derived `PartialEq`, which
     /// is what the resident `Core` compares to decide whether a recompile is needed.
     assets: Vec<(Rc<str>, Rc<str>)>,
+    /// The grammars a document's code is highlighted with, as `.sublime-syntax` text
+    /// (D40); `None` for a host that asks for no highlighting, which leaves every code
+    /// block as comrak writes it. On the declaration for the manifest's reason: prose
+    /// renders while compiling, so the grammars are consumed there, and a document
+    /// records the set it was highlighted against.
+    grammars: Option<Grammars>,
 }
 
 impl Host {
@@ -179,6 +186,33 @@ impl Host {
     /// offered a did-you-mean from, and listed by.
     pub fn asset_paths(&self) -> impl Iterator<Item = &str> {
         self.assets.iter().map(|(path, _)| &**path)
+    }
+
+    /// Declares the grammars code is highlighted with, as `(path, .sublime-syntax text)`
+    /// pairs. Where two declare the same scope, language, or name, the later one wins,
+    /// so grammars a site adds after a default set take precedence over it.
+    ///
+    /// Replaces any already declared, as [`with_assets`](Self::with_assets) does. An
+    /// empty list still asks for highlighting — and so for a warning at every language
+    /// no grammar answers — where a host that never calls this asks for none.
+    #[must_use]
+    pub fn with_grammars<'a>(
+        mut self,
+        grammars: impl IntoIterator<Item = (&'a str, &'a str)>,
+    ) -> Self {
+        self.grammars = Some(Grammars::new(grammars));
+        self
+    }
+
+    /// The grammars the host declared, if it asked for highlighting.
+    pub(crate) const fn grammars(&self) -> Option<&Grammars> {
+        self.grammars.as_ref()
+    }
+
+    /// What a document highlighted against this declaration records: a digest of the
+    /// grammars, or `None` where the host declared none.
+    pub(crate) fn grammar_digest(&self) -> Option<u64> {
+        self.grammars.as_ref().map(Grammars::digest)
     }
 
     /// How `name` is bound where this is read, if the host names it at all: the

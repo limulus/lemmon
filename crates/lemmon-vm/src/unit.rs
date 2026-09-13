@@ -46,8 +46,9 @@ pub struct Unit {
     pub types: Vec<Declaration>,
     /// The compile-time facts this unit consumed: the foreign signatures its calls were
     /// compiled against. With the file's text and the other facts below — `type_refs`,
-    /// `ambient_refs`, `asset_refs`, and `record` — these are the whole cache key (D25):
-    /// an edit that changes none of them leaves this unit byte-identical.
+    /// `ambient_refs`, `asset_refs`, `grammar_ref`, and `record` — these are the whole
+    /// cache key (D25): an edit that changes none of them leaves this unit
+    /// byte-identical.
     pub facts: Vec<ImportedSignature>,
     /// The second kind of fact: the foreign types this file's checking depended on,
     /// each with the declaration it was compiled against, at the first use that reached
@@ -62,6 +63,12 @@ pub struct Unit {
     /// bytecode, so a build that re-hashes that asset leaves this unit stale and every
     /// unit that never named it untouched — which is invariant 11 stated as a test.
     pub asset_refs: Vec<AssetRef>,
+    /// The fifth: the grammars a document's code was highlighted against, when any of
+    /// its code names a language. Prose renders while compiling and the highlighted
+    /// HTML is in the constant pool, so a host that changes its grammars — or starts or
+    /// stops declaring any — leaves this unit stale, and a document with no language
+    /// named untouched.
+    pub grammar_ref: Option<GrammarRef>,
     /// The record the host compiled this file as, which types its document value: a
     /// fact of the unit like the rest, and the reason two documents of different
     /// schemas cannot share one.
@@ -216,6 +223,20 @@ pub struct AssetRef {
     pub span: Span,
 }
 
+/// The grammars a document's code was highlighted against: the host's declared set as a
+/// digest, or `None` where the host declared none, and the first language word, where a
+/// stale unit is reported.
+///
+/// One digest for the whole set rather than one per grammar used: a grammar embeds
+/// others by scope, so which grammars a block's HTML depends on reaches past the one
+/// its language names, and a grammar arriving for a language that had none changes a
+/// block that used no grammar at all.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GrammarRef {
+    pub digest: Option<u64>,
+    pub span: Span,
+}
+
 /// A symbolic reference to a function or type another file defines.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ImportRef {
@@ -357,6 +378,32 @@ pub fn link(units: &[Unit], index: &ExportIndex, host: &Host) -> Compiled<Module
                         reference.span,
                         format!("`{}` is no longer in the manifest", reference.path),
                     )),
+                }
+            }
+            // The grammars are the host's too, and the highlighted code is in this
+            // unit's constants: a set that changed under it, or arrived or went away,
+            // leaves it stale.
+            if let Some(reference) = &unit.grammar_ref {
+                let declared = host.grammar_digest();
+                if declared != reference.digest {
+                    diagnostics.push(Diagnostic::error(
+                        &unit.path,
+                        reference.span,
+                        match (reference.digest, declared) {
+                            (None, _) => {
+                                "the host declares grammars now, and this file's code was \
+                                 compiled with none"
+                            }
+                            (_, None) => {
+                                "the host declares no grammars now, and this file's code \
+                                 was highlighted with the ones it did"
+                            }
+                            _ => {
+                                "the host declares different grammars now, and this file's \
+                                 code was highlighted with the ones before"
+                            }
+                        },
+                    ));
                 }
             }
             for reference in &unit.type_refs {
@@ -1075,7 +1122,7 @@ mod tests {
     use super::*;
     use crate::compile::{compile_unit, prepare};
     use crate::host::Ambient;
-    use crate::testing::at;
+    use crate::testing::{GRAMMARS, at};
     use crate::{SourceFile, Value, render};
 
     /// The host every test below compiles against unless it needs another: the three
@@ -1997,6 +2044,113 @@ mod tests {
             );
             assert!(linked.output.is_none());
         }
+    }
+
+    /// The corpus's grammars, with the one at `path` swapped for `text` — or dropped,
+    /// for `None`.
+    fn grammars_with(path: &str, text: Option<&str>) -> Host {
+        Host::new().with_grammars(GRAMMARS.iter().filter_map(|&(declared, original)| {
+            if declared.ends_with(path) {
+                text.map(|text| (declared, text))
+            } else {
+                Some((declared, original))
+            }
+        }))
+    }
+
+    #[test]
+    fn refuses_to_link_a_document_whose_code_was_highlighted_with_other_grammars() {
+        // Highlighted HTML is in the unit's constants, so the grammars it was made with
+        // are a fact like a manifest entry: any change to the set leaves the document
+        // stale, at the first block that named a language.
+        const DOC: &str = "Setup:\n\n```sh\necho \"hi\"\n```\n";
+        let highlighted = Host::new().with_grammars(GRAMMARS.iter().copied());
+        let unit = unit_against(&highlighted, "post.md", &[("post.md", DOC)]);
+        let shell = "name: Shell\nscope: source.shell\nfile_extensions: [sh]\n\
+                     contexts:\n  main: []\n";
+        for (host, message) in [
+            (
+                grammars_with("shell.sublime-syntax", Some(shell)),
+                "the host declares different grammars now, and this file's code was \
+                 highlighted with the ones before",
+            ),
+            (
+                Host::new(),
+                "the host declares no grammars now, and this file's code was highlighted \
+                 with the ones it did",
+            ),
+        ] {
+            let units = [unit.clone()];
+            let linked = link(&units, &ExportIndex::of(&units), &host);
+            assert_eq!(
+                linked
+                    .diagnostics
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>(),
+                [format!("post.md:{}: {message}", at(DOC, "sh"))]
+            );
+        }
+        let units = [unit];
+        assert!(
+            link(&units, &ExportIndex::of(&units), &highlighted)
+                .output
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn refuses_to_link_a_document_whose_language_has_a_grammar_now() {
+        // The way a host delivers grammars on demand: a language no grammar answered
+        // renders plain and warns, and the grammar arriving leaves exactly that document
+        // stale — as does a host that starts declaring grammars at all.
+        const DOC: &str = "```sh\necho\n```\n";
+        let everything = Host::new().with_grammars(GRAMMARS.iter().copied());
+        for (compiled, message) in [
+            (
+                grammars_with("shell.sublime-syntax", None),
+                "the host declares different grammars now, and this file's code was \
+                 highlighted with the ones before",
+            ),
+            (
+                Host::new(),
+                "the host declares grammars now, and this file's code was compiled with \
+                 none",
+            ),
+        ] {
+            let units = [unit_against(&compiled, "post.md", &[("post.md", DOC)])];
+            let linked = link(&units, &ExportIndex::of(&units), &everything);
+            assert_eq!(
+                linked
+                    .diagnostics
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>(),
+                [format!("post.md:{}: {message}", at(DOC, "sh"))]
+            );
+        }
+    }
+
+    #[test]
+    fn compiles_a_document_whose_code_names_no_language_the_same_under_any_grammars() {
+        // Invariant 11 for grammars: a document with no language named does not depend
+        // on them, so no change to the set touches its unit or its link.
+        const DOC: &str = "Plain:\n\n```\necho\n```\n\n    indented\n";
+        let files = [("post.md", DOC)];
+        let without = unit_against(&Host::new(), "post.md", &files);
+        let with = unit_against(
+            &Host::new().with_grammars(GRAMMARS.iter().copied()),
+            "post.md",
+            &files,
+        );
+        assert_eq!(without, with);
+        assert_eq!(with.grammar_ref, None);
+        let units = [with];
+        assert!(
+            link(&units, &ExportIndex::of(&units), &Host::new())
+                .output
+                .is_some()
+        );
     }
 
     #[test]

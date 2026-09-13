@@ -48,6 +48,24 @@ pub(crate) fn all_of(source: &str) -> Span {
     Span::new(0, offset(source.len()))
 }
 
+/// The document corpus's fixture grammars, as `(path, text)` in the order its harness
+/// declares them — so a unit test highlights with the grammars a corpus case's reader
+/// already holds the output against.
+pub(crate) const GRAMMARS: &[(&str, &str)] = &[
+    (
+        "document/grammars/css.sublime-syntax",
+        include_str!("../../../tests/corpus/document/grammars/css.sublime-syntax"),
+    ),
+    (
+        "document/grammars/html.sublime-syntax",
+        include_str!("../../../tests/corpus/document/grammars/html.sublime-syntax"),
+    ),
+    (
+        "document/grammars/shell.sublime-syntax",
+        include_str!("../../../tests/corpus/document/grammars/shell.sublime-syntax"),
+    ),
+];
+
 /// `needle` with its brackets removed, and the byte range they marked in what is left.
 fn unbracketed(needle: &str) -> (String, Range<usize>) {
     let Some((before, rest)) = needle.split_once('«') else {

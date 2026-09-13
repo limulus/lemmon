@@ -13,18 +13,23 @@
 //!
 //! [`options`] lives here rather than with the adapters because it is not only a set of
 //! markdown preferences: `render.unsafe` is what lets a sentinel line through to be cut
-//! on, so it is part of the splice below. What comrak cannot do at all — heading ids
-//! today, syntax highlighting when it lands — is supplied through its plugin seams by
-//! [`adapters`].
+//! on, so it is part of the splice below. What comrak cannot do at all is supplied
+//! through its plugin seams: heading ids by [`adapters`], and code highlighted by the
+//! host's grammars by [`highlight`].
 
 mod adapters;
+mod highlight;
 
 use comrak::nodes::{NodeValue, Sourcepos};
 use comrak::{Arena, Options, format_html_with_plugins, options::Plugins, parse_document};
 use lemmon_syntax::{DocumentParse, Span};
 
 use crate::compile::Diagnostic;
+use crate::host::Host;
+use crate::unit::GrammarRef;
 use adapters::Headings;
+use highlight::Block;
+pub(crate) use highlight::Grammars;
 
 /// comrak's configuration (D08): CommonMark plus footnotes, `{#id}` heading attributes,
 /// and raw HTML passed through — prose is the author's own. Heading ids are
@@ -43,8 +48,19 @@ fn sentinel(index: usize) -> String {
     format!("<!--lem:{index}-->")
 }
 
-/// Renders a document's prose to one HTML chunk per gap between its blocks: the
-/// chunk at `i` stands before block `i`, the last one after every block.
+/// A document's prose, rendered.
+pub(crate) struct Prose {
+    /// One HTML chunk per gap between the document's blocks: the chunk at `i` stands
+    /// before block `i`, the last one after every block.
+    pub chunks: Vec<String>,
+    /// What highlighting the code had to say, as warnings.
+    pub warnings: Vec<Diagnostic>,
+    /// The grammars the code was highlighted against, when a block names a language: a
+    /// compile-time fact of the document's unit (D25).
+    pub grammar_ref: Option<GrammarRef>,
+}
+
+/// Renders a document's prose, highlighting its code with the `host`'s grammars.
 ///
 /// # Errors
 ///
@@ -54,7 +70,8 @@ pub(crate) fn render_prose(
     path: &str,
     src: &str,
     doc: &DocumentParse,
-) -> Result<Vec<String>, Vec<Diagnostic>> {
+    host: &Host,
+) -> Result<Prose, Vec<Diagnostic>> {
     let mut errors = Vec::new();
     let error = |errors: &mut Vec<Diagnostic>, span: Span, message: &str| {
         errors.push(Diagnostic::error(path, span, message));
@@ -152,9 +169,38 @@ pub(crate) fn render_prose(
         return Err(errors);
     }
 
+    let blocks: Vec<Block> = root
+        .descendants()
+        .filter_map(|node| {
+            let data = node.data.borrow();
+            let NodeValue::CodeBlock(block) = &data.value else {
+                return None;
+            };
+            // comrak's own split of the info string: the language is the first word.
+            let word = block.info.split(is_cmark_space).next().unwrap_or_default();
+            if word == "math" {
+                // Rendered by comrak itself, without asking the highlighter.
+                return None;
+            }
+            let language = (!word.is_empty()).then(|| {
+                let (start, _) = source_range(data.sourcepos);
+                let (at, len) = language_word(&joined, start);
+                (word.to_owned(), to_source(at, len))
+            });
+            Some(Block {
+                language,
+                code: block.literal.clone(),
+            })
+        })
+        .collect();
+    let highlighted = highlight::highlight(path, &blocks, host.grammars());
+
     let headings = Headings::new(root);
     let mut plugins = Plugins::default();
     plugins.render.heading_adapter = Some(&headings);
+    if let Some(adapter) = &highlighted.adapter {
+        plugins.render.codefence_syntax_highlighter = Some(adapter);
+    }
     let mut html = String::new();
     format_html_with_plugins(root, &options(), &mut html, &plugins)
         .expect("writing to a String cannot fail");
@@ -171,7 +217,33 @@ pub(crate) fn render_prose(
         rest = &rest[at + marker.len()..];
     }
     chunks.push(rest.to_owned());
-    Ok(chunks)
+    Ok(Prose {
+        chunks,
+        warnings: highlighted.diagnostics,
+        grammar_ref: highlighted.grammar_ref,
+    })
+}
+
+/// A byte CommonMark counts as whitespace where it splits an info string.
+const fn is_cmark_space(c: char) -> bool {
+    matches!(c, ' ' | '\t' | '\n' | '\u{b}' | '\u{c}' | '\r')
+}
+
+/// Where the language word of the fenced block opening at `start` is written in
+/// `text`, and how many bytes it takes: past the fence's indentation, its run of
+/// backticks or tildes, and the spaces after it, up to the next whitespace. Measured on
+/// the source rather than the decoded info string, where an escape or an entity would
+/// shift it.
+fn language_word(text: &str, start: usize) -> (usize, usize) {
+    let line = &text[start..];
+    let line = &line[..line.find('\n').unwrap_or(line.len())];
+    let fence = line.trim_start_matches([' ', '\t']);
+    let marker = fence.as_bytes()[0];
+    let info = fence
+        .trim_start_matches(char::from(marker))
+        .trim_start_matches([' ', '\t']);
+    let at = start + (line.len() - info.len());
+    (at, info.find(is_cmark_space).unwrap_or(info.len()))
 }
 
 /// The byte offset of each line's first byte.
@@ -215,7 +287,7 @@ mod tests {
 
     fn render(src: &str) -> Result<Vec<String>, Vec<Diagnostic>> {
         let doc = lemmon_syntax::parse_document(src);
-        render_prose("doc.md", src, &doc)
+        render_prose("doc.md", src, &doc, &Host::new()).map(|prose| prose.chunks)
     }
 
     fn messages(result: Result<Vec<String>, Vec<Diagnostic>>) -> Vec<String> {

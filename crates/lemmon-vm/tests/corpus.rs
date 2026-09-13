@@ -38,9 +38,35 @@ const GROUP: &str = "render";
 
 /// The host a `render/` or `document/` case compiles against: the three names the
 /// standard shell binds, none of them typed. That is a host a site really has — the
-/// Phase 0 spike's — and what any document no collection matched sees.
+/// Phase 0 spike's — and what any document no collection matched sees. It declares the
+/// grammars in `document/grammars/`, as a shell declares its set (D40), so a case's code
+/// is highlighted by fixtures its reader can hold the output against.
 fn untyped_host() -> Host {
-    Host::untyped(["site", "page", "build"])
+    Host::untyped(["site", "page", "build"]).with_grammars(
+        grammars()
+            .iter()
+            .map(|(path, text)| (path.as_str(), text.as_str())),
+    )
+}
+
+/// The fixture grammars, as `(path, text)` in file-name order.
+fn grammars() -> &'static [(String, String)] {
+    static GRAMMARS: OnceLock<Vec<(String, String)>> = OnceLock::new();
+    GRAMMARS.get_or_init(|| {
+        let dir = "document/grammars";
+        let mut files: Vec<(String, String)> =
+            fs::read_dir(lemmon_corpus::root().join(dir))
+                .expect("the grammar fixtures are readable")
+                .map(|entry| {
+                    let path = entry.expect("a directory entry").path();
+                    let name = path.file_name().expect("a file").to_string_lossy();
+                    let text = fs::read_to_string(&path).expect("a grammar is text");
+                    (format!("{dir}/{name}"), text)
+                })
+                .collect();
+        files.sort();
+        files
+    })
 }
 
 /// The declaration the `host/` group's environment files back: `page` a `Page`, `build`

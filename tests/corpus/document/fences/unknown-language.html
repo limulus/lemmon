@@ -1,0 +1,10 @@
+<p>A typo in the language:</p>
+<pre><code class="language-bsah">echo &quot;hello&quot;
+</code></pre>
+<p>And a language the host has no grammar for:</p>
+<pre><code class="language-lem">&lt;lem.page.title&gt;
+</code></pre>
+
+--- diagnostics
+document/fences/unknown-language.md:3:4..3:8: warning: the host declares no grammar for `bsah`; did you mean `bash`?
+document/fences/unknown-language.md:9:4..9:7: warning: the host declares no grammar for `lem`, so this code is not highlighted

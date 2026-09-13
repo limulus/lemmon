@@ -1,0 +1,21 @@
+%YAML 1.2
+---
+# A corpus fixture, not a shell grammar: small enough that the HTML it highlights can be
+# read against the fence it came from (tests/corpus/README.md).
+name: Shell
+file_extensions: [sh, bash]
+scope: source.shell
+contexts:
+  main:
+    - match: '#[^\n]*'
+      scope: comment.line.number-sign
+    - match: '"'
+      scope: punctuation.definition.string.begin
+      push: double-quoted
+    - match: '\b(if|then|else|fi|for|in|do|done)\b'
+      scope: keyword.control
+  double-quoted:
+    - meta_scope: string.quoted.double
+    - match: '"'
+      scope: punctuation.definition.string.end
+      pop: true

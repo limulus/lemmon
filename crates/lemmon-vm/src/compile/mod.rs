@@ -161,6 +161,7 @@ pub fn compile_unit(
             type_refs: Vec::new(),
             ambient_refs: Vec::new(),
             asset_refs: Vec::new(),
+            grammar_ref: prepared.grammar_ref.clone(),
             record: prepared.record.clone(),
             defaults: Vec::new(),
             indexes: Vec::new(),

@@ -23,7 +23,7 @@ use crate::decls::{Declaration, FieldDecl, Shape};
 use crate::document;
 use crate::host::Host;
 use crate::types::Type;
-use crate::unit::{ExportedSignature, ImportRef, Param};
+use crate::unit::{ExportedSignature, GrammarRef, ImportRef, Param};
 
 use super::annotations::Reserved;
 use super::names::Names;
@@ -40,6 +40,8 @@ pub struct PreparedFile {
     pub(super) source: ParsedFile,
     /// A document's prose, rendered by comrak here so markdown never runs later.
     pub(super) chunks: Option<Vec<String>>,
+    /// The grammars that prose's code was highlighted against, when it names a language.
+    pub(super) grammar_ref: Option<GrammarRef>,
     pub(super) exports: Vec<ExportedSignature>,
     pub(super) types: Vec<Declaration>,
     /// Every declared type name the signatures and declarations use, where it is
@@ -111,11 +113,14 @@ pub fn prepare(file: &SourceFile, host: &Host) -> Result<PreparedFile, Vec<Diagn
     // Prose is rendered before anything is lowered, and a document markdown rejected
     // fails the file the way a parse error does: its blocks may be fine, but where
     // their output would go is not known.
-    let chunks = match &source {
-        ParsedFile::Template(_) => None,
+    let (chunks, grammar_ref) = match &source {
+        ParsedFile::Template(_) => (None, None),
         ParsedFile::Document(doc) => {
-            match document::render_prose(&file.path, &file.text, doc) {
-                Ok(chunks) => Some(chunks),
+            match document::render_prose(&file.path, &file.text, doc, host) {
+                Ok(prose) => {
+                    diagnostics.extend(prose.warnings);
+                    (Some(prose.chunks), prose.grammar_ref)
+                }
                 Err(errors) => {
                     diagnostics.extend(errors);
                     return Err(diagnostics);
@@ -145,6 +150,7 @@ pub fn prepare(file: &SourceFile, host: &Host) -> Result<PreparedFile, Vec<Diagn
         record_span: file.record_span,
         source,
         chunks,
+        grammar_ref,
         exports,
         types,
         type_uses,

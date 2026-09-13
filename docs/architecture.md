@@ -36,14 +36,15 @@ class Core {
 }
 // HostDecl = {ambient: {[name]: TypeName | {bindingsOf: path} | null},
 //              document?: AmbientName, entry?: FieldName,
-//              assets?: {[logicalPath]: url}}   (D36, the manifest D38)
+//              assets?: {[logicalPath]: url},   (D36, the manifest D38)
+//              grammars?: {path, text}[]}       (.sublime-syntax, D40)
 // reserved optional host import (D08): renderMarkdown?(text: string): string
 ```
 
 Boundary rules: few large calls; program and data stay resident in the instance; bulk data
 crosses as one UTF-8 JSON buffer (rmp-serde if profiling demands); one instance per worker
-thread, nothing shared. Whole-site data ≪ 10 MB. comrak + syntect adds ~1 MB to the .wasm —
-lazy-load in the playground, irrelevant in Node.
+thread, nothing shared. Whole-site data ≪ 10 MB. syntect adds 1.97 MB to the .wasm with no
+grammars in it (D40) — lazy-load in the playground, irrelevant in Node.
 
 Ambient declarations (D30, D36): the core knows no type or value by name. The host passes
 its environment with `compile` — the declarations as Lemmon source (the shell ships
@@ -61,6 +62,20 @@ Each document carries its `record`: the element type of the `from` binding whose
 matched it, or the type a `type:` key names, which the checker requires to extend that
 element type. The unit depends on that type as a compile-time fact (D25). A document
 without one compiles with `page` unknown-typed, which is how the spike renders today.
+
+Code highlighting (D40) takes its grammars from the declaration too, as `.sublime-syntax`
+text, because prose renders while compiling. The first code block that names a language
+parses all of them into one set, linked in declaration order and never grown, so every
+lookup is syntect's own and a block renders the same whatever an instance highlighted
+before it. That parse is per worker: about 0.4 seconds for limulus.net's languages and
+five seconds for bat's whole set, so a host declares the languages a site uses, or hands
+its workers a precompiled set, which syntect loads in milliseconds and unpacks a
+language at a time. What the core owns is only the inside of
+`<code>`: comrak's `<pre><code class="language-x">` is written unchanged, so a host
+that declares no grammars gets plain escaped blocks, and whatever colours them another
+way — a post-render plugin, or a pure wasm highlighter the core calls (∆SDN) — starts
+from markup that names the language. A highlighter choice would be a compile-time
+input like the grammars are, and would ride the same fact.
 
 ∆TNT built the `compile`/`loadData`/`render` subset of that class (plus `version`), and
 settled the spike shapes the sketch left open — each chosen so the full form is additive,
@@ -174,7 +189,9 @@ A unit depends on its text and on the **compile-time facts** it consumed, nothin
 - signatures and types of the project-flat and plugin names it references (not bodies);
 - for a document, the record type the shell compiled it with (D30);
 - what the host bound each ambient value it read to (D36);
-- the asset-manifest entries `asset()` was checked against (D10).
+- the asset-manifest entries `asset()` was checked against (D10);
+- for a document whose code names a language, the grammars the host declared, as one
+  digest of the whole set (D40).
 
 The compiler reports those facts per file, and the shell's cache key is
 `hash(text) + hash(facts)`. That is the guarantee: a content edit re-runs comrak and codegen
@@ -259,7 +276,7 @@ VM time (that number is the Phase 0 exit criterion).
 | Parser         | hand-written RD + Pratt                                  | Chosen in the ∆7Ib bake-off over `lelwel` 0.10 (`docs/journal/∆7Ib-parser-bake-off.md`): LL(1) forced tag names into the token vocabulary and junk out of heads, costing recovery fidelity for ~700 fewer owned lines    |
 | Syntax tree    | `rowan` 0.17 green/red CST                               | lossless + recovering; no incremental reparse needed (rust-analyzer's own conclusion). `lemmon_syntax::ast` is the typed view over it that the checker and codegen read; the CST stays for the formatter and diagnostics |
 | Diagnostics    | structured JSON + `ariadne`/`annotate-snippets` renderer | spans first-class; `line-index` 0.1 (rust-analyzer's, sharing rowan's `text-size`) turns a byte offset into an LSP position at the boundary                                                                                                                                                                                                        |
-| Markdown       | `comrak` 0.54 + `syntect` 5.3 + `two-face`               | in-core (D08); wasm32-clean. comrak is in (`default-features = false` + `attributes`, with a heading adapter since its renderer ignores `{#id}`); syntect is not yet (∆BfR)                                                     |
+| Markdown       | `comrak` 0.54 + `syntect` 5.3                            | in-core (D08); wasm32-clean. comrak with `default-features = false` + `attributes`, a heading adapter since its renderer ignores `{#id}`, and the core's own highlighter adapter — comrak's `SyntectAdapter` writes code unescaped when syntect errs and guesses a language from the first line. syntect with `regex-fancy` (Oniguruma is C) and `yaml-load`, no default grammars or themes: grammars come from the host (D40). +1.97 MB of staged `.wasm` (2.12 → 4.09 MB); embedding bat's grammars via `two-face` as well measured 0.7 MB more |
 | WASM           | `wasm-bindgen` 0.2.127, CLI direct (no wasm-pack)        | `wasm-bindgen --target web` runs in `scripts/stage-wasm.ts`: caller-supplied bytes keep loading injectable and browser-reusable, and the repo owns staging, so wasm-pack’s own package layout would only fight it (∆TNT)                                                                                                                                                                                   |
 | Dates          | `jiff` 0.2                                               | `default-features = false`, `alloc` only: no clock, no system zone, no tzdb, so invariant 1 is structural rather than reviewed. Parsing, the civil calendar, RFC 3339/2822 and strftime; a `datetime` is an instant and the offset it was written in (D38) |
 | URL encoding   | `percent-encoding` 2.3                                   | one encoding pass behind `url()`. The WHATWG `url` crate was rejected: it refuses a relative reference like `/feed/` without a base, which is most of what a site composes, and pulls `idna`'s tables in (D38) |

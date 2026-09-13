@@ -42,6 +42,13 @@ hidden. `render/` and `document/` deliberately keep an untyped host, which names
 three values and types none: that is a host a site really has (the Phase 0 spike's), and
 what any document no collection matched sees.
 
+That host also declares the grammars in `document/grammars/`, which highlight the code
+blocks of every `document/` case (D40). They are fixtures, not cases: `.sublime-syntax`
+files with no expectations of their own, written small — a shell, CSS, and an HTML that
+embeds the CSS — so that a highlighted block's `.html` can be read span by span against
+the fence it came from. A real grammar would bury that reading, and would carry its own
+licence into the repo. `document/fences/` holds the cases about highlighting itself.
+
 There is no `ok/` versus `broken/` split. Whether a case parses clean is _data_: its
 diagnostics section is empty. That keeps a case in the directory that says what it tests
 even after a language change turns it from clean to broken, or back.

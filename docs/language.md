@@ -756,9 +756,42 @@ renders prose; the VM renders Lemmon blocks; outputs are spliced.
 
 comrak configuration: CommonMark + footnotes, attribute-style heading ids (`<h2 id="…">`,
 slugged from the text and made unique, no anchor link injected), `header_attributes`
-(`{#id}`), syntect highlighting (class-based, generated theme CSS — _not yet_ (∆BfR)),
-`render.unsafe` (raw HTML passes through). A shell-side `markdown` override hook is reserved
-but not built.
+(`{#id}`), code highlighting (below), `render.unsafe` (raw HTML passes through). A
+shell-side `markdown` override hook is reserved but not built.
+
+### Code blocks (D40)
+
+A code block's language is the first word of its info string: `ts` in `` ```ts {1,3} ``.
+The rest of the string is ignored, and an indented block has no language.
+
+- **The host's grammars do the highlighting.** A host declares grammars as
+  `.sublime-syntax` text; a block whose language one answers keeps the markup comrak
+  writes, `<pre><code class="language-ts">`, and its code is wrapped in spans whose
+  classes are the grammar's scope atoms, each prefixed `syn-`:
+  `<span class="syn-keyword syn-control">if</span>`. The classes are the same whatever
+  the theme, so a stylesheet is the site's, and one page may use another than the next.
+- **A language is found by file extension, then by name**, without regard to case. Where
+  two grammars claim one, the one declared later wins, so grammars a site adds take
+  precedence over a default set. A grammar's `embed`, `include`, or `push` of another, by
+  scope or by name, resolves the same way. An `embed` of a scope nothing declares falls
+  back to plain text and such an `include` is skipped; a `push` to one fails on the code
+  that reaches it. The declared grammars are parsed together, the first time a block
+  names a language.
+- **What is not highlighted is written as comrak writes it**, escaped and unwrapped: a
+  block with no language, and every block when the host declares no grammars — that
+  host has asked for none, and nothing is said. A `math` fence is comrak's own and never
+  highlighted.
+- **A language no grammar answers is a warning at the word**, with a did-you-mean, and
+  the block renders plain; so is a language whose grammar does not load, with that file
+  labelled, and a grammar that fails on the code. A grammar that does not load claims
+  only a language no loading grammar answers, and one embedded by another leaves that
+  part of the block plain without a word. A grammar whose scopes hold `"`, `'`, `&`, `<`, or
+  `>` does not load, since a scope is written into a class attribute as it is. A `lem`
+  fence warns like any other until a host declares a grammar for it.
+- **The grammars are a compile-time fact.** Prose renders while compiling, so a document
+  whose code names a language records the set it was highlighted against, and any change
+  to that set — including a grammar arriving for a language that had none — leaves the
+  document to recompile (D25).
 
 ## Canonical example
 

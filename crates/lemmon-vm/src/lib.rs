@@ -45,8 +45,8 @@ pub use load::{Data, HostSpan, Loaded, Source, Spans, Store, collects, field_pat
 pub use plan::{BindingStep, Bindings, Fulfilled, Index, RecordPlan, SourceKind, Step};
 pub use types::Type;
 pub use unit::{
-    Access, BindingFn, Call, DefaultFn, ExportedSignature, ImportRef, ImportedSignature,
-    IndexDecl, Param, Root, Supplied, Unit, Uses, link,
+    Access, BindingFn, Call, DefaultFn, ExportedSignature, GrammarRef, ImportRef,
+    ImportedSignature, IndexDecl, Param, Root, Supplied, Unit, Uses, link,
 };
 pub use value::{Closure, Map, Value};
 pub use vm::{invoke, render};

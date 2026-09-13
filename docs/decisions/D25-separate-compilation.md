@@ -2,7 +2,8 @@
 
 - **Status:** Accepted 2026-08-23; revised 2026-09-12 (∆Hbw) — reference-index ids are
   not a fact: a string literal in a template is a string, and a record named by id is
-  read from its map at render
+  read from its map at render; extended 2026-09-13 (∆BfR) — the grammars a document's
+  code was highlighted against are a fact (D40)
 - **Backlog item:** ∆TNT (made it real); ∆RGQ (reported facts across the boundary);
   ∆Hbw (the revision)
 - **Normative text:** `docs/architecture.md` § Separate compilation
@@ -24,7 +25,8 @@ serializes.
 
 A unit is a function of the file's text plus the **compile-time facts** it consumed:
 imported signatures and types, the host's ambient bindings, the document's record,
-asset-manifest entries. The compiler reports those facts, so the shell's cache key
+asset-manifest entries, and the grammars a document's code was highlighted against
+(D40). The compiler reports those facts, so the shell's cache key
 `hash(text) + hash(facts)` is built from evidence, not guessed. _(Revised by ∆Hbw: the
 first reading listed the ids of any reference index a string literal resolved through;
 the alternative below records why none is.)_

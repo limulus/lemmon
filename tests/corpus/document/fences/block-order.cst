@@ -1,0 +1,5 @@
+Root@0..183
+  Text@0..183
+    Text@0..183 "An indented block comes first[^note]:\n\n "…
+
+--- diagnostics
