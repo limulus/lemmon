@@ -25,10 +25,10 @@ refactor priority: reshaping is cheapest before more code is built on what it re
 Seed items for the next phase (architecture doc 3, phase 1); expect these to be split
 further at claim time.
 
-- ∆BfR Syntax highlighting for code fences — comrak's `SyntaxHighlighterAdapter` wired to
-  syntect with class-based output plus a generated theme stylesheet (D08,
-  docs/architecture.md §Crates). Deferred out of document mode: it adds ~1 MB to the .wasm
-  and the spike's page has no fences, but limulus.net's archive does, so the port needs it
+- ∆BfR Syntax highlighting for code fences — the core's own comrak adapter classes a block's
+  code `syn-` with the `.sublime-syntax` grammars the host declares (D40); a host declaring
+  none gets comrak's blocks untouched, and theme CSS is ∆Nxd's. Deferred out of document
+  mode as ~2 MB of `.wasm` the spike's page did not need; limulus.net's archive has fences
 - ∆1Hp Side channels — `lem-style`/`lem-head`/`lem-script` collected per render and
   deduplicated, `lem-emit` recorded as a mark, `render` returning the page as bytes beside
   its marks and channels for the host to splice. D20's CSS bundles and every ported
@@ -101,6 +101,11 @@ API); the port itself lives in limulus-dot-net on a branch while 11ty stays gree
   extends Page` schema, a `posts` glob binding, a `layout` default, and base/post layouts,
   plus an `index.lem` page. The core has no content conventions (D30), so this is where
   a new site gets them — readable and editable, never built in; needs: ∆4tG
+- ∆Nxd Grammars and themes — the shell declares grammars (D40): a default set shipped
+  precompiled beside the `.wasm` (two-face's, with its acknowledgements) so a worker skips
+  the five-second YAML parse, `.sublime-syntax` files a site adds in `lemmon.config.ts`
+  compiled into it once and cached, and `lem theme` turning a `.tmTheme` into CSS for `syn-`
+  classes; D40's scope check and wasm32 regex limit hold for both; needs: ∆4tG, ∆BfR
 
 ### limulus.net plugins (D12)
 
@@ -127,8 +132,8 @@ API); the port itself lives in limulus-dot-net on a branch while 11ty stays gree
 - ∆o24 Content + markdown parity — typed front matter for every `.md` (globs replace `tags`,
   schema defaults replace `links.json`), computed defaults replacing `eleventyComputed.js`
   (title from linkTitle, tilTopic from path, link/via domains, readingTime), the link-post
-  reference appender as `transformDocument`, and comrak matched to markdown-it (footnote
-  markup, task lists, attrs, heading anchors, highlight classes); needs: ∆rT5, ∆BfR
+  appender as `transformDocument`, markdown-it's footnotes, task lists, attrs, and anchors
+  in comrak, and code by D40's restyle-or-highlight.js choice; needs: ∆rT5, ∆BfR, ∆PgF
 - ∆ePP Generated and non-HTML pages — TIL topic pages, links and photo pages via
   generator templates (D41), the three feeds (rss + two atom, `/feed.xsl`), `sitemap.xml`
   with video entries, 404 — the last things still depending on 11ty plugins
@@ -181,3 +186,8 @@ initiative before starting it.
   other than limulus.net get what Lemmon cannot express and the stdlib should not carry
   without breaking invariant 1: fence renderers beside syntect (Pikchr, TeX → MathML),
   then locale formatting (plurals, collation); needs: ∆PgF, ∆BfR
+- ∆5pk `lem` code blocks highlighted by the core's scanner — a `lem` fence classed from the
+  tokens the real scanner lexes, not a `.sublime-syntax` Lemmon grammar beside the Rust
+  parser and tree-sitter-lemmon that no corpus agreement test (invariant 9) would hold.
+  Revisits D40's "the core embeds no grammars"; today a `lem` fence warns wherever a host
+  declares grammars; needs: ∆BfR
