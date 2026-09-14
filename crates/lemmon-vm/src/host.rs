@@ -204,6 +204,19 @@ impl Host {
         self
     }
 
+    /// This declaration, holding `previous`'s grammars where the two declare the same
+    /// ones: a resident core handed a new declaration — a rebuild that re-hashed an
+    /// asset, say — then keeps the set it already parsed instead of parsing every grammar
+    /// again at the next code block. Equal either way, so nothing a comparison of the
+    /// two declarations decides changes.
+    #[must_use]
+    pub fn keeping_grammars_of(mut self, previous: &Self) -> Self {
+        if self.grammars.is_some() && self.grammars == previous.grammars {
+            self.grammars.clone_from(&previous.grammars);
+        }
+        self
+    }
+
     /// The grammars the host declared, if it asked for highlighting.
     pub(crate) const fn grammars(&self) -> Option<&Grammars> {
         self.grammars.as_ref()
@@ -326,6 +339,7 @@ impl Host {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testing::GRAMMARS;
 
     fn shell() -> Host {
         Host::new()
@@ -366,6 +380,27 @@ mod tests {
         let rebuilt = built().with_assets([("styles/site.css", "/site.999.css")]);
         assert_eq!(rebuilt.asset("styles/site.css"), Some("/site.999.css"));
         assert_eq!(rebuilt.asset("scripts/gallery.js"), None);
+    }
+
+    #[test]
+    fn keeps_the_grammars_it_parsed_for_a_declaration_that_repeats_them() {
+        let before = Host::new().with_grammars(GRAMMARS.iter().copied());
+        before.grammars().unwrap().lookup("sh");
+        let rebuilt = built()
+            .with_grammars(GRAMMARS.iter().copied())
+            .keeping_grammars_of(&before);
+        assert!(rebuilt.grammars().unwrap().is_parsed());
+        // Other grammars are parsed afresh, and a host that declares none keeps none.
+        let other = Host::new()
+            .with_grammars([GRAMMARS[0]])
+            .keeping_grammars_of(&before);
+        assert!(!other.grammars().unwrap().is_parsed());
+        assert!(
+            Host::new()
+                .keeping_grammars_of(&before)
+                .grammars()
+                .is_none()
+        );
     }
 
     #[test]

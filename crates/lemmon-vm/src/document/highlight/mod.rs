@@ -121,9 +121,10 @@ fn body(
                     "the grammar for `{word}` does not load, so this code is not \
                      highlighted"
                 ))
-                .with_label(
+                .with_placed_label(
                     &*failure.path,
                     failure.span,
+                    Some(failure.range),
                     format!("it does not load: {}", failure.message),
                 ),
             ),
@@ -142,9 +143,10 @@ fn body(
                 ),
             };
             let labelled = unreadable.iter().fold(warning(message), |d, f| {
-                d.with_label(
+                d.with_placed_label(
                     &*f.path,
                     f.span,
+                    Some(f.range),
                     format!(
                         "this grammar could not be read, so the languages it names are \
                          unknown: {}",

@@ -109,10 +109,11 @@ impl Core {
     /// when the only diagnostics are warnings. A resident file's warnings are reported
     /// by the call that compiled it, not again by later calls.
     ///
-    /// `host` is the ambient declaration, JSON `{ambient, document?, entry?}`: it is
-    /// resident too, so a call that changes nothing about the environment omits it, and
-    /// one that carries it replaces what the core holds. A core given none has no
-    /// ambient values at all.
+    /// `host` is the ambient declaration, JSON `{ambient, document?, entry?, assets?,
+    /// grammars?}`: it is resident too, so a call that changes nothing about the
+    /// environment omits it, and one that carries it replaces what the core holds —
+    /// keeping the grammars it already parsed when the new declaration repeats them. A
+    /// core given none has no ambient values at all.
     ///
     /// A compile that installs a new program drops the data loaded against the old
     /// one: `loadData` again before `render`, or an ambient read fails as not bound.
@@ -208,7 +209,7 @@ impl Core {
         // Installed once the call is past everything that would refuse it: a rejected
         // call is a caller bug, and leaves the resident core exactly as it was.
         if let Some(host) = host {
-            self.host = host.into();
+            self.host = Host::from(host).keeping_grammars_of(&self.host);
         }
         // Indexed up front, before `prepare`, so that a file which fails to even parse
         // can still have its own diagnostics placed.
@@ -1233,6 +1234,63 @@ mod tests {
             r##"[{"path": "loose.md", "text": "<lem.page.whatever>"}]"##,
             Some(TYPED),
         );
+    }
+
+    /// A declaration carrying one grammar, `toylang.sublime-syntax`, found by `toylang`.
+    fn highlighting(grammar: &str) -> String {
+        serde_json::json!({
+            "ambient": {"site": null, "page": null, "build": null},
+            "grammars": [{"path": "toylang.sublime-syntax", "text": grammar}],
+        })
+        .to_string()
+    }
+
+    const TOYLANG_GRAMMAR: &str = "name: Toylang\nscope: source.toylang\n\
+                                 file_extensions: [toylang]\ncontexts:\n  main:\n    \
+                                 - match: go\n      scope: keyword\n";
+
+    #[test]
+    fn highlights_a_document_with_the_grammars_the_declaration_carries() {
+        let mut core = Core::new();
+        compile_clean_with(
+            &mut core,
+            r#"[{"path": "post.md", "text": "```toylang\ngo\n```\n"}]"#,
+            Some(&highlighting(TOYLANG_GRAMMAR)),
+        );
+        let html = html_of(&core, "post.md");
+        assert!(
+            html.contains(r#"<span class="syn-keyword">go</span>"#),
+            "{html}"
+        );
+    }
+
+    #[test]
+    fn places_a_label_in_a_grammar_file_the_core_never_compiled() {
+        // A grammar is text the host holds, like front matter: no index the core keeps
+        // covers it, so its label arrives with its positions already placed.
+        let broken = "name: Toylang\nfile_extensions: [toylang]\nscope: source.toylang\n\
+                      contexts: {}\n";
+        let mut core = Core::new();
+        let result = core
+            .compile_json(
+                r#"[{"path": "post.md", "text": "```toylang\ngo\n```\n"}]"#,
+                Some(&highlighting(broken)),
+            )
+            .unwrap();
+        let label = &diagnostics(&result)[0]["labels"][0];
+        assert_eq!(label["path"], "toylang.sublime-syntax");
+        let end = u32::try_from(broken.len()).unwrap();
+        assert_eq!(label["span"], span(0, end, (0, 0), (4, 0)));
+    }
+
+    #[test]
+    fn keeps_highlighting_when_a_later_declaration_repeats_the_grammars() {
+        let mut core = Core::new();
+        let files = r#"[{"path": "post.md", "text": "```toylang\ngo\n```\n"}]"#;
+        compile_clean_with(&mut core, files, Some(&highlighting(TOYLANG_GRAMMAR)));
+        compile_clean_with(&mut core, files, Some(&highlighting(TOYLANG_GRAMMAR)));
+        let html = html_of(&core, "post.md");
+        assert!(html.contains("syn-keyword"), "{html}");
     }
 
     #[test]

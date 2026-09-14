@@ -39,7 +39,7 @@ comrak = { version = "0.54.0", default-features = false, features = ["attributes
 # Behind code-fence highlighting (D40), driven by the core's own adapter. The grammars
 # come from the host as `.sublime-syntax` text, so no default grammars or themes; the
 # pure-Rust `fancy-regex` engine, since Oniguruma is C. The staged .wasm grew from 2.12 MB
-# to 4.09 MB with it; embedding bat's grammars as well (`two-face`) measured 0.7 MB more.
+# to 4.10 MB with it; embedding bat's grammars as well (`two-face`) measured 0.7 MB more.
 syntect = { version = "5.3.0", default-features = false, features = [
   "parsing",
   "html",

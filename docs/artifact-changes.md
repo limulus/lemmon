@@ -367,17 +367,19 @@ moved it. Newest last. An entry is removed when its change has been applied.
 
 - **WASM API, the host declaration** — add `grammars?: {path, text}[]` beside `assets`:
   `.sublime-syntax` text, consumed while compiling as the manifest is, and omitted to ask
-  for no highlighting. Add the grammars a document's code was highlighted against to the
-  compile-time facts, one digest of the whole set. Say the declared grammars are parsed
-  together, at the first block that names a language, into one set linked in declaration
-  order — about five seconds per worker for bat's whole set, so a host declares a site's
-  languages or hands workers a precompiled set (D40, D25 extended, ∆BfR).
+  for no highlighting; a label pointing into a grammar file carries the core's own
+  positions, and a declaration repeating the grammars keeps the parsed set. Add the
+  grammars a document's code was highlighted against to the compile-time facts, one
+  digest of the whole set. Say the declared grammars are parsed together, at the first
+  block that names a language, into one set linked in declaration order — about five
+  seconds per worker for bat's whole set, so a host declares a site's languages or hands
+  workers a precompiled set (D40, D25 extended, ∆BfR).
 
 - **Crates, Markdown row** — drop `two-face`. syntect with `regex-fancy` and `yaml-load`,
   no default grammars or themes, driven by the core's own comrak adapter because comrak's
   `SyntectAdapter` writes code unescaped on an error and guesses a language from the
   first line. Replace "comrak + syntect adds ~1 MB" with the measurement: the staged
-  `.wasm` grew from 2.12 MB to 4.09 MB with no grammars embedded, and bat's would add
+  `.wasm` grew from 2.12 MB to 4.10 MB with no grammars embedded, and bat's would add
   0.7 MB more (D40).
 
 - **Highlighter seam** — where the text says syntect highlights code fences, say the

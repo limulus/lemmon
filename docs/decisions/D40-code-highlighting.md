@@ -65,7 +65,7 @@ belongs with the shell's grammar set.
 
 - **Embed bat's grammars through `two-face`**, as architecture.md first listed.
   Rejected: 0.7 MB more `.wasm` than the engine alone, which grew the staged artifact
-  from 2.12 MB to 4.09 MB, and a grammar set only a rebuilt core could extend. It does
+  from 2.12 MB to 4.10 MB, and a grammar set only a rebuilt core could extend. It does
   avoid parsing YAML — a precompiled set loads in about 2 ms, against a third of a second
   for TypeScript from YAML — which is the case for a compiled form the shell hands its
   workers, later, rather than for embedding.
@@ -106,6 +106,8 @@ belongs with the shell's grammar set.
   `.wasm`, or the reverse. bat's Hosts File grammar is one; the corpus fixtures stay well
   clear.
 - A `lem` fence warns until a host declares a grammar for it.
-- limulus.net's parity for its highlighted blocks is ∆o24's choice: forgive the inside
-  of `<code>` in the harness and restyle, or colour them with highlight.js after render
-  over a host that declares no grammars.
+- limulus.net's parity for its highlighted blocks is ∆o24's choice. markdown-it writes
+  `<pre><code class="hljs">` where comrak writes `class="language-x"`, so either the
+  harness forgives the class and the inside of `<code>` and the site restyles for `syn-`
+  classes, or highlight.js colours the blocks after render, over a host that declares no
+  grammars, rewriting the class as it goes — which can match exactly.

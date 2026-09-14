@@ -121,14 +121,16 @@ fn each_once<V, E: de::Error>(entries: &[(String, V)]) -> Result<(), E> {
 }
 
 /// The host's declaration as `compile` receives it: `{ambient, document?, entry?,
-/// assets?}`, where each ambient name is bound to a declared type, to the top-level
-/// bindings of a file, or to nothing at all — a name without a type (D30).
+/// assets?, grammars?}`, where each ambient name is bound to a declared type, to the
+/// top-level bindings of a file, or to nothing at all — a name without a type (D30).
 ///
 /// `assets` is the manifest the host's build produced, logical path to the URL it
 /// shipped at. It rides here rather than on `loadData` because `asset("…")` is answered
 /// while compiling (D10, D38), and being part of the declaration is what makes a
 /// rebuild that re-hashes an asset a change to the declaration — which is what the
-/// resident `Core` compares.
+/// resident `Core` compares. `grammars` rides here for the same reason (D40): a
+/// document's code is highlighted while compiling, and omitting the field asks for no
+/// highlighting at all.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct HostInput {
@@ -143,6 +145,18 @@ pub(crate) struct HostInput {
     /// from, and the order a diagnostic shows.
     #[serde(default, deserialize_with = "ordered")]
     pub(crate) assets: Vec<(String, String)>,
+    /// In declaration order, which is what decides a language two grammars claim.
+    #[serde(default)]
+    grammars: Option<Vec<GrammarInput>>,
+}
+
+/// One grammar a host declares: the path its diagnostics name it by, and its
+/// `.sublime-syntax` text.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct GrammarInput {
+    path: String,
+    text: String,
 }
 
 /// What one ambient name is bound to: a declared type by name, or the top-level
@@ -179,12 +193,20 @@ impl From<HostInput> for Host {
         if let Some(entry) = input.entry {
             host = host.rendered_through(&entry);
         }
-        host.with_assets(
+        host = host.with_assets(
             input
                 .assets
                 .iter()
                 .map(|(path, url)| (path.as_str(), url.as_str())),
-        )
+        );
+        match input.grammars {
+            Some(grammars) => host.with_grammars(
+                grammars
+                    .iter()
+                    .map(|grammar| (grammar.path.as_str(), grammar.text.as_str())),
+            ),
+            None => host,
+        }
     }
 }
 

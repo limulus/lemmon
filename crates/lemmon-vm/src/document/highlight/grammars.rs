@@ -16,7 +16,7 @@ use std::fmt;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::rc::Rc;
 
-use lemmon_syntax::{Span, nearest};
+use lemmon_syntax::{LineIndex, Range, Span, nearest};
 use syntect::html::{ClassStyle, ClassedHTMLGenerator};
 use syntect::parsing::syntax_definition::{Pattern, SyntaxDefinition};
 use syntect::parsing::{ParseSyntaxError, SyntaxSet, SyntaxSetBuilder};
@@ -69,6 +69,9 @@ pub(crate) enum Lookup {
 pub(crate) struct Failure {
     pub path: Rc<str>,
     pub span: Span,
+    /// `span` as positions, placed here because a grammar is a file the host holds and
+    /// never compiles: no index the boundary keeps covers its text (D33).
+    pub range: Range,
     pub message: String,
 }
 
@@ -160,6 +163,13 @@ impl Grammars {
         Ok(generator.finalize())
     }
 
+    /// Whether the set has been parsed: all a test can see of a declaration keeping
+    /// another's.
+    #[cfg(test)]
+    pub(crate) fn is_parsed(&self) -> bool {
+        self.0.loaded.get().is_some()
+    }
+
     fn loaded(&self) -> &Loaded {
         self.0.loaded.get_or_init(|| {
             let mut builder = SyntaxSetBuilder::new();
@@ -171,6 +181,7 @@ impl Grammars {
                         Failure {
                             path: Rc::clone(path),
                             span,
+                            range: LineIndex::new(text).range(span),
                             message,
                         },
                         read_header(text),
@@ -306,6 +317,7 @@ fn one_line(message: &str) -> String {
 mod tests {
     use super::*;
     use crate::testing::{GRAMMARS, at};
+    use lemmon_syntax::Position;
 
     /// A grammar with nothing to highlight, found by `extensions` and named `name`.
     fn grammar(name: &str, scope: &str, extensions: &str) -> String {
@@ -452,9 +464,11 @@ scope: source.unusual
     fn refuses_a_language_whose_grammar_does_not_load_across_its_whole_file() {
         let broken = refused("Broken", "broken");
         let grammars = Grammars::new([("broken.sublime-syntax", broken.as_str())]);
+        let span = at(&broken, &broken);
         let failure = Failure {
             path: Rc::from("broken.sublime-syntax"),
-            span: at(&broken, &broken),
+            span,
+            range: LineIndex::new(&broken).range(span),
             message: "Context 'main' is missing".to_owned(),
         };
         assert_eq!(refusal(grammars.lookup("broken")), failure);
@@ -474,16 +488,24 @@ scope: source.unusual
 
     #[test]
     fn lists_a_grammar_whose_yaml_cannot_be_read_where_a_language_is_missing() {
-        // yaml-rust counts characters; a span counts bytes.
+        // yaml-rust counts characters; a span counts bytes, and a position UTF-16 units.
         let text = "name: é\nscope: x: y\n";
         let grammars = Grammars::new([("bad.sublime-syntax", text), ("list", "- a\n")]);
         let (_, unreadable) = missing(grammars.lookup("x"));
+        let point = Position {
+            line: 1,
+            character: 8,
+        };
         assert_eq!(
             unreadable,
             [
                 Failure {
                     path: Rc::from("bad.sublime-syntax"),
                     span: at(text, "x«»: y"),
+                    range: Range {
+                        start: point,
+                        end: point,
+                    },
                     message: "Invalid YAML file syntax: mapping values are not allowed in \
                               this context at line 2 column 9"
                         .to_owned(),
@@ -491,6 +513,7 @@ scope: source.unusual
                 Failure {
                     path: Rc::from("list"),
                     span: at("- a\n", "- a\n"),
+                    range: LineIndex::new("- a\n").range(at("- a\n", "- a\n")),
                     message: "Type mismatch".to_owned(),
                 },
             ]
