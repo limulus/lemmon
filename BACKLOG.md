@@ -25,10 +25,6 @@ refactor priority: reshaping is cheapest before more code is built on what it re
 Seed items for the next phase (architecture doc 3, phase 1); expect these to be split
 further at claim time.
 
-- ∆BfR Syntax highlighting for code fences — the core's own comrak adapter classes a block's
-  code `syn-` with the `.sublime-syntax` grammars the host declares (D40); a host declaring
-  none gets comrak's blocks untouched, and theme CSS is ∆Nxd's. Deferred out of document
-  mode as ~2 MB of `.wasm` the spike's page did not need; limulus.net's archive has fences
 - ∆1Hp Side channels — `lem-style`/`lem-head`/`lem-script` collected per render and
   deduplicated, `lem-emit` recorded as a mark, `render` returning the page as bytes beside
   its marks and channels for the host to splice. D20's CSS bundles and every ported
