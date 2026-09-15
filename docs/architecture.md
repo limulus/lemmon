@@ -10,7 +10,8 @@ Two halves, one contract:
 - **Core** — Rust workspace compiled to WebAssembly: scanner, parser, bytecode compiler
   (which is also the type checker, D31), VM, document-mode segmenter/splicer, and comrak
   for markdown. Pure:
-  `(program, data, page) → (html, side channels, diagnostics)`. No I/O, clock, or env.
+  `(program, data, page) → (page bytes, marks and fragments, diagnostics)`. No I/O, clock,
+  or env.
 - **Shell** — Node/TypeScript: content walker, YAML front matter (with positions), plugin
   host, esbuild driver, worker pool, dev server (COOP/COEP headers, live reload), output
   writer (hashing conventions), CLI (`lem`). Everything site- or host-specific is a plugin:
@@ -29,7 +30,9 @@ class Core {
   loadData(input: DataInput): Diagnostic[]            // records, data files, build info
   upsertRecord(collection, record) / removeRecord(id) // dev server + future on-demand
   plan(): PageRef[]                                   // static pages + expanded generators
-  render(page: PageRef): { html, channels, deps }
+  render(page: PageRef): { html (bytes), marks, fragments, deps }
+      // marks are named ranges the host's handlers fill, fragments what the collect
+      // tags gathered under each name (D42); deps ∆xBO
   exportModule(): Uint8Array / importModule(bytes)    // precompiled program (Lambda cold start)
   analyze(path, offset): { diagnostics, completions, hover, definition }  // LSP
   format(path): string
@@ -37,14 +40,14 @@ class Core {
 // HostDecl = {ambient: {[name]: TypeName | {bindingsOf: path} | null},
 //              document?: AmbientName, entry?: FieldName,
 //              assets?: {[logicalPath]: url},   (D36, the manifest D38)
-//              grammars?: {path, text}[]}       (.sublime-syntax, D40)
+//              marks?: {name, keys?, payload?}[]} (the producers' claims, D42)
 // reserved optional host import (D08): renderMarkdown?(text: string): string
 ```
 
 Boundary rules: few large calls; program and data stay resident in the instance; bulk data
 crosses as one UTF-8 JSON buffer (rmp-serde if profiling demands); one instance per worker
-thread, nothing shared. Whole-site data ≪ 10 MB. syntect adds 1.97 MB to the .wasm with no
-grammars in it (D40) — lazy-load in the playground, irrelevant in Node.
+thread, nothing shared. Whole-site data ≪ 10 MB. The core embeds no highlighter (D42);
+syntect still adds 1.97 MB to the `.wasm`, not yet removed (∆7wK).
 
 Ambient declarations (D30, D36): the core knows no type or value by name. The host passes
 its environment with `compile` — the declarations as Lemmon source (the shell ships
@@ -63,19 +66,17 @@ matched it, or the type a `type:` key names, which the checker requires to exten
 element type. The unit depends on that type as a compile-time fact (D25). A document
 without one compiles with `page` unknown-typed, which is how the spike renders today.
 
-Code highlighting (D40) takes its grammars from the declaration too, as `.sublime-syntax`
-text, because prose renders while compiling. The first code block that names a language
-parses all of them into one set, linked in declaration order and never grown, so every
-lookup is syntect's own and a block renders the same whatever an instance highlighted
-before it. That parse is per worker: about 0.4 seconds for limulus.net's languages and
-five seconds for bat's whole set, so a host declares the languages a site uses, or hands
-its workers a precompiled set, which syntect loads in milliseconds and unpacks a
-language at a time. What the core owns is only the inside of
-`<code>`: comrak's `<pre><code class="language-x">` is written unchanged, so a host
-that declares no grammars gets plain escaped blocks, and whatever colours them another
-way — a post-render plugin, or a pure wasm highlighter the core calls (∆SDN) — starts
-from markup that names the language. A highlighter choice would be a compile-time
-input like the grammars are, and would ride the same fact.
+Code blocks are marks (D42). comrak's adapter records a `code` mark for every code block,
+keyed by its language word, with the info string and the literal as a payload the
+document reports once, by content hash, when it compiles; the block's default content —
+comrak's own `<pre><code class="language-x">`, escaped — stands in the page, and a
+render's mark names the range and the payload id. The core embeds no grammars and
+highlights nothing: the host's producers do, after render, and the claims they declare
+on the declaration are what the compiler checks a language word against, with a
+did-you-mean, recording a digest of the claims a document read as its compile-time
+fact. A host that declares no producer for a language gets the block as comrak writes
+it and a warning at the word. Not yet (∆7wK): today the core highlights while compiling,
+with syntect, against `.sublime-syntax` grammars on the declaration, as D40 had it.
 
 ∆TNT built the `compile`/`loadData`/`render` subset of that class (plus `version`), and
 settled the spike shapes the sketch left open — each chosen so the full form is additive,
@@ -99,19 +100,21 @@ not a break:
   or after the declaration changed without one succeeding — is a thrown caller bug. The
   asset manifest rides on the declaration, not on the envelope: `asset("…")` is answered
   while compiling (D10, D38), so it has to be there by then, and a rebuild that re-hashes
-  an asset is a change to the declaration. So do the grammars (D40), which a new
-  declaration repeating them leaves parsed rather than parsed again; a label pointing
-  into a grammar file arrives with positions the core computed, since no index it keeps
-  covers a file it never compiled. A file passed to
+  an asset is a change to the declaration. So do the mark claims (D42), for the same
+  reason: a document's language words are checked while it compiles. Not yet (∆7wK):
+  today the grammars (D40) ride there instead, a new declaration repeating them leaving
+  them parsed, and a label pointing into a grammar file arriving with positions the
+  core computed, since no index it keeps covers a file it never compiled. A file passed to
   `compile` may carry `recordSpan`, the byte offsets of the `type:` key's value, so a
   diagnostic about the record points at the key; offsets that are not a span of the
   file's text are refused as a caller bug, since a line index panics on them.
 - `PageRef` is `{path}` until `plan()` exists to mint richer references.
 - `render` returns `{html, diagnostics}` — `html: null` plus one diagnostic when the page
-  fails at runtime. `channels` and `deps` are omitted entirely until ∆1Hp and ∆xBO, not
-  stubbed. A loaded document renders with the host's document value bound to its own
-  record from the store; any other file — a template, a document no collection matched —
-  reads the value the envelope carried, if it did, as sent (D37).
+  fails at runtime. The bytes form, `marks`, and `fragments` are omitted entirely until
+  ∆1Hp, and `deps` until ∆xBO, not stubbed. A loaded document renders with the host's
+  document value bound to its own record from the store; any other file — a template, a
+  document no collection matched — reads the value the envelope carried, if it did, as
+  sent (D37).
 - A `Diagnostic` is `{path, span: {start, end, range}, severity, message, labels}`. The
   span carries byte offsets (invariant 8) *and* `range`, the same two points as
   `{line, character}` LSP positions — zero-based, `character` in UTF-16 code units. The
@@ -154,7 +157,9 @@ not a break:
    assets shipped at, since the core does no path arithmetic.
 3. **Compile** (core) — every changed `.lem`/`.md` → its own bytecode unit, then a link step
    joins the units into the module (D25, §Separate compilation); document prose rendered by
-   comrak here and stored in the document's unit (markdown never runs at render time).
+   comrak here and stored in the document's unit (markdown never runs at render time),
+   each code block a `code` mark whose payload is reported by content hash (D42;
+   not yet — ∆7wK).
    Type checking is not a pass of its own: the walk that lowers an expression is the walk
    that types it (D31), so a type error is a compile diagnostic like any other and a file
    with one yields no unit.
@@ -167,11 +172,18 @@ not a break:
    the shell sent with the data.
 5. **Plan** (core) — expand generators → full output list (url, entry, deps); `entry` is
    the page's `layout`, the field the host named (D30).
-6. **Render × N** (core) — body → the entry function → html + channels (styles/
-   scripts/head) + dependency set. Parallel via shell workers.
-7. **Write** (shell) — HTML, hashed per-page CSS bundles (`name.<8hex>.ext`,
-   `/assets/immutable/…` conventions preserved), passthrough.
-8. **Post-process** (shell) — optional transforms (dprint), link/asset integrity check.
+6. **Render × N** (core) — body → the entry function → the page as bytes + its marks
+   (name, range, payload id, span) + the fragments collected under each name +
+   dependency set. Parallel via shell workers.
+7. **Resolve** (shell) — for each mark, its producer, then its decorators in plugin
+   order, over the page as the core returned it; output cached by payload id (D42). The
+   handlers are the plugins' (§Shell plugin API), the shell's own CSS bundler among them.
+8. **Write** (shell) — HTML, the per-page CSS bundle the `styles` producer wrote under
+   `/assets/immutable/…`, passthrough.
+9. **Post-process** (shell) — optional transforms (dprint), link/asset integrity check.
+10. **Second phase** (shell) — pages that read other pages' finished output (feeds,
+    ∆ePP) render after steps 6–9 have finished every other page, with those outputs
+    loaded back as a string source (D42).
 
 Dev incrementality comes from two reported sets. Render-reported deps: template edit →
 recompile one file, re-render dependents; content edit → `upsertRecord`, re-render readers;
@@ -194,8 +206,9 @@ A unit depends on its text and on the **compile-time facts** it consumed, nothin
 - for a document, the record type the shell compiled it with (D30);
 - what the host bound each ambient value it read to (D36);
 - the asset-manifest entries `asset()` was checked against (D10);
-- for a document whose code names a language, the grammars the host declared, as one
-  digest of the whole set (D40).
+- for a file that names a mark, or a document whose code names a language, the claims
+  the host declared for that name, as a digest (D42) — not yet (∆7wK): today the grammar
+  set's digest (D40).
 
 The compiler reports those facts per file, and the shell's cache key is
 `hash(text) + hash(facts)`. That is the guarantee: a content edit re-runs comrak and codegen
@@ -248,8 +261,11 @@ D35). Ops sketch:
 (named args reordered at compile time; lambdas are closures over copied captures),
 `Jump/JumpIfFalse` plus the short-circuit `JumpUnlessNull/JumpIfFalseKeep/JumpIfTrueKeep`,
 `IterInit/IterNext`, `TypeTest`, `Emit` (type-directed) and `EmitText`, `Capture/EndCapture`
-(slot bodies and `lem-let` blocks), `Channel/EmitChannel` (dedup by hash; placeholders
-resolved at page end), `Track` (dependency recording), `Return`. Runtime errors carry spans
+(slot bodies and `lem-let` blocks), `Collect` (a `lem-style`/`lem-head`/`lem-script`
+body into the page's fragments under its name, dedup by content), `Track` (dependency
+recording), `Return`. A mark is a value, not an op: `mark()` makes an `html` value
+carrying a named range over its default content, which `Emit` appends and shifts, and
+`render` returns beside the page (D42). Runtime errors carry spans
 via the pc→span table. A builtin that takes a function (`map`, `filter`) runs it through a
 re-entrant invoke inside its `CallBuiltin` step — the VM pushes the frame and runs its loop
 again until that frame returns — so an error inside the closure keeps the closure's own
@@ -259,8 +275,8 @@ build script links the `.wasm` with; the parser's nesting cap is sized against t
 megabyte, and the boundary's ABI tests show both fit (D38, ∆vnI).
 
 What ∆c8h built is the untyped subset of that: `Value` without the stdlib types, which
-∆Q6L added, and no `Channel` or `Track`, which arrive with the side channels (∆1Hp) and
-render-reported deps (∆xBO).
+∆Q6L added, and no `Collect`, marked value, or `Track`, which arrive with the side
+channels (∆1Hp) and render-reported deps (∆xBO).
 Records are checked by declaration since ∆cea, and since ∆PCK a record value is tagged
 with its declared name (`Value::Record`, made by a map literal where a record is expected
 and, later, by the loader at the boundary), which `TypeTest` reads; an enum value is its
@@ -281,7 +297,7 @@ VM time (that number is the Phase 0 exit criterion).
 | Parser         | hand-written RD + Pratt                                  | Chosen in the ∆7Ib bake-off over `lelwel` 0.10 (`docs/journal/∆7Ib-parser-bake-off.md`): LL(1) forced tag names into the token vocabulary and junk out of heads, costing recovery fidelity for ~700 fewer owned lines    |
 | Syntax tree    | `rowan` 0.17 green/red CST                               | lossless + recovering; no incremental reparse needed (rust-analyzer's own conclusion). `lemmon_syntax::ast` is the typed view over it that the checker and codegen read; the CST stays for the formatter and diagnostics |
 | Diagnostics    | structured JSON + `ariadne`/`annotate-snippets` renderer | spans first-class; `line-index` 0.1 (rust-analyzer's, sharing rowan's `text-size`) turns a byte offset into an LSP position at the boundary                                                                                                                                                                                                        |
-| Markdown       | `comrak` 0.54 + `syntect` 5.3                            | in-core (D08); wasm32-clean. comrak with `default-features = false` + `attributes`, a heading adapter since its renderer ignores `{#id}`, and the core's own highlighter adapter — comrak's `SyntectAdapter` writes code unescaped when syntect errs and guesses a language from the first line. syntect with `regex-fancy` (Oniguruma is C) and `yaml-load`, no default grammars or themes: grammars come from the host (D40). +1.97 MB of staged `.wasm` (2.12 → 4.10 MB); embedding bat's grammars via `two-face` as well measured 0.7 MB more |
+| Markdown       | `comrak` 0.54; `syntect` 5.3 not yet removed (∆7wK) | in-core (D08); wasm32-clean. comrak with `default-features = false` + `attributes`, a heading adapter since its renderer ignores `{#id}`, and the core's own code-block adapter, which records a `code` mark per block (D42). Until ∆7wK it highlights with syntect against the host's grammars instead (D40) — the core's own adapter, since comrak's `SyntectAdapter` writes code unescaped when syntect errs and guesses a language from the first line — at 1.97 MB of staged `.wasm` (2.12 → 4.10 MB) |
 | WASM           | `wasm-bindgen` 0.2.127, CLI direct (no wasm-pack)        | `wasm-bindgen --target web` runs in `scripts/stage-wasm.ts`: caller-supplied bytes keep loading injectable and browser-reusable, and the repo owns staging, so wasm-pack’s own package layout would only fight it (∆TNT)                                                                                                                                                                                   |
 | Dates          | `jiff` 0.2                                               | `default-features = false`, `alloc` only: no clock, no system zone, no tzdb, so invariant 1 is structural rather than reviewed. Parsing, the civil calendar, RFC 3339/2822 and strftime; a `datetime` is an instant and the offset it was written in (D38) |
 | URL encoding   | `percent-encoding` 2.3                                   | one encoding pass behind `url()`. The WHATWG `url` crate was rejected: it refuses a relative reference like `/feed/` without a base, which is most of what a site composes, and pulls `idna`'s tables in (D38) |
@@ -305,6 +321,7 @@ interface Plugin {
   assets?(ctx): Promise<AssetManifest> // logicalPath → {url, hash, deps}
   markdown?: MarkdownRenderer // reserved override (D08)
   transformOutput?(file, ctx): OutputFile
+  marks?: MarkHandler[] // producers (name, keys, payload record) and decorators (D42)
   emit?(ctx): Promise<OutputFile[]>
   commands?: Command[] // e.g. `lem photos add`
   watch?(ctx): AsyncIterable<Change>
@@ -312,7 +329,15 @@ interface Plugin {
 ```
 
 Plugins ship `.lem` files (functions + types) bound via `lem-import` in `site.lem` (D23),
-as the shell ships its own `ambient.lem` (D30); they cannot inject build-time JS (D06).
+as the shell ships its own `ambient.lem` (D30); they cannot inject build-time JS into
+the language or the core (D06). What they do with a page after the core returns it —
+an output transform, a mark handler — is the shell's trust (D42): a producer makes a
+mark's content from its payload and claims the keys it covers, a decorator transforms
+whatever content a mark has, two producers on one name and key is a load error naming
+both, and the shell's own `styles`/`scripts`/`head` producers ship as a default plugin
+the site config lists, so a site can produce those names itself. A plugin that claims a
+name ships a `lem-fn` wrapping `mark()` for it in its `.lem`, so a layout reads
+`<lem.styles()>` and a component `<lem.diagram(…)>` (D42).
 The shell also exposes a content API (`loadSite(config).collection('articles')`) for
 tools like the revisions updater.
 

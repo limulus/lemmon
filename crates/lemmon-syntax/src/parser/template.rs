@@ -29,7 +29,6 @@ enum Builtin {
     Style,
     Head,
     Script,
-    Emit,
 }
 
 const BUILTINS: &[(&str, Builtin)] = &[
@@ -48,7 +47,6 @@ const BUILTINS: &[(&str, Builtin)] = &[
     ("style", Builtin::Style),
     ("head", Builtin::Head),
     ("script", Builtin::Script),
-    ("emit", Builtin::Emit),
 ];
 
 impl Builtin {
@@ -81,7 +79,7 @@ impl Builtin {
                 unreachable!("parsed builtins are dispatched by name")
             }
             Self::Style | Self::Head => true,
-            Self::Import | Self::Script | Self::Emit => false,
+            Self::Import | Self::Script => false,
         }
     }
 
@@ -104,9 +102,7 @@ impl Builtin {
             | Self::Enum => {
                 unreachable!("parsed builtins are dispatched by name")
             }
-            Self::Style | Self::Head | Self::Script | Self::Emit => {
-                "is not supported yet (∆1Hp)"
-            }
+            Self::Style | Self::Head | Self::Script => "is not supported yet (∆1Hp)",
             Self::Import => "is not supported yet (∆PgF)",
         }
     }

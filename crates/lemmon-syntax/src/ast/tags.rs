@@ -1068,7 +1068,7 @@ mod tests {
         };
         assert_eq!(text(tag.open_tag()), "<lem-style");
         assert_eq!(tag.body().expect("a body").items().count(), 1);
-        let Item::Unsupported(tag) = first_item("<lem-emit styles />") else {
+        let Item::Unsupported(tag) = first_item("<lem-script />") else {
             panic!("expected an unsupported tag");
         };
         assert!(tag.body().is_none());

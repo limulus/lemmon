@@ -1,6 +1,9 @@
 # D40 — Code highlighting takes its grammars from the host
 
-- **Status:** Accepted 2026-09-13 (∆BfR), refining D08
+- **Status:** Accepted 2026-09-13 (∆BfR), refining D08; superseded the same day by D42,
+  which takes highlighting out of the core — a code block is a `code` mark the host's
+  handlers resolve — and ∆7wK removes what this record built. The markup contract and
+  the unhandled-block property survive in D42; the grammars do not
 - **Backlog item:** ∆BfR
 - **Normative text:** `docs/language.md` § Document mode, Code blocks
 

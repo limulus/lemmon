@@ -1,4 +1,4 @@
-Root@0..198
+Root@0..178
   UnsupportedTag@0..65
     OpenTag@0..10 "<lem-style"
     Head@10..10
@@ -39,27 +39,17 @@ Root@0..198
     SelfClose@163..165 "/>"
   Text@165..166
     Text@165..166 "\n"
-  UnsupportedTag@166..185
-    OpenTag@166..175 "<lem-emit"
-    Trivia@175..176 " "
-    Head@176..182
-      Ident@176..182 "styles"
-    Trivia@182..183 " "
-    SelfClose@183..185 "/>"
-  Text@185..186
-    Text@185..186 "\n"
-  AccessTag@186..197
-    OpenAccess@186..191 "<lem."
-    Head@191..196
-      NameRef@191..196
-        Ident@191..196 "after"
-    Close@196..197 ">"
-  Text@197..198
-    Text@197..198 "\n"
+  AccessTag@166..177
+    OpenAccess@166..171 "<lem."
+    Head@171..176
+      NameRef@171..176
+        Ident@171..176 "after"
+    Close@176..177 ">"
+  Text@177..178
+    Text@177..178 "\n"
 
 --- diagnostics
 1:1..1:11: `lem-style` is not supported yet (∆1Hp)
 4:1..4:10: `lem-head` is not supported yet (∆1Hp)
 7:1..7:12: `lem-import` is not supported yet (∆PgF)
 8:1..8:12: `lem-script` is not supported yet (∆1Hp)
-9:1..9:10: `lem-emit` is not supported yet (∆1Hp)

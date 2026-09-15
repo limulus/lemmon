@@ -12,7 +12,7 @@ a parity harness shows zero unexpected output diffs.
 page rendering end-to-end from the WASM core) is done and Phase 1 is under way. The
 language runs end to end — scanner → parser → typed AST → compiler → VM, with `.md`
 through document mode — and what each stage settled is the decision index
-(`docs/decisions/README.md`, D01–D41), which is the status. The shape to hold in mind:
+(`docs/decisions/README.md`, D01–D42), which is the status. The shape to hold in mind:
 the checker is the compiler's own walk (D31); a host declares the ambient environment a
 program compiles in, and `loadData` validates the host's data against the declared
 schemas (D30, D36, D37); each file compiles to its own `Unit`, and a link step joins

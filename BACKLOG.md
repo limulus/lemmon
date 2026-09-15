@@ -25,11 +25,16 @@ refactor priority: reshaping is cheapest before more code is built on what it re
 Seed items for the next phase (architecture doc 3, phase 1); expect these to be split
 further at claim time.
 
-- ∆1Hp Side channels — `lem-style`/`lem-head`/`lem-script` collected per render and
-  deduplicated, `lem-emit` recorded as a mark, `render` returning the page as bytes beside
-  its marks and channels for the host to splice. D20's CSS bundles and every ported
-  component (∆rT5) carry styles this way, and ∆7Xs bundles what they collect. Planned in
-  `docs/plans/∆1Hp-side-channels.md`
+- ∆1Hp Side channels and marks — `lem-style`/`lem-head`/`lem-script` collected per
+  render as deduplicated fragments under a name; `mark(name, default?)` placing a named
+  range the host fills, its literal name checked against the host's claims and recorded
+  as a fact; `render` returning the page as bytes beside its marks and fragments,
+  resolved by name in the wrapper (D42). Planned in `docs/plans/∆1Hp-side-channels.md`
+- ∆7wK Code marks — every code block a `code` mark keyed by its language word, the whole
+  `<pre>` its default content, its payload (language, info, code) reported at compile by
+  content hash and referenced by id; `mark()` gains a payload typed by the record a claim
+  names, claims gain keys, the shell's `ambient.lem` declares `Code`; syntect, the grammars
+  on the declaration, and the grammar digest fact leave the core (D42); needs: ∆1Hp
 - ∆c9S Page templates and `plan()` — a `.lem` file becomes a page through front matter as a
   document does, a generator's front matter names a `site` list with per-item values as
   defaults on its page type (D41), `plan()` lists every output with its url, entry (D30),
@@ -49,15 +54,15 @@ further at claim time.
   layouts means writing a lot of Lemmon by agent, and rereading the whole language doc every
   time is neither reliable nor cheap
 - ∆Qr2 Facts and modules across the boundary — `compile` reports each unit's compile-time
-  facts (signatures, ambient bindings, manifest entries, grammars, a document's record) so
+  facts (signatures, ambient bindings, manifest entries, claims, a document's record) so
   ∆4tG keys its unit cache on `hash(text) + hash(facts)` and a content edit never
-  recompiles its layouts (D25, D40), and `exportModule`/`importModule` serialize the linked
+  recompiles its layouts (D25, D42), and `exportModule`/`importModule` serialize the linked
   program (D14). Deferred from ∆TNT because a fact nothing consumes is a comment
 - ∆MlD Reconcile the architecture artifacts — apply every entry in
   `docs/artifact-changes.md` to the three Claude Artifacts Eric owns ("Shell & Core", "The
   Lemmon Language", "From Eleventy to Lemmon") and clear the ledger. The artifacts are the
   rationale record; changes are logged per pass and applied once, at the end of Phase 1,
-  so this is deliberately last; needs: ∆Q6L, ∆BfR, ∆1Hp, ∆c9S, ∆Qr2, ∆xBO, ∆5MM, ∆pXO
+  so this is deliberately last; needs: ∆Q6L, ∆BfR, ∆1Hp, ∆7wK, ∆c9S, ∆Qr2, ∆xBO, ∆5MM, ∆pXO
 
 ## Phase 2 — The static site generator: limulus.net from a Lemmon port
 
@@ -74,21 +79,21 @@ API); the port itself lives in limulus-dot-net on a branch while 11ty stays gree
   pool: compile `ambient.lem` + templates without front matter, match documents and page
   templates to the reported `from` globs and compile them with their record (D30, D41),
   loadData, plan, render; `lem check` prints spanned diagnostics. The shell's backbone
-- ∆7Xs Output writer — HTML to disk with side channels spliced in, per-page hashed CSS
-  bundles of what `lem-style` collects (`name.<8hex>.ext` under `/assets/immutable/…`,
-  D13/D20), passthrough copy by glob (limulus.net copies `assets/**` plus
-  png/svg/jpg/xsd/xsl/txt/pdf), and a link/asset integrity check. Preserving the hash
-  conventions is what keeps CloudFront untouched at cutover; needs: ∆4tG, ∆1Hp
+- ∆7Xs Output writer — HTML to disk with marks resolved, the `styles` producer writing
+  per-page hashed CSS bundles of what `lem-style` collects under `/assets/immutable/…`
+  (today ten characters of a sha256; `name.<8hex>.ext` is esbuild's and passthrough's
+  convention, D13/D20), passthrough copy by glob (`assets/**` plus png/svg/jpg/xsd/xsl/
+  txt/pdf), and a link/asset integrity check, CloudFront untouched; needs: ∆4tG, ∆1Hp
 - ∆d1N esbuild asset pipeline — bundle `**/index.ts` + `**/worker.ts` with `/lib/*` external
   and the wasm loader (D09), resolve the `XXXXXXXX` placeholder in client TS (D10), and hand
   the manifest to the host declaration at `compile`, its entries reported as compile-time
   facts (D25, D38). Not `11ty/esbuild.ts` 1:1: values are finished URLs, not the bare hashes
   it stores, since the core does no path arithmetic; needs: ∆4tG, ∆Q6L
 - ∆PgF Plugin host — the `Plugin` hooks (data, transformDocument, assets, transformOutput,
-  emit, commands, watch), plugin `.lem` bound via `lem-import` in `site.lem` (D23, D06), and
-  the content API (`loadSite(config).collection('articles')`) for out-of-build tools.
-  Everything site-specific in limulus.net is a plugin (D12), so this gates the port;
-  needs: ∆4tG
+  emit, commands, watch, and `marks`: producers with keys and a payload record, decorators,
+  two producers on one key a load error, the shell's `styles`/`scripts`/`head` bundler a
+  default plugin the site lists — D42), plugin `.lem` bound via `lem-import` in `site.lem`
+  (D23, D06), and a content API for out-of-build tools. Gates the port (D12); needs: ∆4tG
 - ∆Vhi `lem dev` — dev server with COOP/COEP headers and live reload, incremental rebuilds
   from render-reported deps and `upsertRecord` (docs/architecture.md §Build pipeline),
   `--drafts` (D19). Replaces `eleventy --serve --incremental`, the daily authoring loop;
@@ -97,11 +102,11 @@ API); the port itself lives in limulus-dot-net on a branch while 11ty stays gree
   extends Page` schema, a `posts` glob binding, a `layout` default, and base/post layouts,
   plus an `index.lem` page. The core has no content conventions (D30), so this is where
   a new site gets them — readable and editable, never built in; needs: ∆4tG
-- ∆Nxd Grammars and themes — the shell declares grammars (D40): a default set shipped
-  precompiled beside the `.wasm` (two-face's, with its acknowledgements) so a worker skips
-  the five-second YAML parse, `.sublime-syntax` files a site adds in `lemmon.config.ts`
-  compiled into it once and cached, and `lem theme` turning a `.tmTheme` into CSS for `syn-`
-  classes; D40's scope check and wasm32 regex limit hold for both; needs: ∆4tG, ∆BfR
+- ∆Nxd Default highlighter plugin — highlight.js as a `code` producer shipped with the
+  shell and listed by `lem init`, claiming its languages, so a new site highlights out of
+  the box and limulus.net's `<pre><code class="hljs">` markup is reproduced exactly (D42);
+  `lem theme` turning a highlight.js or `.tmTheme` theme into CSS. A syntect-in-wasm
+  producer is a plugin a site adds, paying its 2 MB only there; needs: ∆PgF, ∆7wK
 
 ### limulus.net plugins (D12)
 
@@ -129,12 +134,12 @@ API); the port itself lives in limulus-dot-net on a branch while 11ty stays gree
   schema defaults replace `links.json`), computed defaults replacing `eleventyComputed.js`
   (title from linkTitle, tilTopic from path, link/via domains, readingTime), the link-post
   appender as `transformDocument`, markdown-it's footnotes, task lists, attrs, and anchors
-  in comrak, and code by D40's restyle-or-highlight.js choice; needs: ∆rT5, ∆BfR, ∆PgF
+  in comrak, and code by the highlight.js producer (∆Nxd); needs: ∆rT5, ∆Nxd, ∆PgF
 - ∆ePP Generated and non-HTML pages — TIL topic pages, links and photo pages via
   generator templates (D41), the three feeds (rss + two atom, `/feed.xsl`), `sitemap.xml`
   with video entries, 404 — the last things still depending on 11ty plugins
-  (`eleventy-plugin-rss`, pagination, `sitemap.njk`). A feed reads other pages' rendered
-  bodies, which D30 left without a form (`body` is not a `Page` field); needs: ∆rT5, ∆c9S
+  (`eleventy-plugin-rss`, pagination, `sitemap.njk`). A feed renders in a second phase,
+  reading other pages' finished output as a string source (D42); needs: ∆rT5, ∆c9S
 
 ### Parity and cutover (D15)
 
@@ -166,10 +171,10 @@ reproduced cold.
   the compiler's walk in `crates/lemmon-vm/src/compile/expr.rs` recurses per term, as does
   dropping rowan's tree. Decide: a length cap, or walks that do not recurse (found in ∆vnI)
 - ∆aaw `readingTime` counts markup as words — `words()` in `crates/lemmon-vm/src/builtins/
-  text.rs` counts a code block's text like prose, an entity's name as a word (its own test
-  asserts `a &gt; b` is three), and a highlighted block's `syn-` spans as breaks, so `a.b`
-  is two words and a grammar change moves a post's reading time (D40). Decide whether code
-  counts at all or by an estimate from line length; ∆hyz allowlists what then differs
+  text.rs` counts a code block's text like prose and an entity's name as a word (its own
+  test asserts `a &gt; b` is three). Decide whether code counts at all or by an estimate
+  from line length; ∆hyz allowlists what then differs. (The `syn-` span breaks D40 added
+  go with ∆7wK: a block's default content carries none.)
 
 ## Someday/Maybe
 
@@ -177,13 +182,18 @@ Standing section for work no initiative needs — ideas kept so they are not los
 serving consumers beyond limulus.net. Nothing here is scheduled; promote an item into an
 initiative before starting it.
 
-- ∆SDN Pure wasm plugin extensions — revisit D06 ("plugins cannot inject logic") for a
-  plugin-shipped wasm module with no imports, called by the core at render time, so sites
-  other than limulus.net get what Lemmon cannot express and the stdlib should not carry
-  without breaking invariant 1: fence renderers beside syntect (Pikchr, TeX → MathML),
-  then locale formatting (plurals, collation); needs: ∆PgF, ∆BfR
-- ∆5pk `lem` code blocks highlighted by the core's scanner — a `lem` fence classed from the
-  tokens the real scanner lexes, not a `.sublime-syntax` Lemmon grammar beside the Rust
-  parser and tree-sitter-lemmon that no corpus agreement test (invariant 9) would hold.
-  Revisits D40's "the core embeds no grammars"; today a `lem` fence warns wherever a host
-  declares grammars; needs: ∆BfR
+- ∆SDN Pure wasm plugin values — revisit D06 ("plugins cannot inject logic") for a
+  plugin-shipped wasm module with no imports, called by the core at render time, for what
+  a template must compute on and a mark cannot carry (D42): locale formatting, plurals,
+  collation. Output-producing extensions — fence renderers, Pikchr, TeX → MathML — are
+  `code` producers instead and need nothing here; needs: ∆PgF, ∆7wK
+- ∆5pk `lem` code blocks highlighted by the core's scanner — a `code` producer for `lem`
+  built from `lemmon-syntax`'s real scanner and shipped with the default highlighter
+  (∆Nxd), so no `.sublime-syntax` Lemmon grammar drifts from the parser and
+  tree-sitter-lemmon (invariant 9); today a `lem` fence is a block no producer claims;
+  needs: ∆Nxd
+- ∆M5x Raw text in templates — a `lem-let x: string` block whose body is scanned as text
+  to its close tag (a fourth scanner mode beside D29's fields mode), so a template can
+  hand a multi-line source to a `code` or diagram producer as a fence does; over it,
+  call-with-body sugar (`lem-with f(args)` for an `html` slot, `lem-raw f(args)` for a
+  string one) lowering to capture-then-call, revising D22 for both (D42); needs: ∆7wK

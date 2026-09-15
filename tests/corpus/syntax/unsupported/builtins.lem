@@ -6,5 +6,4 @@
 </lem-head>
 <lem-import photos />
 <lem-script />
-<lem-emit styles />
 <lem.after>

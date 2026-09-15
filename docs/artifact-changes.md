@@ -194,14 +194,14 @@ moved it. Newest last. An entry is removed when its change has been applied.
   (D37), and that is the settled behaviour (∆Hbw).
 
 - **Document mode, comrak configuration** — replace "syntect highlighting (class-based,
-  generated theme CSS)" with a Code blocks subsection: a block's language is the first
-  word of its info string; the host declares grammars as `.sublime-syntax` text and the
-  core embeds none; a highlighted block keeps comrak's `<pre><code class="language-x">`
-  and its code is wrapped in spans classed with scope atoms prefixed `syn-`; a language
-  is found by extension, then name, the later declaration winning; a block with no
-  language, or with a host that declares no grammars, is written as comrak writes it; an
-  unknown language or a failing grammar is a warning at the word, with a did-you-mean;
-  no theme is part of the core, so the stylesheet is the site's (D40, ∆BfR).
+  generated theme CSS)" with a Code blocks subsection as `docs/language.md` § Code blocks
+  now reads: a block's language is the first word of its info string; every code block is
+  a `code` mark keyed by that word, the whole `<pre><code class="language-x">` element its
+  default content and the info string and code its payload; a producer the host declares
+  for the key replaces the element after render and a decorator may wrap it; a language
+  no producer claims is a warning at the word, with a did-you-mean, while compiling; the
+  claims for `code` are the document's compile-time fact; a `math` fence is a code block;
+  the core embeds no grammars and no theme (D42, superseding D40).
 
 - **Tags, Names, and Ambient types: page templates** — remove the `lem-page` row. Where
   the text describes page templates, say a `.lem` file is a page when it opens with front
@@ -212,6 +212,21 @@ moved it. Newest last. An entry is removed when its change has been applied.
   given in front matter, or by a generator type's default. In Names, "Page-template
   bindings (lem-page, lem-let at file top level)" becomes file-top-level `lem-let`
   bindings (D41, ∆RGQ).
+
+- **Tags, the side-channel rows; Names; Functions & components; Escaping** — drop the
+  `lem-emit` row: placement is `<lem.mark("styles")>`, an ambient constructor beside
+  `raw()` and `asset()`. Rewrite the `lem-style`/`lem-head`/`lem-script` rows as collect
+  tags: the body, or the script's URL, is a fragment under `styles`, `head`, or `scripts`,
+  deduplicated by content, resolved in the host. Add `mark` to the ambient inventory and a
+  Marks section as `docs/language.md` § Marks reads: `mark(name, payload?, default?)`
+  returns `html` standing for a range the host fills, its default an `html` value passed
+  capture-then-call, its literal name and key checked against the host's claims and
+  recorded as a fact, a mark inside a fragment, a payload, or a default a render error,
+  and a rendered body reaching a template a string of finished output from a second
+  render phase. In Escaping, a producer's output is the host's trust (D42).
+
+- **Deferred questions** — add raw text in templates: a `: string` capture scanned as
+  text and call-with-body sugar (`lem-with`/`lem-raw`) over it, both additive (∆M5x, D42).
 
 ## Shell & Core
 
@@ -365,26 +380,46 @@ moved it. Newest last. An entry is removed when its change has been applied.
   rather than leaving it to the toolchain's default, and which the ABI tests run on
   (∆vnI).
 
-- **WASM API, the host declaration** — add `grammars?: {path, text}[]` beside `assets`:
-  `.sublime-syntax` text, consumed while compiling as the manifest is, and omitted to ask
-  for no highlighting; a label pointing into a grammar file carries the core's own
-  positions, and a declaration repeating the grammars keeps the parsed set. Add the
-  grammars a document's code was highlighted against to the compile-time facts, one
-  digest of the whole set. Say the declared grammars are parsed together, at the first
-  block that names a language, into one set linked in declaration order — about five
-  seconds per worker for bat's whole set, so a host declares a site's languages or hands
-  workers a precompiled set (D40, D25 extended, ∆BfR).
+- **WASM API, the host declaration** — add `marks?: {name, keys?, payload?}[]` beside
+  `assets`: the claims of the host's producers, consumed while compiling as the manifest
+  is, so a literal mark name or language word is checked with a did-you-mean and the
+  claims a unit read are its compile-time fact, one digest per name. No grammars ride on
+  the declaration and the core embeds none (D42, superseding D40 and ∆BfR's entry).
 
-- **Crates, Markdown row** — drop `two-face`. syntect with `regex-fancy` and `yaml-load`,
-  no default grammars or themes, driven by the core's own comrak adapter because comrak's
-  `SyntectAdapter` writes code unescaped on an error and guesses a language from the
-  first line. Replace "comrak + syntect adds ~1 MB" with the measurement: the staged
-  `.wasm` grew from 2.12 MB to 4.10 MB with no grammars embedded, and bat's would add
-  0.7 MB more (D40).
+- **WASM API, `render`** — `render` returns the page as UTF-8 bytes beside its metadata:
+  `marks` (name, byte range, payload id, source span) and `fragments` (the collect tags'
+  bodies under each name), with `deps` still ∆xBO's; the bulk-data rule gains the
+  exception, with ∆RGQ's measurement that the page inside JSON was over half a render
+  call. `@limulus/lemmon-core` ships `resolveMarks`, dispatching by name to producers and
+  decorators before any output transform (D42).
 
-- **Highlighter seam** — where the text says syntect highlights code fences, say the
-  core owns only the inside of `<code>`, so a host that declares no grammars gets plain
-  blocks a post-render plugin or a pure wasm highlighter (∆SDN) can colour instead (D40).
+- **Crates, Markdown row** — drop syntect and `two-face` from the row and every "comrak +
+  syntect adds ~1 MB" sentence: the core embeds no highlighter. comrak's code-block
+  adapter is the core's own, recording a `code` mark per block. Keep the measurement as
+  the reason: syntect alone grew the staged `.wasm` from 2.12 MB to 4.10 MB (D42; ∆7wK
+  removes it).
+
+- **Highlighter seam** — where the text says syntect highlights code fences, say a code
+  block is a `code` mark: the page holds comrak's plain escaped block, and the host's
+  producer for its language replaces the whole element after render, so limulus.net's
+  highlight.js markup is reproducible exactly and a host with no producer keeps the plain
+  block (D42).
+
+- **Shell plugin API and build pipeline** — add the `marks` registration to the `Plugin`
+  sketch: a producer names what it makes, the keys it covers, and the payload record its
+  `.lem` declares; a decorator transforms current content; two producers on one name and
+  key is a load error naming both; the shell's own `styles`/`scripts`/`head` bundler is a
+  default plugin the site lists. In the pipeline, a Resolve step between Render and Write
+  runs each mark's producer then its decorators, cached by payload id, before any
+  transform; and a Second phase renders pages that read other pages' finished output
+  (feeds) after every other page is written, that output loaded back as a string source.
+  D06's "plugins cannot inject logic" is scoped to the language and the core (D42).
+
+- **VM, ops and values** — replace `Channel/EmitChannel` with `Collect { name }` (a collect
+  body into the page's fragments, dedup by content) and say a mark is a value: `mark()`
+  makes an `html` value carrying a named range over its default content, which `Emit`
+  appends and shifts, `EndCapture` carries through captures, and `render` returns beside
+  the page; marked markup is its own `Value` variant behind an `Rc` (D42).
 
 - **Data model, templates and generated pages** — where the text lists templates as
   functions, "page templates with a `<lem-page>` header instead of front matter, and
@@ -401,3 +436,10 @@ moved it. Newest last. An entry is removed when its change has been applied.
   page title = … />`. In the photo page port, the proposed form opens with front matter
   (`type: PhotoPage` and the list it pages over), and `title`, `image` and the url move to
   defaults on `PhotoPage`; the `lem-head` prev/next links and the body are unchanged (D41).
+
+- **Feeds and code blocks** — where the text maps `eleventy-plugin-rss` and the
+  markdown-it highlight function: the three feeds are Lemmon templates rendered in a
+  second phase over each page's finished output, loaded back as a string source and
+  escaped as any string is; code blocks are `code` marks a highlight.js producer fills,
+  reproducing `<pre><code class="hljs">` with `hljs-*` spans exactly, so the parity
+  harness forgives nothing there (D42).

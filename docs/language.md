@@ -132,9 +132,8 @@ follows:
 | `lem-type` | `Name` / `Name extends Base` | Record schema (block); fields in the body, one per line, lexed in fields mode (D29). See § Schemas. |
 | `lem-enum` | `Name = a \| b \| c` | Enum (void); its variants are written bare here, and nowhere else. In an expression a variant is `.hero` where the enum is expected and `Placement.hero` anywhere; a string in front matter. |
 | `lem-import` | `name from plugin("p")` · `{ names } from plugin("p")` | Bind a plugin's shipped functions/types — qualified or promoted (D23). Site files never import each other. Void; lives in `site.lem`. |
-| `lem-style` / `lem-head` | — | Block side channels: collected per page from every function actually called, deduplicated. |
-| `lem-script` | `src=asset(…)` | Void side channel: a deduplicated module script tag. |
-| `lem-emit` | `styles` / `scripts` / `head` | Void placeholder in a layout, resolved after the whole page renders. |
+| `lem-style` / `lem-head` | — | Block collect tags: the rendered body is a fragment under `styles` or `head`, collected per page from every function actually called, deduplicated by content, resolved in the host (§ Marks). |
+| `lem-script` | `src=asset(…)` | Void collect tag: the asset's URL is a fragment under `scripts`. |
 
 ## Expressions
 
@@ -646,9 +645,9 @@ nothing.
   promotion `<lem-import { picture, Photo, PhotoIndex } from plugin("photos") />`
   brings favourites (and types) into the flat namespace. Promotion collisions are the
   same duplicate error.
-- **Ambient:** the stdlib functions that make or vouch for a value (`raw`, `datetime`,
-  `url`, `asset`, `uniqueId` — the whole of the namespace the stdlib occupies) need no
-  import — an entry that works on a value is
+- **Ambient:** the stdlib functions that make a value, vouch for one, or stand for one
+  the host supplies (`raw`, `datetime`, `url`, `asset`, `uniqueId`, `mark` — the whole of
+  the namespace the stdlib occupies) need no import — an entry that works on a value is
   that value's method instead, `heading.slugify()`, `d.rfc3339()`, and occupies no
   namespace (D34); a `lem-fn` or `lem-let` may shadow an ambient name, with a warning at
   the definition when the name it displaces is the stdlib's — a parameter or loop
@@ -685,6 +684,9 @@ nothing.
 ```
 
 - Purity: no clock/filesystem/env access; `build.time` etc. arrive as data.
+- **Layouts place what components collect** with `<lem.mark("styles")>` (§ Marks): a
+  component's styles live in a `lem-style` inside its `lem-fn`, collected once however
+  often it is called.
 
 ## Whitespace (D26, D27, D28)
 
@@ -739,6 +741,28 @@ collapsed blindly (D15's "normalized"; `scripts/lib/rendered-html.ts`).
   grep target for trusted input).
 - `url`: attribute-escaped.
 - Unquoted attribute interpolation (`class=<lem.x>`) is a lint warning.
+- A mark's resolved content is the host's: a producer's output replaces the range after
+  render, trusted as an output transform is (D42, § Marks).
+
+## Marks (D42)
+
+`mark(name, payload?, default?)` returns `html` that stands for a range the host fills
+after the page renders. The default — an `html` value, captured and passed (D22) — is
+what the page holds until a handler replaces it, and nothing when there is none. The
+name is a literal, checked against the names the host's producers claim, with a
+did-you-mean; a payload is a record the claim names, checked at the call, and a literal
+key in it is checked against the producer's keys, a computed one by the handler at
+build. The claims a file read are a compile-time fact of its unit (D25). A host that
+claims a name ships an ordinary `lem-fn` wrapping it —
+`<lem-fn styles(): html = mark("styles") />` — so a layout reads `<lem.styles()>` and a
+site author writes the primitive only where no wrapper exists; a plugin's component
+wraps its own mark the same way. A captured value carrying marks places them as often as
+it is printed, and `==` on `html` compares marks as well as text. A mark inside a
+`lem-style`/`lem-head` body, a payload, or a default is a render error at the block or
+the call. A rendered body that reaches a
+template as a value is a string of finished output the host loaded back for a second
+render phase, never `html` carrying marks. _Not yet (∆1Hp): `mark()`, the collect tags,
+and the claims; nor (∆7wK) a payload._
 
 ## Document mode (D07, D08)
 
@@ -787,42 +811,31 @@ renders prose; the VM renders Lemmon blocks; outputs are spliced.
 
 comrak configuration: CommonMark + footnotes, attribute-style heading ids (`<h2 id="…">`,
 slugged from the text and made unique, no anchor link injected), `header_attributes`
-(`{#id}`), code highlighting (below), `render.unsafe` (raw HTML passes through). A
-shell-side `markdown` override hook is reserved but not built.
+(`{#id}`), a `code` mark per code block (below), `render.unsafe` (raw HTML passes
+through). A shell-side `markdown` override hook is reserved but not built.
 
-### Code blocks (D40)
+### Code blocks (D42)
 
 A code block's language is the first word of its info string: `ts` in `` ```ts {1,3} ``.
-The rest of the string is ignored, and an indented block has no language.
+An indented block has none.
 
-- **The host's grammars do the highlighting.** A host declares grammars as
-  `.sublime-syntax` text; a block whose language one answers keeps the markup comrak
-  writes, `<pre><code class="language-ts">`, and its code is wrapped in spans whose
-  classes are the grammar's scope atoms, each prefixed `syn-`:
-  `<span class="syn-keyword syn-control">if</span>`. The classes are the same whatever
-  the theme, so a stylesheet is the site's, and one page may use another than the next.
-- **A language is found by file extension, then by name**, without regard to case. Where
-  two grammars claim one, the one declared later wins, so grammars a site adds take
-  precedence over a default set. A grammar's `embed`, `include`, or `push` of another, by
-  scope or by name, resolves the same way. An `embed` of a scope nothing declares falls
-  back to plain text and such an `include` is skipped; a `push` to one fails on the code
-  that reaches it. The declared grammars are parsed together, the first time a block
-  names a language.
-- **What is not highlighted is written as comrak writes it**, escaped and unwrapped: a
-  block with no language, and every block when the host declares no grammars — that
-  host has asked for none, and nothing is said. A `math` fence is comrak's own and never
-  highlighted.
-- **A language no grammar answers is a warning at the word**, with a did-you-mean, and
-  the block renders plain; so is a language whose grammar does not load, with that file
-  labelled, and a grammar that fails on the code. A grammar that does not load claims
-  only a language no loading grammar answers, and one embedded by another leaves that
-  part of the block plain without a word. A grammar whose scopes hold `"`, `'`, `&`, `<`, or
-  `>` does not load, since a scope is written into a class attribute as it is. A `lem`
-  fence warns like any other until a host declares a grammar for it.
-- **The grammars are a compile-time fact.** Prose renders while compiling, so a document
-  whose code names a language records the set it was highlighted against, and any change
-  to that set — including a grammar arriving for a language that had none — leaves the
-  document to recompile (D25).
+- **A code block is a `code` mark.** The page holds the block as comrak writes it,
+  `<pre><code class="language-ts">` with the code escaped inside, and the mark names
+  that range, with the language word as its key and the info string and the code as its
+  payload. A producer the host declares for that key replaces the whole element after
+  render; a decorator may wrap it. With no producer for the key the block stays as
+  written, and the host warns. The core embeds no grammars and highlights nothing itself.
+- **A language no producer claims is a warning at the word**, with a did-you-mean over
+  the claimed keys, raised while compiling, so `lem check` and the editor report it
+  without a build; a producer that fails on the code reports at build, at the same span.
+- **The claims are a compile-time fact.** A document whose code names a language records
+  a digest of the claims for `code`, so a producer arriving for a language that had none
+  leaves the document to recompile (D25).
+- **A `math` fence is a code block** like any other, keyed `math`.
+
+_Not yet (∆7wK): today a block is highlighted while compiling, by syntect against the
+`.sublime-syntax` grammars the host declares (D40), its spans classed `syn-`; a host
+that declares none gets every block as comrak writes it, and a `lem` fence warns._
 
 ## Canonical example
 
@@ -875,3 +888,5 @@ provisional reading in this file and flag it in the PR:
 - inline lem tags in prose (reserved for v2; design must remain compatible)
 - markdown inside a block: a block's body is a template (D39); whether a capture may
   ever hold markdown is open, and both forms D39 considered are additive
+- raw text in templates: a `: string` capture scanned as text, and call-with-body sugar
+  over it, both additive (∆M5x, D42); a multi-line source is a fence in a document
