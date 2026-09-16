@@ -113,8 +113,8 @@ export interface DataInput {
    * document stands in for it — a template, or a document no collection matched;
    * whatever an untyped host names. A value the host reads from a file's bindings
    * (`{bindingsOf}`) is built by the core, never carried. The document value is bound
-   * as sent, not validated: it is one value for every such render until `plan()`
-   * gives each page its own (∆c9S).
+   * as sent, not validated: it is one value for every such render. A page template
+   * loads its own record once ∆Bhz lands; a template with no front matter keeps this.
    */
   ambient?: Record<string, JsonValue>
   /**

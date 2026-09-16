@@ -1,8 +1,9 @@
 # D41 — Pages from front matter
 
 - **Status:** Accepted 2026-09-13 (∆RGQ), revising D30; the generator key's name and who
-  reads it are left to ∆c9S
-- **Backlog item:** ∆RGQ (settled it); ∆c9S (builds it)
+  reads it, left to ∆c9S, settled 2026-09-14 by D43 — the planning that split ∆c9S
+- **Backlog item:** ∆RGQ (settled it); ∆Bhz (page templates) and ∆99b (generators) build
+  it
 - **Normative text:** `docs/language.md` § Types › Ambient types
 
 ## Context
@@ -70,14 +71,13 @@ provisionally.
   positions. So the order D30 describes becomes: templates without front matter first,
   `ambient.lem` and `site.lem` among them; then documents and page templates, matched
   against the `from` globs `site.lem` reports and compiled with their records (∆4tG).
-- ∆c9S builds it and settles what this record leaves open:
-  - the generator key's name and shape;
-  - whether the shell reads it, a third name of its own beside `type` and `layout` (D30),
-    or the host declaration names it, as it names `entry`;
-  - how a string in front matter names a field of `site`, which today only a `by` head
-    written in Lemmon does.
-  It also makes the scanner treat a `.lem` file's leading `---` block as front matter, and
-  gives `plan()` the generated pages.
+- This record left three things open, and D43 settled them: the key is `for:`, with one
+  entry naming a field and an `<ambient value>.<field>` list, as a `by` head names a map;
+  the shell reads and strips it as it strips `type:`; the loader checks it. D43 also
+  moved neighbours from the shell's `Page` to the page types that want them.
+- ∆Bhz makes the scanner treat a `.lem` file's leading `---` block as front matter and
+  renders a page template through its layout; ∆99b expands generators and gives `plan()`
+  their pages.
 - A page with several items, such as ten posts per archive page, is additive later; both
   limulus.net generators make one page per item.
 - ∆ePP ports the photo and TIL topic pages as generator templates.

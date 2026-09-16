@@ -1,6 +1,7 @@
 # D36 — The host declaration and the surfaces a file offers
 
-- **Status:** Accepted 2026-09-07 (∆Iau)
+- **Status:** Accepted 2026-09-07 (∆Iau); revised 2026-09-14 (D43) — the declaration
+  also names the field a page's url is in and the two neighbour fields
 - **Backlog item:** ∆Iau
 - **Normative text:** `docs/language.md` § Ambient types (including **Declared, not
   inferred**), § Tags (`lem-let` row); `docs/architecture.md` § WASM API
@@ -52,7 +53,7 @@ value reads it — while a `lem-let` anywhere else is a local and infers as befo
 be a record, and extend the type the document value has; the diagnostic points at the
 document's front matter, since that is where a `type:` key naming it stands. A document
 the host gave no record reads the document value unknown-typed (D30), while a template
-keeps the declared type.
+with no front matter keeps the declared type (D41, D43).
 
 **Tagging loaded data stays with the loader (∆iCW), revising D35.** Ambient values are
 typed for checking here and untagged at run time, so a type test over one is still the

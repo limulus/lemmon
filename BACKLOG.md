@@ -30,11 +30,16 @@ further at claim time.
   content hash and referenced by id; `mark()` gains a payload typed by the record a claim
   names, claims gain keys, the shell's `ambient.lem` declares `Code`; syntect, the grammars
   on the declaration, and the grammar digest fact leave the core (D42); needs: ∆1Hp
-- ∆c9S Page templates and `plan()` — a `.lem` file becomes a page through front matter as a
-  document does, a generator's front matter names a `site` list with per-item values as
-  defaults on its page type (D41), `plan()` lists every output with its url, entry (D30),
-  and prev/next, and `render` binds each page's own record, closing D37's shared-envelope
-  gap. The port's index, photo, and TIL topic pages (∆ePP) are written this way
+- ∆Bhz Pages render through their layout — a `.lem` file's leading `---` block is front
+  matter; page templates load as documents do, and a page typed by `type:` alone loads
+  from a new `pages` envelope section; `render` calls a page's layout with its record and
+  body; `plan()` lists pages with their urls (D43). Today no page renders through its
+  layout. Planned in `docs/plans/∆Bhz-pages-render-through-their-layout.md`; needs: ∆1Hp
+- ∆99b Generators and neighbours — a page template whose `for:` key names a field and an
+  `<ambient value>.<field>` list becomes one page per item at load, its url from its type's
+  default; the loader fills the `prev`/`next` fields a generated page's type declares, in
+  list order, as references into the page table (D43). limulus.net's photo and TIL topic
+  pages (∆ePP) are generators; needs: ∆Bhz
 - ∆xBO Render-reported deps — `render` reports which units and records a page read, so
   `lem dev` (∆Vhi) re-renders only a change's dependents; answers D25's open question of
   whether a new photo id re-renders through a render-time map read or a load-time `by`
@@ -57,7 +62,8 @@ further at claim time.
   `docs/artifact-changes.md` to the three Claude Artifacts Eric owns ("Shell & Core", "The
   Lemmon Language", "From Eleventy to Lemmon") and clear the ledger. The artifacts are the
   rationale record; changes are logged per pass and applied once, at the end of Phase 1,
-  so this is deliberately last; needs: ∆Q6L, ∆BfR, ∆1Hp, ∆7wK, ∆c9S, ∆Qr2, ∆xBO, ∆5MM, ∆pXO
+  so this is deliberately last; needs: ∆Q6L, ∆BfR, ∆1Hp, ∆7wK, ∆Bhz, ∆99b, ∆Qr2, ∆xBO, ∆5MM,
+  ∆pXO
 
 ## Phase 2 — The static site generator: limulus.net from a Lemmon port
 
@@ -130,11 +136,11 @@ API); the port itself lives in limulus-dot-net on a branch while 11ty stays gree
   (title from linkTitle, tilTopic from path, link/via domains, readingTime), the link-post
   appender as `transformDocument`, markdown-it's footnotes, task lists, attrs, and anchors
   in comrak, and code by the highlight.js producer (∆Nxd); needs: ∆rT5, ∆Nxd, ∆PgF
-- ∆ePP Generated and non-HTML pages — TIL topic pages, links and photo pages via
-  generator templates (D41), the three feeds (rss + two atom, `/feed.xsl`), `sitemap.xml`
-  with video entries, 404 — the last things still depending on 11ty plugins
-  (`eleventy-plugin-rss`, pagination, `sitemap.njk`). A feed renders in a second phase,
-  reading other pages' finished output as a string source (D42); needs: ∆rT5, ∆c9S
+- ∆ePP Page templates, generated and non-HTML pages — the index pages and 404 as page
+  templates (D41), photo and TIL topic pages as generators (D43), three feeds (rss + two
+  atom, `/feed.xsl`), `sitemap.xml` with video entries: the last pages on WebC and 11ty
+  plugins (`eleventy-plugin-rss`, pagination, `sitemap.njk`). A feed renders in a second
+  phase, reading other pages' finished output as a string source (D42); needs: ∆rT5, ∆99b
 
 ### Parity and cutover (D15)
 

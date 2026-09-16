@@ -6,7 +6,10 @@
   was implemented, to host-declared ambient types; the `from` clause parsed and
   `lem-collection`/`lem-data` retired 2026-09-04 (∆1vS), which chose `env("…")` for
   environment values; revised 2026-09-13 (∆RGQ) — a template's page fields are its front
-  matter, as a document's are, and `lem-page` is retired (D41)
+  matter, as a document's are, and `lem-page` is retired (D41); revised 2026-09-14 (D43) —
+  `Page` declares no `prev`/`next`, a generated page's type declaring its own neighbours;
+  the shell reads the `for:` key as well as `type:`, and its declaration names the url and
+  neighbour fields beside the entry
 - **Backlog item:** ∆1vS (the `from` binding clause, retiring `lem-collection`/`lem-data`);
   ∆RGQ (retiring `lem-page`, D41)
 - **Normative text:** `docs/language.md` § Types › Ambient types
@@ -28,8 +31,8 @@ The core knows no type or value by name. A host declares its ambient environment
 compiles a program — the names of the ambient values and their types, written in Lemmon
 and passed like any other file, so every field has a span and the checker that validates
 the site's records validates what the host sends. The standard shell ships `ambient.lem`,
-declaring `Page` (`url`, `inputPath`, `prev`, `next`, `draft`) and `Build` (`time`,
-`generator`), and binds `page`, `build`, and `site` — the last to the record of
+declaring `Page` (`url`, `inputPath`, `draft`; `prev` and `next` until D43) and `Build`
+(`time`, `generator`), and binds `page`, `build`, and `site` — the last to the record of
 `site.lem`'s top-level bindings. § Ambient types has the rule; what follows from it:
 
 - A content type is page-backed by `extends Page`, and its front matter is its fields,
@@ -37,11 +40,11 @@ declaring `Page` (`url`, `inputPath`, `prev`, `next`, `draft`) and `Build` (`tim
 - A document's type is the element type of the collection whose glob matched it; a
   `type:` front-matter key may name a subtype of it instead. The shell passes the type per
   file, and the document's unit depends on it as a compile-time fact (D25). A document
-  no glob matches is unknown-typed and renders.
+  no glob matches and no `type:` names is unknown-typed and renders.
 - `layout` is a field every page schema declares, `(T, html): html` for its own `T`,
   resolved from a string by its expected type at load like any such string. The shell
-  names it as the entry field and renders a page by calling it with the page and its
-  rendered body. It is neither a type nor a core concept.
+  names it as the entry field, and `render` calls it with the page and its rendered body.
+  It is neither a type nor a core concept.
 - `body` is not a `Page` field: nothing has produced it before render. It is the layout's
   second parameter and the input computed defaults see.
 - `url` is the one `Page` field a source may provide (`url:` in a document's or a
@@ -77,11 +80,12 @@ declaring `Page` (`url`, `inputPath`, `prev`, `next`, `draft`) and `Build` (`tim
   language does; a host that names none compiles a program with no ambient values.
 - The shell reads two names of its own: `type`, a raw key read before a document has a
   type, and `layout`, a field required on every page schema. Everything else it knows
-  about a page is a field with a span, in `ambient.lem` or `site.lem`.
+  about a page is a field with a span, in `ambient.lem` or `site.lem`. (D43 adds the
+  `for:` key, and the url and neighbour fields its declaration names.)
 - Documents are typed per file, so the shell compiles templates without front matter
   first, reads the `from` bindings `site.lem` reports, matches documents and page
-  templates (D41) to those globs, and compiles each with its record (∆4tG); `plan()` fills
-  each page's entry from the host-named field (∆c9S).
+  templates (D41) to those globs, and compiles each with its record (∆4tG); ∆Bhz makes
+  `render` call the function in each page's entry field.
 - Environment values — the first form's `Build.env` — become a `from` source on `site`:
   `<lem-let siteUrl: url from env("SITE_URL") />` (∆1vS). The same shape as
   `plugin("…")`, a call naming a host source with a literal argument, so the core
