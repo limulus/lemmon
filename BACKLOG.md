@@ -25,11 +25,6 @@ refactor priority: reshaping is cheapest before more code is built on what it re
 Seed items for the next phase (architecture doc 3, phase 1); expect these to be split
 further at claim time.
 
-- ∆1Hp Side channels and marks — `lem-style`/`lem-head`/`lem-script` collected per
-  render as deduplicated fragments under a name; `mark(name, default?)` placing a named
-  range the host fills, its literal name checked against the host's claims and recorded
-  as a fact; `render` returning the page as bytes beside its marks and fragments,
-  resolved by name in the wrapper (D42). Planned in `docs/plans/∆1Hp-side-channels.md`
 - ∆7wK Code marks — every code block a `code` mark keyed by its language word, the whole
   `<pre>` its default content, its payload (language, info, code) reported at compile by
   content hash and referenced by id; `mark()` gains a payload typed by the record a claim
