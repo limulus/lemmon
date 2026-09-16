@@ -10,11 +10,11 @@ written, its Planning section absorbs this file and the file is deleted.
 
 1. Read `CLAUDE.md`, the ∆Bhz item in `BACKLOG.md`,
    `docs/decisions/D43-generated-pages-and-neighbours.md`, and D41.
-2. This item needs ∆1Hp, which reshapes `lemmon_vm::render`, the boundary's `render`, the
-   corpus harness's `rendered`, and about twenty-five `render` call sites. Every line
-   number below was taken before ∆1Hp was built and checked by a read-only review on
-   2026-09-14; functions are named so they can be found again. Confirm each before
-   editing.
+2. ∆1Hp has landed (`e1568cb` in the VM, `598d9f8` at the boundary). It reshaped
+   `lemmon_vm::render`, the boundary's `render`, the corpus harness's `rendered`, and all
+   24 `render` call sites, which now read `.html` off a `Rendered` — so this item leaves
+   them alone. Every line number below was rechecked against `main` at `0072bfc`;
+   functions are named so they can be found again.
 3. `npx @limulus/delto@1 claim ∆Bhz`.
 4. If the checkout has no `target/` or `artifacts/wasm/`, the first `npm run rust:wasm`
    and `cargo test` are cold builds.
@@ -30,12 +30,13 @@ and § VM, and `docs/artifact-changes.md` describe the target, with placeholders
 
 ## What exists today, and why this item is larger than its old text
 
-- **No page renders through its layout.** `lemmon_vm::render` (vm.rs:57-82) runs a file's
-  entry function with no arguments and returns its output, `.md` documents included.
-  `Host::entry` has one consumer, `check_entry_field` (compile/schema.rs:143), which
+- **No page renders through its layout.** `lemmon_vm::render` (vm.rs:61-92) runs a file's
+  entry function with no arguments and returns what it emitted — since ∆1Hp a
+  `Rendered { html, marks, fragments }` (rendered.rs:182-190) — `.md` documents included.
+  `Host::entry` has one consumer, `check_entry_field` (compile/schema.rs:177), which
   checks that a record whose base is the document type declares the field with the shape
   `(Self, html): html`; it runs only in the file that declares such a record, and nothing
-  reads the field at render. `packages/core/src/lib/core.spec.ts:303`, `:314` and `:363`,
+  reads the field at render. `packages/core/src/lib/core.spec.ts:313`, `:324` and `:373`,
   and every `host/pages` and `host/tils` case that renders, show a document without its
   layout's `<h1>`.
 - **A `.lem` file's front matter is text.** The template scanner has no front-matter rule,
@@ -43,15 +44,15 @@ and § VM, and `docs/artifact-changes.md` describe the target, with placeholders
   `parse_document` skips the block, with its private `front_matter`
   (lemmon-syntax/src/document.rs:160-176), and the block sits inside the document tree's
   first `TextRun` (the test at document.rs:313 asserts `Text@0..18`). The corpus harness
-  has a second, LF-only detector (lemmon-vm/tests/corpus.rs:419-425, tested at 577-610).
-- **A page template cannot be loaded.** `Module.documents[i]` (bytecode.rs:176-198) is
-  `Some` only for `.md` files, built at link from `Unit.body` (unit.rs:546-552), so
-  `check_envelope` (load/mod.rs:219-238) refuses a `.lem` glob member as "no compiled
-  document". A file typed by `type:` alone, with no glob, compiles typed and has nowhere
-  in `DataInput` (wire.rs:219-226) to send its front matter.
+  has a second, LF-only detector (lemmon-vm/tests/corpus.rs:453-462, tested at 613-644).
+- **A page template cannot be loaded.** `Module.documents` (bytecode.rs:205, its
+  `Document` at 183-194) is `Some` only for `.md` files, built at link from `Unit.body`
+  (unit.rs:591-599), so `check_envelope` (load/mod.rs:219-238) refuses a `.lem` glob
+  member as "no compiled document". A file typed by `type:` alone, with no glob, compiles
+  typed and has nowhere in `DataInput` (wire.rs:231-244) to send its front matter.
 - **`page` in a template is the envelope's value.** `Store` keeps one record per document
   path (load/mod.rs:73-102); anything else binds the value the envelope carried, unchecked.
-- **Nothing reports a url.** The harness makes one up (`/{stem}/`, corpus.rs:384-410).
+- **Nothing reports a url.** The harness makes one up (`/{stem}/`, corpus.rs:436-444).
 
 ## Working agreements
 
@@ -73,33 +74,33 @@ and § VM, and `docs/artifact-changes.md` describe the target, with placeholders
 - **One rule, one predicate.** `front_matter` moves out of `document.rs` into a public
   `lemmon_syntax::front_matter(src) -> Option<Span>`, unchanged: a first line of exactly
   `---` (CRLF allowed) through the next such line; with no closing line there is none.
-  `parse` (template mode) and `parse_document` both call it. The harness's detector and
-  its tests go; the harness takes the span and parses the YAML inside it. The tests at
-  document.rs:309-327 exercise `parse_document`; the predicate gets tests of its own, and
-  those stay where they are with the tree they assert updated.
+  `parse` (template mode) and `parse_document` both call it. The harness's detector
+  (corpus.rs:453-462) and its tests (613-644) go; the harness takes the span and parses the
+  YAML inside it. The tests at document.rs:309-327 exercise `parse_document`; the predicate
+  gets tests of its own, and those stay where they are with the tree they assert updated.
 - **Front matter is a token.** A new `SyntaxKind::FrontMatter` is the first child of `Root`
   in both modes, so the CST stays lossless and a `.md` tree no longer folds the block into
   its first `TextRun` (`Text@0..18` becomes `FrontMatter@0..13` and `Text@13..18`). The
   token section of `SyntaxKind` mirrors `TokenKind` one for one (syntax_kind.rs:9-11, the
-  `From` at 202-253), so `FrontMatter` goes after `Error` with a note saying it comes from
-  no scanner token. `.tags` projects it as a boundary line, which is what a tree-sitter
-  grammar has to agree with (invariant 9, ∆5MM). In template mode `parse` splits the file
-  at the block's end, parses the rest, and splices the rest's children after the token,
-  shifting diagnostics and their labels as document.rs:78-91 does. Nothing inside the YAML
-  is ever scanned. The typed view iterates nodes only (ast/tags.rs:17-19), so it skips the
-  token and the compiler emits nothing for it.
+  `From` at 208-260), so `FrontMatter` goes after `Error` (line 76) with a note saying it
+  comes from no scanner token. `.tags` projects it as a boundary line, which is what a
+  tree-sitter grammar has to agree with (invariant 9, ∆5MM). In template mode `parse` splits
+  the file at the block's end, parses the rest, and splices the rest's children after the
+  token, shifting diagnostics and their labels as document.rs:78-91 does. Nothing inside the
+  YAML is ever scanned. The typed view iterates nodes only (ast/tags.rs:17-19), so it skips
+  the token and the compiler emits nothing for it.
 - **An unclosed block stays text, as it does in documents.** See the questions for Eric.
 
 ### Which files are pages
 
-- **A page is a file compiled with a record that has front matter** — any `.md` document,
-  or a `.lem` file that opens with a `---` block. It loads a record, `plan()` lists it,
-  and `render` renders it through its entry. A `.md` with no record, or a `.lem` with front
+- **A page is a file compiled with a record that has front matter** — any `.md` document, or
+  a `.lem` file that opens with a `---` block. It loads a record, `plan()` lists it, and
+  `render` renders it through its entry. A `.md` with no record, or a `.lem` with front
   matter and no record, reads the document value unknown-typed and renders its own output,
-  as an unmatched document does now. `Host::for_file` (host.rs:305-319) is keyed on
-  `is_document(path)` today; it takes whether the file is page-shaped instead, and so does
-  its caller in link (unit.rs:339), which has no source text and reads a flag the unit
-  records.
+  as an unmatched document does now. `Host::for_file` (host.rs:352-366) is keyed on
+  `is_document(path)` today (line 362); it takes whether the file is page-shaped instead,
+  and so does its caller in link (unit.rs:353), which has no source text and reads a flag
+  the unit records.
 - **A `.lem` file with no front matter takes no record.** It is no page, so a record would
   type `page` while the render binds the envelope's unchecked value (invariant 10). The
   compiler reports it at the start of the file: "a template with no front matter is no
@@ -116,23 +117,26 @@ and § VM, and `docs/artifact-changes.md` describe the target, with placeholders
 ### `body` and a page template
 
 - **Where a default reads `body` is recorded.** The collector a default compiles under has
-  no roots for `path` and `body` (compile/mod.rs:612 opens it with empty `params`), and
-  the resolver's `used` flag is a bool that `Implicit` bindings are exempt from, so neither
+  no roots for `path` and `body` (compile/mod.rs:615 opens it with empty `params`), and the
+  resolver's `used` flag is a bool that `Implicit` bindings are exempt from, so neither
   gives the span. Record it where a name resolves to `Resolved::Local { binder }` and the
   binder is `body`'s — the one `compile_step` makes at `Span::new(span.end, span.end)`
-  (compile/mod.rs:585) — matching the binder, not the name, since a lambda parameter may
-  be called `body`. Keep the first such span on `DefaultFn` (unit.rs:112).
+  (compile/mod.rs:586, `path`'s at 585) — matching the binder, not the name, since a lambda
+  parameter may be called `body`. Keep the first such span on `DefaultFn` (unit.rs:112).
 - **Link refuses a page template whose record's plan runs such a default.** For each unit
   that is a page template with a record, walk that record's plan — every field's default
   from the nearest declaration that gives one, inherited ones included, so not through
-  `record_plans`' `refuse` gate (unit.rs:688), which skips them — and report one error at
+  `record_plans`' `refuse` gate (unit.rs:737), which skips them — and report one error at
   the template's record span: "`Til` cannot type a page template: its defaults read
   `body`, and a template has no body until it renders", labelled at each reading default.
   A document of the same record is not refused; both halves are tested.
 - **The loader passes `Value::Null` for a page template's `body`.** Step results are not
-  revalidated (validate.rs:329-335), so the link refusal is the only thing keeping a
+  revalidated (validate.rs:333-339), so the link refusal is the only thing keeping a
   default such as `excerpt: html = body` from storing a null. Its negative test is a
   perturbation that shows that harm: disable the refusal, and watch the record carry null.
+  Since ∆1Hp a `body`-derived default can also carry marks
+  (`takes_marked_markup_where_a_host_supplies_html`, load/mod.rs:638-665), which is one
+  more reason a template's null must never reach one.
 
 ### Loading
 
@@ -142,7 +146,7 @@ and § VM, and `docs/artifact-changes.md` describe the target, with placeholders
   every bindings plan, in envelope order, through the path `Loader::document`
   (load/mod.rs:482-519) takes, minus the element check.
 - **What `check_envelope` refuses.** As caller bugs, after the refusals it makes today (so
-  `refuses_sources_in_the_wrong_shape`, load/mod.rs:822-889, still passes): a `pages`
+  `refuses_sources_in_the_wrong_shape`, load/mod.rs:851, still passes): a `pages`
   entry with no path; one naming a file compiled as no page, or with no record; a page
   carried twice, in a glob and in `pages` or twice in either.
 - **A page the envelope does not carry is not loaded.** It is not an error: the resident
@@ -151,25 +155,25 @@ and § VM, and `docs/artifact-changes.md` describe the target, with placeholders
   make every later load throw. `plan()` omits it, and `render` of it throws a caller bug
   — "`x` is a page the last load did not carry" — since binding the envelope's value would
   type `page` as a record it is not. `skips_a_computed_binding_once_an_earlier_value_failed`
-  (load/mod.rs:1146-1166), which compiles `pages/a.md` and loads `posts: []`, keeps
+  (load/mod.rs:1178), which compiles `pages/a.md` and loads `posts: []`, keeps
   passing.
 - **The store keeps pages in load order.** `Store.documents: BTreeMap<String, Value>`
   becomes an ordered list of loaded pages, each `{path, record, spans, record_span}`, with
   an index by path: collection members in the order the loader builds the collections —
-  its steps' link order (unit.rs:739-747), which D43 and `architecture.md` call binding
+  its steps' link order (unit.rs:788-796), which D43 and `architecture.md` call binding
   order and which can differ from declaration order — then `pages` in envelope order. A
   test holds the order where the two differ. `Store::globals` finds a page by path; ∆99b
   keys it by `{path, index}`. Callers to update: validate.rs:559, 1173, 1240, 1425;
-  load/mod.rs:783-815 and 972; bytecode.rs:356-379 builds a `Document` literally.
+  load/mod.rs:811-846 and 1002; bytecode.rs:361-385 builds a `Document` literally.
 
 ### The url field
 
 - **The declaration names it** (D43). `Host` gains `url: Option<Rc<str>>` beside `entry`
   (wire `HostInput.url`, TS `HostDecl.url?`), installed as `entry` is.
 - **It is checked at link, and so is the entry field.** The document type is declared in a
-  host file with no base, which `check_declarations` skips (schema.rs:274-279), and
+  host file with no base, which `check_declarations` (schema.rs:292) skips at 308-312, and
   neither name is a fact of any unit, so a compile that only changes the declaration
-  relinks without recompiling (lemmon-wasm/src/lib.rs:228-262) and a compile-time check
+  relinks without recompiling (lemmon-wasm/src/lib.rs:237-271) and a compile-time check
   would never see it. Link has the index and the host on every relink: it reports a
   document type that does not declare the url field as `url` at that type's declaration,
   and — now that `render` reads it — a page record without the entry field, in the same
@@ -185,22 +189,27 @@ and § VM, and `docs/artifact-changes.md` describe the target, with placeholders
 
 - **`render_page` renders a page through its entry, in one VM.** A new VM entry point
   takes the module, a handle on the store's page, the entry field's name, and the globals,
-  so ∆99b adds the page table without changing it again and the `render` call sites ∆1Hp
-  touches stay as they are. It captures the file's entry function's output natively,
-  converting the buffer exactly as ∆1Hp's `Op::EndCapture` does — plain `Html`, or
-  `Marked` when the buffer holds marks — so marks in the body are not dropped. It then
-  calls the record's entry field with the record and that body inside the same `Vm`, not
-  through `vm::invoke` (which collects no fragments, so `Collect` would fault) or
-  `Machine::invoke` (which counts `MAX_NATIVE_DEPTH`), and emits what it returns into the
-  root buffer. So `uniqueId` counts on from the body into the layout, and the fragments of
-  both land in one collection. The capture adds no `Op`: the every-Op gate reads only the
-  `render` group (corpus.rs:620-640), where no page is rendered. A call that fails before
-  running has no span (vm.rs:236-241); map it to the page's `record_span`. A layout's
-  runtime error keeps the layout's span. A file that is no page renders as today, so
-  `render/`, `document/`, and the spike are unchanged; a page with no host entry renders
-  its own output, bound to its record.
+  and returns a `Rendered` as `render` does, so ∆99b adds the page table without changing
+  the signature again and the 24 `render` call sites ∆1Hp reshaped stay as they are. It
+  captures the file's entry function's output natively through `Buffer::into_value()`
+  (rendered.rs:100-108), the one call `Op::EndCapture` (vm.rs:525-528) makes — plain
+  `Html`, or `Marked` when the buffer holds marks — so marks in the body are not dropped.
+  It then calls the record's entry field with the record and that body inside the same
+  `Vm`, not through `vm::invoke` (whose `fragments` is `None`, vm.rs:123, so a `Collect`
+  faults at vm.rs:571-575) or `Machine::invoke` (which counts `MAX_NATIVE_DEPTH`,
+  vm.rs:633-639), and emits what it returns into the root buffer — a fallible step since
+  ∆1Hp, because `Buffer::push_marked` (rendered.rs:74-87) refuses a page over four
+  gigabytes. So `uniqueId` counts on from the body into the layout, the fragments of both
+  land in one collection, and the marks of both arrive in one `Vec<Mark>` in
+  non-decreasing `start` order, which is what `Rendered.marks` promises
+  (rendered.rs:185-187). The capture adds no `Op`: the every-Op gate reads only the
+  `render` group (corpus.rs:646-682, `GROUP` at corpus.rs:37), where no page is rendered.
+  A call that fails before running has no span (vm.rs:236-241); map it to the page's
+  `record_span`. A layout's runtime error keeps the layout's span. A file that is no page
+  renders as today, so `render/`, `document/`, and the spike are unchanged; a page with no
+  host entry renders its own output, bound to its record.
 - **`plan()` lists loaded pages.** `Store::plan(&Host) -> Vec<PlannedPage>` (not `Planned`,
-  which `unit.rs:634` already names), each `{path, url?}` in store order, `url` the
+  which `unit.rs:686` already names), each `{path, url?}` in store order, `url` the
   field's text when the host names one. At the boundary `Core::plan()` returns that JSON;
   a call before any load has succeeded, or after a compile dropped the store, throws, as
   `render` before a compile does; after a failed load it lists the stale store.
@@ -227,7 +236,7 @@ and § VM, and `docs/artifact-changes.md` describe the target, with placeholders
 
 4. `compile/surfaces.rs`: `ParsedFile::Template` knows its front matter; `record_span`
    falls back to it; the no-front-matter record refusal. `Host::for_file` and its six
-   tests (host.rs:490-527) and its link caller.
+   tests (host.rs:535-576) and its link caller.
 5. `unit.rs`, `bytecode.rs`: `Unit`'s front-matter flag; `Document.body` optional; link
    builds a page source for a document or a template with front matter.
 6. `compile/mod.rs`: the `body` read span on `DefaultFn`. `unit.rs`: the page-template
@@ -261,7 +270,8 @@ and § VM, and `docs/artifact-changes.md` describe the target, with placeholders
     - `host/sections/index-page.lem`: a title and a teaser holding `<lem.x>`, a body
       reading `page.title` — binds its own record.
     - `host/sections/blank-line-after-front-matter.lem`: the leading newline a file body
-      keeps (whitespace.rs:36-40), as an author would see it.
+      keeps (whitespace.rs:36-40, the rule restated at 122 — ∆1Hp rewrote this file's
+      trailing-edge handling, so read it before writing the case), as an author sees it.
     - `host/standalone/about.md` and `host/standalone/home.lem`: `type: SitePage`, no glob,
       loaded from `pages`.
     - `host/errors/template-typed-by-a-record-that-reads-body.lem`: `type: Til`, the link
@@ -270,8 +280,11 @@ and § VM, and `docs/artifact-changes.md` describe the target, with placeholders
       unknown-typed, the fixture's value.
     - A `host/sections` case with a load error in its front matter, at the YAML position.
 13. Docs: `language.md` § Scanner gains the front-matter rule for both modes; the envelope
-    placeholder in § Ambient types is swept; `tests/corpus/README.md` describes `.lem`
-    pages, `pages`, and `host/sections` and `host/standalone`.
+    placeholder in § Ambient types is swept; `tests/corpus/README.md` — which ∆1Hp rewrote
+    at 62-82 for the fragment sections and mark notation — describes `.lem` pages, `pages`,
+    and `host/sections` and `host/standalone`. The corpus host (`declared_host`,
+    corpus.rs:79-90) claims no mark names, so a layout that calls `mark()` warns rather
+    than places: leave it that way, or claim a name deliberately.
 
 Verification: `npm run rust`; `npm run corpus:bless`, then read the diff; `npm run
 verify`.
@@ -284,9 +297,11 @@ verify`.
 15. `load/mod.rs`: the url pass after every page loads; `Store::plan`. Unit tests as
     settled above.
 16. `vm.rs`: `render_page`. Unit tests: the body reaches the layout; `uniqueId` counts from
-    body into layout; a layout's error keeps its span; a mark in the body lands at its
-    shifted place and a fragment from each half lands in one collection; a page with no
-    host entry renders its own output; `render` of an uncarried page is refused.
+    body into layout; a layout's error keeps its span; a mark in the body and one in the
+    layout arrive in one `Vec<Mark>` in non-decreasing `start` order; a `lem-style` in
+    each half lands in one collection, which is the rule `vm::invoke` cannot satisfy; a
+    page with no host entry renders its own output; `render` of an uncarried page is
+    refused.
 17. `tests/corpus.rs`: `declared_host` names `url`; `typed_html` renders a loaded page
     through `render_page`. The `host/` cases that render a loaded page gain their layout's
     output (about eleven more end in a load error and do not render). Add a case whose
@@ -298,18 +313,24 @@ Verification: as checkpoint 1.
 ## Checkpoint 3 — the boundary, the wrapper, the scripts, the journal
 
 19. `crates/lemmon-wasm/src/wire.rs`: `HostInput.url`, `DataInput.pages`, the planned-page
-    output; `PageRef`'s doc comment (wire.rs:365-366) says `index` waits on ∆99b. `src/
-    lib.rs`: `plan`, and `render` through `render_page`, throwing for an uncarried page.
-    Host-target tests: plan before a load, after a failed load, and after a compile that
-    dropped the store; plan's order across a glob and `pages`; a page renders through its
-    layout; a repeated url; the url field check on a declaration-only compile.
-    `tests/boundary.rs`: `plan` across the ABI. Doc comments at wire.rs:123, lib.rs:112 and
-    153-158, host.rs:8-9.
-20. `packages/core`: `boundary.ts` `plan`; `types.ts` `HostDecl.url`, `DataInput.pages`,
-    `PlannedPage`, the notes naming ∆Bhz (the document value) and `plan()` (`PageRef`,
-    types.ts:135-136) rewritten; `core.ts` `plan()`, `render` sending only `PageRef`
-    fields, and its doc comment at 73. Specs: `plan()` through the staged artifact; the
-    expectations at `core.spec.ts:303`, `:314`, and `:363` gain their layout;
+    output; `PageRef`'s doc comment (wire.rs:383-384) says `index` waits on ∆99b. `src/
+    lib.rs`: `plan`, and `render` through `render_page` — one swap at the `render(...)`
+    inside `render_bytes` (lib.rs:343-369), since `RenderMeta::placed` and `encode_render`
+    already place a mark by its own file — throwing for an uncarried page. Host-target
+    tests: plan before a load, after a failed load, and after a compile that dropped the
+    store; plan's order across a glob and `pages`; a page renders through its layout; a
+    repeated url; the url field check on a declaration-only compile. `tests/boundary.rs`:
+    `plan` across the ABI. Doc comments: wire.rs:125-135 and lib.rs:113-117 (both already
+    stale for ∆1Hp's `marks`), lib.rs:155-171, and host.rs:8-9, which says a host adds two
+    names and now adds three.
+20. `packages/core` (∆1Hp added `marks.ts`, `marks.spec.ts`, and a `RenderResult` of bytes,
+    types.ts:255-258, so the coverage budget here is larger than it looks): `boundary.ts`
+    `plan`; `types.ts` `HostDecl.url`, `DataInput.pages`, `PlannedPage`, the notes naming
+    ∆Bhz (the document value) and `plan()` (`PageRef`, types.ts:152-157; the ∆Bhz note at
+    types.ts:117) rewritten; `core.ts` `plan()`, `render` sending only `PageRef` fields, and
+    its doc comment at 76-86, which ∆1Hp rewrote around the byte reply. Specs: `plan()`
+    through the staged artifact; the expectations at `core.spec.ts:313`, `:324`, and `:373`
+    — each now through the `page()` helper at `core.spec.ts:13` — gain their layout;
     `load.spec.ts` for `pages`.
 21. `scripts/wasm-artifact.ts`: `core_plan`. `scripts/render-the-rebound.ts` and
     `scripts/bench-wasm.ts`: confirm the untyped spike renders unchanged; grep `scripts/`
