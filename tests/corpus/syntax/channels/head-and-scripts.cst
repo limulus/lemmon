@@ -1,0 +1,141 @@
+Root@0..432
+  FnBlock@0..431
+    OpenTag@0..7 "<lem-fn"
+    Trivia@7..8 " "
+    Head@8..44
+      Ident@8..15 "gallery"
+      Params@15..44
+        LParen@15..16 "("
+        Param@16..31
+          Ident@16..22 "photos"
+          TypeAnnotation@22..31
+            Colon@22..23 ":"
+            Trivia@23..24 " "
+            ListType@24..31
+              LBracket@24..25 "["
+              NamedType@25..30
+                Ident@25..30 "Photo"
+              RBracket@30..31 "]"
+        Comma@31..32 ","
+        Trivia@32..33 " "
+        Param@33..43
+          Ident@33..37 "feed"
+          TypeAnnotation@37..43
+            Colon@37..38 ":"
+            Trivia@38..39 " "
+            OptionalType@39..43
+              NamedType@39..42
+                Ident@39..42 "url"
+              Question@42..43 "?"
+        RParen@43..44 ")"
+    Close@44..45 ">"
+    Block@45..422
+      Text@45..48
+        Text@45..48 "\n  "
+      HeadBlock@48..238
+        OpenTag@48..57 "<lem-head"
+        Head@57..57
+        Close@57..58 ">"
+        Block@58..227
+          Text@58..122
+            Text@58..122 "\n    <link rel=\"preconnect\" href=\"https:"…
+          IfTag@122..224
+            OpenTag@122..129 "<lem-if"
+            Trivia@129..130 " "
+            Head@130..134
+              NameRef@130..134
+                Ident@130..134 "feed"
+            Close@134..135 ">"
+            Block@135..215
+              Text@135..198
+                Text@135..198 "\n      <link rel=\"alternate\" type=\"appli"…
+              AccessTag@198..208
+                OpenAccess@198..203 "<lem."
+                Head@203..207
+                  NameRef@203..207
+                    Ident@203..207 "feed"
+                Close@207..208 ">"
+              Text@208..215
+                Text@208..215 "\">\n    "
+            CloseTag@215..224
+              CloseTag@215..223 "</lem-if"
+              Close@223..224 ">"
+          Text@224..227
+            Text@224..227 "\n  "
+        CloseTag@227..238
+          CloseTag@227..237 "</lem-head"
+          Close@237..238 ">"
+      Text@238..241
+        Text@238..241 "\n  "
+      ScriptVoid@241..289
+        OpenTag@241..252 "<lem-script"
+        Trivia@252..253 " "
+        Head@253..286
+          Ident@253..256 "src"
+          Trivia@256..257 " "
+          Eq@257..258 "="
+          Trivia@258..259 " "
+          CallExpr@259..286
+            NameRef@259..264
+              Ident@259..264 "asset"
+            ArgList@264..286
+              LParen@264..265 "("
+              Literal@265..285
+                StringLit@265..285 "\"scripts/gallery.js\""
+              RParen@285..286 ")"
+        Trivia@286..287 " "
+        SelfClose@287..289 "/>"
+      Text@289..292
+        Text@289..292 "\n  "
+      AccessTag@292..312
+        OpenAccess@292..297 "<lem."
+        Head@297..311
+          CallExpr@297..311
+            NameRef@297..301
+              Ident@297..301 "mark"
+            ArgList@301..311
+              LParen@301..302 "("
+              Literal@302..310
+                StringLit@302..310 "\"styles\""
+              RParen@310..311 ")"
+        Close@311..312 ">"
+      Text@312..340
+        Text@312..340 "\n  <ul class=\"gallery\">\n    "
+      ForTag@340..413
+        OpenTag@340..348 "<lem-for"
+        Trivia@348..349 " "
+        Head@349..364
+          ForBinding@349..354
+            Ident@349..354 "photo"
+          Trivia@354..355 " "
+          In@355..357 "in"
+          Trivia@357..358 " "
+          NameRef@358..364
+            Ident@358..364 "photos"
+        Close@364..365 ">"
+        Block@365..403
+          Text@365..376
+            Text@365..376 "\n      <li>"
+          AccessTag@376..393
+            OpenAccess@376..381 "<lem."
+            Head@381..392
+              MemberExpr@381..392
+                NameRef@381..386
+                  Ident@381..386 "photo"
+                Dot@386..387 "."
+                Ident@387..392 "title"
+            Close@392..393 ">"
+          Text@393..403
+            Text@393..403 "</li>\n    "
+        CloseTag@403..413
+          CloseTag@403..412 "</lem-for"
+          Close@412..413 ">"
+      Text@413..422
+        Text@413..422 "\n  </ul>\n"
+    CloseTag@422..431
+      CloseTag@422..430 "</lem-fn"
+      Close@430..431 ">"
+  Text@431..432
+    Text@431..432 "\n"
+
+--- diagnostics

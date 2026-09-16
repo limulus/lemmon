@@ -1,7 +1,9 @@
 # D26 — Body whitespace
 
 - **Status:** Accepted 2026-08-23; the hugged, flow, and nested readings settled
-  2026-08-24 when it was implemented (∆2vO)
+  2026-08-24 when it was implemented (∆2vO); (∆1Hp) `lem-style` and `lem-head` bodies are
+  value bodies, and the trailing edge is found past the statements whose lines D27 took —
+  a body ending in one had kept the newline above it
 - **Backlog item:** ∆2vO
 - **Normative text:** `docs/language.md` § Whitespace
 

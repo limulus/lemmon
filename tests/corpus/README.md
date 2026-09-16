@@ -62,7 +62,25 @@ basename:
 | ------------- | ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `<name>.cst`  | `lemmon_syntax::dump`          | The lossless tree, one node or token per line, then `--- diagnostics` and one `line:col..line:col: message` per line; for a `.md`, the tree `parse_document` assembled |
 | `<name>.tags` | `lemmon_syntax::tag_dump`      | The tag-boundary projection: text runs, tag nodes, close tags, and the errors standing where an item would, with heads, expressions, and `Block` wrappers elided |
-| `<name>.html` | `lemmon_vm::{compile, render}` | The rendered output, then `--- diagnostics` and one `path:line:col..line:col: message` per compile diagnostic — warnings too — or for the runtime error that stopped the render |
+| `<name>.html` | `lemmon_vm::{compile, render}` | The rendered output; then each fragment the page's collect blocks gathered, under a `--- styles`, `--- head`, or `--- scripts` line of its own (below); then `--- diagnostics` and one `path:line:col..line:col: message` per compile diagnostic — warnings too — or for the runtime error that stopped the render |
+
+### Marks in a render
+
+A mark is a named range of the page the host fills after the render (D42), so an `.html`
+expectation shows each one where it stands: `⟦mark styles⟧` where the range is empty, and
+`⟦mark toc⟧…⟦/mark⟧` around default content. The notation is the harness's alone — nothing
+in the core writes it — and it is applied back to front, so the offsets in it are the ones
+the render gave. Marks at one offset stand in the order they were printed.
+
+### Fragments in a render
+
+A `lem-style`, `lem-head`, or `lem-script` renders nothing where it stands: its output is
+a fragment the host resolves (D42). So an `.html` expectation prints each fragment after
+the page, one `--- name` line and then its text, names in sorted order and each name's
+fragments in the order the render first reached them — which is also where dedup shows: a
+component called three times leaves one section. The sections sit above the diagnostics
+trailer, which is found by its last `--- diagnostics` line, so fragment text never reads
+as one. The notation exists only here; nothing in the core writes it.
 
 ### Positions in a trailer
 

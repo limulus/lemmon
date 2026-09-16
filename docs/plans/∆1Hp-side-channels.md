@@ -281,10 +281,10 @@ plugin.
 
 ### VM shape
 
-- A new module, `src/marks.rs`: what a render collects beside its text — `Mark`,
-  `Marked`, `Fragment`, `Fragments`, `Buffer { text: String, marks: Vec<Mark> }`, and
-  `Rendered { html: String, marks: Vec<Mark>, fragments: Fragments }`. Its `//!` states
-  that one responsibility. Export the public types from `src/lib.rs:35`.
+- A new module, `src/rendered.rs` (1a): what a render returns — `Fragment`, `Fragments`,
+  and `Rendered { html: String, fragments: Fragments }`, to which 1b adds `Mark`, `Marked`,
+  `Buffer { text: String, marks: Vec<Mark> }`, and `Rendered.marks`. Its `//!` states that
+  one responsibility. The public types are exported from `src/lib.rs`.
 - `bytecode.rs`: `Collect { name: u32 }` (1a) and `Mark { name: u32 }` (1b) after
   `EndCapture` (`:132`). `names_every_op_from_one_list` (`:303`) goes 43 → 44 → 45. Both
   join the name-operand arm of link's rebasing (`unit.rs:562-569`) and the test helper
@@ -453,7 +453,7 @@ plugin.
 
 ### Compiler and VM (`crates/lemmon-vm`)
 
-7. `src/marks.rs` with `Fragment`, `Fragments` and `Rendered { html, fragments }`;
+7. `src/rendered.rs` with `Fragment`, `Fragments` and `Rendered { html, fragments }`;
    `bytecode.rs` `Collect { name }`, documented "Pop an `html` value and add its text to
    the fragments under the name, unless it is empty or they already hold equal text".
    Link rebasing and `run`'s shift gain the op; the op count goes to 44.
@@ -523,7 +523,7 @@ which the checkpoint preview says. Then `npm run verify`.
 
 ## Checkpoint 1b — marks
 
-17. `src/marks.rs`: `Mark`, `Marked`, `Buffer`; `Rendered` gains `marks`.
+17. `src/rendered.rs`: `Mark`, `Marked`, `Buffer`; `Rendered` gains `marks`.
     `bytecode.rs`: `Mark { name }`, documented "Pop an `html` default and push it marked
     under the name, spanning its text". Link rebasing and `run`'s shift gain the op; the
     op count goes to 45.

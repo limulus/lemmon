@@ -1,0 +1,27 @@
+<lem-fn base(title: string, body: html)>
+  <html>
+    <head>
+      <title><lem.title></title>
+      <lem.mark("styles")><lem.mark("head")>
+    </head>
+    <body><lem.body></body>
+  </html>
+</lem-fn>
+<lem-fn aside(note: html)>
+  <aside><lem.note></aside>
+</lem-fn>
+<lem-let sidenote>
+  <lem.mark("head", default: raw("<meta name=\"note\" content=\"a\">"))>
+</lem-let>
+<lem-let draftOnly>
+  <lem.mark("styles")>
+</lem-let>
+<lem-let body>
+  <p>A page whose aside carries a mark of its own.</p>
+  <lem.aside(sidenote)>
+  <lem.aside(sidenote)>
+  <lem-if site.name == "drafts">
+    <lem.draftOnly>
+  </lem-if>
+</lem-let>
+<lem.base("Marks", body)>

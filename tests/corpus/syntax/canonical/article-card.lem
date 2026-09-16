@@ -25,4 +25,10 @@
       </div>
     </a>
   </article>
+  <lem-style>
+    .article-card {
+      > a { display: block; overflow: hidden; }
+      img.preview { display: block; width: 100%; height: auto; }
+    }
+  </lem-style>
 </lem-fn>

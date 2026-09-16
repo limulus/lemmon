@@ -1,0 +1,12 @@
+<lem-fn chipList(size: string, slot: html)>
+  <ul class="chip-list <lem.size>">
+    <lem.slot>
+  </ul>
+  <lem-style>
+    .chip-list {
+      display: flex;
+      > li { margin-inline-end: 0.5em; }
+      &.small > li { font-size: 0.8em; }
+    }
+  </lem-style>
+</lem-fn>

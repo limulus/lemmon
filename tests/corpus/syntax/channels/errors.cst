@@ -1,0 +1,126 @@
+Root@0..365
+  FnBlock@0..364
+    OpenTag@0..7 "<lem-fn"
+    Trivia@7..8 " "
+    Head@8..26
+      Ident@8..13 "video"
+      Params@13..26
+        LParen@13..14 "("
+        Param@14..25
+          Ident@14..17 "src"
+          TypeAnnotation@17..25
+            Colon@17..18 ":"
+            Trivia@18..19 " "
+            NamedType@19..25
+              Ident@19..25 "string"
+        RParen@25..26 ")"
+    Close@26..27 ">"
+    Block@27..355
+      Text@27..30
+        Text@27..30 "\n  "
+      ScriptVoid@30..44
+        OpenTag@30..41 "<lem-script"
+        Trivia@41..42 " "
+        Head@42..42
+        SelfClose@42..44 "/>"
+      Text@44..47
+        Text@44..47 "\n  "
+      ScriptVoid@47..94
+        OpenTag@47..58 "<lem-script"
+        Trivia@58..59 " "
+        Head@59..91
+          Error@59..63
+            Ident@59..63 "href"
+          Trivia@63..64 " "
+          Eq@64..65 "="
+          Trivia@65..66 " "
+          CallExpr@66..91
+            NameRef@66..71
+              Ident@66..71 "asset"
+            ArgList@71..91
+              LParen@71..72 "("
+              Literal@72..90
+                StringLit@72..90 "\"scripts/video.js\""
+              RParen@90..91 ")"
+        Trivia@91..92 " "
+        SelfClose@92..94 "/>"
+      Text@94..97
+        Text@94..97 "\n  "
+      ScriptVoid@97..147
+        OpenTag@97..108 "<lem-script"
+        Trivia@108..109 " "
+        Head@109..144
+          Ident@109..112 "src"
+          Eq@112..113 "="
+          Literal@113..144
+            StringLit@113..144 "\"/lib/video-on-demand/index.js\""
+        Trivia@144..145 " "
+        SelfClose@145..147 "/>"
+      Text@147..150
+        Text@147..150 "\n  "
+      ScriptVoid@150..162
+        OpenTag@150..161 "<lem-script"
+        Head@161..161
+        Close@161..162 ">"
+      Text@162..208
+        Text@162..208 "\n    document.querySelector(\"video\").pla"…
+      Error@208..221
+        CloseTag@208..221
+          CloseTag@208..220 "</lem-script"
+          Close@220..221 ">"
+      Text@221..224
+        Text@221..224 "\n  "
+      StyleBlock@224..291
+        OpenTag@224..234 "<lem-style"
+        Trivia@234..235 " "
+        Head@235..248
+          Error@235..248
+            Ident@235..240 "class"
+            Eq@240..241 "="
+            StringLit@241..248 "\"video\""
+        Close@248..249 ">"
+        Block@249..279
+          Text@249..279
+            Text@249..279 "\n    video { width: 100%; }\n  "
+        CloseTag@279..291
+          CloseTag@279..290 "</lem-style"
+          Close@290..291 ">"
+      Text@291..294
+        Text@291..294 "\n  "
+      UnknownTag@294..313
+        OpenTag@294..303 "<lem-emit"
+        Trivia@303..304 " "
+        Head@304..310
+          Ident@304..310 "styles"
+        Trivia@310..311 " "
+        SelfClose@311..313 "/>"
+      Text@313..316
+        Text@313..316 "\n  "
+      StyleBlock@316..355
+        OpenTag@316..326 "<lem-style"
+        Head@326..326
+        Close@326..327 ">"
+        Block@327..355
+          Text@327..343
+            Text@327..343 "\n    <p>a</p>\n  "
+          Error@343..354
+            CloseTag@343..354
+              CloseTag@343..353 "</lem-head"
+              Close@353..354 ">"
+          Text@354..355
+            Text@354..355 "\n"
+    CloseTag@355..364
+      CloseTag@355..363 "</lem-fn"
+      Close@363..364 ">"
+  Text@364..365
+    Text@364..365 "\n"
+
+--- diagnostics
+2:15..2:17: expected `src` before `/>`
+3:15..3:19: expected `src`, found `href`
+5:14..5:15: expected `src` before `>`
+7:3..7:15: found `</lem-script>` while `lem-fn` is still open: expected `</lem-fn>`
+8:14..8:27: `lem-style` takes no head
+11:3..11:12: unknown tag `lem-emit`
+14:3..14:13: found `</lem-head>` while `lem-style` is still open: expected `</lem-style>`
+15:1..15:9: found `</lem-fn>` while `lem-style` is still open: expected `</lem-style>`

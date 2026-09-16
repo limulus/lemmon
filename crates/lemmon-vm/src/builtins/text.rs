@@ -27,8 +27,10 @@ const WORDS_PER_MINUTE: u64 = 200;
 /// therefore differ by a minute, which is a parity-harness question (∆hyz) and not a
 /// bug here: counting what a reader sees is the better answer.
 pub(super) fn reading_time(_vm: &mut dyn Machine, args: &[Value]) -> Result<Value, Fault> {
+    // A mark's default content is text a reader sees, so it counts like any other.
     let markup = match &args[0] {
-        Value::Html(markup) => markup,
+        Value::Html(markup) => &**markup,
+        Value::Marked(marked) => &*marked.text,
         other => return Err(method_receiver("readingTime", "html", other)),
     };
     // Counted into a `u64` before the multiply: a `usize` is thirty-two bits in the

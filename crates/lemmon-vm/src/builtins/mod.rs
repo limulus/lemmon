@@ -82,7 +82,7 @@ impl ReceiverKind {
             Value::Int(_) => Some(Self::Int),
             Value::Float(_) => Some(Self::Float),
             Value::Bool(_) => Some(Self::Bool),
-            Value::Html(_) => Some(Self::Html),
+            Value::Html(_) | Value::Marked(_) => Some(Self::Html),
             Value::Datetime(_) => Some(Self::Datetime),
             Value::Duration(_) => Some(Self::Duration),
             Value::Url(_) => Some(Self::Url),
@@ -215,6 +215,9 @@ pub const BUILTINS: &[Builtin] = &[
     ambient("url", 1, values::url_type, values::url),
     ambient("asset", 1, values::asset_type, values::asset),
     ambient("uniqueId", 1, values::unique_id_type, values::unique_id),
+    // Written `mark("styles")` or `mark("toc", default: fallback)`: the one builtin
+    // with a named argument, and the compiler reads both (D42).
+    ambient("mark", 1, values::mark_type, values::mark),
     // `string`
     method(
         ReceiverKind::String,

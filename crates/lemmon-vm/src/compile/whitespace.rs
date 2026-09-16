@@ -114,6 +114,35 @@ impl Body {
         self.pieces.last_mut().and_then(Piece::text_mut)
     }
 
+    /// Drops the newline-and-indent the body ends with, read past the statements whose
+    /// lines the line rule took. Those are gone before the edge is trimmed, so a
+    /// `lem-style` closing a component's body leaves the body ending where the markup
+    /// above it ends, as it would without the tag. What stands between the last such
+    /// statement and the close tag is the close tag's indent, blank text going with the
+    /// newline. The leading edge needs no such reading: the line rule keeps a statement's
+    /// newline in the text before it, which at that edge is the first text.
+    fn trim_trailing_edge(&mut self) {
+        let Some(at) = self.pieces.iter().rposition(|piece| match piece {
+            Piece::Tag { took_its_line, .. } => !took_its_line,
+            Piece::Text { text, .. } => !is_blank(text),
+            Piece::If { .. } | Piece::For { .. } | Piece::Match { .. } => true,
+        }) else {
+            return;
+        };
+        let (edge, after) = self.pieces.split_at_mut(at + 1);
+        if let Some(text) = edge[at].text_mut()
+            && let Some(newline) = text.rfind('\n')
+            && is_blank(&text[newline + 1..])
+        {
+            let cr = usize::from(text[..newline].ends_with('\r'));
+            text.truncate(newline - cr);
+            after
+                .iter_mut()
+                .filter_map(Piece::text_mut)
+                .for_each(String::clear);
+        }
+    }
+
     /// The body rule: trim each edge, measure the margin over what remains, strip it.
     fn normalize(&mut self) {
         let at_line_start = self.trim_edges();
@@ -129,13 +158,7 @@ impl Body {
     /// deliberate blank line survives as one. Reports whether the leading edge went,
     /// which is what makes the body's first byte a line start.
     fn trim_edges(&mut self) -> bool {
-        if let Some(text) = self.last_text()
-            && let Some(at) = text.rfind('\n')
-            && is_blank(&text[at + 1..])
-        {
-            let cr = usize::from(text[..at].ends_with('\r'));
-            text.truncate(at - cr);
-        }
+        self.trim_trailing_edge();
         let Some(text) = self.first_text() else {
             return false;
         };
@@ -238,7 +261,8 @@ impl Piece {
     pub(super) const fn renders_nothing(&self) -> bool {
         match self {
             // A declaration is a statement like a definition: it renders nothing and
-            // takes its line (D27).
+            // takes its line (D27). So does a collect tag, whose output goes to the
+            // host rather than to where it stands (D42).
             Self::Tag { item, .. } => matches!(
                 item,
                 Item::LetVoid(_)
@@ -248,6 +272,9 @@ impl Piece {
                     | Item::FnBlock(_)
                     | Item::TypeDecl(_)
                     | Item::EnumDecl(_)
+                    | Item::StyleBlock(_)
+                    | Item::HeadBlock(_)
+                    | Item::ScriptVoid(_)
             ),
             _ => false,
         }
@@ -552,6 +579,7 @@ mod tests {
         let body = match items.first().expect("a tag") {
             Item::FnBlock(tag) => tag.body().expect("a body").items().collect(),
             Item::LetBlock(tag) => tag.body().expect("a body").items().collect(),
+            Item::StyleBlock(tag) => tag.body().expect("a body").items().collect(),
             _ => panic!("the first item must be a block definition"),
         };
         let mut out = String::new();
@@ -753,6 +781,62 @@ mod tests {
         assert_eq!(
             body_of("<lem-fn f()>\n  <lem-let x = 1 />\n  <p><lem.x></p>\n</lem-fn>"),
             "<p>{}</p>"
+        );
+    }
+
+    #[test]
+    fn trims_the_trailing_edge_past_the_statements_that_end_a_body() {
+        assert_eq!(
+            body_of("<lem-fn f()>\n  <p>a</p>\n  <lem-let x = 1 />\n</lem-fn>"),
+            "<p>a</p>"
+        );
+        assert_eq!(
+            body_of(concat!(
+                "<lem-fn f()>\n",
+                "  <p>a</p>\n",
+                "  <lem-let x = 1 />\n",
+                "  <lem-style>\n    .a {}\n  </lem-style>\n",
+                "</lem-fn>",
+            )),
+            "<p>a</p>"
+        );
+        // Nested one level in, the close tag is indented, and that indent goes too.
+        assert_eq!(
+            body_of("<lem-let c>\n    <p>a</p>\n    <lem-let x = 1 />\n  </lem-let>"),
+            "<p>a</p>"
+        );
+        // A tag that renders where it stands stops the reading: the text before it is
+        // not at the edge.
+        assert_eq!(
+            body_of("<lem-fn f()>\n  <p>a</p>\n  <lem.x></lem-fn>"),
+            "<p>a</p>\n{}"
+        );
+    }
+
+    #[test]
+    fn dedents_a_style_body_as_it_dedents_a_capture_body() {
+        assert_eq!(
+            body_of("<lem-style>\n  .a {\n    > b { color: red; }\n  }\n</lem-style>"),
+            ".a {\n  > b { color: red; }\n}"
+        );
+    }
+
+    #[test]
+    fn lets_each_collect_tag_take_its_line() {
+        // What a collect tag renders goes to the host, so where it stands it is a
+        // statement, and three on their own lines leave no blank lines between `a` and
+        // `b`.
+        assert_eq!(
+            body_of(concat!(
+                "<lem-fn f()>\n",
+                "  <p>a</p>\n",
+                "  <lem-style>\n    .a {}\n  </lem-style>\n",
+                "  <lem-head><link></lem-head>\n",
+                "  <lem-script src = asset(\"a.js\") />\n",
+                "  <p>b</p>\n",
+                "</lem-fn>",
+            )),
+            "<p>a</p>\n<p>b</p>"
         );
     }
 

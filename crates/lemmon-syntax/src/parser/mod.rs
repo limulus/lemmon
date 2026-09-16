@@ -622,10 +622,10 @@ mod tests {
     #[test]
     fn enters_the_error_state_only_for_a_diagnostic_about_the_current_token() {
         assert_eq!(
-            messages("<lem-style /></lem-style>"),
+            messages("<lem-default /></lem-default>"),
             vec![
-                "`lem-style` is not supported yet (∆1Hp)",
-                "`lem-style` is a block tag and cannot be self-closed: expected `>`",
+                "`lem-default` outside `lem-match`",
+                "`lem-default` is a block tag and cannot be self-closed: expected `>`",
             ]
         );
     }

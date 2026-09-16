@@ -17,8 +17,11 @@
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
+use lemmon_syntax::Span;
+
 use crate::builtins::{self, BUILTINS, Fault, Machine, ReceiverKind};
 use crate::bytecode::{Function, Module, Op};
+use crate::rendered::{Buffer, Fragment, Fragments, Mark, Marked, Rendered};
 use crate::value::{Closure, Map};
 use crate::{RuntimeError, Value};
 
@@ -44,7 +47,8 @@ const MAX_DEPTH: usize = 256;
 const MAX_NATIVE_DEPTH: usize = 64;
 
 /// Renders the file at `path` from `module`, with `globals` bound to the ambient names
-/// (`page`, `site`, `build`) the templates may read.
+/// (`page`, `site`, `build`) the templates may read, and returns the page with the
+/// fragments its collect blocks gathered.
 ///
 /// # Errors
 ///
@@ -58,7 +62,7 @@ pub fn render(
     module: &Module,
     path: &str,
     globals: &[(&str, Value)],
-) -> Result<String, RuntimeError> {
+) -> Result<Rendered, RuntimeError> {
     let entry = module
         .entry(path)
         .unwrap_or_else(|| panic!("no file `{path}` in the module"));
@@ -70,7 +74,8 @@ pub fn render(
         native_depth: 0,
         ids: BTreeMap::new(),
         iters: Vec::new(),
-        out: vec![String::new()],
+        out: vec![Buffer::default()],
+        fragments: Some(Fragments::default()),
     };
     vm.call(entry, 0, &[]).map_err(|message| {
         // The entry takes no arguments, so the only way in here is the depth cap,
@@ -78,7 +83,12 @@ pub fn render(
         unreachable!("entry call failed: {message}")
     })?;
     vm.run_until(0)?;
-    Ok(vm.out.pop().expect("the root output buffer"))
+    let (html, marks) = vm.out.pop().expect("the root output buffer").into_parts();
+    Ok(Rendered {
+        html,
+        marks,
+        fragments: vm.fragments.take().expect("a page render collects"),
+    })
 }
 
 /// Calls `functions[func]` of `module` with `args`, `globals` bound to the ambient
@@ -109,7 +119,8 @@ pub fn invoke(
         native_depth: 0,
         ids: BTreeMap::new(),
         iters: Vec::new(),
-        out: vec![String::new()],
+        out: vec![Buffer::default()],
+        fragments: None,
     };
     vm.call(func, argc, &[])
         .unwrap_or_else(|message| panic!("invoking `{func}` failed: {message}"));
@@ -147,7 +158,10 @@ struct Vm<'a> {
     /// renders of one page agree.
     ids: BTreeMap<Rc<str>, u64>,
     iters: Vec<Iter>,
-    out: Vec<String>,
+    out: Vec<Buffer>,
+    /// What collect blocks have gathered: `Some` in a page render, and `None` while the
+    /// loader runs a function, which renders no page to collect for.
+    fragments: Option<Fragments>,
 }
 
 impl<'a> Vm<'a> {
@@ -172,6 +186,14 @@ impl<'a> Vm<'a> {
         &module.functions[index as usize]
     }
 
+    /// The file and span of the instruction running now, for what a render records
+    /// rather than fails with. Read before anything re-enters the loop.
+    fn here(&self) -> (u32, Span) {
+        let frame = self.frames.last().expect("a running frame");
+        let function = self.function(frame.func);
+        (function.file, function.spans[frame.pc - 1])
+    }
+
     fn fail(&self, func: u32, pc: usize, message: String) -> RuntimeError {
         let function = self.function(func);
         RuntimeError::new(
@@ -191,6 +213,12 @@ impl<'a> Vm<'a> {
     }
 
     fn constant_str(&self, index: u32) -> &'a str {
+        self.constant_name(index)
+    }
+
+    /// The interned name at `index`, shared rather than copied: a mark carries its name
+    /// as long as the page does.
+    fn constant_name(&self, index: u32) -> &'a Rc<str> {
         match self.constant(index) {
             Value::Str(s) => s,
             other => unreachable!("the compiler interns names as strings, not {other:?}"),
@@ -493,10 +521,59 @@ impl<'a> Vm<'a> {
                     .expect("an output buffer")
                     .push_str(text);
             }
-            Op::Capture => self.out.push(String::new()),
+            Op::Capture => self.out.push(Buffer::default()),
             Op::EndCapture => {
                 let captured = self.out.pop().expect("a capture buffer");
-                self.stack.push(Value::html(captured));
+                self.stack.push(captured.into_value());
+            }
+            Op::Mark { name } => {
+                let text = match self.pop() {
+                    Value::Html(text) => text,
+                    Value::Marked(_) => {
+                        return Err(
+                            "a mark cannot stand inside another mark's default".into()
+                        );
+                    }
+                    // Through `any`: the checker asks for `html` at the call.
+                    other => {
+                        return Err(format!(
+                            "a mark's default is html, got {}",
+                            other.type_name()
+                        )
+                        .into());
+                    }
+                };
+                let name = self.constant_name(name).clone();
+                let (file, span) = self.here();
+                let end = u32::try_from(text.len())
+                    .map_err(|_| "a mark's default is too long".to_owned())?;
+                self.stack.push(Value::Marked(Rc::new(Marked {
+                    text,
+                    marks: Box::from([Mark {
+                        name,
+                        start: 0,
+                        end,
+                        file,
+                        span,
+                    }]),
+                })));
+            }
+            Op::Collect { name } => {
+                let text = match self.pop() {
+                    Value::Html(text) => text,
+                    Value::Marked(_) => {
+                        return Err("a mark cannot be collected into a fragment".into());
+                    }
+                    other => unreachable!("a collect block captures html, not {other:?}"),
+                };
+                let name = self.constant_str(name);
+                let (file, span) = self.here();
+                let Some(fragments) = &mut self.fragments else {
+                    return Err("only a page render collects fragments, and this block \
+                                ran while the data was loading"
+                        .into());
+                };
+                fragments.push(name, Fragment { text, file, span });
             }
             Op::Return => {
                 let value = self.pop();
@@ -759,7 +836,15 @@ mod tests {
     }
 
     /// Runs `code` as the entry function with `constants`, returning the output.
-    fn run(constants: Vec<Value>, mut code: Vec<Op>) -> Result<String, RuntimeError> {
+    fn run(constants: Vec<Value>, code: Vec<Op>) -> Result<String, RuntimeError> {
+        rendered(constants, code).map(|rendered| rendered.html)
+    }
+
+    /// As [`run`], returning the whole render.
+    fn rendered(
+        constants: Vec<Value>,
+        mut code: Vec<Op>,
+    ) -> Result<Rendered, RuntimeError> {
         code.extend([Op::Const { index: 0 }, Op::Return]);
         let mut constants = constants;
         constants.insert(0, Value::Null);
@@ -779,6 +864,8 @@ mod tests {
                     len,
                 },
                 Op::TypeTest { name } => Op::TypeTest { name: name + 1 },
+                Op::Collect { name } => Op::Collect { name: name + 1 },
+                Op::Mark { name } => Op::Mark { name: name + 1 },
                 other => other,
             })
             .collect();
@@ -796,7 +883,7 @@ mod tests {
         Op::Const { index }
     }
 
-    fn error(result: Result<String, RuntimeError>) -> (u32, String) {
+    fn error<T: std::fmt::Debug>(result: Result<T, RuntimeError>) -> (u32, String) {
         let err = result.unwrap_err();
         assert_eq!(err.path, "t.lem");
         assert_eq!(err.span.end, err.span.start + 5);
@@ -878,7 +965,7 @@ mod tests {
             ],
         );
         let module = module(vec![Value::Int(1), Value::Int(10)], vec![entry, callee]);
-        assert_eq!(render(&module, "t.lem", &[]).unwrap(), "9");
+        assert_eq!(render(&module, "t.lem", &[]).unwrap().html, "9");
     }
 
     #[test]
@@ -970,7 +1057,7 @@ mod tests {
             ],
         );
         let module = module(vec![Value::Int(100), Value::Int(5)], vec![entry, lambda]);
-        assert_eq!(render(&module, "t.lem", &[]).unwrap(), "105");
+        assert_eq!(render(&module, "t.lem", &[]).unwrap().html, "105");
     }
 
     #[test]
@@ -1013,7 +1100,7 @@ mod tests {
         );
         let list = Value::list(vec![Value::Int(1), Value::Int(2)]);
         let module = module(vec![list, Value::Null], vec![entry, f]);
-        assert_eq!(render(&module, "t.lem", &[]).unwrap(), "1121");
+        assert_eq!(render(&module, "t.lem", &[]).unwrap().html, "1121");
     }
 
     #[test]
@@ -1098,7 +1185,7 @@ mod tests {
             Value::Null,
         ];
         let module = module(constants, vec![entry, increment]);
-        assert_eq!(render(&module, "t.lem", &[]).unwrap(), "42|");
+        assert_eq!(render(&module, "t.lem", &[]).unwrap().html, "42|");
     }
 
     #[test]
@@ -1202,6 +1289,220 @@ mod tests {
         };
         assert_eq!(program().unwrap(), "desc-0desc-1");
         assert_eq!(program().unwrap(), "desc-0desc-1");
+    }
+
+    #[test]
+    fn collects_a_captured_body_at_the_span_of_the_collect_that_first_gave_it() {
+        // Constants, 0-based and shifted by `run`: the body's text, then the name.
+        let body = [
+            Op::Capture,
+            Op::EmitText { index: 0 },
+            Op::EndCapture,
+            Op::Collect { name: 1 },
+        ];
+        let rendered = rendered(
+            vec![Value::str("a {}"), Value::str("styles")],
+            [body, body].concat(),
+        )
+        .unwrap();
+        assert_eq!(rendered.html, "");
+        let fragments = rendered.fragments.get("styles");
+        assert_eq!(fragments.len(), 1);
+        assert_eq!(&*fragments[0].text, "a {}");
+        // The first `Collect` is the fourth instruction: the one that ran, not the one
+        // after it.
+        assert_eq!(
+            (fragments[0].file, fragments[0].span),
+            (0, Span::new(30, 35))
+        );
+    }
+
+    /// The ops `mark(name)` with no default lowers to: the empty default, then the op.
+    /// Written 0-based like every name-carrying op here, and shifted by `run`.
+    const fn mark(default: u32, name: u32) -> [Op; 2] {
+        [Op::Const { index: default + 1 }, Op::Mark { name }]
+    }
+
+    #[test]
+    fn places_a_captured_mark_wherever_the_capture_is_printed() {
+        // Constants, 0-based: the default, the name, the capture's text, a separator.
+        let constants = vec![
+            Value::html(""),
+            Value::str("styles"),
+            Value::str("ab"),
+            Value::str("-"),
+        ];
+        let [default, name] = mark(0, 1);
+        // A mark reaches a buffer by being printed, which is what `<lem.mark(…)>` does.
+        let capture = vec![
+            Op::Capture,
+            Op::EmitText { index: 2 },
+            default,
+            name,
+            Op::Emit,
+            Op::EndCapture,
+            Op::StoreLocal { slot: 0 },
+        ];
+        let print = vec![Op::Local { slot: 0 }, Op::Emit];
+        let twice = rendered(
+            constants.clone(),
+            [
+                capture.clone(),
+                print.clone(),
+                vec![Op::EmitText { index: 3 }],
+                print,
+            ]
+            .concat(),
+        )
+        .unwrap();
+        assert_eq!(twice.html, "ab-ab");
+        let ranges: Vec<(u32, u32)> =
+            twice.marks.iter().map(|m| (m.start, m.end)).collect();
+        assert_eq!(ranges, [(2, 2), (5, 5)]);
+        // Both come from the one call, and point at it: the `Mark` op is the fourth
+        // instruction of the capture above.
+        assert!(twice.marks.iter().all(|mark| {
+            (&*mark.name, mark.file, mark.span) == ("styles", 0, Span::new(30, 35))
+        }));
+        // A capture never printed places nothing.
+        let unprinted = rendered(constants, capture).unwrap();
+        assert_eq!((unprinted.html.as_str(), unprinted.marks.len()), ("", 0));
+    }
+
+    #[test]
+    fn shifts_a_mark_through_every_capture_it_travels_in() {
+        let [default, name] = mark(0, 1);
+        let page = rendered(
+            vec![
+                Value::html(""),
+                Value::str("styles"),
+                Value::str("xy"),
+                Value::str("z"),
+            ],
+            vec![
+                // The outer capture holds `xy`, then the inner capture's `z` and mark.
+                Op::Capture,
+                Op::EmitText { index: 2 },
+                Op::Capture,
+                Op::EmitText { index: 3 },
+                default,
+                name,
+                Op::Emit,
+                Op::EndCapture,
+                Op::Emit,
+                Op::EndCapture,
+                Op::Emit,
+            ],
+        )
+        .unwrap();
+        assert_eq!(page.html, "xyz");
+        assert_eq!(page.marks.iter().map(|m| m.start).collect::<Vec<_>>(), [3]);
+    }
+
+    #[test]
+    fn keeps_a_default_under_the_mark_that_stands_for_it() {
+        let [default, name] = mark(0, 1);
+        let page = rendered(
+            vec![Value::html("<pre>code</pre>"), Value::str("code")],
+            vec![default, name, Op::Emit],
+        )
+        .unwrap();
+        assert_eq!(page.html, "<pre>code</pre>");
+        assert_eq!(
+            page.marks
+                .iter()
+                .map(|m| (m.start, m.end))
+                .collect::<Vec<_>>(),
+            [(0, 15)]
+        );
+    }
+
+    #[test]
+    fn keeps_two_marks_at_one_offset_in_the_order_they_were_printed() {
+        let [default, styles] = mark(0, 1);
+        let head = Op::Mark { name: 2 };
+        let page = rendered(
+            vec![Value::html(""), Value::str("styles"), Value::str("head")],
+            vec![default, styles, Op::Emit, default, head, Op::Emit],
+        )
+        .unwrap();
+        assert_eq!(page.html, "");
+        let names: Vec<&str> = page.marks.iter().map(|m| &*m.name).collect();
+        assert_eq!(names, ["styles", "head"]);
+    }
+
+    #[test]
+    fn passes_a_marked_value_through_raw_unchanged() {
+        let [default, name] = mark(0, 1);
+        let page = rendered(
+            vec![Value::html("<p>a</p>"), Value::str("toc")],
+            vec![
+                default,
+                name,
+                Op::CallBuiltin {
+                    id: ambient("raw"),
+                    argc: 1,
+                },
+                Op::Emit,
+            ],
+        )
+        .unwrap();
+        assert_eq!(page.html, "<p>a</p>");
+        assert_eq!(page.marks.len(), 1);
+    }
+
+    #[test]
+    fn refuses_a_mark_standing_in_another_marks_default() {
+        let [default, name] = mark(0, 1);
+        // At the second `Mark`, the third instruction.
+        assert_eq!(
+            error(rendered(
+                vec![Value::html(""), Value::str("styles")],
+                vec![default, name, Op::Mark { name: 1 }],
+            )),
+            (
+                2,
+                "a mark cannot stand inside another mark's default".to_owned()
+            )
+        );
+    }
+
+    #[test]
+    fn refuses_a_marked_value_collected_into_a_fragment() {
+        let [default, name] = mark(0, 1);
+        assert_eq!(
+            error(rendered(
+                vec![Value::html(""), Value::str("styles")],
+                vec![default, name, Op::Collect { name: 1 }],
+            )),
+            (2, "a mark cannot be collected into a fragment".to_owned())
+        );
+    }
+
+    #[test]
+    fn refuses_to_collect_while_the_loader_runs_a_function() {
+        let collects = function(
+            "styled",
+            &[],
+            &[],
+            vec![
+                Op::Capture,
+                Op::EndCapture,
+                Op::Collect { name: 0 },
+                Op::Const { index: 0 },
+                Op::Return,
+            ],
+        );
+        let module = module(vec![Value::str("styles")], vec![collects]);
+        let error = invoke(&module, 0, Vec::new(), &[]).unwrap_err();
+        assert_eq!(
+            (error.span, error.message.as_str()),
+            (
+                Span::new(20, 25),
+                "only a page render collects fragments, and this block ran while the data \
+                 was loading"
+            )
+        );
     }
 
     /// The cap is a stack budget, so the test that matters runs it on the stack it was

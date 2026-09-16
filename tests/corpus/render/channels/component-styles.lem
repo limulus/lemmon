@@ -1,0 +1,34 @@
+<lem-fn chip(label: string)>
+  <li class="chip"><lem.label></li>
+  <lem-style>
+    .chip {
+      display: inline-block;
+      > a { color: inherit; }
+    }
+  </lem-style>
+</lem-fn>
+<lem-fn chipList(slot: html)>
+  <ul class="chip-list">
+    <lem.slot>
+  </ul>
+  <lem-style>
+    .chip-list { display: flex; gap: 0.5em; }
+  </lem-style>
+</lem-fn>
+<lem-fn styles(): html = mark("styles") />
+<lem-fn head(): html = mark("head") />
+<lem-fn shell(slot: html)>
+  <head>
+    <lem.styles()><lem.head()>
+  </head>
+  <body><lem.slot></body>
+</lem-fn>
+<lem-let chips>
+  <lem.chip("eric")>
+  <lem.chip("2024-11-24")>
+  <lem.chip("til")>
+</lem-let>
+<lem-let main>
+  <lem.chipList(chips)>
+</lem-let>
+<lem.shell(main)>

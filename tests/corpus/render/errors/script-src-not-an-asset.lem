@@ -1,0 +1,5 @@
+<lem-fn video(poster: string)>
+  <video poster="<lem.poster>" controls></video>
+  <lem-script src = "/lib/video-on-demand/index.js" />
+</lem-fn>
+<lem.video("/vod/poster.jpg")>

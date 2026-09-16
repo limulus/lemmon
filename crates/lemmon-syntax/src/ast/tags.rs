@@ -51,6 +51,12 @@ ast_enum!(
         EnumDecl(EnumDecl),
         /// `<lem-match subject> cases </lem-match>`
         Match(MatchTag),
+        /// `<lem-style> … </lem-style>`
+        StyleBlock(StyleBlock),
+        /// `<lem-head> … </lem-head>`
+        HeadBlock(HeadBlock),
+        /// `<lem-script src = expr />`
+        ScriptVoid(ScriptVoid),
         /// A builtin outside the parsed subset.
         Unsupported(UnsupportedTag),
         /// A `lem-*` name that is no builtin.
@@ -560,7 +566,49 @@ impl Pattern {
 }
 
 ast_node!(
-    /// A builtin outside the parsed subset, kept opaquely.
+    /// `<lem-style> … </lem-style>`
+    StyleBlock,
+    StyleBlock
+);
+
+impl StyleBlock {
+    /// The items whose rendered text is collected under `styles`.
+    #[must_use]
+    pub fn body(&self) -> Option<Block> {
+        child(&self.syntax)
+    }
+}
+
+ast_node!(
+    /// `<lem-head> … </lem-head>`
+    HeadBlock,
+    HeadBlock
+);
+
+impl HeadBlock {
+    /// The items whose rendered text is collected under `head`.
+    #[must_use]
+    pub fn body(&self) -> Option<Block> {
+        child(&self.syntax)
+    }
+}
+
+ast_node!(
+    /// `<lem-script src = expr />`
+    ScriptVoid,
+    ScriptVoid
+);
+
+impl ScriptVoid {
+    /// The expression after `src =`, whose URL is collected under `scripts`.
+    #[must_use]
+    pub fn src(&self) -> Option<Expr> {
+        head_child(&self.syntax)
+    }
+}
+
+ast_node!(
+    /// A builtin outside the parsed subset, kept opaquely. Always void.
     UnsupportedTag,
     UnsupportedTag
 );
@@ -570,12 +618,6 @@ impl UnsupportedTag {
     #[must_use]
     pub fn open_tag(&self) -> Option<SyntaxToken> {
         token(&self.syntax, SyntaxKind::OpenTag)
-    }
-
-    /// The body, when the builtin is a block.
-    #[must_use]
-    pub fn body(&self) -> Option<Block> {
-        child(&self.syntax)
     }
 }
 
@@ -1062,16 +1104,48 @@ mod tests {
     }
 
     #[test]
+    fn exposes_the_body_of_a_style_block() {
+        let Item::StyleBlock(tag) = first_item("<lem-style>a<lem.b></lem-style>") else {
+            panic!("expected a style block");
+        };
+        assert_eq!(
+            item_texts(&tag.body().expect("a body").items().collect::<Vec<_>>()),
+            vec!["a", "<lem.b>"]
+        );
+    }
+
+    #[test]
+    fn exposes_the_body_of_a_head_block() {
+        let Item::HeadBlock(tag) = first_item("<lem-head><link></lem-head>") else {
+            panic!("expected a head block");
+        };
+        assert_eq!(
+            item_texts(&tag.body().expect("a body").items().collect::<Vec<_>>()),
+            vec!["<link>"]
+        );
+    }
+
+    #[test]
+    fn exposes_the_source_of_a_script() {
+        let Item::ScriptVoid(tag) = first_item("<lem-script src = asset(\"a.js\") />")
+        else {
+            panic!("expected a script");
+        };
+        assert_eq!(expr_text(tag.src()).as_deref(), Some("asset(\"a.js\")"));
+        // A head that names something other than `src` still yields what follows its
+        // `=`, never the misnamed word.
+        let Item::ScriptVoid(tag) = first_item("<lem-script href = x />") else {
+            panic!("expected a script");
+        };
+        assert_eq!(expr_text(tag.src()).as_deref(), Some("x"));
+    }
+
+    #[test]
     fn exposes_the_opener_of_unsupported_and_unknown_tags() {
-        let Item::Unsupported(tag) = first_item("<lem-style>a</lem-style>") else {
+        let Item::Unsupported(tag) = first_item("<lem-import photos />") else {
             panic!("expected an unsupported tag");
         };
-        assert_eq!(text(tag.open_tag()), "<lem-style");
-        assert_eq!(tag.body().expect("a body").items().count(), 1);
-        let Item::Unsupported(tag) = first_item("<lem-script />") else {
-            panic!("expected an unsupported tag");
-        };
-        assert!(tag.body().is_none());
+        assert_eq!(text(tag.open_tag()), "<lem-import");
         let Item::Unknown(tag) = first_item("<lem-iff x>") else {
             panic!("expected an unknown tag");
         };

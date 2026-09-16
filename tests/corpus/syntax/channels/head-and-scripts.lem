@@ -1,0 +1,15 @@
+<lem-fn gallery(photos: [Photo], feed: url?)>
+  <lem-head>
+    <link rel="preconnect" href="https://cdn.limulus.net">
+    <lem-if feed>
+      <link rel="alternate" type="application/atom+xml" href="<lem.feed>">
+    </lem-if>
+  </lem-head>
+  <lem-script src = asset("scripts/gallery.js") />
+  <lem.mark("styles")>
+  <ul class="gallery">
+    <lem-for photo in photos>
+      <li><lem.photo.title></li>
+    </lem-for>
+  </ul>
+</lem-fn>

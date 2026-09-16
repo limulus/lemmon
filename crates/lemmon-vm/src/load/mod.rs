@@ -550,6 +550,7 @@ pub(crate) mod tests {
     use lemmon_syntax::{LineIndex, Span};
 
     use super::*;
+    use crate::rendered::{Mark, Marked};
     use crate::testing::{all_of, at};
     use crate::{SourceFile, compile};
 
@@ -632,6 +633,35 @@ pub(crate) mod tests {
             path: None,
             spans: Spans::new(),
         })
+    }
+
+    #[test]
+    fn takes_marked_markup_where_a_host_supplies_html() {
+        // A Rust host hands the loader `Value`s, and a render's own output is among what
+        // it may hand back: marked markup is `html` like any other (D42), and nothing
+        // about carrying a mark makes it another type.
+        const MARKED: &str = "<lem-type Page>\n  url: string\n</lem-type>\n\
+                              <lem-type Build>\n  banner: html\n</lem-type>";
+        let module = module(&shell(), &[("ambient.lem", MARKED), ("site.lem", "")]);
+        let banner = Value::Marked(Rc::new(Marked {
+            text: Rc::from("<b>hi</b>"),
+            marks: Box::from([Mark {
+                name: Rc::from("head"),
+                start: 0,
+                end: 9,
+                file: 0,
+                span: Span::new(0, 1),
+            }]),
+        }));
+        let data = Data {
+            ambient: vec![("build".to_owned(), object(&[("banner", banner.clone())]))],
+            sources: Vec::new(),
+        };
+        let store = load(&module, &shell(), data).unwrap().expect_output();
+        let Value::Record(build) = &store.ambient[0].1 else {
+            panic!("a tagged record");
+        };
+        assert_eq!(build.fields.get("banner"), Some(&banner));
     }
 
     #[test]

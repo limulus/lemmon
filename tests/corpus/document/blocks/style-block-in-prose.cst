@@ -1,0 +1,17 @@
+Root@0..151
+  Text@0..48
+    Text@0..48 "The paragraph after the block is styled "…
+  StyleBlock@48..106
+    OpenTag@48..58 "<lem-style"
+    Head@58..58
+    Close@58..59 ">"
+    Block@59..94
+      Text@59..94
+        Text@59..94 "\n  p.aside { font-style: italic; }\n"
+    CloseTag@94..106
+      CloseTag@94..105 "</lem-style"
+      Close@105..106 ">"
+  Text@106..151
+    Text@106..151 "\n\nThe block renders nothing where it sta"…
+
+--- diagnostics

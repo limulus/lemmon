@@ -19,7 +19,7 @@ use crate::closure::{self, Closed, ReadClosure};
 use crate::compile::{Compiled, Diagnostic, Runs, index_u32, refused_at_load};
 use crate::decls::{DeclKind, Declaration, Decls, Shape, TypeFact};
 use crate::exports::ExportIndex;
-use crate::host::Host;
+use crate::host::{ClaimState, Host};
 use crate::plan::{
     BindingStep, Bindings, Fulfilled, Index, RecordPlan, SourceKind, Step, order,
 };
@@ -69,6 +69,9 @@ pub struct Unit {
     /// stops declaring any — leaves this unit stale, and a document with no language
     /// named untouched.
     pub grammar_ref: Option<GrammarRef>,
+    /// The sixth: what the host's claims said about each mark name this file placed, at
+    /// the first `mark()` that named it.
+    pub claim_refs: Vec<ClaimRef>,
     /// The record the host compiled this file as, which types its document value: a
     /// fact of the unit like the rest, and the reason two documents of different
     /// schemas cannot share one.
@@ -234,6 +237,17 @@ pub struct AssetRef {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GrammarRef {
     pub digest: Option<u64>,
+    pub span: Span,
+}
+
+/// A mark name a file placed, with what the host's claims said about it when the file
+/// compiled: the warning at an unclaimed name was answered then, and ∆7wK will type a
+/// payload there too, so a declaration that starts or stops claiming the name leaves
+/// this unit stale.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ClaimRef {
+    pub name: Rc<str>,
+    pub state: ClaimState,
     pub span: Span,
 }
 
@@ -406,6 +420,39 @@ pub fn link(units: &[Unit], index: &ExportIndex, host: &Host) -> Compiled<Module
                     ));
                 }
             }
+            // A claim is the host's as a grammar is, and says whether a name is
+            // handled: a file compiled where one claimed it warned about nothing, and
+            // one compiled where none did warned at the word.
+            for reference in &unit.claim_refs {
+                let now = host.claim_state(&reference.name);
+                if now == reference.state {
+                    continue;
+                }
+                let name = &reference.name;
+                diagnostics.push(Diagnostic::error(
+                    &unit.path,
+                    reference.span,
+                    match (reference.state, now) {
+                        (ClaimState::Claimed, _) => format!(
+                            "no handler claims `{name}` now, and this file was compiled \
+                             where one did"
+                        ),
+                        (_, ClaimState::Claimed) => format!(
+                            "a handler claims `{name}` now, and this file was compiled \
+                             where none did"
+                        ),
+                        (ClaimState::Undeclared, _) => format!(
+                            "the host declares handlers now, and this file was compiled \
+                             against none, so nothing was said about `{name}`"
+                        ),
+                        _ => format!(
+                            "the host declares no handlers now, and this file was \
+                             compiled against the ones it did, which left `{name}` \
+                             unclaimed"
+                        ),
+                    },
+                ));
+            }
             for reference in &unit.type_refs {
                 match index.lookup_type(&reference.name) {
                     Some(export) if export.decl.fact() == reference.fact => {}
@@ -564,7 +611,9 @@ pub fn link(units: &[Unit], index: &ExportIndex, host: &Host) -> Compiled<Module
                     | Op::OptField { name }
                     | Op::CallDynamic { name, .. }
                     | Op::MakeRecord { name, .. }
-                    | Op::TypeTest { name } => {
+                    | Op::TypeTest { name }
+                    | Op::Collect { name }
+                    | Op::Mark { name } => {
                         *name = add_u32(constant_offset, *name);
                     }
                     Op::Global { func: target }
@@ -1313,7 +1362,9 @@ mod tests {
         let module =
             link(&units, &ExportIndex::of(&units), &untyped_host()).expect_output();
         assert_eq!(
-            render(&module, "page.lem", &[("page", Value::Null)]).unwrap(),
+            render(&module, "page.lem", &[("page", Value::Null)])
+                .unwrap()
+                .html,
             "HELLO you"
         );
     }
@@ -1336,7 +1387,9 @@ mod tests {
         let module =
             link(&units, &ExportIndex::of(&units), &untyped_host()).expect_output();
         assert_eq!(
-            render(&module, "page.lem", &[("page", Value::Null)]).unwrap(),
+            render(&module, "page.lem", &[("page", Value::Null)])
+                .unwrap()
+                .html,
             "hello-there firstsecond"
         );
     }
@@ -1367,7 +1420,9 @@ mod tests {
         let module =
             link(&units, &ExportIndex::of(&units), &untyped_host()).expect_output();
         assert_eq!(
-            render(&module, "page.lem", &[("page", Value::Null)]).unwrap(),
+            render(&module, "page.lem", &[("page", Value::Null)])
+                .unwrap()
+                .html,
             "oak"
         );
     }
@@ -1462,7 +1517,9 @@ mod tests {
             link(&units, &index, &untyped_host()).expect_output()
         );
         assert_eq!(
-            render(&module, "page.lem", &[("page", Value::Null)]).unwrap(),
+            render(&module, "page.lem", &[("page", Value::Null)])
+                .unwrap()
+                .html,
             "a42b"
         );
     }
@@ -2094,6 +2151,63 @@ mod tests {
         let units = [unit];
         assert!(
             link(&units, &ExportIndex::of(&units), &highlighted)
+                .output
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn refuses_to_link_a_file_whose_marks_the_host_claims_differently_now() {
+        // What the claims said was answered while the file compiled — the warning at the
+        // word, and with ∆7wK a payload's type — so any change to what they say about a
+        // name this file marks leaves it stale, at that name.
+        const SRC: &str = "<lem.mark(\"styles\")>";
+        let files = [("page.lem", SRC)];
+        let claimed = Host::untyped(["page"]).with_marks(["styles"]);
+        let other = Host::untyped(["page"]).with_marks(["head"]);
+        let none = Host::untyped(["page"]);
+        for (compiled, now, message) in [
+            (
+                &claimed,
+                &other,
+                "no handler claims `styles` now, and this file was compiled where one did",
+            ),
+            (
+                &other,
+                &claimed,
+                "a handler claims `styles` now, and this file was compiled where none did",
+            ),
+            (
+                &none,
+                &other,
+                "the host declares handlers now, and this file was compiled against none, \
+                 so nothing was said about `styles`",
+            ),
+            (
+                &other,
+                &none,
+                "the host declares no handlers now, and this file was compiled against \
+                 the ones it did, which left `styles` unclaimed",
+            ),
+        ] {
+            let units = [unit_against(compiled, "page.lem", &files)];
+            let linked = link(&units, &ExportIndex::of(&units), now);
+            assert_eq!(
+                linked
+                    .diagnostics
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>(),
+                [format!("page.lem:{}: {message}", at(SRC, "\"styles\""))]
+            );
+        }
+        // Unchanged claims link, and one name marked twice is one fact.
+        const TWICE: &str = "<lem.mark(\"styles\")><lem.mark(\"styles\")>";
+        let unit = unit_against(&claimed, "page.lem", &[("page.lem", TWICE)]);
+        assert_eq!(unit.claim_refs.len(), 1);
+        let units = [unit];
+        assert!(
+            link(&units, &ExportIndex::of(&units), &claimed)
                 .output
                 .is_some()
         );

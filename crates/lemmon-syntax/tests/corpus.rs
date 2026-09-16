@@ -247,7 +247,7 @@ fn visit_items(items: impl Iterator<Item = Item>, out: &mut Vec<(u32, u32)>) {
     for item in items {
         out.push(range(item.syntax()));
         match &item {
-            Item::Text(_) | Item::Unknown(_) => {}
+            Item::Text(_) | Item::Unknown(_) | Item::Unsupported(_) => {}
             Item::Access(a) => visit_expr(a.expr(), out),
             Item::If(tag) => {
                 for IfArm {
@@ -311,7 +311,9 @@ fn visit_items(items: impl Iterator<Item = Item>, out: &mut Vec<(u32, u32)>) {
                     visit_block(default.body(), out);
                 }
             }
-            Item::Unsupported(tag) => visit_block(tag.body(), out),
+            Item::StyleBlock(tag) => visit_block(tag.body(), out),
+            Item::HeadBlock(tag) => visit_block(tag.body(), out),
+            Item::ScriptVoid(tag) => visit_expr(tag.src(), out),
         }
     }
 }

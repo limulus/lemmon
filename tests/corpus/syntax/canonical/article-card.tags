@@ -1,5 +1,5 @@
-Root@0..998
-  FnBlock@0..997
+Root@0..1166
+  FnBlock@0..1165
     Text@38..85
     AccessTag@85..102
     Text@102..111
@@ -40,6 +40,10 @@ Root@0..998
     AccessTag@831..871
     Text@871..901
     AccessTag@901..948
-    Text@948..988
-    CloseTag@988..997
-  Text@997..998
+    Text@948..990
+    StyleBlock@990..1155
+      Text@1001..1143
+      CloseTag@1143..1155
+    Text@1155..1156
+    CloseTag@1156..1165
+  Text@1165..1166

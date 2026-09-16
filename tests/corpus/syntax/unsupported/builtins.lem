@@ -1,9 +1,2 @@
-<lem-style>
-  .article-card { color: rebeccapurple }
-</lem-style>
-<lem-head>
-  <meta name="description" content="x">
-</lem-head>
 <lem-import photos />
-<lem-script />
 <lem.after>

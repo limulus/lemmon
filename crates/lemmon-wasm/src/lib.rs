@@ -347,8 +347,9 @@ impl Core {
             .map(|store| store.globals(&linked.host, &page.path))
             .unwrap_or_default();
         let result = match render(&linked.module, &page.path, &globals) {
-            Ok(html) => RenderResult {
-                html: Some(html),
+            // The marks and fragments beside the page: not here yet (∆1Hp).
+            Ok(rendered) => RenderResult {
+                html: Some(rendered.html),
                 diagnostics: Vec::new(),
             },
             Err(error) => RenderResult {

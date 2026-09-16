@@ -1,0 +1,15 @@
+<lem-fn video(src: string)>
+  <lem-script />
+  <lem-script href = asset("scripts/video.js") />
+  <lem-script src="/lib/video-on-demand/index.js" />
+  <lem-script>
+    document.querySelector("video").play()
+  </lem-script>
+  <lem-style class="video">
+    video { width: 100%; }
+  </lem-style>
+  <lem-emit styles />
+  <lem-style>
+    <p>a</p>
+  </lem-head>
+</lem-fn>

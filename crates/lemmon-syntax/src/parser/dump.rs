@@ -122,6 +122,9 @@ fn is_boundary(kind: SyntaxKind, in_items: bool) -> bool {
             | SyntaxKind::MatchTag
             | SyntaxKind::CaseTag
             | SyntaxKind::DefaultTag
+            | SyntaxKind::StyleBlock
+            | SyntaxKind::HeadBlock
+            | SyntaxKind::ScriptVoid
             | SyntaxKind::UnsupportedTag
             | SyntaxKind::UnknownTag
             | SyntaxKind::CloseTag

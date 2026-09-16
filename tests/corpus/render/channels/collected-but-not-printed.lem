@@ -1,0 +1,13 @@
+<lem-fn mapBox(place: string)>
+  <div class="map-box"><lem.place></div>
+  <lem-head>
+    <link rel="preconnect" href="https://api.mapbox.com">
+  </lem-head>
+</lem-fn>
+<lem-let figure>
+  <lem.mapBox("Letchworth State Park")>
+</lem-let>
+<lem-if site.name == "a site with maps">
+  <lem.figure>
+</lem-if>
+<p>no map on this page, and still its preconnect</p>

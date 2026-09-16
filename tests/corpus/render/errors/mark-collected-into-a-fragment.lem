@@ -1,0 +1,7 @@
+<lem-fn card()>
+  <div class="card">a</div>
+  <lem-style>
+    .card { padding: <lem.mark("styles")>; }
+  </lem-style>
+</lem-fn>
+<lem.card()>

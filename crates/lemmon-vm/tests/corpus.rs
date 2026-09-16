@@ -28,9 +28,9 @@ use std::sync::OnceLock;
 use glob::Pattern;
 use lemmon_corpus::Case;
 use lemmon_vm::{
-    Ambient, Data, Decls as _, Fulfilled, Host, HostSpan, LineIndex, Loaded, Map, Module,
-    Op, Source, SourceFile, SourceKind, Span, Spans, Value, collects, compile, field_path,
-    is_document, load, render,
+    Ambient, Data, Decls as _, Fulfilled, Host, HostSpan, LineIndex, Loaded, Map, Mark,
+    Module, Op, Rendered, Source, SourceFile, SourceKind, Span, Spans, Value, collects,
+    compile, field_path, is_document, load, render,
 };
 use saphyr::{LoadableYamlNode, MarkedYaml, Scalar, YamlData};
 
@@ -40,13 +40,17 @@ const GROUP: &str = "render";
 /// standard shell binds, none of them typed. That is a host a site really has — the
 /// Phase 0 spike's — and what any document no collection matched sees. It declares the
 /// grammars in `document/grammars/`, as a shell declares its set (D40), so a case's code
-/// is highlighted by fixtures its reader can hold the output against.
+/// is highlighted by fixtures its reader can hold the output against, and it claims the
+/// three names the shell's own bundler handles (D42), so a case can place a mark under
+/// one and a case that misspells one warns.
 fn untyped_host() -> Host {
-    Host::untyped(["site", "page", "build"]).with_grammars(
-        grammars()
-            .iter()
-            .map(|(path, text)| (path.as_str(), text.as_str())),
-    )
+    Host::untyped(["site", "page", "build"])
+        .with_marks(["styles", "head", "scripts"])
+        .with_grammars(
+            grammars()
+                .iter()
+                .map(|(path, text)| (path.as_str(), text.as_str())),
+        )
 }
 
 /// The fixture grammars, as `(path, text)` in file-name order.
@@ -183,15 +187,48 @@ fn page() -> Value {
 }
 
 /// Renders a compiled case: its output, or the runtime error as a diagnostic line.
+///
+/// The output is the page with its marks shown where they stand, then each fragment it
+/// collected under a `--- name` line of its own, in name order and then in the order the
+/// render reached them. The sections stand above the diagnostics trailer, which is found
+/// by its last header, so they pass through blessing as page text does.
 fn rendered(
     module: &Module,
     path: &str,
     globals: &[(&str, Value)],
 ) -> (String, Option<String>) {
     match render(module, path, globals) {
-        Ok(html) => (html, None),
+        Ok(Rendered {
+            html,
+            marks,
+            fragments,
+        }) => {
+            let mut out = marked(&html, &marks);
+            for (name, fragments) in fragments.iter() {
+                for fragment in fragments {
+                    let _ = write!(out, "\n--- {name}\n{}", fragment.text);
+                }
+            }
+            (out, None)
+        }
         Err(error) => (String::new(), Some(error.to_string())),
     }
+}
+
+/// The page with each mark shown where it stands: `⟦mark styles⟧` where its range is
+/// empty, `⟦mark toc⟧…⟦/mark⟧` around default content. Written back to front, so every
+/// offset is still the one the render gave; marks at one offset keep the order they were
+/// printed in, which is the order they arrive in.
+fn marked(html: &str, marks: &[Mark]) -> String {
+    let mut out = html.to_owned();
+    for mark in marks.iter().rev() {
+        let at = |offset: u32| usize::try_from(offset).expect("an offset in this page");
+        if mark.end > mark.start {
+            out.insert_str(at(mark.end), "⟦/mark⟧");
+        }
+        out.insert_str(at(mark.start), &format!("⟦mark {}⟧", mark.name));
+    }
+    out
 }
 
 /// The output and diagnostics of a case in the shape the `.html` expectation takes:

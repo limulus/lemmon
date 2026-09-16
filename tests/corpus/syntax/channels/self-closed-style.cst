@@ -1,0 +1,45 @@
+Root@0..78
+  FnBlock@0..77
+    OpenTag@0..7 "<lem-fn"
+    Trivia@7..8 " "
+    Head@8..27
+      Ident@8..12 "card"
+      Params@12..27
+        LParen@12..13 "("
+        Param@13..26
+          Ident@13..18 "title"
+          TypeAnnotation@18..26
+            Colon@18..19 ":"
+            Trivia@19..20 " "
+            NamedType@20..26
+              Ident@20..26 "string"
+        RParen@26..27 ")"
+    Close@27..28 ">"
+    Block@28..68
+      Text@28..31
+        Text@28..31 "\n  "
+      StyleBlock@31..68
+        OpenTag@31..41 "<lem-style"
+        Trivia@41..42 " "
+        Head@42..42
+        SelfClose@42..44 "/>"
+        Block@44..68
+          Text@44..51
+            Text@44..51 "\n  <h2>"
+          AccessTag@51..62
+            OpenAccess@51..56 "<lem."
+            Head@56..61
+              NameRef@56..61
+                Ident@56..61 "title"
+            Close@61..62 ">"
+          Text@62..68
+            Text@62..68 "</h2>\n"
+    CloseTag@68..77
+      CloseTag@68..76 "</lem-fn"
+      Close@76..77 ">"
+  Text@77..78
+    Text@77..78 "\n"
+
+--- diagnostics
+2:14..2:16: `lem-style` is a block tag and cannot be self-closed: expected `>`
+4:1..4:9: found `</lem-fn>` while `lem-style` is still open: expected `</lem-style>`

@@ -110,6 +110,12 @@ syntax_kinds! {
     CaseTag,
     /// `<lem-default> … </lem-default>` — likewise.
     DefaultTag,
+    /// `<lem-style> … </lem-style>` — its rendered body collected under `styles`.
+    StyleBlock,
+    /// `<lem-head> … </lem-head>` — its rendered body collected under `head`.
+    HeadBlock,
+    /// `<lem-script src = expr />` — the asset's URL collected under `scripts`.
+    ScriptVoid,
     /// A builtin outside the parsed subset, skipped opaquely.
     UnsupportedTag,
     /// A `lem-*` name that is no builtin.

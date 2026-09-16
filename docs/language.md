@@ -64,9 +64,10 @@ Scanner rules the parser and the tree-sitter grammar must agree on:
 - There is no compile-time comment tag. HTML comments are text and pass through to the
   output — and a trigger inside one still fires.
 - `lt lte gt gte in is as true false null` are reserved words: they cannot be used as
-  identifiers or as named-argument names. `extends`, `by` and `from` are contextual —
-  `extends` in a `lem-type` head, `by` after a field's type, `from` after the name in a
-  `lem-let` head or in a `lem-import` head — and ordinary names anywhere else.
+  identifiers or as named-argument names. `extends`, `by`, `from` and `src` are
+  contextual — `extends` in a `lem-type` head, `by` after a field's type, `from` after the
+  name in a `lem-let` head or in a `lem-import` head, `src` opening a `lem-script` head —
+  and ordinary names anywhere else.
 
 Parser recovery rules — what a tag's shape is when its terminator or close tag
 contradicts it, and what each such mistake costs. The tree-sitter grammar must agree
@@ -132,8 +133,8 @@ follows:
 | `lem-type` | `Name` / `Name extends Base` | Record schema (block); fields in the body, one per line, lexed in fields mode (D29). See § Schemas. |
 | `lem-enum` | `Name = a \| b \| c` | Enum (void); its variants are written bare here, and nowhere else. In an expression a variant is `.hero` where the enum is expected and `Placement.hero` anywhere; a string in front matter. |
 | `lem-import` | `name from plugin("p")` · `{ names } from plugin("p")` | Bind a plugin's shipped functions/types — qualified or promoted (D23). Site files never import each other. Void; lives in `site.lem`. |
-| `lem-style` / `lem-head` | — | Block collect tags: the rendered body is a fragment under `styles` or `head`, collected per page from every function actually called, deduplicated by content, resolved in the host (§ Marks). |
-| `lem-script` | `src=asset(…)` | Void collect tag: the asset's URL is a fragment under `scripts`. |
+| `lem-style` / `lem-head` | — | Block collect tags: the rendered body — a template, as a capture's is, so a string printed in it is escaped as anywhere — is a fragment under `styles` or `head`, resolved in the host (§ Marks). A block collects when it runs, from every function actually called, whether or not the value it stands in is printed; fragments are deduplicated by content, and an empty body collects nothing. Only a page render collects: a block reached while the host's data loads is an error. |
+| `lem-script` | `src = asset(…)` | Void collect tag: the asset's URL, printed as `<lem.…>` prints one, is a fragment under `scripts`, collected as the block tags' are. Only an `asset` is admitted, so a script is one the build produced; the markup that loads it is the host's. |
 
 ## Expressions
 
@@ -142,7 +143,7 @@ follows:
 | Literals | `"text"`, `"Link: {linkTitle}"`, `42`, `1.5`, `true`, `null`, `[a, b]`, `{k: v}` | A `{k: v}` written where a record is expected is a value of that record (§ Checking, Literals). String interpolation `{…}` (`{{` for a literal brace — delimiter is a deferred question); until it is settled, an interpolated expression may not itself contain a string literal. No datetime literal: a fixed date is `datetime("2024-11-24")` (stdlib, validated at compile time when the argument is a literal). |
 | Access | `a.b`, `a?.b`, `xs[i]`, `m["key"]` | `.` asks the type on its left and nothing else: a record's field, an enum's variant when the name on its left is one (below), or — called — a builtin type's method. A map is indexed. `?.` propagates null and needs an optional on its left; `a?.b.c` needs a second `?.`, since `a?.b` is optional. An out-of-range list index or a missing map key is a render error, not null. |
 | Variants | `.hero`, `Placement.hero` | `.hero` is a variant of whichever enum is expected where it stands; where none is, qualify it. A bare `hero` is only ever a name. In a `?:` leave the space — `?.` is one token, so `c ?.hero : .left` reads as a member access. |
-| Calls | `f(x)`, `f(x, nolink: true)`, `xs.first()` | Positional then named. A bare name is a `lem-fn` or an ambient function. `x.f(…)` reads the receiver's type (D34): a builtin type's method — `heading.slugify()`, `words.first()`, `m.keys()` — or a record's field `f` called as the value it holds. Nothing consults the enclosing scope, so a project `lem-fn` is never reached through a dot: it is `rendition(photo, md, jpeg)`, not `photo.rendition(md, jpeg)`. On `any` the VM resolves the name at render time. |
+| Calls | `f(x)`, `f(x, nolink: true)`, `xs.first()` | Positional then named. A bare name is a `lem-fn` or an ambient function. Of the stdlib only `mark()` takes a named argument (§ Marks); every other builtin takes positional arguments alone. `x.f(…)` reads the receiver's type (D34): a builtin type's method — `heading.slugify()`, `words.first()`, `m.keys()` — or a record's field `f` called as the value it holds. Nothing consults the enclosing scope, so a project `lem-fn` is never reached through a dot: it is `rendition(photo, md, jpeg)`, not `photo.rendition(md, jpeg)`. On `any` the VM resolves the name at render time. |
 | Lambdas | `\|a\| a.date`, `\|a, b\| a.date lt b.date` | Parameter types inferred from the expected function type, or from the builtin whose argument the lambda is: `xs.map(\|a\| …)` types `a` from the element type of `xs` and infers the return from the body (D34); with none expected they are `any` (provisional). |
 | Arithmetic | `+ - * / %`, unary `-` | `+` also concatenates strings; `string + int` is a type error. |
 | Comparison/logic | `== !=`, `lt lte gt gte`, `&& \|\| !`, `a ?? b`, `c ? a : b` | Equality structural. Ordering on numbers, strings, datetimes. |
@@ -697,16 +698,18 @@ layout from the output and nothing else. Text around block tags is otherwise pre
 written.
 
 **Statement lines (D27).** A tag that renders nothing where it stands — `lem-let` or
-`lem-fn`, void form or block — takes its line with it when nothing else stands on that
-line, so a file laid out one statement per line leaks no blank line per statement.
+`lem-fn`, void form or block, a `lem-type` or `lem-enum`, and the collect tags
+`lem-style`, `lem-head` and `lem-script` — takes its line with it when nothing else stands
+on that line, so a file laid out one statement per line leaks no blank line per statement.
 `<lem.…>` renders in place and keeps the line it is written on; `lem-if`/`lem-for` render
 their bodies and keep theirs.
 
-**Body normalization (D26).** A `lem-fn` block body and a `lem-let` capture body are
-normalized at compile time:
+**Body normalization (D26).** A `lem-fn` block body, a `lem-let` capture body, and a
+`lem-style` or `lem-head` body are normalized at compile time:
 
 - one newline-and-indent is trimmed at each edge — one per edge, so a deliberate blank
-  line survives as one;
+  line survives as one. The edge is where the body ends once the statement rule has taken
+  its lines, so a `lem-style` closing a component's body leaves no newline behind;
 - the lines that remain are dedented by the longest whitespace prefix they share, blank
   lines ignored, so a definition's own indentation never reaches the output and relative
   indentation survives;
@@ -746,23 +749,36 @@ collapsed blindly (D15's "normalized"; `scripts/lib/rendered-html.ts`).
 
 ## Marks (D42)
 
-`mark(name, payload?, default?)` returns `html` that stands for a range the host fills
-after the page renders. The default — an `html` value, captured and passed (D22) — is
-what the page holds until a handler replaces it, and nothing when there is none. The
-name is a literal, checked against the names the host's producers claim, with a
-did-you-mean; a payload is a record the claim names, checked at the call, and a literal
-key in it is checked against the producer's keys, a computed one by the handler at
-build. The claims a file read are a compile-time fact of its unit (D25). A host that
-claims a name ships an ordinary `lem-fn` wrapping it —
+`mark(name, payload?, default: html)` returns `html` that stands for a range the host
+fills after the page renders. The default — an `html` value, captured and passed (D22) —
+is what the page holds until a handler replaces it, and nothing when there is none. It is
+written as a named argument, the one named argument any builtin takes, which is what
+leaves the positional slot to a payload (∆7wK).
+
+The name is a literal: the claims are read while the file compiles, so a name a render
+computes could be checked against nothing, and is refused where it stands. It is checked
+against the names the host's handlers claim, and a name none of them claims is a
+**warning** at the word, with a did-you-mean — the page is correct either way, since the
+mark keeps its default content. A host that declares no handlers at all — the playground,
+the editor — says nothing about any name. What the claims said is a compile-time fact of
+the unit (D25), so a plugin that starts or stops claiming a name leaves the files that
+mark it stale, and them alone. A payload is a record the claim names, checked at the call,
+and a literal key in it is checked against the producer's keys, a computed one by the
+handler at build.
+
+A host that claims a name ships an ordinary `lem-fn` wrapping it —
 `<lem-fn styles(): html = mark("styles") />` — so a layout reads `<lem.styles()>` and a
 site author writes the primitive only where no wrapper exists; a plugin's component
-wraps its own mark the same way. A captured value carrying marks places them as often as
-it is printed, and `==` on `html` compares marks as well as text. A mark inside a
+wraps its own mark the same way.
+
+A mark travels on the value it was made in: a captured value carrying marks places them
+as often as it is printed, and none if it is never printed. `==` on `html` compares marks
+as well as text — by what they place, not by where the `mark()` that made them was
+written. `readingTime` counts a default's text like any other. A mark inside a
 `lem-style`/`lem-head` body, a payload, or a default is a render error at the block or
-the call. A rendered body that reaches a
-template as a value is a string of finished output the host loaded back for a second
-render phase, never `html` carrying marks. _Not yet (∆1Hp): `mark()`, the collect tags,
-and the claims; nor (∆7wK) a payload._
+the call. A rendered body that reaches a template as a value is a string of finished
+output the host loaded back for a second render phase, never `html` carrying marks.
+_Not yet (∆7wK): a payload._
 
 ## Document mode (D07, D08)
 

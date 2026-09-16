@@ -15,13 +15,13 @@
 
 use std::rc::Rc;
 
-use lemmon_syntax::Span;
 use lemmon_syntax::ast::TypeExpr;
+use lemmon_syntax::{Span, nearest};
 
 use crate::decls::{DeclKind, Declaration, Decls, FieldDecl, Shape};
-use crate::host::no_asset;
+use crate::host::{ClaimState, no_asset};
 use crate::types::Type;
-use crate::unit::{AmbientRef, AssetRef, ImportRef, TypeRef};
+use crate::unit::{AmbientRef, AssetRef, ClaimRef, ImportRef, TypeRef};
 
 use super::surfaces::PreparedFile;
 use super::{Compiler, Diagnostic, annotations, duplicate_named};
@@ -88,6 +88,40 @@ impl Compiler<'_> {
             span,
         });
         Some(url)
+    }
+
+    /// Records what the host's claims say about the mark name `name`, and warns where
+    /// the host declares handlers and none claims it (D42).
+    ///
+    /// A fact of the unit for `asset_ref`'s reason: the answer is given while this file
+    /// compiles, so a declaration that starts or stops claiming the name has to leave
+    /// the unit stale. A host that declares no handlers at all says nothing — the
+    /// playground and the editor render pages no plugin ever touches, and every mark in
+    /// them is meant to keep its default content.
+    pub(super) fn claim_ref(&mut self, name: &str, span: Span) {
+        let state = self.host.claim_state(name);
+        if !self
+            .unit
+            .claim_refs
+            .iter()
+            .any(|reference| &*reference.name == name)
+        {
+            self.unit.claim_refs.push(ClaimRef {
+                name: Rc::from(name),
+                state,
+                span,
+            });
+        }
+        if state != ClaimState::Unclaimed {
+            return;
+        }
+        let message = match nearest(name, self.host.claimed_names()) {
+            Some(near) => format!("no handler claims `{name}`; did you mean `{near}`?"),
+            None => format!(
+                "no handler claims `{name}`, so this mark keeps its default content"
+            ),
+        };
+        self.warn(span, message);
     }
 
     /// The type an ambient value has here, recorded as a fact of this unit the first

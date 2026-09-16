@@ -1,6 +1,7 @@
 # D27 — Statement lines
 
-- **Status:** Accepted 2026-08-24 (∆2vO), widening the void-tag-only line rule from ∆c8h
+- **Status:** Accepted 2026-08-24 (∆2vO), widening the void-tag-only line rule from ∆c8h;
+  (∆1Hp) the collect tags `lem-style`, `lem-head` and `lem-script` take their line
 - **Backlog item:** ∆2vO
 - **Normative text:** `docs/language.md` § Whitespace
 

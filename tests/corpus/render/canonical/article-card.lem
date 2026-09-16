@@ -53,6 +53,12 @@
       </div>
     </a>
   </article>
+  <lem-style>
+    .article-card {
+      > a { display: block; overflow: hidden; }
+      img.preview { display: block; width: 100%; height: auto; }
+    }
+  </lem-style>
 </lem-fn>
 <lem-let hero = {url: "/photos/upper-falls.jpg", alt: "Upper Falls, Letchworth State Park"} />
 <lem-let articles: any = [

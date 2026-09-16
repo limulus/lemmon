@@ -1,0 +1,9 @@
+<lem-fn swatch(name: string, colour: string)>
+  <span class="swatch-<lem.name>"></span>
+  <lem-style>
+    .swatch-<lem.name> { background: <lem.colour>; }
+  </lem-style>
+</lem-fn>
+<lem.swatch("sea", "#2a6f97")>
+<lem.swatch("sand", "#e9d8a6")>
+<lem.swatch("sea", "#2a6f97")>

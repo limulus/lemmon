@@ -1,55 +1,21 @@
-Root@0..178
-  UnsupportedTag@0..65
-    OpenTag@0..10 "<lem-style"
-    Head@10..10
-    Close@10..11 ">"
-    Block@11..53
-      Text@11..53
-        Text@11..53 "\n  .article-card { color: rebeccapurple "…
-    CloseTag@53..65
-      CloseTag@53..64 "</lem-style"
-      Close@64..65 ">"
-  Text@65..66
-    Text@65..66 "\n"
-  UnsupportedTag@66..128
-    OpenTag@66..75 "<lem-head"
-    Head@75..75
-    Close@75..76 ">"
-    Block@76..117
-      Text@76..117
-        Text@76..117 "\n  <meta name=\"description\" content=\"x\">"…
-    CloseTag@117..128
-      CloseTag@117..127 "</lem-head"
-      Close@127..128 ">"
-  Text@128..129
-    Text@128..129 "\n"
-  UnsupportedTag@129..150
-    OpenTag@129..140 "<lem-import"
-    Trivia@140..141 " "
-    Head@141..147
-      Ident@141..147 "photos"
-    Trivia@147..148 " "
-    SelfClose@148..150 "/>"
-  Text@150..151
-    Text@150..151 "\n"
-  UnsupportedTag@151..165
-    OpenTag@151..162 "<lem-script"
-    Trivia@162..163 " "
-    Head@163..163
-    SelfClose@163..165 "/>"
-  Text@165..166
-    Text@165..166 "\n"
-  AccessTag@166..177
-    OpenAccess@166..171 "<lem."
-    Head@171..176
-      NameRef@171..176
-        Ident@171..176 "after"
-    Close@176..177 ">"
-  Text@177..178
-    Text@177..178 "\n"
+Root@0..34
+  UnsupportedTag@0..21
+    OpenTag@0..11 "<lem-import"
+    Trivia@11..12 " "
+    Head@12..18
+      Ident@12..18 "photos"
+    Trivia@18..19 " "
+    SelfClose@19..21 "/>"
+  Text@21..22
+    Text@21..22 "\n"
+  AccessTag@22..33
+    OpenAccess@22..27 "<lem."
+    Head@27..32
+      NameRef@27..32
+        Ident@27..32 "after"
+    Close@32..33 ">"
+  Text@33..34
+    Text@33..34 "\n"
 
 --- diagnostics
-1:1..1:11: `lem-style` is not supported yet (∆1Hp)
-4:1..4:10: `lem-head` is not supported yet (∆1Hp)
-7:1..7:12: `lem-import` is not supported yet (∆PgF)
-8:1..8:12: `lem-script` is not supported yet (∆1Hp)
+1:1..1:12: `lem-import` is not supported yet (∆PgF)

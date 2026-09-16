@@ -3,9 +3,10 @@
 //! [`compile`] lowers every file of a site to one [`Module`] of bytecode, checking types
 //! as it lowers (D31); [`load`] validates the data a host hands it against the module's
 //! declarations and runs the module's plans, building what every render binds (D37);
-//! [`render`] runs a file's entry function and returns its HTML. The VM is the runtime
-//! for `any`: what the checker could not decide statically — every operation on a value
-//! typed `any` — it checks at run time, with a span.
+//! [`render`] runs a file's entry function and returns its HTML with the fragments its
+//! collect blocks gathered (D42). The VM is the runtime for `any`: what the checker could
+//! not decide statically — every operation on a value typed `any` — it checks at run
+//! time, with a span.
 
 mod builtins;
 mod bytecode;
@@ -18,6 +19,7 @@ mod exports;
 mod host;
 mod load;
 mod plan;
+mod rendered;
 #[cfg(test)]
 mod testing;
 mod types;
@@ -40,9 +42,10 @@ pub use compile::{
 pub use datetime::Datetime;
 pub use decls::{DeclKind, Declaration, Decls, FieldDecl, Shape, ShapeFact, TypeFact};
 pub use exports::{Export, ExportIndex, TypeExport};
-pub use host::{Ambient, Host};
+pub use host::{Ambient, ClaimState, Host};
 pub use load::{Data, HostSpan, Loaded, Source, Spans, Store, collects, field_path, load};
 pub use plan::{BindingStep, Bindings, Fulfilled, Index, RecordPlan, SourceKind, Step};
+pub use rendered::{Fragment, Fragments, Mark, Marked, Rendered};
 pub use types::Type;
 pub use unit::{
     Access, BindingFn, Call, DefaultFn, ExportedSignature, GrammarRef, ImportRef,

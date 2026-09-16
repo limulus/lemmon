@@ -1,0 +1,41 @@
+Root@0..199
+  Text@0..47
+    Text@0..47 "The page's own prose stands around the b"…
+  LetBlock@47..134
+    OpenTag@47..55 "<lem-let"
+    Trivia@55..56 " "
+    Head@56..62
+      Ident@56..62 "styles"
+    Close@62..63 ">"
+    Block@63..124
+      Text@63..124
+        Text@63..124 "\n  <link rel=\"stylesheet\" href=\"/assets/"…
+    CloseTag@124..134
+      CloseTag@124..133 "</lem-let"
+      Close@133..134 ">"
+  Text@134..135
+    Text@134..135 "\n"
+  AccessTag@135..172
+    OpenAccess@135..140 "<lem."
+    Head@140..171
+      CallExpr@140..171
+        NameRef@140..144
+          Ident@140..144 "mark"
+        ArgList@144..171
+          LParen@144..145 "("
+          Literal@145..153
+            StringLit@145..153 "\"styles\""
+          Comma@153..154 ","
+          Trivia@154..155 " "
+          NamedArg@155..170
+            Ident@155..162 "default"
+            Colon@162..163 ":"
+            Trivia@163..164 " "
+            NameRef@164..170
+              Ident@164..170 "styles"
+          RParen@170..171 ")"
+    Close@171..172 ">"
+  Text@172..199
+    Text@172..199 "\n\nAnd more prose after it.\n"
+
+--- diagnostics

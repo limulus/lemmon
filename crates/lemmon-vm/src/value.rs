@@ -17,10 +17,11 @@
 
 use std::borrow::Cow;
 use std::cmp::Ordering;
-use std::fmt::Write as _;
+use std::fmt::{self, Write as _};
 use std::rc::Rc;
 
 use crate::datetime::Datetime;
+use crate::rendered::{Buffer, Marked};
 
 /// An insertion-ordered string-keyed map — the shape front-matter records and map
 /// literals take. Lookup is linear; records in the spike have a handful of fields.
@@ -137,6 +138,9 @@ pub enum Value {
     Str(Rc<str>),
     /// Trusted markup; emitted verbatim.
     Html(Rc<str>),
+    /// Trusted markup carrying marks — named ranges the host fills after the render
+    /// (D42). Behind an `Rc` so that a `Value` stays 24 bytes (D38).
+    Marked(Rc<Marked>),
     /// A moment, and the offset it was written in; equal and ordered by the moment.
     Datetime(Datetime),
     /// A span of time, in whole seconds. Has no printed form: a site says how it wants
@@ -209,7 +213,7 @@ impl Value {
             Self::Int(_) => "int",
             Self::Float(_) => "float",
             Self::Str(_) => "string",
-            Self::Html(_) => "html",
+            Self::Html(_) | Self::Marked(_) => "html",
             Self::Datetime(_) => "datetime",
             Self::Duration(_) => "duration",
             Self::Url(_) => "url",
@@ -233,17 +237,19 @@ impl Value {
         }
     }
 
-    /// Appends this value to `out` the way `<lem.…>` prints it.
+    /// Appends this value to `out` the way `<lem.…>` prints it — marked markup with its
+    /// marks, shifted to where its text now stands.
     ///
     /// # Errors
     ///
     /// For a value that has no printed form — `null`, a `bool`, a list, a map, or a
     /// function. The checker reports these at compile time; here they come through
-    /// `any`.
-    pub fn emit(&self, out: &mut String) -> Result<(), String> {
+    /// `any`. And for output too long to carry a mark's offsets.
+    pub(crate) fn emit(&self, out: &mut Buffer) -> Result<(), String> {
         match self {
             Self::Str(s) => escape_html(s, out),
             Self::Html(h) => out.push_str(h),
+            Self::Marked(marked) => out.push_marked(marked)?,
             Self::Int(i) => {
                 let _ = write!(out, "{i}");
             }
@@ -350,22 +356,59 @@ fn maps_equal(a: &Map, b: &Map) -> Result<bool, String> {
 
 /// Appends `text` to `out` with `& < > " '` replaced by entities — safe in text content
 /// and in quoted attribute values alike.
-pub fn escape_html(text: &str, out: &mut String) {
+pub fn escape_html(text: &str, out: &mut impl fmt::Write) {
     for c in text.chars() {
-        match c {
-            '&' => out.push_str("&amp;"),
-            '<' => out.push_str("&lt;"),
-            '>' => out.push_str("&gt;"),
-            '"' => out.push_str("&quot;"),
-            '\'' => out.push_str("&#39;"),
-            other => out.push(other),
-        }
+        let _ = match c {
+            '&' => out.write_str("&amp;"),
+            '<' => out.write_str("&lt;"),
+            '>' => out.write_str("&gt;"),
+            '"' => out.write_str("&quot;"),
+            '\'' => out.write_str("&#39;"),
+            other => out.write_char(other),
+        };
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use lemmon_syntax::Span;
+
     use super::*;
+    use crate::rendered::Mark;
+
+    /// Two values that would put the same content in the same place are one value,
+    /// wherever the `mark()` calls that made them were written: `==` on `html` asks
+    /// about the page, not about the source.
+    #[test]
+    fn compares_marked_markup_by_what_its_marks_place() {
+        let mark = |name: &str, end: u32, at: u32| Mark {
+            name: Rc::from(name),
+            start: 0,
+            end,
+            file: 0,
+            span: Span::new(at, at + 1),
+        };
+        let marked = |mark: Mark| {
+            Value::Marked(Rc::new(Marked {
+                text: Rc::from("x"),
+                marks: Box::from([mark]),
+            }))
+        };
+        let styles = marked(mark("styles", 1, 4));
+        assert_eq!(styles.equals(&marked(mark("styles", 1, 40))), Ok(true));
+        assert_eq!(styles.equals(&marked(mark("head", 1, 4))), Ok(false));
+        assert_eq!(styles.equals(&marked(mark("styles", 0, 4))), Ok(false));
+        // Markup of the same text with no mark in it places nothing, so it is neither.
+        assert_eq!(styles.equals(&Value::html("x")), Ok(false));
+        assert_eq!(Value::html("x").equals(&styles), Ok(false));
+    }
+
+    /// A value is copied on every push, pop, and capture, so its size is a budget (D38).
+    /// `Marked` rides behind an `Rc` to stay inside it.
+    #[test]
+    fn stays_within_its_budget_of_twenty_four_bytes() {
+        assert_eq!(size_of::<Value>(), 24);
+    }
 
     #[test]
     fn builds_a_map_from_unique_entries_in_their_order() {
@@ -389,8 +432,9 @@ mod tests {
     }
 
     fn emitted(value: &Value) -> Result<String, String> {
-        let mut out = String::new();
-        value.emit(&mut out).map(|()| out)
+        let mut buffer = Buffer::default();
+        value.emit(&mut buffer)?;
+        Ok(buffer.into_parts().0)
     }
 
     #[test]

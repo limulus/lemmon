@@ -79,6 +79,12 @@ impl Compiler<'_> {
             }
             Some(Resolved::Builtin(id)) => {
                 let name = name.expect("a builtin has a name");
+                // `mark()` alone takes a named argument, and reads both of them here.
+                if (BUILTINS[id as usize].reach, BUILTINS[id as usize].name)
+                    == (Reach::Ambient, "mark")
+                {
+                    return self.call_mark(id, &positional, &named, span);
+                }
                 if self.reject_named(&named, &name) {
                     self.discard(&positional, &named);
                     return Type::Any;
@@ -285,6 +291,74 @@ impl Compiler<'_> {
         let index = self.constant(value);
         self.emit(Op::Const { index }, argument.span());
         Type::Asset
+    }
+
+    /// Lowers `mark("name")` or `mark("name", default: expr)` to an `Op::Mark`.
+    ///
+    /// The name is a literal for [`call_asset`](Self::call_asset)'s reason: the claims
+    /// are read while this file compiles, so a name a render computes could be checked
+    /// against nothing and recorded as no fact. The default is named — the language's
+    /// one named argument to a builtin — which is what keeps ∆7wK's positional payload
+    /// additive: no call written today has a second positional argument to mean
+    /// something else. It is always lowered, an empty `html` where the call omits it, so
+    /// the op pops one value however the call was written.
+    fn call_mark(
+        &mut self,
+        id: u32,
+        positional: &[Expr],
+        named: &[NamedArg],
+        span: Span,
+    ) -> Type {
+        if self.require(
+            span,
+            rules::builtin(&BUILTINS[id as usize], positional.len()),
+        ) {
+            self.discard(positional, named);
+            return Type::Html;
+        }
+        let argument = positional.first().expect("arity is checked above");
+        let Some(literal) = string_literal(argument.clone()) else {
+            self.error(
+                argument.span(),
+                "`mark()` needs a name written as a literal: the host's claims are read \
+                 while this file compiles, and a name a render computes cannot be \
+                 checked then"
+                    .to_owned(),
+            );
+            self.discard(positional, named);
+            return Type::Html;
+        };
+        let name = decode_string(literal.text());
+        self.claim_ref(&name, literal.span());
+        let mut default = None;
+        for argument in named {
+            let written = required(argument.name());
+            if written.text() == "default" && default.is_none() {
+                default = Some(required(argument.value()));
+            } else {
+                self.error(
+                    written.span(),
+                    format!(
+                        "`mark()` takes one named argument, `default`, and takes it once, \
+                         not `{}`",
+                        written.text()
+                    ),
+                );
+                self.discard(&[required(argument.value())], &[]);
+            }
+        }
+        match default {
+            Some(expr) => {
+                self.check(&expr, &Type::Html);
+            }
+            None => {
+                let index = self.constant(Value::html(""));
+                self.emit(Op::Const { index }, span);
+            }
+        }
+        let name = self.intern(&name);
+        self.emit(Op::Mark { name }, span);
+        Type::Html
     }
 
     /// Reports a first argument written as a literal that `read` refuses, at the

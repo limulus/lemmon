@@ -161,6 +161,7 @@ pub fn compile_unit(
             type_refs: Vec::new(),
             ambient_refs: Vec::new(),
             asset_refs: Vec::new(),
+            claim_refs: Vec::new(),
             grammar_ref: prepared.grammar_ref.clone(),
             record: prepared.record.clone(),
             defaults: Vec::new(),
@@ -892,6 +893,11 @@ impl<'a> Compiler<'a> {
             .push(Diagnostic::error(self.path, span, message));
     }
 
+    fn warn(&mut self, span: Span, message: impl Into<String>) {
+        self.diagnostics
+            .push(Diagnostic::warning(self.path, span, message));
+    }
+
     // --- Names ----------------------------------------------------------------------
 
     fn push_scope(&mut self) {
@@ -947,7 +953,7 @@ mod tests {
     /// The host every test below compiles against unless it needs another: the three
     /// names the standard shell binds, none of them typed.
     fn untyped_host() -> Host {
-        Host::untyped(["site", "page", "build"])
+        Host::untyped(["site", "page", "build"]).with_marks(["styles", "head", "scripts"])
     }
 
     fn run(src: &str) -> Result<String, String> {
@@ -959,7 +965,9 @@ mod tests {
         let Some(module) = compiled.output else {
             return Err(shown(&compiled.diagnostics).join("\n"));
         };
-        render(&module, entry, &[("page", Value::str("P"))]).map_err(|e| e.to_string())
+        render(&module, entry, &[("page", Value::str("P"))])
+            .map(|rendered| rendered.html)
+            .map_err(|e| e.to_string())
     }
 
     fn shown(diagnostics: &[Diagnostic]) -> Vec<String> {
@@ -1572,6 +1580,143 @@ mod tests {
     }
 
     #[test]
+    fn warns_at_a_mark_name_no_handler_claims() {
+        const SRC: &str = "<lem.mark(\"stylez\")>";
+        let compiled = compile(&[SourceFile::new("t.lem", SRC)], &untyped_host());
+        assert_eq!(
+            shown(&compiled.diagnostics),
+            [format!(
+                "t.lem:{}: warning: no handler claims `stylez`; did you mean `styles`?",
+                at(SRC, "\"stylez\"")
+            )]
+        );
+        // The page is still correct without a handler, so the unit is still built.
+        assert!(compiled.output.is_some());
+    }
+
+    #[test]
+    fn says_nothing_about_a_mark_where_the_host_declares_no_handlers() {
+        // A playground or an editor runs no plugins (D42): every mark there is meant to
+        // keep its default content, and warning at each would be noise.
+        const SRC: &str = "<lem.mark(\"stylez\")>";
+        let bare = Host::untyped(["site", "page", "build"]);
+        let compiled = compile(&[SourceFile::new("t.lem", SRC)], &bare);
+        assert_eq!(shown(&compiled.diagnostics), Vec::<String>::new());
+    }
+
+    #[test]
+    fn warns_at_every_mark_of_a_name_no_handler_claims() {
+        // Each `mark()` is its own written mistake, and the warning stands at the word
+        // the author would fix. What is recorded once is the fact behind them.
+        const SRC: &str = "<lem.mark(\"stylez\")><lem.mark(\"stylez\")>";
+        let compiled = compile(&[SourceFile::new("t.lem", SRC)], &untyped_host());
+        let spans: Vec<Span> = compiled.diagnostics.iter().map(|d| d.span).collect();
+        assert_eq!(
+            spans,
+            [
+                at(SRC, "«\"stylez\"»)><"),
+                at(SRC, "><lem.mark(«\"stylez\"»)")
+            ]
+        );
+    }
+
+    #[test]
+    fn refuses_a_mark_name_a_render_would_compute() {
+        const SRC: &str = "<lem-let name = \"styles\" />\n<lem.mark(name)>";
+        assert_eq!(
+            shown(&compile_errors(&[SourceFile::new("t.lem", SRC)])),
+            [format!(
+                "t.lem:{}: `mark()` needs a name written as a literal: the host's claims \
+                 are read while this file compiles, and a name a render computes cannot \
+                 be checked then",
+                at(SRC, "mark(«name»)")
+            )]
+        );
+    }
+
+    #[test]
+    fn takes_a_marks_default_as_one_named_argument() {
+        // The default is `html`, and named: `mark("toc", default: …)`, never a second
+        // positional, which ∆7wK's payload takes.
+        assert_eq!(
+            run("<lem-let fallback>none yet</lem-let>\n<lem.mark(\"styles\", default: fallback)>")
+                .unwrap(),
+            "none yet"
+        );
+        const STRING: &str = "<lem.mark(\"styles\", default: \"x\")>";
+        assert_eq!(
+            run(STRING).unwrap_err(),
+            format!(
+                "t.lem:{}: expected `html`, got `string`",
+                at(STRING, "\"x\"")
+            ),
+        );
+        const NAMED: &str = "<lem.mark(\"styles\", fallback: 1)>";
+        assert_eq!(
+            run(NAMED).unwrap_err(),
+            format!(
+                "t.lem:{}: `mark()` takes one named argument, `default`, and takes it \
+                 once, not `fallback`",
+                at(NAMED, "fallback")
+            )
+        );
+    }
+
+    #[test]
+    fn keeps_equal_fragments_from_two_files_once_under_one_name() {
+        // Each file interns `styles` among its own constants, so after link the name
+        // stands at a different index in each: a render that kept fragments by index
+        // would give this CSS twice. No single-file case can show it.
+        const LIB: &str = "<lem-fn card()><lem-style>.card {}</lem-style>card</lem-fn>";
+        const PAGE: &str = "<lem-style>.card {}</lem-style><lem.card()>";
+        let files = [
+            SourceFile::new("lib.lem", LIB),
+            SourceFile::new("page.lem", PAGE),
+        ];
+        let module = compile(&files, &untyped_host()).output.expect("a module");
+        let rendered = render(&module, "page.lem", &[]).unwrap();
+        assert_eq!(rendered.html, "card");
+        let [fragment] = rendered.fragments.get("styles") else {
+            panic!("one fragment: {:?}", rendered.fragments);
+        };
+        // The page's own block ran first, so the fragment points there.
+        assert_eq!(
+            (module.files[fragment.file as usize].as_str(), fragment.span),
+            ("page.lem", at(PAGE, "<lem-style>.card {}</lem-style>"))
+        );
+    }
+
+    #[test]
+    fn places_a_mark_from_the_file_the_call_stands_in() {
+        // The name is a constant of the file that marks, and link offsets each file's
+        // pool: an `Op::Mark` left out of that rebasing would read the page's constants
+        // instead, under a name nothing claims. Only a module of two files shows it —
+        // and the same case pins the file a handler's diagnostic would point at.
+        const LIB: &str = "<lem-fn styles(): html = mark(\"styles\") />";
+        const PAGE: &str = "<p>a</p><lem.styles()>";
+        let lib = SourceFile::new("lib.lem", LIB);
+        let page = SourceFile::new("page.lem", PAGE);
+        // Both orders, since a file linked first is offset by nothing and would hide a
+        // missing rebase.
+        for files in [[lib.clone(), page.clone()], [page, lib]] {
+            let module = compile(&files, &untyped_host()).output.expect("a module");
+            let rendered = render(&module, "page.lem", &[]).unwrap();
+            let [mark] = rendered.marks.as_slice() else {
+                panic!("one mark: {:?}", rendered.marks);
+            };
+            assert_eq!(
+                (
+                    &*mark.name,
+                    module.files[mark.file as usize].as_str(),
+                    mark.span,
+                    (mark.start, mark.end)
+                ),
+                ("styles", "lib.lem", at(LIB, "mark(\"styles\")"), (8, 8))
+            );
+        }
+    }
+
+    #[test]
     fn calls_a_function_across_files_whichever_order_the_files_come_in() {
         // Both orders, so a link that forgot to offset a unit's local indices — under
         // which `two` here collides with `one` or the other file's entry — misrenders.
@@ -1880,7 +2025,7 @@ mod tests {
                 "{src}"
             );
             let module = compiled.output.expect("a module still comes with warnings");
-            assert_eq!(render(&module, "t.lem", &[]).unwrap(), out, "{src}");
+            assert_eq!(render(&module, "t.lem", &[]).unwrap().html, out, "{src}");
         }
         // A name that is not the stdlib's does not warn.
         assert_eq!(

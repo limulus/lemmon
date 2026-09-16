@@ -61,32 +61,10 @@ impl Builtin {
         nearest(name, BUILTINS.iter().map(|(n, _)| *n))
     }
 
-    /// Whether the tag is a block — for the builtins the parser keeps opaquely. The
-    /// ones it parses are dispatched by name before this is consulted.
-    fn is_block(self) -> bool {
-        match self {
-            Self::If
-            | Self::ElseIf
-            | Self::Else
-            | Self::For
-            | Self::Let
-            | Self::Fn
-            | Self::Match
-            | Self::Case
-            | Self::Default
-            | Self::Type
-            | Self::Enum => {
-                unreachable!("parsed builtins are dispatched by name")
-            }
-            Self::Style | Self::Head => true,
-            Self::Import | Self::Script => false,
-        }
-    }
-
     /// Why an opaque builtin is refused: the tail of its diagnostic, naming the backlog
     /// item that gives it meaning. The phrase and the item share a row so that the
     /// placeholder gate (∆DA2) can see them together and fail the build once that item
-    /// has landed and the refusal has outlived it.
+    /// has landed and the refusal has outlived it. Every opaque builtin is void.
     fn unsupported(self) -> &'static str {
         match self {
             Self::If
@@ -99,10 +77,12 @@ impl Builtin {
             | Self::Case
             | Self::Default
             | Self::Type
-            | Self::Enum => {
+            | Self::Enum
+            | Self::Style
+            | Self::Head
+            | Self::Script => {
                 unreachable!("parsed builtins are dispatched by name")
             }
-            Self::Style | Self::Head | Self::Script => "is not supported yet (∆1Hp)",
             Self::Import => "is not supported yet (∆PgF)",
         }
     }
@@ -321,9 +301,10 @@ fn block_close(p: &mut Parser<'_>, name: &str) {
 }
 
 /// Whether the current head contains an `=` — the void marker of `lem-let` and
-/// `lem-fn`. Nothing else in a head can be an `=` (named arguments use `:`, there is
-/// no assignment), so no bracket counting is needed, and a stray one in malformed
-/// input still means the author wrote the void form.
+/// `lem-fn`, the only heads it is asked of. Nothing else in such a head can be an `=`
+/// (named arguments use `:`, there is no assignment), so no bracket counting is needed,
+/// and a stray one in malformed input still means the author wrote the void form. The
+/// `=` in a `lem-enum` or `lem-script` head marks nothing: those tags have one shape.
 fn head_has_eq(p: &Parser<'_>) -> bool {
     p.tokens[p.pos.min(p.tokens.len())..]
         .iter()
@@ -455,24 +436,26 @@ fn open_tag<'src>(p: &mut Parser<'src>, stack: &mut Vec<Open<'src>>) {
             };
             block(p, m, kind, name, span, Body::Plain, stack);
         }
-        _ => {
+        Builtin::Style | Builtin::Head => {
+            head(p, |p| {
+                p.skip_to_head_end(&format!("`lem-{name}` takes no head"))
+            });
+            let kind = match builtin {
+                Builtin::Style => SyntaxKind::StyleBlock,
+                _ => SyntaxKind::HeadBlock,
+            };
+            block(p, m, kind, name, span, Body::Plain, stack);
+        }
+        Builtin::Script => {
+            head(p, script_head);
+            void_close(p);
+            m.complete(p, SyntaxKind::ScriptVoid);
+        }
+        Builtin::Import => {
             p.error(format!("`lem-{name}` {}", builtin.unsupported()), span);
-            let is_block = builtin.is_block();
             opaque_head(p);
-            if is_block {
-                block(
-                    p,
-                    m,
-                    SyntaxKind::UnsupportedTag,
-                    name,
-                    span,
-                    Body::Plain,
-                    stack,
-                );
-            } else {
-                void_close(p);
-                m.complete(p, SyntaxKind::UnsupportedTag);
-            }
+            void_close(p);
+            m.complete(p, SyntaxKind::UnsupportedTag);
         }
     }
 }
@@ -799,6 +782,19 @@ fn for_head(p: &mut Parser<'_>) {
     expr::expression(p);
 }
 
+/// `src = expr`. `src` is contextual: the one thing a `lem-script` head names, and a
+/// plain name anywhere else — including the expression after the `=`.
+fn script_head(p: &mut Parser<'_>) {
+    if p.at(TokenKind::Ident) && p.current_text() == "src" {
+        p.bump();
+    } else {
+        p.error_expected("`src`");
+    }
+    skip_until(p, TokenKind::Eq, "unexpected tokens before `=`");
+    p.expect(TokenKind::Eq, "`=`");
+    expr::expression(p);
+}
+
 /// `name [: Type] = expr`
 fn let_void_head(p: &mut Parser<'_>) {
     p.expect(TokenKind::Ident, "a name");
@@ -975,14 +971,7 @@ mod tests {
     }
 
     #[test]
-    fn knows_the_fixed_shape_of_every_opaque_builtin() {
-        assert!(Builtin::Style.is_block());
-        assert!(!Builtin::Script.is_block());
-    }
-
-    #[test]
     fn names_the_item_each_opaque_builtin_waits_on() {
-        assert!(Builtin::Style.unsupported().ends_with("(∆1Hp)"));
         assert!(Builtin::Import.unsupported().ends_with("(∆PgF)"));
     }
 }
@@ -1125,13 +1114,58 @@ mod parse_tests {
     }
 
     #[test]
-    fn tracks_the_nesting_of_an_unsupported_block_builtin() {
+    fn parses_a_collect_block_nested_in_another_clean() {
         assert_eq!(
             messages("<lem-style><lem-head>a</lem-head></lem-style>"),
-            vec![
-                "`lem-style` is not supported yet (∆1Hp)",
-                "`lem-head` is not supported yet (∆1Hp)"
-            ]
+            Vec::<String>::new()
+        );
+    }
+
+    #[test]
+    fn rejects_a_head_on_a_collect_block() {
+        assert_eq!(
+            diagnostics("<lem-style class=\"x\">a</lem-style>"),
+            vec![(Span::new(11, 20), "`lem-style` takes no head".into())]
+        );
+        assert_eq!(
+            messages("<lem-head x>a</lem-head>"),
+            vec!["`lem-head` takes no head"]
+        );
+    }
+
+    #[test]
+    fn parses_a_script_head_as_src_and_an_expression() {
+        assert_eq!(
+            messages("<lem-script src = asset(\"a.js\") />"),
+            Vec::<String>::new()
+        );
+    }
+
+    #[test]
+    fn names_what_a_script_head_is_missing() {
+        assert_eq!(
+            messages("<lem-script />"),
+            vec!["expected `src` before `/>`"]
+        );
+        assert_eq!(
+            messages("<lem-script href = x />"),
+            vec!["expected `src`, found `href`"]
+        );
+        assert_eq!(
+            messages("<lem-script src />"),
+            vec!["expected `=` before `/>`"]
+        );
+        assert_eq!(
+            messages("<lem-script src = />"),
+            vec!["expected an expression before `/>`"]
+        );
+    }
+
+    #[test]
+    fn keeps_a_script_void_whatever_follows_it() {
+        assert_eq!(
+            messages("<lem-script src=\"/x.js\">code</lem-script>"),
+            vec!["stray `</lem-script>`: no `lem-script` is open"]
         );
     }
 
@@ -1345,10 +1379,10 @@ mod parse_tests {
     #[test]
     fn still_reports_an_unclosed_block_after_an_error_at_its_opener() {
         assert_eq!(
-            messages("<lem-style>hello"),
+            messages("<lem-default>hello"),
             vec![
-                "`lem-style` is not supported yet (∆1Hp)",
-                "unclosed `lem-style`: expected `</lem-style>` before end of input",
+                "`lem-default` outside `lem-match`",
+                "unclosed `lem-default`: expected `</lem-default>` before end of input",
             ]
         );
     }

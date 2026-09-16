@@ -2,7 +2,12 @@
 
 - **Status:** Accepted 2026-09-13, settled in a planning pass before ∆1Hp was built,
   superseding D40 and retiring `lem-emit` unbuilt; ∆1Hp builds the mark and ∆7wK the
-  fence, and either adds a clause here for what the build changes
+  fence, and either adds a clause here for what the build changes. As built (∆1Hp): a
+  name no handler claims is a warning, and a host that declares no handlers says nothing;
+  `default` is a named argument, which keeps ∆7wK's positional payload additive;
+  `mark()` lowers to an `Op::Mark` rather than running as a builtin, since a builtin
+  cannot reach its call's file and span; a mark and a fragment each carry the file they
+  were made in beside their span
 - **Backlog item:** ∆1Hp (the mark, claims by name, the collect tags, the boundary);
   ∆7wK (the `code` mark, keys and payloads, the core's highlighter removed)
 - **Normative text:** `docs/language.md` § Marks, § Document mode, Code blocks;

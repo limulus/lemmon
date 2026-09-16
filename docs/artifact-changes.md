@@ -217,16 +217,27 @@ moved it. Newest last. An entry is removed when its change has been applied.
   `lem-emit` row: placement is `<lem.mark("styles")>`, an ambient constructor beside
   `raw()` and `asset()`. Rewrite the `lem-style`/`lem-head`/`lem-script` rows as collect
   tags: the body, or the script's URL, is a fragment under `styles`, `head`, or `scripts`,
-  deduplicated by content, resolved in the host. Add `mark` to the ambient inventory and a
+  deduplicated by content, resolved in the host; a block collects when it runs, whether or
+  not the value it stands in is printed, an empty body collects nothing, and only a page
+  render collects. `lem-script`'s head is `src = asset(…)`, `src` contextual there. Add `mark` to the ambient inventory and a
   Marks section as `docs/language.md` § Marks reads: `mark(name, payload?, default?)`
   returns `html` standing for a range the host fills, its default an `html` value passed
-  capture-then-call, its literal name and key checked against the host's claims and
-  recorded as a fact, a mark inside a fragment, a payload, or a default a render error,
+  capture-then-call as the *named* argument `default:` — the one named argument a builtin
+  takes, which leaves the positional slot to ∆7wK's payload — its literal name and key
+  checked against the host's claims, a name none claims a warning and a host declaring no
+  handlers silent, the claims recorded as a fact, a mark inside a fragment, a payload, or
+  a default a render error,
   and a rendered body reaching a template a string of finished output from a second
   render phase. In Escaping, a producer's output is the host's trust (D42).
 
 - **Deferred questions** — add raw text in templates: a `: string` capture scanned as
   text and call-with-body sugar (`lem-with`/`lem-raw`) over it, both additive (∆M5x, D42).
+
+- **Whitespace, statement lines and body normalization** — add `lem-style`, `lem-head`,
+  and `lem-script` to the tags that take their line, and `lem-style`/`lem-head` bodies to
+  the bodies normalized; say a body's trailing edge is found past the statements whose
+  lines were taken, so a `lem-style` closing a component's body leaves no newline behind
+  (D26, D27, ∆1Hp).
 
 ## Shell & Core
 

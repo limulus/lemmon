@@ -130,6 +130,13 @@ ops! {
     Capture,
     /// Stop capturing; push the buffer as `html`.
     EndCapture,
+    /// Pop an `html` default and push it marked under the name at `constants[name]`,
+    /// with one mark spanning its text (D42). A default carrying a mark is an error.
+    Mark { name: u32 },
+    /// Pop the `html` a collect block rendered and add it to the render's fragments
+    /// under the name at `constants[name]`, unless it is empty or they hold its text
+    /// already (D42). Only a page render collects; a loader's run is an error.
+    Collect { name: u32 },
     /// Pop the return value and leave the frame.
     Return,
 }
@@ -300,7 +307,7 @@ mod tests {
         assert_eq!(Op::Emit.name(), "Emit");
         assert_eq!(Op::Const { index: 3 }.name(), "Const");
         assert!(Op::NAMES.contains(&"IterNext"));
-        assert_eq!(Op::NAMES.len(), 43);
+        assert_eq!(Op::NAMES.len(), 45);
     }
 
     #[test]

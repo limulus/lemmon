@@ -11,6 +11,7 @@
 //! A host that names nothing compiles a program with no ambient values: `page` is then
 //! an undefined name like any other, not a reserved one.
 
+use std::collections::BTreeSet;
 use std::rc::Rc;
 
 use lemmon_syntax::nearest;
@@ -113,6 +114,24 @@ pub struct Host {
     /// renders while compiling, so the grammars are consumed there, and a document
     /// records the set it was highlighted against.
     grammars: Option<Grammars>,
+    /// The mark names the host's handlers claim (D42), sorted; `None` for a host that
+    /// declares no handlers at all — a playground, an editor — which is silent about
+    /// every name rather than warning at each. On the declaration for the manifest's
+    /// reason: a name is checked while a file compiles, and the file records what the
+    /// claims said.
+    marks: Option<BTreeSet<Rc<str>>>,
+}
+
+/// What a host's declaration says about one mark name (D42). With names only, a claim
+/// carries nothing beyond being made; ∆7wK gives a claimed name its keys and payload.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ClaimState {
+    /// The host declares no handlers, so it says nothing about any name.
+    Undeclared,
+    /// The host declares handlers, and none claims this name.
+    Unclaimed,
+    /// A handler claims it.
+    Claimed,
 }
 
 impl Host {
@@ -215,6 +234,34 @@ impl Host {
             self.grammars.clone_from(&previous.grammars);
         }
         self
+    }
+
+    /// Declares the mark names the host's handlers claim, as the shell's default plugin
+    /// claims `styles`, `scripts` and `head` (D42).
+    ///
+    /// Replaces any already declared, as [`with_assets`](Self::with_assets) does. An
+    /// empty list still declares handlers — and so warns at every name none of them
+    /// claims — where a host that never calls this warns at none.
+    #[must_use]
+    pub fn with_marks<'a>(mut self, names: impl IntoIterator<Item = &'a str>) -> Self {
+        self.marks = Some(names.into_iter().map(Rc::from).collect());
+        self
+    }
+
+    /// What this declaration says about the mark name `name`.
+    #[must_use]
+    pub fn claim_state(&self, name: &str) -> ClaimState {
+        match &self.marks {
+            None => ClaimState::Undeclared,
+            Some(claimed) if claimed.contains(name) => ClaimState::Claimed,
+            Some(_) => ClaimState::Unclaimed,
+        }
+    }
+
+    /// Every name the host's handlers claim, in sorted order — the candidates a
+    /// did-you-mean is drawn from.
+    pub fn claimed_names(&self) -> impl Iterator<Item = &str> {
+        self.marks.iter().flatten().map(|name| &**name)
     }
 
     /// The grammars the host declared, if it asked for highlighting.

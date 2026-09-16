@@ -262,10 +262,12 @@ D35). Ops sketch:
 `Jump/JumpIfFalse` plus the short-circuit `JumpUnlessNull/JumpIfFalseKeep/JumpIfTrueKeep`,
 `IterInit/IterNext`, `TypeTest`, `Emit` (type-directed) and `EmitText`, `Capture/EndCapture`
 (slot bodies and `lem-let` blocks), `Collect` (a `lem-style`/`lem-head`/`lem-script`
-body into the page's fragments under its name, dedup by content), `Track` (dependency
-recording), `Return`. A mark is a value, not an op: `mark()` makes an `html` value
-carrying a named range over its default content, which `Emit` appends and shifts, and
-`render` returns beside the page (D42). Runtime errors carry spans
+body into the page's fragments under its name, dedup by content), `Mark` (its default
+under a named range), `Track` (dependency recording), `Return`. A mark is a value as much
+as an op: `Mark` makes an `html` value carrying a named range over its default content,
+which `Emit` appends and shifts, and `render` returns beside the page (D42). It is an op
+rather than a builtin because a builtin cannot reach the file and span of its own call,
+which is what a handler's diagnostic points at. Runtime errors carry spans
 via the pc→span table. A builtin that takes a function (`map`, `filter`) runs it through a
 re-entrant invoke inside its `CallBuiltin` step — the VM pushes the frame and runs its loop
 again until that frame returns — so an error inside the closure keeps the closure's own
@@ -275,8 +277,8 @@ build script links the `.wasm` with; the parser's nesting cap is sized against t
 megabyte, and the boundary's ABI tests show both fit (D38, ∆vnI).
 
 What ∆c8h built is the untyped subset of that: `Value` without the stdlib types, which
-∆Q6L added, and no `Collect`, marked value, or `Track`, which arrive with the side
-channels (∆1Hp) and render-reported deps (∆xBO).
+∆Q6L added, and no `Collect`, marked value, or `Track`. `Collect` and the marked value
+arrived with the side channels; `Track` arrives with render-reported deps (∆xBO).
 Records are checked by declaration since ∆cea, and since ∆PCK a record value is tagged
 with its declared name (`Value::Record`, made by a map literal where a record is expected
 and, later, by the loader at the boundary), which `TypeTest` reads; an enum value is its

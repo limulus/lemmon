@@ -62,7 +62,7 @@ impl Loader<'_> {
             | (Type::Int, value @ Value::Int(_))
             | (Type::Float, value @ Value::Float(_))
             | (Type::Bool, value @ Value::Bool(_))
-            | (Type::Html, value @ Value::Html(_)) => Some(value),
+            | (Type::Html, value @ (Value::Html(_) | Value::Marked(_))) => Some(value),
             // A whole number in data is an integer to the parser whatever the author
             // wrote — JSON has no `2.0` once a shell has serialised it — so a `float`
             // field takes one, as long as a float holds it exactly. The checker's rule

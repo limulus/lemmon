@@ -1,0 +1,27 @@
+Root@0..365
+  FnBlock@0..364
+    Text@27..30
+    ScriptVoid@30..44
+    Text@44..47
+    ScriptVoid@47..94
+    Text@94..97
+    ScriptVoid@97..147
+    Text@147..150
+    ScriptVoid@150..162
+    Text@162..208
+    Error@208..221
+      CloseTag@208..221
+    Text@221..224
+    StyleBlock@224..291
+      Text@249..279
+      CloseTag@279..291
+    Text@291..294
+    UnknownTag@294..313
+    Text@313..316
+    StyleBlock@316..355
+      Text@327..343
+      Error@343..354
+        CloseTag@343..354
+      Text@354..355
+    CloseTag@355..364
+  Text@364..365

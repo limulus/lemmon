@@ -6,8 +6,8 @@
 use std::rc::Rc;
 
 use lemmon_syntax::ast::{
-    ArgList, BinaryOp, Expr, ForTag, Item, LetBlock, LetFrom, LetVoid, LiteralKind,
-    MatchTag, Pattern, Spanned,
+    ArgList, BinaryOp, Block, Expr, ForTag, Item, LetBlock, LetFrom, LetVoid, LiteralKind,
+    MatchTag, Pattern, ScriptVoid, Spanned,
 };
 use lemmon_syntax::{Span, SyntaxToken};
 
@@ -163,6 +163,15 @@ impl Compiler<'_> {
             Item::EnumDecl(_) => {
                 self.error(item.span(), "`lem-enum` must be at the top level of a file");
             }
+            // The tag decides the name a fragment is collected under; the host decides
+            // what the name means (D42).
+            Item::StyleBlock(tag) => {
+                self.lower_collect_block(tag.body(), "styles", tag.span())
+            }
+            Item::HeadBlock(tag) => {
+                self.lower_collect_block(tag.body(), "head", tag.span())
+            }
+            Item::ScriptVoid(tag) => self.lower_script(tag),
             Item::Unsupported(_) | Item::Unknown(_) => {
                 unreachable!(
                     "the parser reports these, and a parse with diagnostics is never compiled"
@@ -395,6 +404,30 @@ impl Compiler<'_> {
         self.emit(Op::EndCapture, tag.span());
         let slot = self.bind(&name, BindingKind::Definition, Type::Html);
         self.emit(Op::StoreLocal { slot }, name.span());
+    }
+
+    /// A `lem-style` or `lem-head`: its body captured as a capture's is, D26's
+    /// normalization included, and collected under `name` rather than bound.
+    fn lower_collect_block(&mut self, body: Option<Block>, name: &str, span: Span) {
+        let body = required(body);
+        self.emit(Op::Capture, span);
+        self.lower_block(body.items().collect(), BodyKind::Value);
+        self.emit(Op::EndCapture, span);
+        let name = self.intern(name);
+        self.emit(Op::Collect { name }, span);
+    }
+
+    /// A `lem-script`: the asset's URL, printed as `<lem.…>` prints one, collected under
+    /// `scripts`. Only an `asset` is admitted, so a script is always one the build
+    /// produced; what markup loads it is the host's to write.
+    fn lower_script(&mut self, tag: &ScriptVoid) {
+        let span = tag.span();
+        self.emit(Op::Capture, span);
+        self.check(&required(tag.src()), &Type::Asset);
+        self.emit(Op::Emit, span);
+        self.emit(Op::EndCapture, span);
+        let name = self.intern("scripts");
+        self.emit(Op::Collect { name }, span);
     }
 
     // --- The bindings file's top level (D36, ∆iCW) --------------------------------
@@ -779,7 +812,7 @@ mod tests {
                 .collect(),
         );
         assert_eq!(
-            render(&module, "site.lem", &[("site", site)]).unwrap(),
+            render(&module, "site.lem", &[("site", site)]).unwrap().html,
             "from-render"
         );
     }

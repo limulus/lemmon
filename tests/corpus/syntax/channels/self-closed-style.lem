@@ -1,0 +1,4 @@
+<lem-fn card(title: string)>
+  <lem-style />
+  <h2><lem.title></h2>
+</lem-fn>

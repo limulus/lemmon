@@ -25,11 +25,11 @@ pub(super) fn raw_type(args: &[Type]) -> Result<Type, String> {
 }
 
 /// `raw(s)`: vouches for a string as trusted markup. Already-trusted markup passes
-/// through unchanged.
+/// through unchanged, marks included: vouching is not printing, so nothing moves.
 pub(super) fn raw(_vm: &mut dyn Machine, args: &[Value]) -> Result<Value, Fault> {
     match &args[0] {
         Value::Str(s) => Ok(Value::Html(s.clone())),
-        html @ Value::Html(_) => Ok(html.clone()),
+        html @ (Value::Html(_) | Value::Marked(_)) => Ok(html.clone()),
         other => Err(format!("raw() takes a string, got {}", other.type_name()).into()),
     }
 }
@@ -88,6 +88,24 @@ pub(super) fn asset_type(_args: &[Type]) -> Result<Type, String> {
 pub(super) fn asset(_vm: &mut dyn Machine, _args: &[Value]) -> Result<Value, Fault> {
     Err(Fault::from(
         "asset() is resolved while compiling and should never run",
+    ))
+}
+
+/// `mark(name: string, default: html = ""): html` — the type is fixed: what a handler
+/// puts in the range is markup whatever the default was.
+pub(super) fn mark_type(_args: &[Type]) -> Result<Type, String> {
+    Ok(Type::Html)
+}
+
+/// `mark(name)` never runs as a builtin.
+///
+/// The entry is in the table for [`asset`]'s reasons — the name resolves, and a
+/// definition shadowing it warns — but `compile/calls.rs` reads the literal name against
+/// the host's claims and emits an `Op::Mark`, which is where a mark's file and span come
+/// from (D42). Reaching here would mean that lowering was skipped.
+pub(super) fn mark(_vm: &mut dyn Machine, _args: &[Value]) -> Result<Value, Fault> {
+    Err(Fault::from(
+        "mark() is lowered while compiling and should never run",
     ))
 }
 

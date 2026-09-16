@@ -1,5 +1,5 @@
-Root@0..998
-  FnBlock@0..997
+Root@0..1166
+  FnBlock@0..1165
     OpenTag@0..7 "<lem-fn"
     Trivia@7..8 " "
     Head@8..37
@@ -15,7 +15,7 @@ Root@0..998
               Ident@29..36 "Article"
         RParen@36..37 ")"
     Close@37..38 ">"
-    Block@38..988
+    Block@38..1156
       Text@38..85
         Text@38..85 "\n  <article class=\"article-card\">\n    <a"…
       AccessTag@85..102
@@ -316,12 +316,24 @@ Root@0..998
                 StringLit@944..946 "\"\""
             RParen@946..947 ")"
         Close@947..948 ">"
-      Text@948..988
-        Text@948..988 "</p>\n      </div>\n    </a>\n  </article>\n"
-    CloseTag@988..997
-      CloseTag@988..996 "</lem-fn"
-      Close@996..997 ">"
-  Text@997..998
-    Text@997..998 "\n"
+      Text@948..990
+        Text@948..990 "</p>\n      </div>\n    </a>\n  </article>\n"…
+      StyleBlock@990..1155
+        OpenTag@990..1000 "<lem-style"
+        Head@1000..1000
+        Close@1000..1001 ">"
+        Block@1001..1143
+          Text@1001..1143
+            Text@1001..1143 "\n    .article-card {\n      > a { display"…
+        CloseTag@1143..1155
+          CloseTag@1143..1154 "</lem-style"
+          Close@1154..1155 ">"
+      Text@1155..1156
+        Text@1155..1156 "\n"
+    CloseTag@1156..1165
+      CloseTag@1156..1164 "</lem-fn"
+      Close@1164..1165 ">"
+  Text@1165..1166
+    Text@1165..1166 "\n"
 
 --- diagnostics
