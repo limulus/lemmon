@@ -211,7 +211,16 @@ moved it. Newest last. An entry is removed when its change has been applied.
   url as defaults on its type. In the `url` sentence drop `<lem-page url = … />`: `url` is
   given in front matter, or by a generator type's default. In Names, "Page-template
   bindings (lem-page, lem-let at file top level)" becomes file-top-level `lem-let`
-  bindings (D41, ∆RGQ).
+  bindings (D41, ∆RGQ). Give the generator its key: `for:` with one entry, a field the
+  page type declares and an `<ambient value>.<field>` list, read and stripped by the
+  shell as `type:` is and checked at load; a generator's front matter gives neither that
+  field nor `url`, and no `from` glob holds its pages. Remove `prev`/`next` from the
+  shell's `Page` and from the sentence calling them a page's neighbours in its
+  collection: a generated page's type declares them as optionals of itself or an
+  ancestor, the loader fills them in list order, and every other page has neither. Where
+  the text says the shell reads two names of its own, list the keys `type` and `for` and
+  the declared fields `layout`, `url`, `prev`, and `next`. A page template has no `body`
+  before it renders, so a record whose default reads `body` cannot type one (D43).
 
 - **Tags, the side-channel rows; Names; Functions & components; Escaping** — drop the
   `lem-emit` row: placement is `<lem.mark("styles")>`, an ambient constructor beside
@@ -310,7 +319,7 @@ moved it. Newest last. An entry is removed when its change has been applied.
   the `any` receiver of `x.f(…)`, say a record reads its field and everything else takes
   its runtime type's method — the agreement with the checker. The loader tags what it
   validates at `loadData`; what it leaves as sent — an untyped host's values, the host's
-  document value where no loaded document stands in for it — stays untagged `any`, and
+  document value where no loaded page stands in for it — stays untagged `any`, and
   which record a page carries is the store's to know (D35 as revised, D36, D37, ∆Iau,
   ∆iCW).
 - **VM, the module's tables** — where the text (and the entry above) says `Module`
@@ -332,9 +341,11 @@ moved it. Newest last. An entry is removed when its change has been applied.
   the linked program — a compile that installs a new program drops it, and `loadData`
   runs against the program that linked, under the declaration it linked with — and
   that `render` binds the host's document value to a loaded document's own record from
-  the store, and to the envelope's value, unvalidated, where no loaded document stands:
-  a template, or a document no collection matched — one value for every such render
-  until `plan()` (∆c9S) gives each page its own (D37, ∆iCW).
+  the store, and to the envelope's value, unvalidated, where no loaded page stands in for
+  it: a
+  template with no front matter, or a document or page template no collection matched
+  and no `type:` named; a page template loads its own record as a document does (D37,
+  ∆iCW, D43).
 
 - **VM, the module's plans** — where the text gives `RecordPlan` as a record's ordered
   steps, add `indexes` beside them: each a field with the ambient value and field its
@@ -425,8 +436,24 @@ moved it. Newest last. An entry is removed when its change has been applied.
   functions, "page templates with a `<lem-page>` header instead of front matter, and
   generators", and says generated pages are "a `<lem-page for photo in
   site.photos.gallery() …>` header", say a page template carries front matter like a
-  document, and a generator's front matter names a `site` list, each page's other fields
-  computed by its type's defaults (D41, ∆RGQ).
+  document, and a generator's front matter names an ambient value's list with its `for:`
+  key, each page's other fields computed by its type's defaults (D41, ∆RGQ, D43).
+
+- **WASM API, pages** — in the class sketch, `plan()` returns `{path, index?, url?}` for
+  every loaded page: each collection's in the order the loader builds them, then the
+  envelope's `pages` in order, a generator expanded where it stands, the url read from the
+  field the host names, and two pages at one url a load error. `PageRef` is `{path,
+  index?}`, `index` numbering a generator's pages. `HostDecl` gains `url?` and
+  `neighbours?`, two field names; `DataInput` gains `pages`, the front matter of every page
+  no glob holds, a generator's with its `for:` pair. `render` renders a loaded page through
+  its entry — the file's output passed as `body` to the entry field's function in one VM run
+  — and any other file as its own output. In the pipeline, Plan lists loaded pages rather
+  than expanding generators, which Load does (D43).
+
+- **VM, neighbour references** — where the text lists the value set, say a neighbour
+  field holds a reference into the store's page table that a field read resolves to the
+  page's record, so no record holds another, and `render` takes the page table beside the
+  globals (D43).
 
 ## From Eleventy to Lemmon
 
@@ -434,8 +461,10 @@ moved it. Newest last. An entry is removed when its change has been applied.
   generator template whose front matter names a `site` list, not to `<lem-page for … />`;
   the index pages row becomes `.lem` templates with front matter, not `<lem-page layout =
   page title = … />`. In the photo page port, the proposed form opens with front matter
-  (`type: PhotoPage` and the list it pages over), and `title`, `image` and the url move to
-  defaults on `PhotoPage`; the `lem-head` prev/next links and the body are unchanged (D41).
+  (`type: PhotoPage` and `for:` naming the list it pages over, `photo: site.gallery`), and
+  `title`, `image` and the url move to defaults on `PhotoPage`, which also declares
+  `prev: PhotoPage?` and `next: PhotoPage?`; the `lem-head` prev/next links and the body
+  are unchanged, and `page.prev.title` needs no narrowing (D41, D43).
 
 - **Feeds and code blocks** — where the text maps `eleventy-plugin-rss` and the
   markdown-it highlight function: the three feeds are Lemmon templates rendered in a

@@ -106,14 +106,14 @@ that for the renders no loaded document stands in for — a document no collecti
 matched, whose `page` is unknown-typed (D30), and a template, whose `page` is the
 declared type — so the loader binds it as sent, one value for all of them, and
 `render` binds the document value from the store for a loaded document, else from the
-envelope. A template's `page` is therefore checked by the compiler and not by the
-loader until `plan()` (∆c9S) gives each page a value of its own. Loading proceeds in
-one order — the host's own values in its declaration order, then each bindings file —
-and no function runs over a value that is not loaded yet or that failed: a computed
-binding that reads a later file's, or a `by` index naming a map the loader reaches
-later, is a load error at the binding or the field, and once a value has failed the
-plans after it are not run, so the one error reported is the author's and not a fault
-downstream of it.
+envelope. A template's `page` is therefore checked by the compiler and not by the loader; a
+page template loads its own record as a document does once ∆Bhz lands, and a template with
+no front matter keeps the envelope's value. Loading proceeds in one order — the host's own
+values in its declaration order, then each bindings file — and no function runs over a value
+that is not loaded yet or that failed: a computed binding that reads a later file's, or a
+`by` index naming a map the loader reaches later, is a load error at the binding or the
+field, and once a value has failed the plans after it are not run, so the one error reported
+is the author's and not a fault downstream of it.
 
 **Positions come from the host, as complete boundary spans.** `loadData` receives, per
 loaded value, a table from field path to `{start, end, range}`. The host owns the text of

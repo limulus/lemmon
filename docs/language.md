@@ -295,8 +295,9 @@ one cannot see the rest of the page, so the count is the VM's. It is still deter
   default sees `self`, the record being built, as the declaring type — a subtype that
   redeclares a field to change its default sees the subtype. On a record that extends
   the host's document type it also sees `path`, the document's path, and `body`, its
-  rendered prose as `html`; on any other record those names are undefined. It sees no
-  ambient value — not `site`, not `build`, not the host's document value: a record's
+  rendered prose as `html` — which a page template has none of, so such a record cannot
+  type one (see **Ambient types**); on any other record those names are undefined. It
+  sees no ambient value — not `site`, not `build`, not the host's document value: a record's
   plan depends on its own declarations alone, and what a page needs of the site its
   layout reads, taking the record once it is loaded (∆eag). What a default reads
   through `self` is recorded with it, and so is what it reads through the `lem-fn`s it
@@ -354,8 +355,6 @@ The standard shell (`@limulus/lemmon-shell`) ships this declaration and binds `p
 <lem-type Page>
   url: url
   inputPath: string
-  prev: Page?
-  next: Page?
   draft: bool = false
 </lem-type>
 
@@ -365,8 +364,8 @@ The standard shell (`@limulus/lemmon-shell`) ships this declaration and binds `p
 </lem-type>
 ```
 
-`prev`/`next` are a page's neighbours in the collection whose glob matched it; `draft` is
-D19's flag — a draft is skipped and left out of collections unless `--drafts`.
+`draft` is D19's flag — a draft is skipped and left out of collections unless `--drafts`.
+`Page` declares no neighbours: a generated page's type declares its own (below, D43).
 
 - **`site`** is the record of `site.lem`'s top-level bindings. A `from` binding names a
   source the shell fulfils, and the binding's type decides what is loaded: a list of a
@@ -393,13 +392,12 @@ D19's flag — a draft is skipped and left out of collections unless `--drafts`.
   declaration order, and a bindings file's after them; so a binding may read `build`,
   while a default reads no ambient value at all, and a `by` index names a map loaded
   before its record (see **Schemas**). The host's document value is the one value the
-  loader leaves as sent: the envelope carries it for the renders no loaded document
-  stands in for — a document no collection matched, whose `page` is unknown-typed, and
-  a template, whose `page` is the declared type — so it is bound as sent, not
-  validated.
-- _Not yet (∆c9S): the envelope's document value is one value for every render no
-  loaded document stands in for, so a template's `page` is checked by the compiler and
-  not by the loader; `plan()` gives each page its own, validated as the declared type._
+  loader leaves as sent: the envelope carries it for the renders no loaded page stands
+  in for — a document or page template no collection matched and no `type:` named,
+  whose `page` is unknown-typed, and a template with no front matter, whose `page` is
+  the declared type — so it is bound as sent, not validated.
+- _Not yet (∆Bhz): a page template loads no record of its own, so its `page` is the
+  envelope's value, checked by the compiler and not by the loader._
 
 ```
 <lem-let posts:    [Article]        from "feed/*/index.md" />
@@ -412,23 +410,34 @@ D19's flag — a draft is skipped and left out of collections unless `--drafts`.
 - **A content type is page-backed by `extends Page`**, and its front matter is its own
   fields, flat: `page.title` beside `page.url`. A `from` glob's element type must extend
   `Page`. A document's type is the element type of the collection whose glob matched it;
-  a front-matter `type:` key may name a subtype instead, and the checker reports at that
-  key if the named type does not extend the element type. The host names that type per
-  file, and the file's unit depends on it as a compile-time fact (D25); the core checks
-  what it can see — that the name is a declared record, and that it extends the type the
-  document value has — and reports at the front matter, which is where the key that may
-  have named it stands. A document no glob matches has no schema: `page` is
-  unknown-typed, and it renders.
+  a front-matter `type:` key may name a subtype instead — or, where no glob matched, any
+  record that extends `Page` — and the checker reports at that key if the named type does
+  not extend the element type. The host names that type per file, and the file's unit
+  depends on it as a compile-time fact (D25); the core checks what it can see — that the
+  name is a declared record, and that it extends the type the document value has — and
+  reports at the front matter, which is where the key that may have named it stands. A
+  document no glob matches and no `type:` names has no schema: `page` is unknown-typed,
+  and it renders its own output, with no layout.
 - **A template is a page when it has front matter** (D41). A `.lem` file that opens with a
   `---` block is typed as a document is — by the collection whose glob matched it, or by a
   `type:` key — its front matter is its record, and the template's output is the body its
-  layout receives. A `.lem` file with no front matter is not a page: it holds definitions,
-  or it is a file the host reads bindings from. There is no page-header tag.
-- **A generator is a page template whose front matter names a list**: one page per item,
-  the item in the field the key names, the page's other fields computed by its type's
-  defaults (D37). Filtering and sorting the list is a computed binding in `site.lem`. A
-  generated page's `url` comes from its type's default, since every page of one file
-  would otherwise derive the same one, and `prev`/`next` follow the list's order.
+  layout receives. A `.lem` file with no front matter is not a page, and a record the
+  host names for one is a compile error: it holds definitions, or it is a file the host
+  reads bindings from. There is no page-header tag. A page template has no `body` until
+  it renders, so a record whose default reads `body` cannot type a page template: the
+  link step refuses it at the template's front matter (D43).
+- **A generator is a page template whose front matter names a list** (D43): one page per
+  item, the page's other fields computed by its type's defaults (D37). The front matter
+  carries `for:` with exactly one entry — a field the page type declares, and the list
+  whose items fill it, written `<ambient value>.<field>` as a `by` index is — and names
+  its type with `type:`. The shell reads and strips `for:` as it does `type:`, and the
+  loader checks it at the positions the shell sent: the list is a field the ambient value
+  declares as `[T]`, and `T` is assignable to the named field. Filtering and sorting the
+  list is a computed binding in `site.lem`. A generator's front matter gives neither the
+  named field nor `url`, which comes from its type's default, since every page of one
+  file would otherwise derive the same one. Its pages are built once the bindings have
+  loaded, so no `from` glob holds them, and a glob that matches a generator is a load
+  error at its `for:` key.
 
   ```
   ---
@@ -445,14 +454,19 @@ D19's flag — a draft is skipped and left out of collections unless `--drafts`.
     url: url = url("/tils/" + self.topic + "/")
   </lem-type>
   ```
-- _Not yet (∆c9S): the scanner reads a `.lem` file's leading `---` block as text, and
-  nothing renders a template through its layout or expands a generator._
-- _Not yet (∆c9S): the generator key's name and shape — `for:` above is provisional — who
-  reads it (the shell reads only `type` and `layout` today, or the host declares the name),
-  and how a string in front matter names a field of `site`._
+- **A generated page's neighbours are fields its type declares** (D43): the two fields
+  the host declaration names as neighbours, `prev` and `next` in the standard shell, each
+  an optional of that type or an ancestor — `prev: PhotoPage?` on `PhotoPage`. The
+  loader fills them with the pages before and after it in the list; the first page has no
+  `prev`, the last no `next`, and a page that was not generated has neither. A default may
+  not read one, since the loader fills them after every page of the generator is built.
+- _Not yet (∆Bhz): the scanner reads a `.lem` file's leading `---` block as text,
+  nothing renders a page — template or document — through its layout, no page's url is
+  reported or checked against another's, and no `body` read refuses a page template._
+- _Not yet (∆99b): nothing expands a generator or fills a neighbour field._
 - **`layout`** is a field every page schema declares, `(T, html): html` for its own `T`,
   usually with a default. At load its string value resolves to a project function of that
-  type, as any string does where a function type is expected; the shell renders a page by
+  type, as any string does where a function type is expected; `render` renders a page by
   calling that function with the page and its rendered body. That is why `body` is the
   layout's parameter and not a `Page` field: nothing has produced it before render. There
   is no `Layout` type and no `layout` builtin. The checker asks for it where a record's
@@ -462,15 +476,18 @@ D19's flag — a draft is skipped and left out of collections unless `--drafts`.
   extends `Page` is a layout the whole family can share.
 - **`url`** is the one `Page` field a source may provide — `url:` in a document's or a
   template's front matter, as `url: /feed.xml` on a feed template — and a generator's page
-  type gives it a default; the shell derives it otherwise. There is no `permalink`.
+  type gives it a default; the shell derives it otherwise. There is no `permalink`. The
+  host declaration names it, so the core reports where each page goes (D43), and two
+  pages at one url is a load error at the second.
 - A string in data resolves **by its expected type** — record → its `by` index, enum → a
   variant, `asset` → the manifest, `datetime` → parse, function type → a project function
   of that type — so `layout: article` in front matter needs no special case.
 
-The shell reads exactly two names of its own: `type`, a raw key it must read before a
-document has a type, and `layout`, a field it requires on every page schema. Everything
-else it knows about a page is a field declared with a span, in `ambient.lem` or
-`site.lem`.
+The shell reads two front-matter keys of its own before a page has a type: `type`, and
+`for` on a generator. Its declaration names the fields the core reads (D43): `layout`, the
+entry every page schema declares; `url`, which `Page` declares; and `prev` and `next`,
+which only a generated page's type declares. Everything else it knows about a page is a
+field declared with a span, in `ambient.lem` or `site.lem`.
 
 **Declared, not inferred.** Every surface one file offers another is read from heads
 alone, never from a body: a `lem-fn`'s parameters and return, a `lem-type`'s fields, and
