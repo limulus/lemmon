@@ -8,6 +8,11 @@ import type {
   SourceFileInput,
 } from './types.ts'
 
+/** The reply's header: everything a render returns except the page itself. */
+type RenderMeta = Omit<RenderResult, 'html'>
+
+const decoder = new TextDecoder()
+
 /**
  * The typed face of the WASM core: one resident instance per worker holding the
  * compiled program and its data across calls. Methods marshal their input to the one
@@ -69,12 +74,24 @@ export class Core {
   }
 
   /**
-   * Renders one page: its HTML, or `null` alongside the runtime diagnostic. A loaded
-   * document renders with the host's document value bound to its own record; any
-   * other file reads the value the envelope carried, if it did.
+   * Renders one page: its bytes with the marks standing in them and the fragments it
+   * collected, or `null`s alongside the runtime diagnostic. A loaded document renders
+   * with the host's document value bound to its own record; any other file reads the
+   * value the envelope carried, if it did.
+   *
+   * The reply crosses as a four-byte length, that many bytes of metadata JSON, then the
+   * page. `html` is a view onto those bytes, so a caller reading `html.buffer` must
+   * honour `byteOffset`; it is `null` only where the render failed, an empty page being
+   * an empty view.
    */
   render(page: PageRef): RenderResult {
-    return JSON.parse(this.#core.render(JSON.stringify(page))) as RenderResult
+    const reply = this.#core.render(JSON.stringify(page))
+    const length = new DataView(reply.buffer, reply.byteOffset, 4).getUint32(0, true)
+    const meta = JSON.parse(decoder.decode(reply.subarray(4, 4 + length))) as RenderMeta
+    return {
+      ...meta,
+      html: meta.marks === null ? null : reply.subarray(4 + length),
+    }
   }
 
   /**

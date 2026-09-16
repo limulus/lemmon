@@ -74,6 +74,24 @@ export interface HostDecl {
    * language needs them, and keeps what it parsed while later declarations repeat them.
    */
   grammars?: GrammarFile[]
+  /**
+   * What the host's mark handlers claim (D42): the names `mark()` may place, which the
+   * core checks a literal name against while compiling. Omitted, the host declares no
+   * handlers at all and the core says nothing about any name — what a playground or an
+   * editor wants, since a mark there is meant to keep its default content. An empty
+   * list still declares handlers, and warns at every name none of them claims.
+   *
+   * On the declaration for the manifest's reason: the answer is given while a file
+   * compiles, so a plugin list that starts or stops claiming a name leaves the files
+   * that mark it stale, and only those.
+   */
+  marks?: Claim[]
+}
+
+/** One claim a host's handlers make. ∆7wK adds the keys and payload beside the name. */
+export interface Claim {
+  /** The name `mark()` places and the handler answers for. */
+  name: string
 }
 
 /** One grammar a host declares. */
@@ -197,10 +215,46 @@ export interface Diagnostic {
 }
 
 /**
- * What a render returns: the page's HTML, or `null` with the runtime diagnostic.
- * `channels` (∆1Hp) and `deps` (∆xBO) are additive fields that arrive with those items.
+ * A named range of a rendered page for the host's handlers to fill (D42), with its
+ * default content already inside it.
+ */
+export interface Mark {
+  /** The name the handlers are dispatched by. */
+  name: string
+  /** Byte offsets into {@link RenderResult.html}, not character indexes. */
+  start: number
+  end: number
+  /** The file the `mark()` call stands in — a layout, not the page being rendered. */
+  path: string
+  /** That call, so a handler's own diagnostic can point at source (invariant 8). */
+  span: Span
+}
+
+/** One thing a `lem-style`, `lem-head`, or `lem-script` gathered, and where from. */
+export interface Fragment {
+  /** The text the block rendered, or the URL the script named. */
+  text: string
+  path: string
+  span: Span
+}
+
+/**
+ * What a page collected, by name: a name with no fragments is absent rather than empty.
+ */
+export type Fragments = Record<string, Fragment[]>
+
+/**
+ * What a render returns: the page's bytes with the marks standing in them and the
+ * fragments gathered beside it, or `null`s with the runtime diagnostic.
+ *
+ * The page is bytes and not a string because a mark's offsets name those bytes, and
+ * because escaping a page into the reply's JSON and parsing it back costs more than the
+ * render. A host that wants a string decodes once, after {@link resolveMarks} has
+ * spliced (D42). `deps` (∆xBO) is an additive field that arrives with that item.
  */
 export interface RenderResult {
-  html: string | null
+  html: Uint8Array | null
+  marks: Mark[] | null
+  fragments: Fragments | null
   diagnostics: Diagnostic[]
 }

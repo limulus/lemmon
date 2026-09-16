@@ -11,6 +11,19 @@
 use lemmon_wasm::{Core, version};
 use wasm_bindgen_test::wasm_bindgen_test;
 
+/// A render's reply as its two parts: the metadata JSON, and the page's text after it.
+/// The page crosses as bytes beside the metadata rather than inside it (D42), so a test
+/// that reads either says which it means.
+fn decode(reply: &[u8]) -> (String, String) {
+    let (header, rest) = reply.split_at(4);
+    let length = u32::from_le_bytes(header.try_into().expect("four bytes")) as usize;
+    let (meta, page) = rest.split_at(length);
+    (
+        String::from_utf8(meta.to_vec()).expect("metadata is UTF-8"),
+        String::from_utf8(page.to_vec()).expect("a page is UTF-8"),
+    )
+}
+
 /// The host most of these compile against: the three names the standard shell binds,
 /// none of them typed. A program compiled with no declaration at all has no ambient
 /// values, so every test that reads one says so here (D30).
@@ -33,10 +46,13 @@ fn compiles_loads_and_renders_through_the_abi() {
     assert_eq!(diagnostics, "[]");
     core.load_data(r#"{"ambient": {"site": {"name": "limulus.net"}}}"#)
         .expect("a well-formed loadData payload");
-    let result = core
-        .render(r#"{"path": "page.lem"}"#)
-        .expect("a compiled page renders");
-    assert!(result.contains("hi limulus.net"), "{result}");
+    let (meta, page) = decode(
+        &core
+            .render(r#"{"path": "page.lem"}"#)
+            .expect("a compiled page renders"),
+    );
+    assert_eq!(page, "hi limulus.net");
+    assert!(meta.contains(r#""diagnostics":[]"#), "{meta}");
 }
 
 /// The declaration crosses as its own JSON string, and what it says reaches the
@@ -83,13 +99,13 @@ fn reaches_the_depth_cap_through_nested_invokes_without_trapping() {
         .compile(&files, Some(UNTYPED.to_owned()))
         .expect("a well-formed compile payload");
     assert_eq!(diagnostics, "[]");
-    let result = core
-        .render(r#"{"path": "deep.lem"}"#)
-        .expect("a runtime failure is a diagnostic, not a throw");
-    assert!(
-        result.contains("builtins nested more than 64 deep"),
-        "{result}"
+    let (meta, page) = decode(
+        &core
+            .render(r#"{"path": "deep.lem"}"#)
+            .expect("a runtime failure is a diagnostic, not a throw"),
     );
+    assert!(page.is_empty(), "a failed render sends no page: {page}");
+    assert!(meta.contains("builtins nested more than 64 deep"), "{meta}");
 }
 
 /// The parser recurses once per nested block, and checking, lowering, and rendering what
@@ -113,10 +129,12 @@ fn renders_blocks_nested_to_the_parser_cap_without_trapping() {
         .compile(&nested(200), Some(UNTYPED.to_owned()))
         .expect("a well-formed compile payload");
     assert_eq!(diagnostics, "[]");
-    let result = core
-        .render(r#"{"path": "deep.lem"}"#)
-        .expect("a runtime failure is a diagnostic, not a throw");
-    assert!(result.contains(r#""html":"a""#), "{result}");
+    let (_, page) = decode(
+        &core
+            .render(r#"{"path": "deep.lem"}"#)
+            .expect("a runtime failure is a diagnostic, not a throw"),
+    );
+    assert_eq!(page, "a");
     let diagnostics = core
         .compile(&nested(201), Some(UNTYPED.to_owned()))
         .expect("a well-formed compile payload");
@@ -158,10 +176,12 @@ fn highlights_large_long_and_deeply_nested_code_without_trapping() {
     assert_eq!(diagnostics, "[]");
     core.load_data(r#"{"ambient": {}}"#)
         .expect("a well-formed loadData payload");
-    let result = core
-        .render(r#"{"path": "big.md"}"#)
-        .expect("a compiled page renders");
-    assert!(result.contains("syn-meta syn-group"), "a highlighted page");
+    let (_, page) = decode(
+        &core
+            .render(r#"{"path": "big.md"}"#)
+            .expect("a compiled page renders"),
+    );
+    assert!(page.contains("syn-meta syn-group"), "a highlighted page");
 }
 
 /// A load crosses with the host's positions and its diagnostics come back placed by

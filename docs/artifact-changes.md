@@ -426,6 +426,12 @@ moved it. Newest last. An entry is removed when its change has been applied.
   (feeds) after every other page is written, that output loaded back as a string source.
   D06's "plugins cannot inject logic" is scoped to the language and the core (D42).
 
+- **WASM API, the render reply** — where the API sketch says a render returns JSON, say
+  the page crosses as bytes beside a JSON header of its marks and fragments: a four-byte
+  length, the metadata, then the page, with no page section at all where the render
+  failed. Keep the measurement as the reason — escaping a page into JSON and parsing it
+  back was more than half of a render call (∆1Hp, D42).
+
 - **VM, ops and values** — replace `Channel/EmitChannel` with `Collect { name }` (a collect
   body into the page's fragments, dedup by content) and say a mark is a value: `mark()`
   makes an `html` value carrying a named range over its default content, which `Emit`

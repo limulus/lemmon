@@ -45,8 +45,11 @@ class Core {
 ```
 
 Boundary rules: few large calls; program and data stay resident in the instance; bulk data
-crosses as one UTF-8 JSON buffer (rmp-serde if profiling demands); one instance per worker
-thread, nothing shared. Whole-site data ≪ 10 MB. The core embeds no highlighter (D42);
+crosses as one UTF-8 JSON buffer (rmp-serde if profiling demands) — except a render's
+page, which crosses as bytes beside a JSON header of its marks and fragments, since
+escaping the page into that JSON and parsing it back is more than half of a `render` call
+(the spike's page: 108 µs to 49 µs) and a mark's offsets name the page's own bytes (D42);
+one instance per worker thread, nothing shared. Whole-site data ≪ 10 MB. The core embeds no highlighter (D42);
 syntect still adds 1.97 MB to the `.wasm`, not yet removed (∆7wK).
 
 Ambient declarations (D30, D36): the core knows no type or value by name. The host passes
@@ -109,9 +112,12 @@ not a break:
   diagnostic about the record points at the key; offsets that are not a span of the
   file's text are refused as a caller bug, since a line index panics on them.
 - `PageRef` is `{path}` until `plan()` exists to mint richer references.
-- `render` returns `{html, diagnostics}` — `html: null` plus one diagnostic when the page
-  fails at runtime. The bytes form, `marks`, and `fragments` are omitted entirely until
-  ∆1Hp, and `deps` until ∆xBO, not stubbed. A loaded document renders with the host's
+- `render` returns a four-byte little-endian length, that many bytes of
+  `{marks, fragments, diagnostics}` as JSON, then the page's UTF-8 bytes. A failed render
+  sends the diagnostic, null marks and fragments, and no page section at all, which is
+  what tells it from a page that rendered empty. A mark is `{name, start, end, path,
+  span}`, its offsets naming the page's bytes; a fragment is `{text, path, span}`. `deps`
+  is omitted until ∆xBO, not stubbed. A loaded document renders with the host's
   document value bound to its own record from the store; any other file — a template, a
   document no collection matched — reads the value the envelope carried, if it did, as
   sent (D37).

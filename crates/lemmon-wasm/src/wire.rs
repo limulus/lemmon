@@ -2,8 +2,10 @@
 //! between them and the core's own types.
 //!
 //! Every call across the boundary carries its bulk data as one UTF-8 JSON string
-//! (docs/architecture.md §"WASM API"), so each has an input shape and each result has an
-//! output one. They are deliberately not the core's types: `deny_unknown_fields` makes a
+//! (docs/architecture.md §"WASM API") — except a render's page, which crosses as bytes
+//! beside a JSON header describing them ([`encode_render`]), since escaping and parsing
+//! a page inside JSON costs more than the render. Each call has an input shape and each
+//! result an output one. They are deliberately not the core's types: `deny_unknown_fields` makes a
 //! malformed envelope a caller bug rather than a silently ignored field, and a diagnostic
 //! goes out carrying both what the core works in — byte offsets — and the same two points
 //! as zero-based UTF-16 LSP positions (D33), so neither `lem check` nor the language
@@ -18,8 +20,8 @@ use std::marker::PhantomData;
 use std::rc::Rc;
 
 use lemmon_vm::{
-    Ambient, Data, Host, HostSpan, LineIndex, Loaded, Map, Position, Range, RuntimeError,
-    Severity, Source, Span, Spans, Value, repeated_path,
+    Ambient, Data, Host, HostSpan, LineIndex, Loaded, Map, Position, Range, Rendered,
+    RuntimeError, Severity, Source, Span, Spans, Value, repeated_path,
 };
 use serde::de::value::{MapAccessDeserializer, SeqAccessDeserializer};
 use serde::de::{self, Deserializer, MapAccess, SeqAccess, Visitor};
@@ -148,6 +150,19 @@ pub(crate) struct HostInput {
     /// In declaration order, which is what decides a language two grammars claim.
     #[serde(default)]
     grammars: Option<Vec<GrammarInput>>,
+    /// What the host's mark handlers claim (D42). Omitting the field declares no
+    /// handlers at all, which is silence about every name rather than a warning at
+    /// each — what a playground or an editor wants.
+    #[serde(default)]
+    marks: Option<Vec<ClaimInput>>,
+}
+
+/// One claim a host declares: the name its handlers answer for. An object rather than a
+/// bare string, so that ∆7wK's `mode`, `keys` and `payload` are added beside it.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ClaimInput {
+    name: String,
 }
 
 /// One grammar a host declares: the path its diagnostics name it by, and its
@@ -199,6 +214,9 @@ impl From<HostInput> for Host {
                 .iter()
                 .map(|(path, url)| (path.as_str(), url.as_str())),
         );
+        if let Some(marks) = input.marks {
+            host = host.with_marks(marks.iter().map(|claim| claim.name.as_str()));
+        }
         match input.grammars {
             Some(grammars) => host.with_grammars(
                 grammars
@@ -584,12 +602,126 @@ impl Diagnostic {
     }
 }
 
-/// What `render` returns: the page's HTML, or the runtime diagnostic instead.
-/// `channels` (∆1Hp) and `deps` (∆xBO) are additive fields that arrive with those items.
+/// Everything a render returns except the page itself: the ranges the host's handlers
+/// fill, what its collect blocks gathered, and the runtime diagnostic where it failed.
+/// `deps` (∆xBO) is an additive field that arrives with that item.
+///
+/// `marks` and `fragments` are `null` exactly when the render failed, which is also when
+/// there are no page bytes — an empty page is an empty section, not a missing one.
 #[derive(Serialize)]
-pub(crate) struct RenderResult {
-    pub(crate) html: Option<String>,
+pub(crate) struct RenderMeta {
+    pub(crate) marks: Option<Vec<MarkOut>>,
+    pub(crate) fragments: Option<BTreeMap<String, Vec<FragmentOut>>>,
     pub(crate) diagnostics: Vec<Diagnostic>,
+}
+
+/// One mark: the name to dispatch on, the byte range of the page it stands for, and
+/// where the `mark()` that made it was written — `path` beside `span`, as a diagnostic
+/// carries them, so a handler's own diagnostic can point at source (invariant 8).
+#[derive(Serialize)]
+pub(crate) struct MarkOut {
+    name: String,
+    start: u32,
+    end: u32,
+    path: String,
+    span: SpanWire,
+}
+
+/// One collected fragment: its text, and the block that first gave it.
+#[derive(Serialize)]
+pub(crate) struct FragmentOut {
+    text: String,
+    path: String,
+    span: SpanWire,
+}
+
+impl RenderMeta {
+    /// What a render produced, placed against the files it came from.
+    pub(crate) fn placed(
+        rendered: &Rendered,
+        files: &[String],
+        resident: &LineIndexes,
+    ) -> Self {
+        let place = |file: u32, span: Span| {
+            let path = &files[file as usize];
+            (
+                path.clone(),
+                SpanWire::placed(span, index_for(path, None, resident)),
+            )
+        };
+        let marks = rendered
+            .marks
+            .iter()
+            .map(|mark| {
+                let (path, span) = place(mark.file, mark.span);
+                MarkOut {
+                    name: mark.name.to_string(),
+                    start: mark.start,
+                    end: mark.end,
+                    path,
+                    span,
+                }
+            })
+            .collect();
+        let fragments = rendered
+            .fragments
+            .iter()
+            .map(|(name, fragments)| {
+                let fragments = fragments
+                    .iter()
+                    .map(|fragment| {
+                        let (path, span) = place(fragment.file, fragment.span);
+                        FragmentOut {
+                            text: fragment.text.to_string(),
+                            path,
+                            span,
+                        }
+                    })
+                    .collect();
+                (name.to_owned(), fragments)
+            })
+            .collect();
+        Self {
+            marks: Some(marks),
+            fragments: Some(fragments),
+            diagnostics: Vec::new(),
+        }
+    }
+
+    /// A render that failed: its diagnostic, and no page to mark.
+    pub(crate) fn failed(diagnostic: Diagnostic) -> Self {
+        Self {
+            marks: None,
+            fragments: None,
+            diagnostics: vec![diagnostic],
+        }
+    }
+}
+
+/// A render's reply: a four-byte little-endian length, that many bytes of `meta` as
+/// JSON, then the page's UTF-8 bytes — nothing where the render failed.
+///
+/// The page crosses as bytes rather than inside the JSON because escaping it there and
+/// parsing it back is more than half of a `render` call, and because the host splices
+/// handler output at the marks' byte offsets, which a JSON string's escaping would move.
+///
+/// # Errors
+///
+/// If the metadata cannot be serialised, which is a bug in the shapes above.
+pub(crate) fn encode_render(
+    meta: &RenderMeta,
+    html: Option<&str>,
+) -> Result<Vec<u8>, String> {
+    let meta = serde_json::to_vec(meta)
+        .map_err(|e| format!("serialising the render result failed: {e}"))?;
+    let length = u32::try_from(meta.len())
+        .map_err(|_| "the render's metadata is too long to send".to_owned())?;
+    let html = html.unwrap_or_default().as_bytes();
+    let mut out = Vec::with_capacity(4 + meta.len() + html.len());
+    out.extend_from_slice(&length.to_le_bytes());
+    out.extend_from_slice(&meta);
+    out.extend_from_slice(html);
+    Ok(out)
 }
 
 /// A JSON value as the VM's: integral numbers become `Int` and the rest `Float`;

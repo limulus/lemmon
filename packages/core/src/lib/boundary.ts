@@ -14,12 +14,17 @@ export interface WasmBoundary {
 
 /**
  * The raw `Core` the glue exposes: every call carries its bulk data as one JSON string
- * (few large calls), and a throw is a caller bug, never a template problem.
+ * (few large calls) — except a render's reply, which is bytes beside a JSON header — and
+ * a throw is a caller bug, never a template problem.
  */
 export interface BoundaryCore {
   compile(files: string, host?: string): string
   loadData(input: string): string
-  render(page: string): string
+  /**
+   * A four-byte little-endian length, that many bytes of metadata JSON, then the page's
+   * UTF-8 bytes — nothing after the metadata where the render failed (D42).
+   */
+  render(page: string): Uint8Array
   /** Releases the instance's memory on the wasm side. */
   free(): void
 }

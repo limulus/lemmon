@@ -1,7 +1,17 @@
 import { describe, expect, it } from 'vitest'
 
 import { loadCore } from './load.ts'
-import type { DataInput, HostDecl, SourceFileInput, Span } from './types.ts'
+import { resolveMarks } from './marks.ts'
+import type { DataInput, HostDecl, RenderResult, SourceFileInput, Span } from './types.ts'
+
+const decoder = new TextDecoder()
+
+/**
+ * A render's page as text. What the core returns is bytes, since a mark's offsets name
+ * them and the host splices there before anything needs a string (D42).
+ */
+const page = (result: RenderResult): string | null =>
+  result.html === null ? null : decoder.decode(result.html)
 
 /**
  * The declaration most of these compile against: the three names the standard shell
@@ -178,7 +188,7 @@ describe('Core', () => {
         { path: 'page.lem', text: '<lem-let raw = 1 />new<lem.raw>' },
       ])
       expect(diagnostics.map((d) => d.severity)).toEqual(['warning'])
-      expect(core.render({ path: 'page.lem' }).html).toBe('new1')
+      expect(page(core.render({ path: 'page.lem' }))).toBe('new1')
     })
 
     it('should leave an ambient name undefined when no host declares one', async () => {
@@ -223,7 +233,7 @@ describe('Core', () => {
       const post = { path: 'post.md', text: '```toylang\ngo\n```\n' }
       expect(core.compile([post], highlighting)).toEqual([])
       core.loadData({ ambient: {} })
-      expect(core.render({ path: 'post.md' }).html).toBe(
+      expect(page(core.render({ path: 'post.md' }))).toBe(
         '<pre><code class="language-toylang"><span class="syn-source syn-toylang">' +
           '<span class="syn-keyword">go</span>\n</span></code></pre>\n'
       )
@@ -257,14 +267,14 @@ describe('Core', () => {
       const core = await loadCore()
       core.compile(layoutChain, untyped)
       core.loadData({ ambient: { page: { title: 'T' } } })
-      expect(core.render({ path: 'article.lem' }).html).toBe(
+      expect(page(core.render({ path: 'article.lem' }))).toBe(
         '<html><main>Hi T</main></html>'
       )
       const edited = layoutChain[1].text.replaceAll('main>', 'article>')
       expect(core.compile([{ path: 'layout.lem', text: edited }])).toEqual([])
       // The new program binds nothing until data is loaded against it.
       core.loadData({ ambient: { page: { title: 'T' } } })
-      expect(core.render({ path: 'article.lem' }).html).toBe(
+      expect(page(core.render({ path: 'article.lem' }))).toBe(
         '<html><article>Hi T</article></html>'
       )
     })
@@ -291,7 +301,7 @@ describe('Core', () => {
       expect(
         core.loadData({ ambient: { page: { title: 'T' }, site: { name: 's' } } })
       ).toEqual([])
-      expect(core.render({ path: 'page.lem' }).html).toBe('T on s')
+      expect(page(core.render({ path: 'page.lem' }))).toBe('T on s')
     })
 
     it('should load a collection and bind each document at render as its own record', async () => {
@@ -300,7 +310,7 @@ describe('Core', () => {
       expect(core.loadData(loaded)).toEqual([])
       // `title` was validated, `slug`'s default ran over the document's path, and
       // `motto` came through `site`.
-      expect(core.render({ path: 'posts/a.md' }).html).toBe('A\nposts/a.md\nhi\n')
+      expect(page(core.render({ path: 'posts/a.md' }))).toBe('A\nposts/a.md\nhi\n')
     })
 
     it("should bind the envelope's document value only where no loaded document stands", async () => {
@@ -310,8 +320,8 @@ describe('Core', () => {
       expect(core.loadData({ ...loaded, ambient: { page: { title: 'Loose' } } })).toEqual(
         []
       )
-      expect(core.render({ path: 'loose.md' }).html).toBe('Loose\n')
-      expect(core.render({ path: 'posts/a.md' }).html).toBe('A\nposts/a.md\nhi\n')
+      expect(page(core.render({ path: 'loose.md' }))).toBe('Loose\n')
+      expect(page(core.render({ path: 'posts/a.md' }))).toBe('A\nposts/a.md\nhi\n')
     })
 
     it('should place a load diagnostic by the positions the host sent', async () => {
@@ -360,7 +370,7 @@ describe('Core', () => {
         },
       })
       expect(diagnostics).toHaveLength(1)
-      expect(core.render({ path: 'posts/a.md' }).html).toBe('A\nposts/a.md\nhi\n')
+      expect(page(core.render({ path: 'posts/a.md' }))).toBe('A\nposts/a.md\nhi\n')
     })
 
     it('should throw for an envelope the program cannot be loaded from', async () => {
@@ -405,9 +415,71 @@ describe('Core', () => {
       core.loadData({ ambient: { page: {} } })
       const result = core.render({ path: 'page.lem' })
       expect(result.html).toBeNull()
+      expect(result.marks).toBeNull()
+      expect(result.fragments).toBeNull()
       expect(result.diagnostics).toHaveLength(1)
       expect(result.diagnostics[0].path).toBe('page.lem')
       expect(result.diagnostics[0].span.start).toBeGreaterThan(0)
+    })
+
+    it('should return the page as bytes with its marks and fragments', async () => {
+      const core = await loadCore()
+      const text =
+        '<lem-fn card()>\n  <p>caf\u00e9</p>\n  <lem-style>\n    .card {}\n  ' +
+        '</lem-style>\n</lem-fn>\n<lem.card()><lem.mark("styles")>'
+      expect(
+        core.compile([{ path: 'page.lem', text }], {
+          ...untyped,
+          marks: [{ name: 'styles' }],
+        })
+      ).toEqual([])
+      const result = core.render({ path: 'page.lem' })
+      expect(page(result)).toBe('<p>caf\u00e9</p>')
+      // Both offsets are bytes, not characters: the page is twelve bytes where it is
+      // eleven characters, and the call stands one byte past where `indexOf` puts it.
+      const encoder = new TextEncoder()
+      const at = (text: string) => encoder.encode(text).length
+      expect(result.marks).toEqual([
+        {
+          name: 'styles',
+          start: at('<p>caf\u00e9</p>'),
+          end: at('<p>caf\u00e9</p>'),
+          path: 'page.lem',
+          span: expect.objectContaining({
+            start: at(text.slice(0, text.indexOf('mark('))),
+          }) as Span,
+        },
+      ])
+      expect(result.fragments?.styles?.[0]?.text).toBe('.card {}')
+      // What a host does with them: the bundler's link replaces the range, and the
+      // page becomes a string once, afterwards.
+      const resolved = resolveMarks(result, [
+        {
+          name: 'styles',
+          produce: ({ fragments }) =>
+            fragments.map(() => '<style>' + fragments[0].text + '</style>'),
+        },
+      ])
+      expect(decoder.decode(resolved.html)).toBe('<p>caf\u00e9</p><style>.card {}</style>')
+      expect([resolved.unclaimed, resolved.unplaced]).toEqual([[], []])
+    })
+
+    it('should warn at a mark name the declaration claims no handler for', async () => {
+      const core = await loadCore()
+      const diagnostics = core.compile(
+        [{ path: 'page.lem', text: '<lem.mark("stylez")>' }],
+        { ...untyped, marks: [{ name: 'styles' }] }
+      )
+      expect(diagnostics).toHaveLength(1)
+      expect(diagnostics[0].severity).toBe('warning')
+      expect(diagnostics[0].message).toContain('did you mean `styles`?')
+      // And a host that declares no handlers at all hears nothing about the same name.
+      // Its own core: dropping the claims under the file above would leave that one
+      // stale, which is the other half of the same rule.
+      const quiet = await loadCore()
+      expect(
+        quiet.compile([{ path: 'page.lem', text: '<lem.mark("stylez")>' }], untyped)
+      ).toEqual([])
     })
 
     it('should throw for a path the program has no file for', async () => {

@@ -12,7 +12,7 @@ const core = await loadCore() // the staged artifact in the repo's artifacts/was
 const host = { ambient: { site: null } } // names `site`, types nothing (D30)
 core.compile([{ path: 'page.lem', text: 'Hi <lem.site.name>' }], host) // [] = clean
 core.loadData({ ambient: { site: { name: 'limulus.net' } } }) // [] = loaded
-core.render({ path: 'page.lem' }) // { html, diagnostics }
+core.render({ path: 'page.lem' }) // { html (bytes), marks, fragments, diagnostics }
 ```
 
 `loadCore()` reads the wasm-bindgen output `npm run rust:wasm` stages into

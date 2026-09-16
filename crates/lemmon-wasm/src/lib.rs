@@ -30,7 +30,8 @@ use wasm_bindgen::prelude::wasm_bindgen;
 mod wire;
 
 use wire::{
-    DataInput, Diagnostic, FileInput, HostInput, LineIndexes, PageRef, RenderResult,
+    DataInput, Diagnostic, FileInput, HostInput, LineIndexes, PageRef, RenderMeta,
+    encode_render,
 };
 
 /// The version of the core this `.wasm` was built from.
@@ -151,8 +152,16 @@ impl Core {
         self.load_data_json(input).map_err(|m| JsError::new(&m))
     }
 
-    /// Renders one page. `page` is JSON `{path}`; the result is JSON
-    /// `{html, diagnostics}` — the page's HTML, or `null` with the runtime diagnostic.
+    /// Renders one page. `page` is JSON `{path}`; the result is bytes — a four-byte
+    /// little-endian length, that many bytes of JSON
+    /// `{marks, fragments, diagnostics}`, then the page's UTF-8 bytes.
+    ///
+    /// The page crosses as bytes rather than inside the JSON because escaping and
+    /// parsing it there costs more than the render, and because a mark's offsets name
+    /// the page's own bytes (D42). A failed render carries the runtime diagnostic, null
+    /// marks and fragments, and no page section at all — which is how a caller tells it
+    /// from a page that rendered empty.
+    ///
     /// A loaded document is rendered with the host's document value bound to its own
     /// record; any other file reads the value the envelope carried, if it did.
     ///
@@ -160,8 +169,8 @@ impl Core {
     ///
     /// A malformed `page` payload, rendering before any compile has succeeded, or a
     /// path the program has no file for — caller bugs with no source span to carry.
-    pub fn render(&self, page: &str) -> Result<String, JsError> {
-        self.render_json(page).map_err(|m| JsError::new(&m))
+    pub fn render(&self, page: &str) -> Result<Vec<u8>, JsError> {
+        self.render_bytes(page).map_err(|m| JsError::new(&m))
     }
 }
 
@@ -331,7 +340,7 @@ impl Core {
             .map_err(|e| format!("serialising diagnostics failed: {e}"))
     }
 
-    fn render_json(&self, page_json: &str) -> Result<String, String> {
+    fn render_bytes(&self, page_json: &str) -> Result<Vec<u8>, String> {
         let page: PageRef = serde_json::from_str(page_json)
             .map_err(|e| format!("malformed `render` input: {e}"))?;
         let linked = self.linked.as_ref().ok_or(
@@ -346,19 +355,17 @@ impl Core {
             .as_ref()
             .map(|store| store.globals(&linked.host, &page.path))
             .unwrap_or_default();
-        let result = match render(&linked.module, &page.path, &globals) {
-            // The marks and fragments beside the page: not here yet (∆1Hp).
-            Ok(rendered) => RenderResult {
-                html: Some(rendered.html),
-                diagnostics: Vec::new(),
-            },
-            Err(error) => RenderResult {
-                html: None,
-                diagnostics: vec![Diagnostic::placed_runtime(error, &linked.indexes)],
-            },
-        };
-        serde_json::to_string(&result)
-            .map_err(|e| format!("serialising the render result failed: {e}"))
+        match render(&linked.module, &page.path, &globals) {
+            Ok(rendered) => {
+                let meta =
+                    RenderMeta::placed(&rendered, &linked.module.files, &linked.indexes);
+                encode_render(&meta, Some(&rendered.html))
+            }
+            Err(error) => {
+                let diagnostic = Diagnostic::placed_runtime(error, &linked.indexes);
+                encode_render(&RenderMeta::failed(diagnostic), None)
+            }
+        }
     }
 }
 
@@ -449,13 +456,33 @@ mod tests {
         }})
     }
 
-    fn html_of(core: &Core, path: &str) -> String {
-        let result = core
-            .render_json(&format!("{{\"path\": \"{path}\"}}"))
+    /// A render's reply taken apart: its metadata, and the page bytes after it — `None`
+    /// where the render failed and sent no page section at all.
+    fn decode(reply: &[u8]) -> (serde_json::Value, Option<String>) {
+        let (header, rest) = reply.split_at(4);
+        let length = u32::from_le_bytes(header.try_into().expect("four bytes"));
+        let (meta, html) = rest.split_at(length as usize);
+        let meta: serde_json::Value = serde_json::from_slice(meta).unwrap();
+        let page = String::from_utf8(html.to_vec()).expect("a page is UTF-8");
+        let failed = meta["marks"].is_null();
+        assert_eq!(
+            failed,
+            page.is_empty() && meta["diagnostics"][0].is_object()
+        );
+        (meta, (!failed).then_some(page))
+    }
+
+    fn rendered(core: &Core, path: &str) -> (serde_json::Value, Option<String>) {
+        let reply = core
+            .render_bytes(&format!("{{\"path\": \"{path}\"}}"))
             .unwrap();
-        let result: serde_json::Value = serde_json::from_str(&result).unwrap();
-        assert_eq!(result["diagnostics"], serde_json::json!([]));
-        result["html"].as_str().expect("html on success").to_owned()
+        decode(&reply)
+    }
+
+    fn html_of(core: &Core, path: &str) -> String {
+        let (meta, html) = rendered(core, path);
+        assert_eq!(meta["diagnostics"], serde_json::json!([]));
+        html.expect("html on success")
     }
 
     #[test]
@@ -792,7 +819,7 @@ mod tests {
             "{reported:?}"
         );
         // The refused file compiled to nothing, so the program has no b.lem to render.
-        assert!(core.render_json(r#"{"path": "b.lem"}"#).is_err());
+        assert!(core.render_bytes(r#"{"path": "b.lem"}"#).is_err());
         // And a later call is not told again about a collision it did not make: the
         // call that introduced it is the one that reported it.
         compile_clean(&mut core, r#"[{"path": "page.lem", "text": "<lem.f()>"}]"#);
@@ -870,6 +897,80 @@ mod tests {
         assert_eq!(html_of(&core, "page.lem"), "3|1.5|yes|none|1,2,|z=1;a=2;");
     }
 
+    /// The declaration a host with handlers makes: the three names the shell's own
+    /// bundler claims (D42).
+    const CLAIMING: &str = r#"{"ambient": {"site": null, "page": null, "build": null},
+        "marks": [{"name": "styles"}, {"name": "head"}, {"name": "scripts"}]}"#;
+
+    #[test]
+    fn sends_the_page_as_bytes_beside_its_marks_and_fragments() {
+        // The offsets name the page's own bytes, so a mark after text no ASCII could
+        // hold is where the host must splice — not where a character count would put it.
+        let mut core = Core::new();
+        let text = "<lem-fn card()>\n  <p>café — señor</p>\n  <lem-style>\n    .card {}\n                      </lem-style>\n</lem-fn>\n<lem.card()><lem.mark(\"styles\")>";
+        let files = serde_json::json!([{"path": "page.lem", "text": text}]).to_string();
+        compile_clean_with(&mut core, &files, Some(CLAIMING));
+        let (meta, html) = rendered(&core, "page.lem");
+        let html = html.expect("a page");
+        assert_eq!(html, "<p>café — señor</p>");
+        let mark = &meta["marks"][0];
+        assert_eq!(
+            (&mark["name"], &mark["start"], &mark["end"], &mark["path"]),
+            (
+                &serde_json::json!("styles"),
+                &serde_json::json!(html.len()),
+                &serde_json::json!(html.len()),
+                &serde_json::json!("page.lem")
+            )
+        );
+        // The span is the call, placed for an editor as a diagnostic's is (D33).
+        let at = text.find("mark(").expect("the call") as u32;
+        assert_eq!(mark["span"]["start"], at);
+        assert_eq!(mark["span"]["range"]["start"]["line"], 6);
+        let fragment = &meta["fragments"]["styles"][0];
+        assert_eq!(fragment["text"], ".card {}");
+        assert_eq!(fragment["path"], "page.lem");
+        assert_eq!(
+            fragment["span"]["start"],
+            text.find("<lem-style>").expect("the block") as u32
+        );
+    }
+
+    #[test]
+    fn sends_an_empty_page_as_an_empty_section_rather_than_none() {
+        let mut core = Core::new();
+        compile_clean(&mut core, r#"[{"path": "page.lem", "text": ""}]"#);
+        let (meta, html) = rendered(&core, "page.lem");
+        assert_eq!(html.as_deref(), Some(""));
+        assert_eq!(meta["marks"], serde_json::json!([]));
+        assert_eq!(meta["fragments"], serde_json::json!({}));
+    }
+
+    #[test]
+    fn stales_a_unit_whose_mark_the_declaration_stops_claiming() {
+        // What the claims said was answered while the file compiled, so a plugin list
+        // that changes under it leaves exactly the files that mark stale (D42, D25).
+        let mut core = Core::new();
+        let files = r#"[{"path": "page.lem", "text": "<lem.mark(\"styles\")>"}]"#;
+        compile_clean_with(&mut core, files, Some(CLAIMING));
+        // Another file arrives under a declaration whose handlers claim nothing: the
+        // page's unit is resident and marks, so relinking it reports.
+        let other = r#"[{"path": "other.lem", "text": "<p>b</p>"}]"#;
+        let diagnostics = core.compile_json(other, Some(UNTYPED)).unwrap();
+        let diagnostics: serde_json::Value = serde_json::from_str(&diagnostics).unwrap();
+        assert_eq!(diagnostics[0]["path"], "page.lem");
+        assert!(
+            diagnostics[0]["message"]
+                .as_str()
+                .is_some_and(|m| m.contains("no handler claims `styles` now")),
+            "{diagnostics}"
+        );
+        // The same change says nothing about a file that marks nothing.
+        let mut core = Core::new();
+        compile_clean_with(&mut core, other, Some(CLAIMING));
+        assert_eq!(core.compile_json(other, Some(UNTYPED)).unwrap(), "[]");
+    }
+
     #[test]
     fn renders_a_runtime_failure_as_a_diagnostic_not_a_throw() {
         let mut core = Core::new();
@@ -877,9 +978,12 @@ mod tests {
             &mut core,
             r#"[{"path": "page.lem", "text": "<lem.1 / 0>"}]"#,
         );
-        let result = core.render_json(r#"{"path": "page.lem"}"#).unwrap();
-        let result: serde_json::Value = serde_json::from_str(&result).unwrap();
-        assert_eq!(result["html"], serde_json::Value::Null);
+        let (result, html) = rendered(&core, "page.lem");
+        // A failed render sends no page section, and says so with null marks and
+        // fragments rather than by its length: an empty page is a page.
+        assert_eq!(html, None);
+        assert_eq!(result["marks"], serde_json::Value::Null);
+        assert_eq!(result["fragments"], serde_json::Value::Null);
         assert_eq!(result["diagnostics"][0]["path"], "page.lem");
         assert_eq!(result["diagnostics"][0]["span"]["start"], 5);
         assert_eq!(
@@ -895,10 +999,10 @@ mod tests {
     #[test]
     fn refuses_to_render_what_it_cannot_have_compiled() {
         let mut core = Core::new();
-        let error = core.render_json(r#"{"path": "page.lem"}"#).unwrap_err();
+        let error = core.render_bytes(r#"{"path": "page.lem"}"#).unwrap_err();
         assert!(error.contains("`compile` first"), "{error}");
         compile_clean(&mut core, r#"[{"path": "page.lem", "text": "ok"}]"#);
-        let error = core.render_json(r#"{"path": "other.lem"}"#).unwrap_err();
+        let error = core.render_bytes(r#"{"path": "other.lem"}"#).unwrap_err();
         assert_eq!(error, "no compiled file at `other.lem`");
     }
 
@@ -916,7 +1020,7 @@ mod tests {
                 .starts_with("malformed `loadData` input:")
         );
         assert!(
-            core.render_json(r#"{}"#)
+            core.render_bytes(r#"{}"#)
                 .unwrap_err()
                 .starts_with("malformed `render` input:")
         );
@@ -1050,9 +1154,7 @@ mod tests {
         );
         // Until the data is loaded again nothing is bound, so a read fails instead of
         // showing the old program's value.
-        let result: serde_json::Value =
-            serde_json::from_str(&core.render_json(r#"{"path": "posts/a.md"}"#).unwrap())
-                .unwrap();
+        let (result, _) = rendered(&core, "posts/a.md");
         assert!(
             result["diagnostics"][0]["message"]
                 .as_str()

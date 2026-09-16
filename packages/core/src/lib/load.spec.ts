@@ -28,11 +28,13 @@ describe('stagingDirectory()', () => {
   })
 })
 
+const decoder = new TextDecoder()
+
 describe('loadCore()', () => {
   it('should load the staged artifact found from this module', async () => {
     const core = await loadCore()
     expect(core.compile([{ path: 'page.lem', text: 'hi' }])).toEqual([])
-    expect(core.render({ path: 'page.lem' }).html).toBe('hi')
+    expect(decoder.decode(core.render({ path: 'page.lem' }).html!)).toBe('hi')
   })
 
   it('should accept a directory as a path string, trailing slash or not', async () => {
@@ -67,7 +69,7 @@ describe('createCore()', () => {
     const first = createCore(glue, bytes)
     const second = createCore(glue, bytes)
     first.compile([{ path: 'page.lem', text: 'hi' }])
-    expect(first.render({ path: 'page.lem' }).html).toBe('hi')
+    expect(decoder.decode(first.render({ path: 'page.lem' }).html!)).toBe('hi')
     // The second core shares the instantiated module but none of the resident state.
     expect(() => second.render({ path: 'page.lem' })).toThrow(/`compile` first/)
     second.free()

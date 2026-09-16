@@ -28,6 +28,7 @@ import {
   loadCore,
   type Diagnostic,
   type JsonValue,
+  type RenderResult,
   type SourceFileInput,
 } from '../packages/core/src/index.ts'
 
@@ -261,6 +262,14 @@ const loadContent = record('loadData (ambient + content)')
 const renderPost = record('render pass 1 (index.md)')
 const renderPage = record('render pass 2 (driver.lem)')
 
+// A render returns the page as bytes beside its marks (D42). The spike runs no
+// handlers, so each pass decodes outside the timed closure: what the budget is about is
+// the render, and a real shell decodes once, after splicing.
+const decoder = new TextDecoder()
+const last: { body: RenderResult['html']; page: RenderResult['html'] } = {
+  body: null,
+  page: null,
+}
 let bodyHtml = ''
 let pageHtml = ''
 for (let run = 0; run < RENDER_RUNS; run += 1) {
@@ -270,8 +279,9 @@ for (let run = 0; run < RENDER_RUNS; run += 1) {
   renderPost(() => {
     const result = core.render({ path: PAGE_PATH })
     expectClean(result.diagnostics, `rendering ${PAGE_PATH}`)
-    bodyHtml = result.html ?? ''
+    last.body = result.html
   })
+  bodyHtml = last.body === null ? '' : decoder.decode(last.body)
   const withContent = {
     ...ambient,
     page: { ...(ambient.page as JsonRecord), content: bodyHtml },
@@ -282,8 +292,9 @@ for (let run = 0; run < RENDER_RUNS; run += 1) {
   renderPage(() => {
     const result = core.render({ path: 'driver.lem' })
     expectClean(result.diagnostics, 'rendering driver.lem')
-    pageHtml = result.html ?? ''
+    last.page = result.html
   })
+  pageHtml = last.page === null ? '' : decoder.decode(last.page)
 }
 core.free()
 
@@ -305,7 +316,7 @@ const comparison = compareRendered(
 console.log(`lemmon output written to ${outDir}/lemmon.html`)
 console.log()
 console.log('rendered comparison (lemmon vs 11ty reference):')
-console.log(`  bytes: ${pageHtml.length} lemmon, ${reference.length} 11ty`)
+console.log(`  bytes: ${last.page?.length ?? 0} lemmon, ${reference.length} 11ty`)
 console.log(`  nodes matched: ${comparison.matched}`)
 for (const [name, count] of comparison.forgiven) {
   console.log(`  forgiven ${name}: ${count}`)

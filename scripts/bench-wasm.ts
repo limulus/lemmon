@@ -67,10 +67,21 @@ function record(name: string): (fn: () => { in: unknown; out: unknown }) => void
     const micros = Number(process.hrtime.bigint() - start) / 1000
     scenario.samples.push({
       micros,
-      bytesIn: Buffer.byteLength(JSON.stringify(payloads.in)),
-      bytesOut: Buffer.byteLength(JSON.stringify(payloads.out)),
+      bytesIn: bytesOf(payloads.in),
+      bytesOut: bytesOf(payloads.out),
     })
   }
+}
+
+/**
+ * What one side of a call weighs. Everything crosses as JSON except a render's page,
+ * which crosses as bytes (D42) — counting those as JSON would count each byte as the
+ * three or four characters `JSON.stringify` writes for it.
+ */
+function bytesOf(payload: unknown): number {
+  return payload instanceof Uint8Array
+    ? payload.byteLength
+    : Buffer.byteLength(JSON.stringify(payload))
 }
 
 function expectClean(diagnostics: Diagnostic[], doing: string): void {
@@ -210,7 +221,7 @@ async function corpusScenarios(): Promise<void> {
     renderOne(() => {
       const result = core.render({ path: input.path })
       expectClean(result.diagnostics, `rendering ${input.path}`)
-      return { in: { path: input.path }, out: result }
+      return { in: { path: input.path }, out: result.html }
     })
   }
   console.log(`corpus: ${inputs.length} fixtures (error cases excluded)`)
@@ -255,7 +266,7 @@ async function siteScenarios(): Promise<void> {
     renders(() => {
       const result = bigCore.render({ path })
       expectClean(result.diagnostics, `rendering ${path}`)
-      return { in: { path }, out: result }
+      return { in: { path }, out: result.html }
     })
   }
 
