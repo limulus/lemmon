@@ -152,7 +152,7 @@ fn cases_in(dir: &Path) -> Vec<Case> {
 }
 
 /// Checks every case in `group` against its `ext` expectation, naming every mismatch at
-/// once rather than stopping at the first — the nearest [`CASE_BUDGET`] of them with a
+/// once rather than stopping at the first — the nearest `CASE_BUDGET` of them with a
 /// diff, the rest by name.
 ///
 /// With `UPDATE_CORPUS` set in the environment, rewrites the expectations instead of
