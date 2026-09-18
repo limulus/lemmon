@@ -74,7 +74,8 @@ API); the port itself lives in limulus-dot-net on a branch while 11ty stays gree
   matter with YAML positions, loads `lemmon.config.ts`, and drives the core across a worker
   pool: compile `ambient.lem` + templates without front matter, match documents and page
   templates to the reported `from` globs and compile them with their record (D30, D41),
-  loadData, plan, render; `lem check` prints spanned diagnostics. The shell's backbone
+  loadData, plan, render; `lem check` prints spanned diagnostics. The shell's backbone;
+  needs: ∆Bhz
 - ∆7Xs Output writer — HTML to disk with marks resolved, the `styles` producer writing
   per-page hashed CSS bundles of what `lem-style` collects under `/assets/immutable/…`
   (today ten characters of a sha256; `name.<8hex>.ext` is esbuild's and passthrough's
