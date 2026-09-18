@@ -28,9 +28,9 @@ use std::sync::OnceLock;
 use glob::Pattern;
 use lemmon_corpus::Case;
 use lemmon_vm::{
-    Ambient, Data, Decls as _, Fulfilled, Host, HostSpan, LineIndex, Loaded, Map, Mark,
-    Module, Op, Rendered, Source, SourceFile, SourceKind, Span, Spans, Value, collects,
-    compile, field_path, is_document, load, render,
+    Ambient, Claim, Data, Decls as _, Fulfilled, Host, HostSpan, LineIndex, Loaded, Map,
+    Mark, Module, Op, Rendered, Source, SourceFile, SourceKind, Span, Spans, Value,
+    collects, compile, field_path, is_document, load, render,
 };
 use saphyr::{LoadableYamlNode, MarkedYaml, Scalar, YamlData};
 
@@ -45,7 +45,19 @@ const GROUP: &str = "render";
 /// one and a case that misspells one warns.
 fn untyped_host() -> Host {
     Host::untyped(["site", "page", "build"])
-        .with_marks(["styles", "head", "scripts"])
+        .with_claims([
+            ("styles", Claim::new()),
+            ("head", Claim::new()),
+            ("scripts", Claim::new()),
+            // A highlighter's claim: the languages one producer covers, the record a
+            // mark of the name carries, and the field it is keyed by (D42).
+            (
+                "code",
+                Claim::new()
+                    .with_keys(["bash", "css", "html", "sh"])
+                    .with_payload("Code", Some("language")),
+            ),
+        ])
         .with_grammars(
             grammars()
                 .iter()
@@ -216,9 +228,10 @@ fn rendered(
 }
 
 /// The page with each mark shown where it stands: `⟦mark styles⟧` where its range is
-/// empty, `⟦mark toc⟧…⟦/mark⟧` around default content. Written back to front, so every
-/// offset is still the one the render gave; marks at one offset keep the order they were
-/// printed in, which is the order they arrive in.
+/// empty, `⟦mark toc⟧…⟦/mark⟧` around default content. A mark's key follows its name, and
+/// its payload the key, so a case shows what the host's handler is dispatched on and
+/// given. Written back to front, so every offset is still the one the render gave; marks
+/// at one offset keep the order they were printed in, which is the order they arrive in.
 fn marked(html: &str, marks: &[Mark]) -> String {
     let mut out = html.to_owned();
     for mark in marks.iter().rev() {
@@ -226,9 +239,53 @@ fn marked(html: &str, marks: &[Mark]) -> String {
         if mark.end > mark.start {
             out.insert_str(at(mark.end), "⟦/mark⟧");
         }
-        out.insert_str(at(mark.start), &format!("⟦mark {}⟧", mark.name));
+        let mut head = format!("⟦mark {}", mark.name);
+        if let Some(key) = &mark.key {
+            head.push_str(&format!(" {key}"));
+        }
+        if let Some(payload) = &mark.payload {
+            head.push_str(&format!(" {}", shown_value(payload)));
+        }
+        head.push('⟧');
+        out.insert_str(at(mark.start), &head);
     }
     out
+}
+
+/// A payload as the corpus shows it: what the handler is given, written the way a
+/// template wrote it rather than the way the VM holds it. A record keeps its declared
+/// name, since that is what the claim named.
+fn shown_value(value: &Value) -> String {
+    let entries = |map: &Map| {
+        map.iter()
+            .map(|(key, value)| format!("{key}: {}", shown_value(value)))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    match value {
+        Value::Null => "null".to_owned(),
+        Value::Bool(b) => b.to_string(),
+        Value::Int(n) => n.to_string(),
+        // `{:?}`, not `to_string`: `1.0` must not be blessed as `1`, or a change that
+        // turned a float into an int would show nothing in the diff a reader judges.
+        Value::Float(f) => format!("{f:?}"),
+        Value::Duration(seconds) => format!("{seconds}s"),
+        Value::Str(text) | Value::Html(text) | Value::Url(text) | Value::Asset(text) => {
+            format!("{text:?}")
+        }
+        Value::Datetime(when) => format!("{when:?}"),
+        Value::List(items) => format!(
+            "[{}]",
+            items.iter().map(shown_value).collect::<Vec<_>>().join(", ")
+        ),
+        Value::Map(map) => format!("{{{}}}", entries(map)),
+        Value::Record(record) => {
+            format!("{} {{{}}}", record.name, entries(&record.fields))
+        }
+        // Neither can be a payload: the compiler refuses a function field and the VM a
+        // mark inside one, so a case that reaches here is a case about that refusal.
+        Value::Marked(_) | Value::Fn(_) => format!("<{}>", value.type_name()),
+    }
 }
 
 /// The output and diagnostics of a case in the shape the `.html` expectation takes:

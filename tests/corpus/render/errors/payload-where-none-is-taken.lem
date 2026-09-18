@@ -1,0 +1,4 @@
+<lem-fn styleSheet(): html = mark("styles", {media: "print"}) />
+<head>
+  <lem.styleSheet()>
+</head>

@@ -19,7 +19,7 @@ use lemmon_syntax::ast::TypeExpr;
 use lemmon_syntax::{Span, nearest};
 
 use crate::decls::{DeclKind, Declaration, Decls, FieldDecl, Shape};
-use crate::host::{ClaimState, no_asset};
+use crate::host::{ClaimAnswer, no_asset};
 use crate::types::Type;
 use crate::unit::{AmbientRef, AssetRef, ClaimRef, ImportRef, TypeRef};
 
@@ -90,38 +90,74 @@ impl Compiler<'_> {
         Some(url)
     }
 
-    /// Records what the host's claims say about the mark name `name`, and warns where
-    /// the host declares handlers and none claims it (D42).
+    /// Records what the host's claims say about the mark name `name` — asked about
+    /// `key`, where the mark has one while compiling — and warns at a name no handler
+    /// claims, or a key no producer covers (D42).
     ///
-    /// A fact of the unit for `asset_ref`'s reason: the answer is given while this file
-    /// compiles, so a declaration that starts or stops claiming the name has to leave
-    /// the unit stale. A host that declares no handlers at all says nothing — the
-    /// playground and the editor render pages no plugin ever touches, and every mark in
-    /// them is meant to keep its default content.
-    pub(super) fn claim_ref(&mut self, name: &str, span: Span) {
-        let state = self.host.claim_state(name);
-        if !self
-            .unit
-            .claim_refs
-            .iter()
-            .any(|reference| &*reference.name == name)
-        {
+    /// The one place either question is asked, so a `mark()` call and a code block get
+    /// the same answer and record the same fact. A fact of the unit for `asset_ref`'s
+    /// reason: the answer is given while this file compiles, so a declaration that
+    /// changes it has to leave the unit stale. A host that declares no handlers at all
+    /// says nothing — the playground and the editor render pages no plugin ever touches,
+    /// and every mark in them is meant to keep its default content.
+    pub(super) fn claim_ref(
+        &mut self,
+        name: &str,
+        span: Span,
+        key: Option<(&str, Span)>,
+    ) -> ClaimAnswer {
+        let answer = self.host.answer(name, key.map(|(key, _)| key));
+        let asked: Option<(Rc<str>, Span)> = key.map(|(key, at)| (Rc::from(key), at));
+        if !self.unit.claim_refs.iter().any(|reference| {
+            &*reference.name == name
+                && reference.key.as_ref().map(|(key, _)| key)
+                    == asked.as_ref().map(|(key, _)| key)
+        }) {
             self.unit.claim_refs.push(ClaimRef {
                 name: Rc::from(name),
-                state,
                 span,
+                key: asked,
+                answer: answer.clone(),
             });
         }
-        if state != ClaimState::Unclaimed {
-            return;
+        match &answer {
+            ClaimAnswer::Unclaimed => {
+                let message = match nearest(name, self.host.claimed_names()) {
+                    Some(near) => {
+                        format!("no handler claims `{name}`; did you mean `{near}`?")
+                    }
+                    None => format!(
+                        "no handler claims `{name}`, so this mark keeps its default \
+                         content"
+                    ),
+                };
+                self.warn(span, message);
+            }
+            // A producer lists the keys it covers and no wildcard (D42), so a key none
+            // of them lists is the author's mistake, said where the key is written.
+            ClaimAnswer::Claimed {
+                key: Some(false), ..
+            } => {
+                let (key, at) = key.expect("a key answer comes of asking about a key");
+                let claimed = self
+                    .host
+                    .claim(name)
+                    .into_iter()
+                    .flat_map(crate::Claim::keys);
+                let message = match nearest(key, claimed) {
+                    Some(near) => format!(
+                        "no producer claims `{key}` for `{name}`; did you mean `{near}`?"
+                    ),
+                    None => format!(
+                        "no producer claims `{key}` for `{name}`, so this mark keeps its \
+                         default content"
+                    ),
+                };
+                self.warn(at, message);
+            }
+            ClaimAnswer::Undeclared | ClaimAnswer::Claimed { .. } => {}
         }
-        let message = match nearest(name, self.host.claimed_names()) {
-            Some(near) => format!("no handler claims `{name}`; did you mean `{near}`?"),
-            None => format!(
-                "no handler claims `{name}`, so this mark keeps its default content"
-            ),
-        };
-        self.warn(span, message);
+        answer
     }
 
     /// The type an ambient value has here, recorded as a fact of this unit the first

@@ -20,7 +20,7 @@ use std::rc::Rc;
 use lemmon_syntax::Span;
 
 use crate::builtins::{self, BUILTINS, Fault, Machine, ReceiverKind};
-use crate::bytecode::{Function, Module, Op};
+use crate::bytecode::{Function, MarkKey, MarkPayload, Module, Op};
 use crate::rendered::{Buffer, Fragment, Fragments, Mark, Marked, Rendered};
 use crate::value::{Closure, Map};
 use crate::{RuntimeError, Value};
@@ -526,7 +526,9 @@ impl<'a> Vm<'a> {
                 let captured = self.out.pop().expect("a capture buffer");
                 self.stack.push(captured.into_value());
             }
-            Op::Mark { name } => {
+            Op::Mark { name, key, payload } => {
+                // The default is on top and the payload beneath it, which is the order
+                // the compiler lowered them in.
                 let text = match self.pop() {
                     Value::Html(text) => text,
                     Value::Marked(_) => {
@@ -543,6 +545,43 @@ impl<'a> Vm<'a> {
                         .into());
                     }
                 };
+                let payload = match payload {
+                    MarkPayload::None => None,
+                    MarkPayload::Popped => Some(self.pop()),
+                };
+                if let Some(payload) = &payload {
+                    if payload.carries_a_mark() {
+                        return Err("a mark cannot stand inside a payload".into());
+                    }
+                    // Through `any`: the checker asks for a record at the call, and only
+                    // where the host claimed nothing about the name.
+                    if !matches!(payload, Value::Record(_) | Value::Map(_)) {
+                        return Err(format!(
+                            "a mark's payload is a record, got {}",
+                            payload.type_name()
+                        )
+                        .into());
+                    }
+                }
+                let key = match key {
+                    MarkKey::None => None,
+                    MarkKey::Const { index } => Some(self.constant_name(index).clone()),
+                    // The call computed it, so it is read here. A string, as a written
+                    // key is: a field holding anything else — markup, a number, null —
+                    // leaves the mark unkeyed, which is what a written key that is not a
+                    // literal string does too, so the two paths key alike.
+                    MarkKey::Field { index } => {
+                        let field = self.constant_str(index);
+                        match payload.as_ref().and_then(|value| match value {
+                            Value::Record(record) => record.fields.get(field),
+                            Value::Map(map) => map.get(field),
+                            _ => None,
+                        }) {
+                            Some(Value::Str(key)) => Some(key.clone()),
+                            _ => None,
+                        }
+                    }
+                };
                 let name = self.constant_name(name).clone();
                 let (file, span) = self.here();
                 let end = u32::try_from(text.len())
@@ -551,6 +590,8 @@ impl<'a> Vm<'a> {
                     text,
                     marks: Box::from([Mark {
                         name,
+                        key,
+                        payload,
                         start: 0,
                         end,
                         file,
@@ -865,7 +906,11 @@ mod tests {
                 },
                 Op::TypeTest { name } => Op::TypeTest { name: name + 1 },
                 Op::Collect { name } => Op::Collect { name: name + 1 },
-                Op::Mark { name } => Op::Mark { name: name + 1 },
+                Op::Mark { name, key, payload } => Op::Mark {
+                    name: name + 1,
+                    key,
+                    payload,
+                },
                 other => other,
             })
             .collect();
@@ -1320,7 +1365,14 @@ mod tests {
     /// The ops `mark(name)` with no default lowers to: the empty default, then the op.
     /// Written 0-based like every name-carrying op here, and shifted by `run`.
     const fn mark(default: u32, name: u32) -> [Op; 2] {
-        [Op::Const { index: default + 1 }, Op::Mark { name }]
+        [
+            Op::Const { index: default + 1 },
+            Op::Mark {
+                name,
+                key: MarkKey::None,
+                payload: MarkPayload::None,
+            },
+        ]
     }
 
     #[test]
@@ -1420,7 +1472,11 @@ mod tests {
     #[test]
     fn keeps_two_marks_at_one_offset_in_the_order_they_were_printed() {
         let [default, styles] = mark(0, 1);
-        let head = Op::Mark { name: 2 };
+        let head = Op::Mark {
+            name: 2,
+            key: MarkKey::None,
+            payload: MarkPayload::None,
+        };
         let page = rendered(
             vec![Value::html(""), Value::str("styles"), Value::str("head")],
             vec![default, styles, Op::Emit, default, head, Op::Emit],
@@ -1458,7 +1514,15 @@ mod tests {
         assert_eq!(
             error(rendered(
                 vec![Value::html(""), Value::str("styles")],
-                vec![default, name, Op::Mark { name: 1 }],
+                vec![
+                    default,
+                    name,
+                    Op::Mark {
+                        name: 1,
+                        key: MarkKey::None,
+                        payload: MarkPayload::None,
+                    },
+                ],
             )),
             (
                 2,

@@ -14,12 +14,14 @@ use std::rc::Rc;
 use lemmon_syntax::Span;
 
 use crate::Value;
-use crate::bytecode::{Declared, Document, Exported, Function, Module, Op};
+use crate::bytecode::{
+    Declared, Document, Exported, Function, MarkKey, MarkPayload, Module, Op,
+};
 use crate::closure::{self, Closed, ReadClosure};
 use crate::compile::{Compiled, Diagnostic, Runs, index_u32, refused_at_load};
 use crate::decls::{DeclKind, Declaration, Decls, Shape, TypeFact};
 use crate::exports::ExportIndex;
-use crate::host::{ClaimState, Host};
+use crate::host::{ClaimAnswer, Host};
 use crate::plan::{
     BindingStep, Bindings, Fulfilled, Index, RecordPlan, SourceKind, Step, order,
 };
@@ -240,15 +242,25 @@ pub struct GrammarRef {
     pub span: Span,
 }
 
-/// A mark name a file placed, with what the host's claims said about it when the file
-/// compiled: the warning at an unclaimed name was answered then, and ∆7wK will type a
-/// payload there too, so a declaration that starts or stops claiming the name leaves
-/// this unit stale.
+/// A mark name a file placed — and the key it placed it under, where it had one while
+/// compiling — with what the host's claims said about the pair.
+///
+/// The answer was consumed then: the warning at an unclaimed name, the warning at a key
+/// no producer covers, and the record the payload was checked against were all settled
+/// while the file compiled. So a declaration that changes any of them for this name and
+/// key leaves this unit stale — and one that changes them for another key leaves it
+/// alone, which is what lets a highlighter add a language without recompiling every
+/// document that holds a fence.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ClaimRef {
     pub name: Rc<str>,
-    pub state: ClaimState,
+    /// Where the name is written: a `mark()` call's literal, or a code block's language
+    /// word. What a diagnostic about the name or the payload points at.
     pub span: Span,
+    /// The key this file asked about and where it is written, when it had one while
+    /// compiling. A key a render computes has none, and is the handler's to check.
+    pub key: Option<(Rc<str>, Span)>,
+    pub answer: ClaimAnswer,
 }
 
 /// A symbolic reference to a function or type another file defines.
@@ -420,38 +432,20 @@ pub fn link(units: &[Unit], index: &ExportIndex, host: &Host) -> Compiled<Module
                     ));
                 }
             }
-            // A claim is the host's as a grammar is, and says whether a name is
-            // handled: a file compiled where one claimed it warned about nothing, and
-            // one compiled where none did warned at the word.
+            // A claim is the host's as a grammar is, and what it said was answered
+            // while the file compiled: the warning at the word, the warning at a key,
+            // and the record a payload was checked against.
             for reference in &unit.claim_refs {
-                let now = host.claim_state(&reference.name);
-                if now == reference.state {
+                let now = host.answer(
+                    &reference.name,
+                    reference.key.as_ref().map(|(key, _)| &**key),
+                );
+                if now == reference.answer {
                     continue;
                 }
-                let name = &reference.name;
-                diagnostics.push(Diagnostic::error(
-                    &unit.path,
-                    reference.span,
-                    match (reference.state, now) {
-                        (ClaimState::Claimed, _) => format!(
-                            "no handler claims `{name}` now, and this file was compiled \
-                             where one did"
-                        ),
-                        (_, ClaimState::Claimed) => format!(
-                            "a handler claims `{name}` now, and this file was compiled \
-                             where none did"
-                        ),
-                        (ClaimState::Undeclared, _) => format!(
-                            "the host declares handlers now, and this file was compiled \
-                             against none, so nothing was said about `{name}`"
-                        ),
-                        _ => format!(
-                            "the host declares no handlers now, and this file was \
-                             compiled against the ones it did, which left `{name}` \
-                             unclaimed"
-                        ),
-                    },
-                ));
+                if let Some((message, span)) = stale_claim(reference, &now) {
+                    diagnostics.push(Diagnostic::error(&unit.path, span, message));
+                }
             }
             for reference in &unit.type_refs {
                 match index.lookup_type(&reference.name) {
@@ -612,9 +606,22 @@ pub fn link(units: &[Unit], index: &ExportIndex, host: &Host) -> Compiled<Module
                     | Op::CallDynamic { name, .. }
                     | Op::MakeRecord { name, .. }
                     | Op::TypeTest { name }
-                    | Op::Collect { name }
-                    | Op::Mark { name } => {
+                    | Op::Collect { name } => {
                         *name = add_u32(constant_offset, *name);
+                    }
+                    // Three operands rather than one: a mark's key and its payload name
+                    // this file's constants as its name does.
+                    Op::Mark { name, key, payload } => {
+                        *name = add_u32(constant_offset, *name);
+                        match key {
+                            MarkKey::Const { index } | MarkKey::Field { index } => {
+                                *index = add_u32(constant_offset, *index);
+                            }
+                            MarkKey::None => {}
+                        }
+                        match payload {
+                            MarkPayload::None | MarkPayload::Popped => {}
+                        }
                     }
                     Op::Global { func: target }
                     | Op::Call { func: target, .. }
@@ -1146,6 +1153,113 @@ fn stale_signature_message(
     )
 }
 
+/// Why `reference` is stale under the answer the declaration gives `now`, and where to
+/// say so: at the key where the key's coverage moved, at the name otherwise.
+///
+/// The comparison is ordered as a reader would ask it — whether the name is handled at
+/// all, then whether this key is covered, then what the payload is — and the first
+/// difference is the one reported, so one changed claim costs one diagnostic. `None`
+/// where the two answers are equal, which the caller has already ruled out.
+fn stale_claim(reference: &ClaimRef, now: &ClaimAnswer) -> Option<(String, Span)> {
+    let name = &reference.name;
+    let at_name = |message: String| Some((message, reference.span));
+    let was = &reference.answer;
+    match (was, now) {
+        (ClaimAnswer::Claimed { .. }, ClaimAnswer::Claimed { .. }) => {}
+        (ClaimAnswer::Claimed { .. }, _) => {
+            return at_name(format!(
+                "no handler claims `{name}` now, and this file was compiled where one did"
+            ));
+        }
+        (_, ClaimAnswer::Claimed { .. }) => {
+            return at_name(format!(
+                "a handler claims `{name}` now, and this file was compiled where none did"
+            ));
+        }
+        (ClaimAnswer::Undeclared, _) => {
+            return at_name(format!(
+                "the host declares handlers now, and this file was compiled against \
+                 none, so nothing was said about `{name}`"
+            ));
+        }
+        _ => {
+            return at_name(format!(
+                "the host declares no handlers now, and this file was compiled against \
+                 the ones it did, which left `{name}` unclaimed"
+            ));
+        }
+    }
+    let (
+        ClaimAnswer::Claimed {
+            key: was_key,
+            payload: was_payload,
+            keyed_by: was_keyed_by,
+        },
+        ClaimAnswer::Claimed {
+            key: now_key,
+            payload: now_payload,
+            keyed_by: now_keyed_by,
+        },
+    ) = (was, now)
+    else {
+        unreachable!("both answers are claims here");
+    };
+    if was_key != now_key {
+        // A key is only asked about where the file wrote one, so there is a span for it.
+        let (key, span) = reference
+            .key
+            .as_ref()
+            .expect("a key answer comes of asking about a key");
+        let message = match (was_key, now_key) {
+            (_, Some(true)) => format!(
+                "a producer claims `{key}` for `{name}` now, and this file was compiled \
+                 where none did"
+            ),
+            (_, Some(false)) => format!(
+                "no producer claims `{key}` for `{name}` now, and this file was compiled \
+                 where one did"
+            ),
+            _ => format!(
+                "the handlers for `{name}` claim no keys now, and this file was compiled \
+                 against the keys they did"
+            ),
+        };
+        return Some((message, *span));
+    }
+    if was_payload != now_payload {
+        return at_name(match (was_payload, now_payload) {
+            (Some(was), Some(now)) => format!(
+                "the handler for `{name}` takes a `{now}` payload now, and this file was \
+                 compiled against `{was}`"
+            ),
+            (None, Some(now)) => format!(
+                "the handler for `{name}` takes a `{now}` payload now, and this file was \
+                 compiled where it took none"
+            ),
+            (Some(was), None) => format!(
+                "the handler for `{name}` takes no payload now, and this file was \
+                 compiled against a `{was}`"
+            ),
+            (None, None) => unreachable!("the payloads differ"),
+        });
+    }
+    at_name(match (was_keyed_by, now_keyed_by) {
+        (Some(was), Some(now)) => format!(
+            "the handler for `{name}` keys its payload by `{now}` now, and this file was \
+             compiled against `{was}`"
+        ),
+        (None, Some(now)) => format!(
+            "the handler for `{name}` keys its payload by `{now}` now, and this file was \
+             compiled where it keyed by nothing"
+        ),
+        (Some(was), None) => format!(
+            "the handler for `{name}` keys its payload by nothing now, and this file was \
+             compiled against `{was}`"
+        ),
+        (None, None) => unreachable!("an answer that differs in nothing is not stale"),
+    })
+}
+
 /// What a consumer is told when the type it was compiled against has changed shape
 /// under it: both shapes, so the difference is visible without opening the declaration.
 fn stale_type_message(declared: &TypeFact, compiled: &TypeFact) -> String {
@@ -1170,7 +1284,7 @@ fn signature(name: &str, params: &[Param], ret: &Type) -> String {
 mod tests {
     use super::*;
     use crate::compile::{compile_unit, prepare};
-    use crate::host::Ambient;
+    use crate::host::{Ambient, Claim};
     use crate::testing::{GRAMMARS, at};
     use crate::{SourceFile, Value, render};
 
@@ -2210,6 +2324,98 @@ mod tests {
             link(&units, &ExportIndex::of(&units), &claimed)
                 .output
                 .is_some()
+        );
+    }
+
+    /// A host whose handlers claim `code` for `keys`, with the payload record a mark of
+    /// that name carries and the field it is keyed by.
+    fn claiming(keys: &[&str], payload: &str) -> Host {
+        Host::untyped(["site", "page", "build"]).with_claims([(
+            "code",
+            Claim::new()
+                .with_keys(keys.iter().copied())
+                .with_payload(payload, Some("language")),
+        )])
+    }
+
+    /// A file declaring the payload record and marking `code` under one written key.
+    const KEYED: &str = "<lem-type Code>\n  language: string?\n</lem-type>\n\
+                         <lem.mark(\"code\", {language: \"bash\"})>";
+
+    #[test]
+    fn refuses_to_link_a_file_whose_key_the_host_claims_differently_now() {
+        // What a per-key fact buys: the answer at `bash` was consumed while the file
+        // compiled — it decided the warning — so a producer arriving for it, or dropping
+        // it, leaves this file stale, and the message names the key.
+        let host = claiming(&["css"], "Code");
+        let unit = unit_against(&host, "page.lem", &[("page.lem", KEYED)]);
+        for (now, expect) in [
+            (
+                claiming(&["bash", "css"], "Code"),
+                "a producer claims `bash` for `code` now, and this file was compiled \
+                 where none did",
+            ),
+            (
+                claiming(&["css"], "Snippet"),
+                "the handler for `code` takes a `Snippet` payload now, and this file was \
+                 compiled against `Code`",
+            ),
+        ] {
+            let units = [unit.clone()];
+            let linked = link(&units, &ExportIndex::of(&units), &now);
+            assert_eq!(
+                linked
+                    .diagnostics
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>(),
+                [format!(
+                    "page.lem:{}: {expect}",
+                    if expect.starts_with("a producer") {
+                        at(KEYED, "\"bash\"")
+                    } else {
+                        at(KEYED, "mark(«\"code\"»")
+                    }
+                )],
+                "{expect}"
+            );
+        }
+        // The converse, and the half a digest could not give: a producer arriving for
+        // another language leaves this file alone.
+        let units = [unit];
+        assert!(
+            link(
+                &units,
+                &ExportIndex::of(&units),
+                &claiming(&["css", "rust"], "Code")
+            )
+            .diagnostics
+            .is_empty()
+        );
+    }
+
+    #[test]
+    fn records_one_claim_fact_for_each_name_and_key_a_file_asks_about() {
+        // One fact per pair, however often the file asks: two marks of one name and key
+        // are one question, and a second key is a second one.
+        const TWICE: &str = "<lem-type Code>\n  language: string?\n</lem-type>\n\
+                             <lem.mark(\"code\", {language: \"bash\"})>\
+                             <lem.mark(\"code\", {language: \"bash\"})>\
+                             <lem.mark(\"code\", {language: \"css\"})>";
+        let unit = unit_against(
+            &claiming(&["bash", "css"], "Code"),
+            "page.lem",
+            &[("page.lem", TWICE)],
+        );
+        assert_eq!(
+            unit.claim_refs
+                .iter()
+                .map(|reference| (
+                    &*reference.name,
+                    reference.key.as_ref().map(|(key, _)| &**key)
+                ))
+                .collect::<Vec<_>>(),
+            [("code", Some("bash")), ("code", Some("css"))]
         );
     }
 

@@ -22,7 +22,7 @@ use lemmon_syntax::ast::{BinaryOp, UnaryOp};
 use lemmon_syntax::{Span, nearest};
 
 use crate::builtins::{self, Builtin, ReceiverKind};
-use crate::decls::{DeclKind, Decls, no_field};
+use crate::decls::{DeclKind, Decls, Shape, no_field};
 use crate::types::{Type, assignable, join};
 use crate::unit::Param;
 
@@ -636,6 +636,91 @@ pub(super) fn builtin(builtin: &Builtin, argc: usize) -> Rule<()> {
     } else {
         let written = argc - (builtin.arity - builtin.written_arity());
         Err(arity(&builtin.written(), builtin.written_arity(), written))
+    }
+}
+
+/// Whether `argc` arguments are what `mark()` takes: a name, and the payload the host's
+/// claim names where it names one (D42). The one builtin with an optional positional,
+/// so the one that cannot be counted by [`builtin`].
+pub(super) fn mark_arity(argc: usize) -> Rule<()> {
+    if (1..=2).contains(&argc) {
+        Ok(())
+    } else {
+        Err(format!("`mark` takes one or two arguments, got {argc}"))
+    }
+}
+
+/// Whether `ty` is something a mark can carry to a handler where no claim types it: a
+/// record the program declares, a map — which is the record an author writes where
+/// nothing typed one — or `any`, which the VM checks where the value is made.
+///
+/// A payload is what a handler is dispatched on and reads fields of, so a value with no
+/// fields is a mistake worth catching: `default` is a named argument exactly so that the
+/// positional slot means the payload and nothing else (D42). The VM refuses the same
+/// three kinds where a value reaches it through `any`, so the two agree.
+pub(super) fn mark_payload(ty: &Type, decls: &dyn Decls) -> Rule<()> {
+    match ty {
+        Type::Any | Type::Map(_) => Ok(()),
+        Type::Named(name) if decls.kind(name) == Some(DeclKind::Record) => Ok(()),
+        _ => Err(format!("a mark's payload is a record, got {ty}")),
+    }
+}
+
+/// Whether a mark of `name` can carry the declared record `record`: a payload crosses to
+/// the host as data, so neither its fields nor those of a record they hold may be a
+/// function, which has no form outside the program that made it.
+///
+/// The refusal names the path that reaches the field, since the record a claim names is
+/// often not the one that declares it.
+pub(super) fn payload_record(name: &str, record: &str, decls: &dyn Decls) -> Rule<()> {
+    let mut pending: Vec<(Rc<str>, String)> = vec![(Rc::from(record), String::new())];
+    let mut seen: Vec<Rc<str>> = Vec::new();
+    while let Some((declared, path)) = pending.pop() {
+        if seen.contains(&declared) {
+            continue;
+        }
+        seen.push(declared.clone());
+        for decl in decls.chain(&declared) {
+            let Shape::Record { fields, .. } = &decl.shape else {
+                continue;
+            };
+            for field in fields {
+                let at = if path.is_empty() {
+                    field.name.to_string()
+                } else {
+                    format!("{path}.{}", field.name)
+                };
+                match carried(&field.ty) {
+                    Carried::Data => {}
+                    Carried::Record(held) => pending.push((held, at)),
+                    Carried::Function => {
+                        return Err(format!(
+                            "a mark's payload crosses to the handler as data, and \
+                             `{record}.{at}` is a function, so `{name}` cannot carry it"
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// What carrying a value of `ty` to a handler needs: nothing, a walk into the record it
+/// holds, or a refusal. A list, map or optional is followed into its element, which is
+/// where a function would hide.
+enum Carried {
+    Data,
+    Record(Rc<str>),
+    Function,
+}
+
+fn carried(ty: &Type) -> Carried {
+    match ty {
+        Type::Fn(_, _) => Carried::Function,
+        Type::List(inner) | Type::Map(inner) | Type::Optional(inner) => carried(inner),
+        Type::Named(name) => Carried::Record(name.clone()),
+        _ => Carried::Data,
     }
 }
 

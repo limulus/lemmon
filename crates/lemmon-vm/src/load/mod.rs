@@ -647,6 +647,8 @@ pub(crate) mod tests {
             text: Rc::from("<b>hi</b>"),
             marks: Box::from([Mark {
                 name: Rc::from("head"),
+                key: None,
+                payload: None,
                 start: 0,
                 end: 9,
                 file: 0,

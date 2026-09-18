@@ -11,7 +11,7 @@
 //! A host that names nothing compiles a program with no ambient values: `page` is then
 //! an undefined name like any other, not a reserved one.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 
 use lemmon_syntax::nearest;
@@ -114,24 +114,110 @@ pub struct Host {
     /// renders while compiling, so the grammars are consumed there, and a document
     /// records the set it was highlighted against.
     grammars: Option<Grammars>,
-    /// The mark names the host's handlers claim (D42), sorted; `None` for a host that
+    /// What the host's handlers claim (D42), by mark name; `None` for a host that
     /// declares no handlers at all — a playground, an editor — which is silent about
     /// every name rather than warning at each. On the declaration for the manifest's
     /// reason: a name is checked while a file compiles, and the file records what the
     /// claims said.
-    marks: Option<BTreeSet<Rc<str>>>,
+    marks: Option<BTreeMap<Rc<str>, Claim>>,
 }
 
-/// What a host's declaration says about one mark name (D42). With names only, a claim
-/// carries nothing beyond being made; ∆7wK gives a claimed name its keys and payload.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ClaimState {
+/// What a host's handlers claim for one mark name (D42): the keys its producers cover,
+/// the record a mark of the name carries, and which field of that record holds a mark's
+/// key.
+///
+/// Several handlers may claim one name — a producer and a decorator, two producers on
+/// disjoint keys — so this is the merge of what they said: keys are unioned, while the
+/// payload and the key field are the name's own and have to agree. Two producers on one
+/// key, and two claims disagreeing about a payload, are the host's to refuse before a
+/// declaration is built from them (D42; the plugin-load error is ∆PgF's).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Claim {
+    /// The keys the name's producers cover, sorted — what a did-you-mean at a key is
+    /// drawn from, and what makes the listing deterministic.
+    keys: BTreeSet<Rc<str>>,
+    /// Whether any claim for this name listed keys at all. A producer that lists keys
+    /// covers those and no others; a claim that lists none covers whatever comes, which
+    /// is every decorator and the shell's own `styles` bundler. The two are not the same
+    /// as an empty list, so this is a flag rather than `keys.is_empty()`.
+    keyed: bool,
+    /// The record a mark of this name carries, where the handlers take a payload.
+    payload: Option<Rc<str>>,
+    /// The field of that record whose value is a mark's key — `language` on `code`.
+    /// Named by the claim rather than found by convention, since the plugin that
+    /// declares the record is the one that knows which field it dispatches on.
+    keyed_by: Option<Rc<str>>,
+}
+
+impl Claim {
+    /// A claim carrying nothing beyond being made — a decorator's, or a handler for a
+    /// name with neither keys nor a payload.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// The same claim, covering `keys` — a producer's claim. Adds to any already
+    /// claimed, since one name's producers are merged.
+    #[must_use]
+    pub fn with_keys<'a>(mut self, keys: impl IntoIterator<Item = &'a str>) -> Self {
+        self.keys.extend(keys.into_iter().map(Rc::from));
+        self.keyed = true;
+        self
+    }
+
+    /// The same claim, taking a payload of the declared record `record`, keyed by its
+    /// field `keyed_by` where the handlers dispatch on one.
+    #[must_use]
+    pub fn with_payload(mut self, record: &str, keyed_by: Option<&str>) -> Self {
+        self.payload = Some(Rc::from(record));
+        self.keyed_by = keyed_by.map(Rc::from);
+        self
+    }
+
+    /// Every key this claim covers, in sorted order.
+    pub fn keys(&self) -> impl Iterator<Item = &str> {
+        self.keys.iter().map(|key| &**key)
+    }
+
+    /// The payload field whose value is a mark's key, where the claim names one.
+    #[must_use]
+    pub fn keyed_by(&self) -> Option<&str> {
+        self.keyed_by.as_deref()
+    }
+
+    /// What this claim says about `key`: `None` where none was asked about, or where the
+    /// claim lists none and so covers whatever comes.
+    fn covers(&self, key: Option<&str>) -> Option<bool> {
+        let key = key.filter(|_| self.keyed)?;
+        Some(self.keys.iter().any(|claimed| &**claimed == key))
+    }
+}
+
+/// What a host's declaration says about one mark name, asked about one key (D42).
+///
+/// This is the whole of what compiling a `mark()` or a code block consumes of a claim —
+/// the warning at a name, the warning at a key, and the record a payload is checked
+/// against all read it and nothing else — which is why it is also what the unit records
+/// as its fact ([`ClaimRef`](crate::ClaimRef)). The one thing it leaves out is the key
+/// list a did-you-mean is drawn from, so that text can go stale where the answer itself
+/// did not change.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ClaimAnswer {
     /// The host declares no handlers, so it says nothing about any name.
     Undeclared,
     /// The host declares handlers, and none claims this name.
     Unclaimed,
     /// A handler claims it.
-    Claimed,
+    Claimed {
+        /// Whether a producer covers the key asked about: `None` where no key was asked
+        /// about, or where the name's claims list none and so cover every key.
+        key: Option<bool>,
+        /// The record a mark of this name carries, where the handlers take a payload.
+        payload: Option<Rc<str>>,
+        /// The payload field whose value is the mark's key.
+        keyed_by: Option<Rc<str>>,
+    },
 }
 
 impl Host {
@@ -236,32 +322,64 @@ impl Host {
         self
     }
 
-    /// Declares the mark names the host's handlers claim, as the shell's default plugin
-    /// claims `styles`, `scripts` and `head` (D42).
+    /// Declares the mark names the host's handlers claim, each carrying nothing beyond
+    /// being made — as the shell's default plugin claims `styles`, `scripts` and `head`
+    /// (D42).
     ///
     /// Replaces any already declared, as [`with_assets`](Self::with_assets) does. An
     /// empty list still declares handlers — and so warns at every name none of them
     /// claims — where a host that never calls this warns at none.
     #[must_use]
-    pub fn with_marks<'a>(mut self, names: impl IntoIterator<Item = &'a str>) -> Self {
-        self.marks = Some(names.into_iter().map(Rc::from).collect());
+    pub fn with_marks<'a>(self, names: impl IntoIterator<Item = &'a str>) -> Self {
+        self.with_claims(names.into_iter().map(|name| (name, Claim::new())))
+    }
+
+    /// Declares what the host's handlers claim, by mark name: the keys a producer
+    /// covers and the payload a mark of that name carries (D42).
+    ///
+    /// Replaces any already declared, like [`with_marks`](Self::with_marks). Two entries
+    /// for one name are merged as [`Claim`] describes.
+    #[must_use]
+    pub fn with_claims<'a>(
+        mut self,
+        claims: impl IntoIterator<Item = (&'a str, Claim)>,
+    ) -> Self {
+        let mut declared: BTreeMap<Rc<str>, Claim> = BTreeMap::new();
+        for (name, claim) in claims {
+            let merged = declared.entry(Rc::from(name)).or_default();
+            merged.keys.extend(claim.keys.iter().cloned());
+            merged.keyed |= claim.keyed;
+            merged.payload = merged.payload.take().or(claim.payload);
+            merged.keyed_by = merged.keyed_by.take().or(claim.keyed_by);
+        }
+        self.marks = Some(declared);
         self
     }
 
-    /// What this declaration says about the mark name `name`.
+    /// What the host's handlers claim for `name`, where any claims it.
     #[must_use]
-    pub fn claim_state(&self, name: &str) -> ClaimState {
-        match &self.marks {
-            None => ClaimState::Undeclared,
-            Some(claimed) if claimed.contains(name) => ClaimState::Claimed,
-            Some(_) => ClaimState::Unclaimed,
+    pub fn claim(&self, name: &str) -> Option<&Claim> {
+        self.marks.as_ref()?.get(name)
+    }
+
+    /// What this declaration says about the mark name `name`, asked about `key`.
+    #[must_use]
+    pub fn answer(&self, name: &str, key: Option<&str>) -> ClaimAnswer {
+        match self.marks.as_ref().map(|marks| marks.get(name)) {
+            None => ClaimAnswer::Undeclared,
+            Some(None) => ClaimAnswer::Unclaimed,
+            Some(Some(claim)) => ClaimAnswer::Claimed {
+                key: claim.covers(key),
+                payload: claim.payload.clone(),
+                keyed_by: claim.keyed_by.clone(),
+            },
         }
     }
 
     /// Every name the host's handlers claim, in sorted order — the candidates a
     /// did-you-mean is drawn from.
     pub fn claimed_names(&self) -> impl Iterator<Item = &str> {
-        self.marks.iter().flatten().map(|name| &**name)
+        self.marks.iter().flatten().map(|(name, _)| &**name)
     }
 
     /// The grammars the host declared, if it asked for highlighting.
@@ -475,6 +593,71 @@ mod tests {
             no_asset(&Host::new(), "styles/site.css"),
             "the manifest has no asset `styles/site.css`; the host declares none"
         );
+    }
+
+    #[test]
+    fn merges_every_claim_made_for_one_name() {
+        // What a site's plugin list looks like: a highlighter producing two languages
+        // and a copy-button decorator producing none, both answering for `code`. Keys
+        // are unioned across them, and the payload the producer named is the name's.
+        let host = Host::new().with_claims([
+            (
+                "code",
+                Claim::new()
+                    .with_keys(["rust"])
+                    .with_payload("Code", Some("language")),
+            ),
+            ("code", Claim::new()),
+            ("code", Claim::new().with_keys(["ts"])),
+        ]);
+        let claim = host.claim("code").expect("a claim");
+        assert_eq!(claim.keys().collect::<Vec<_>>(), ["rust", "ts"]);
+        assert_eq!(claim.keyed_by(), Some("language"));
+        assert_eq!(
+            host.answer("code", Some("ts")),
+            ClaimAnswer::Claimed {
+                key: Some(true),
+                payload: Some(Rc::from("Code")),
+                keyed_by: Some(Rc::from("language")),
+            }
+        );
+        // And a key no producer listed stays uncovered, however many handlers claim the
+        // name: a decorator transforms what is there, it does not make content.
+        assert!(matches!(
+            host.answer("code", Some("css")),
+            ClaimAnswer::Claimed {
+                key: Some(false),
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn covers_every_key_where_no_claim_lists_one() {
+        // A bundler claims `styles` and dispatches on nothing, so a key never makes one
+        // of its marks unhandled — which is the other half of the rule above.
+        let host = Host::new().with_marks(["styles"]);
+        assert!(matches!(
+            host.answer("styles", Some("anything")),
+            ClaimAnswer::Claimed {
+                key: None,
+                payload: None,
+                keyed_by: None
+            }
+        ));
+        assert_eq!(host.answer("head", None), ClaimAnswer::Unclaimed);
+        assert_eq!(Host::new().answer("styles", None), ClaimAnswer::Undeclared);
+    }
+
+    #[test]
+    fn replaces_the_claims_rather_than_adding_to_them() {
+        // One plugin list is one whole answer, as a manifest is: a name the last list
+        // dropped must stop being claimed, or a stale handler would go on answering.
+        let host = Host::new()
+            .with_marks(["styles", "head"])
+            .with_marks(["styles"]);
+        assert_eq!(host.claimed_names().collect::<Vec<_>>(), ["styles"]);
+        assert_eq!(host.answer("head", None), ClaimAnswer::Unclaimed);
     }
 
     #[test]

@@ -1,0 +1,2 @@
+<p>A table of contents, with the heading text passed where a payload goes:</p>
+<lem.mark("toc", "Contents")>

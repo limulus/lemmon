@@ -41,7 +41,7 @@ class Core {
 //              document?: AmbientName, entry?: FieldName,
 //              url?: FieldName, neighbours?: [FieldName, FieldName],  (D43)
 //              assets?: {[logicalPath]: url},   (D36, the manifest D38)
-//              marks?: {name, keys?, payload?}[]} (the producers' claims, D42)
+//              marks?: {name, keys?, payload?, keyedBy?}[]} (the claims, D42)
 // reserved optional host import (D08): renderMarkdown?(text: string): string
 ```
 
@@ -231,9 +231,11 @@ A unit depends on its text and on the **compile-time facts** it consumed, nothin
 - for a document, the record type the shell compiled it with (D30);
 - what the host bound each ambient value it read to (D36);
 - the asset-manifest entries `asset()` was checked against (D10);
-- for a file that names a mark, or a document whose code names a language, the claims
-  the host declared for that name, as a digest (D42) — not yet (∆7wK): today the grammar
-  set's digest (D40).
+- for a file that names a mark, or a document whose code names a language, what the
+  host's claims said about that name and that key — the answer itself, not a digest of
+  the claim, so a producer that starts covering one language leaves the files that named
+  it stale and not the files that named another (D42). Not yet (∆7wK): a document's
+  fences ask nothing yet, and the grammar set's digest is still a fact of its own (D40).
 
 The compiler reports those facts per file, and the shell's cache key is
 `hash(text) + hash(facts)`. That is the guarantee: a content edit re-runs comrak and codegen
@@ -291,11 +293,14 @@ D35). Ops sketch:
 `IterInit/IterNext`, `TypeTest`, `Emit` (type-directed) and `EmitText`, `Capture/EndCapture`
 (slot bodies and `lem-let` blocks), `Collect` (a `lem-style`/`lem-head`/`lem-script`
 body into the page's fragments under its name, dedup by content), `Mark` (its default
-under a named range), `Track` (dependency recording), `Return`. A mark is a value as much
-as an op: `Mark` makes an `html` value carrying a named range over its default content,
-which `Emit` appends and shifts, and `render` returns beside the page (D42). It is an op
-rather than a builtin because a builtin cannot reach the file and span of its own call,
-which is what a handler's diagnostic points at. Runtime errors carry spans
+under a named range, with the key and payload the call gave), `Track` (dependency
+recording), `Return`. A mark is a value as much as an op: `Mark` makes an `html` value
+carrying a named range over its default content, which `Emit` appends and shifts, and
+`render` returns beside the page (D42). Its key operand says where the key comes from —
+a constant the compiler checked against the producers' keys, or a payload field read at
+render — and its payload operand whether a record is popped from under the default. It is
+an op rather than a builtin because a builtin cannot reach the file and span of its own
+call, which is what a handler's diagnostic points at. Runtime errors carry spans
 via the pc→span table. A builtin that takes a function (`map`, `filter`) runs it through a
 re-entrant invoke inside its `CallBuiltin` step — the VM pushes the frame and runs its loop
 again until that frame returns — so an error inside the closure keeps the closure's own

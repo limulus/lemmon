@@ -203,6 +203,38 @@ impl Value {
         }))
     }
 
+    /// Whether this value holds marked markup anywhere inside it.
+    ///
+    /// The one thing a mark's payload may not carry (D42): a mark names a range of the
+    /// page it was printed into, and a payload is never printed, so a mark inside one
+    /// would stand for a range of nothing. Checked where the payload is made rather than
+    /// where a handler receives it, so the error points at the call (invariant 8).
+    #[must_use]
+    pub fn carries_a_mark(&self) -> bool {
+        match self {
+            Self::Marked(_) => true,
+            Self::List(items) => items.iter().any(Self::carries_a_mark),
+            Self::Map(map) => map.iter().any(|(_, value)| value.carries_a_mark()),
+            Self::Record(record) => record
+                .fields
+                .iter()
+                .any(|(_, value)| value.carries_a_mark()),
+            // A lambda's captures are copied values like any other, and a captured
+            // capture can hold a mark.
+            Self::Fn(closure) => closure.captures.iter().any(Self::carries_a_mark),
+            Self::Null
+            | Self::Bool(_)
+            | Self::Int(_)
+            | Self::Float(_)
+            | Self::Str(_)
+            | Self::Html(_)
+            | Self::Datetime(_)
+            | Self::Duration(_)
+            | Self::Url(_)
+            | Self::Asset(_) => false,
+        }
+    }
+
     /// The name the language uses for this value's type, for messages: a record names
     /// its declared type.
     #[must_use]
@@ -383,6 +415,8 @@ mod tests {
     fn compares_marked_markup_by_what_its_marks_place() {
         let mark = |name: &str, end: u32, at: u32| Mark {
             name: Rc::from(name),
+            key: None,
+            payload: None,
             start: 0,
             end,
             file: 0,
@@ -398,6 +432,31 @@ mod tests {
         assert_eq!(styles.equals(&marked(mark("styles", 1, 40))), Ok(true));
         assert_eq!(styles.equals(&marked(mark("head", 1, 4))), Ok(false));
         assert_eq!(styles.equals(&marked(mark("styles", 0, 4))), Ok(false));
+        // The key and the payload are what the handler is dispatched on and given, so
+        // two marks differing in either place different content and are not equal.
+        let keyed = |key: Option<&str>, payload: Option<Value>| {
+            marked(Mark {
+                key: key.map(Rc::from),
+                payload,
+                ..mark("code", 1, 4)
+            })
+        };
+        assert_eq!(
+            keyed(Some("ts"), None).equals(&keyed(Some("ts"), None)),
+            Ok(true)
+        );
+        assert_eq!(
+            keyed(Some("ts"), None).equals(&keyed(Some("rs"), None)),
+            Ok(false)
+        );
+        assert_eq!(
+            keyed(Some("ts"), None).equals(&keyed(None, None)),
+            Ok(false)
+        );
+        assert_eq!(
+            keyed(None, Some(Value::str("a"))).equals(&keyed(None, Some(Value::str("b")))),
+            Ok(false)
+        );
         // Markup of the same text with no mark in it places nothing, so it is neither.
         assert_eq!(styles.equals(&Value::html("x")), Ok(false));
         assert_eq!(Value::html("x").equals(&styles), Ok(false));

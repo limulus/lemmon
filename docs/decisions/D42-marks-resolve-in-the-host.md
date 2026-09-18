@@ -7,7 +7,12 @@
   `default` is a named argument, which keeps ∆7wK's positional payload additive;
   `mark()` lowers to an `Op::Mark` rather than running as a builtin, since a builtin
   cannot reach its call's file and span; a mark and a fragment each carry the file they
-  were made in beside their span
+  were made in beside their span. As built (∆7wK): a claim carries its keys, the payload
+  record, and `keyedBy`, the payload field holding a mark's key, since the plugin that
+  declares the record is what knows which field it dispatches on; a unit's fact is the
+  answer about a name *and* a key rather than one digest per name, so a producer gaining
+  a language stales only the files that named it; a payload crossing as data may hold no
+  function, at any depth, and no mark
 - **Backlog item:** ∆1Hp (the mark, claims by name, the collect tags, the boundary);
   ∆7wK (the `code` mark, keys and payloads, the core's highlighter removed)
 - **Normative text:** `docs/language.md` § Marks, § Document mode, Code blocks;

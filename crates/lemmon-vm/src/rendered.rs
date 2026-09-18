@@ -18,10 +18,15 @@ use crate::Value;
 ///
 /// `start` and `end` are byte offsets into the text it stands in — the buffer while a
 /// render is building one, the page when the render returns.
-#[derive(Clone, Debug, Eq)]
+#[derive(Clone, Debug)]
 pub struct Mark {
     /// The name the host's handlers are dispatched by.
     pub name: Rc<str>,
+    /// What the handlers for that name are dispatched on, where the claim keys them: a
+    /// code block's language word, or the payload field a `mark()` call filled (D42).
+    pub key: Option<Rc<str>>,
+    /// What the handler is given beside the range, where the claim takes one.
+    pub payload: Option<Value>,
     pub start: u32,
     pub end: u32,
     /// The file the `mark()` call stands in: an index into
@@ -34,17 +39,26 @@ pub struct Mark {
 
 /// Equality is what `==` on `html` asks: two marks that would place the same content in
 /// the same place are equal, wherever the `mark()` that made them was written. One rule,
-/// so the derived equality of a [`Value`] cannot say something else.
+/// so the derived equality of a [`Value`] cannot say something else. The key and the
+/// payload are part of it because they are what the handler is dispatched on and given,
+/// so two marks that differ in either place different content.
 impl PartialEq for Mark {
     fn eq(&self, other: &Self) -> bool {
-        (&self.name, self.start, self.end) == (&other.name, other.start, other.end)
+        (&self.name, &self.key, &self.payload, self.start, self.end)
+            == (
+                &other.name,
+                &other.key,
+                &other.payload,
+                other.start,
+                other.end,
+            )
     }
 }
 
 /// Markup carrying marks: what `mark()` makes, and what a capture whose output holds one
 /// becomes. Markup with no mark stays a plain [`Value::Html`], so nothing pays for this
 /// but the pages that use it.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Marked {
     pub text: Rc<str>,
     pub marks: Box<[Mark]>,
@@ -76,6 +90,8 @@ impl Buffer {
         for mark in &marked.marks {
             self.marks.push(Mark {
                 name: mark.name.clone(),
+                key: mark.key.clone(),
+                payload: mark.payload.clone(),
                 start: shift(mark.start, by)?,
                 end: shift(mark.end, by)?,
                 file: mark.file,
@@ -178,7 +194,7 @@ impl Fragments {
 }
 
 /// A page as [`render`](crate::render) returns it.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Rendered {
     /// The page's text.
     pub html: String,

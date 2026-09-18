@@ -1,0 +1,5 @@
+<p>A table of contents, handed the markup a component already placed:</p>
+<lem-let heading>
+  <lem.mark("styles")>
+</lem-let>
+<lem.mark("toc", {headings: [heading]})>

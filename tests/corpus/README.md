@@ -68,9 +68,17 @@ basename:
 
 A mark is a named range of the page the host fills after the render (D42), so an `.html`
 expectation shows each one where it stands: `⟦mark styles⟧` where the range is empty, and
-`⟦mark toc⟧…⟦/mark⟧` around default content. The notation is the harness's alone — nothing
-in the core writes it — and it is applied back to front, so the offsets in it are the ones
-the render gave. Marks at one offset stand in the order they were printed.
+`⟦mark toc⟧…⟦/mark⟧` around default content. A key follows the name and a payload follows
+the key — `⟦mark code bash Code {language: "bash", …}⟧` — so a case shows what the host's
+handler would be dispatched on and given, which is the whole of what a mark carries. The
+notation is the harness's alone — nothing in the core writes it — and it is applied back to
+front, so the offsets in it are the ones the render gave. Marks at one offset stand in the
+order they were printed.
+
+The `render/` and `document/` host claims `styles`, `head` and `scripts` bare, as the
+shell's own bundler does, and `code` as a highlighter does: four languages, a `Code`
+payload, keyed by its `language` field. So a case can place a mark under any of them, and
+a case that misspells a name or a language warns.
 
 ### Fragments in a render
 

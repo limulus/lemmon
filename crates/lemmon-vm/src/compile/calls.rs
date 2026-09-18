@@ -15,12 +15,14 @@
 use lemmon_syntax::ast::{
     ArgList, CallExpr, Expr, LiteralKind, MemberExpr, NamedArg, Spanned,
 };
-use lemmon_syntax::{Span, SyntaxToken};
+use lemmon_syntax::{Span, SyntaxKind, SyntaxToken};
 
 use crate::Value;
 use crate::builtins::{BUILTINS, Expected, Reach, ReceiverKind};
-use crate::bytecode::Op;
+use crate::bytecode::{MarkKey, MarkPayload, Op};
 use crate::datetime::Datetime;
+use crate::decls::DeclKind;
+use crate::host::{Claim, ClaimAnswer};
 use crate::types::Type;
 
 use super::expr::{decode_string, lambda_params, unparen};
@@ -35,6 +37,31 @@ fn string_literal(expr: Expr) -> Option<SyntaxToken> {
         return None;
     };
     (literal.kind() == Some(LiteralKind::String)).then(|| required(literal.token()))
+}
+
+/// The string literal that the map literal `expr` gives its `field` entry, and where it
+/// is written — a mark's key, where the call wrote one plainly (D42).
+///
+/// `None` where the payload is not a literal record, gives that field no entry, or gives
+/// it something a render computes: the key is then read from the value at render, and
+/// the producers' keys are the handler's to check.
+fn literal_field(expr: &Expr, field: &str) -> Option<(String, Span)> {
+    let Expr::Map(map) = unparen(expr.clone()) else {
+        return None;
+    };
+    map.entries().find_map(|entry| {
+        let key = entry.key()?;
+        let written = if key.kind() == SyntaxKind::StringLit {
+            decode_string(key.text())
+        } else {
+            key.text().to_owned()
+        };
+        if written != field {
+            return None;
+        }
+        let literal = string_literal(entry.value()?)?;
+        Some((decode_string(literal.text()), literal.span()))
+    })
 }
 
 impl Compiler<'_> {
@@ -83,7 +110,7 @@ impl Compiler<'_> {
                 if (BUILTINS[id as usize].reach, BUILTINS[id as usize].name)
                     == (Reach::Ambient, "mark")
                 {
-                    return self.call_mark(id, &positional, &named, span);
+                    return self.call_mark(&positional, &named, span);
                 }
                 if self.reject_named(&named, &name) {
                     self.discard(&positional, &named);
@@ -293,26 +320,18 @@ impl Compiler<'_> {
         Type::Asset
     }
 
-    /// Lowers `mark("name")` or `mark("name", default: expr)` to an `Op::Mark`.
+    /// Lowers `mark("name")`, with the payload and default the call gave, to an
+    /// `Op::Mark`.
     ///
     /// The name is a literal for [`call_asset`](Self::call_asset)'s reason: the claims
     /// are read while this file compiles, so a name a render computes could be checked
     /// against nothing and recorded as no fact. The default is named — the language's
-    /// one named argument to a builtin — which is what keeps ∆7wK's positional payload
-    /// additive: no call written today has a second positional argument to mean
-    /// something else. It is always lowered, an empty `html` where the call omits it, so
-    /// the op pops one value however the call was written.
-    fn call_mark(
-        &mut self,
-        id: u32,
-        positional: &[Expr],
-        named: &[NamedArg],
-        span: Span,
-    ) -> Type {
-        if self.require(
-            span,
-            rules::builtin(&BUILTINS[id as usize], positional.len()),
-        ) {
+    /// one named argument to a builtin — which is what left the positional slot free for
+    /// the payload (D42). It is always lowered, an empty `html` where the call omits it,
+    /// so the op pops one value however the call was written; the payload is lowered
+    /// first, so the op finds the default on top and the record beneath it.
+    fn call_mark(&mut self, positional: &[Expr], named: &[NamedArg], span: Span) -> Type {
+        if self.require(span, rules::mark_arity(positional.len())) {
             self.discard(positional, named);
             return Type::Html;
         }
@@ -329,7 +348,24 @@ impl Compiler<'_> {
             return Type::Html;
         };
         let name = decode_string(literal.text());
-        self.claim_ref(&name, literal.span());
+        let payload = positional.get(1);
+        // The key is read from the payload before anything is lowered, because a claim
+        // answers about a name and a key together, and what it answers is what decides
+        // how the payload itself is checked.
+        let keyed_by = self
+            .host
+            .claim(&name)
+            .and_then(Claim::keyed_by)
+            .map(str::to_owned);
+        let written_key = payload
+            .zip(keyed_by.as_deref())
+            .and_then(|(expr, field)| literal_field(expr, field));
+        let answer = self.claim_ref(
+            &name,
+            literal.span(),
+            written_key.as_ref().map(|(key, at)| (key.as_str(), *at)),
+        );
+        let carried = self.mark_payload(&name, payload, &answer, span);
         let mut default = None;
         for argument in named {
             let written = required(argument.name());
@@ -356,9 +392,97 @@ impl Compiler<'_> {
                 self.emit(Op::Const { index }, span);
             }
         }
+        let key = match (&written_key, &keyed_by, carried) {
+            (Some((key, _)), _, _) => MarkKey::Const {
+                index: self.intern(key),
+            },
+            // The call computed what the claim keys on, so the VM reads the field from
+            // the record at render and the handler checks it at build (D42).
+            (None, Some(field), MarkPayload::Popped) => MarkKey::Field {
+                index: self.intern(field),
+            },
+            _ => MarkKey::None,
+        };
         let name = self.intern(&name);
-        self.emit(Op::Mark { name }, span);
+        self.emit(
+            Op::Mark {
+                name,
+                key,
+                payload: carried,
+            },
+            span,
+        );
         Type::Html
+    }
+
+    /// Lowers a mark's payload where the call gave one, checked against the record the
+    /// host's claim names (D42), and says whether the op pops one.
+    ///
+    /// A claim that names no record takes no payload and a claim that names one takes it,
+    /// so a call that disagrees is refused at the argument rather than left to a handler.
+    /// Where nothing was claimed — an unclaimed name, a host with no handlers — there is
+    /// nothing to check it against, and the payload only has to be something a handler
+    /// could be given.
+    fn mark_payload(
+        &mut self,
+        name: &str,
+        payload: Option<&Expr>,
+        answer: &ClaimAnswer,
+        span: Span,
+    ) -> MarkPayload {
+        let declared = match answer {
+            ClaimAnswer::Claimed { payload, .. } => payload.clone(),
+            ClaimAnswer::Unclaimed | ClaimAnswer::Undeclared => None,
+        };
+        match (payload, declared) {
+            (Some(expr), Some(record)) => {
+                // The record is the program's to declare, so a claim naming one it has
+                // not — or naming an enum, which no literal could satisfy — is a mistake
+                // in the host's declaration, said at the call, the only place in this
+                // file that consumed it. Refused before the payload is checked against
+                // it, or the author would be told about their own literal instead.
+                if self.decls().kind(&record) != Some(DeclKind::Record) {
+                    let what = match self.decls().kind(&record) {
+                        Some(DeclKind::Enum) => "which is an enum, not a record",
+                        _ => "which nothing declares",
+                    };
+                    self.error(
+                        span,
+                        format!(
+                            "the host's claim for `{name}` names a payload `{record}`, \
+                             {what}"
+                        ),
+                    );
+                    self.expr(expr);
+                } else {
+                    self.note_type(&record, expr.span());
+                    self.require(span, rules::payload_record(name, &record, self.decls()));
+                    self.check(expr, &Type::Named(record));
+                }
+                MarkPayload::Popped
+            }
+            (Some(expr), None) if matches!(answer, ClaimAnswer::Claimed { .. }) => {
+                self.error(
+                    expr.span(),
+                    format!("the handler for `{name}` takes no payload"),
+                );
+                self.expr(expr);
+                MarkPayload::Popped
+            }
+            (Some(expr), None) => {
+                let ty = self.expr(expr);
+                self.require(expr.span(), rules::mark_payload(&ty, self.decls()));
+                MarkPayload::Popped
+            }
+            (None, Some(record)) => {
+                self.error(
+                    span,
+                    format!("the producer for `{name}` takes a `{record}` payload"),
+                );
+                MarkPayload::None
+            }
+            (None, None) => MarkPayload::None,
+        }
     }
 
     /// Reports a first argument written as a literal that `read` refuses, at the

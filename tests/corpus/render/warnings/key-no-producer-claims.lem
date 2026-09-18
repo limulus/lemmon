@@ -1,0 +1,9 @@
+<lem-type Code>
+  language: string?
+  info: string
+  code: string
+</lem-type>
+
+<p>The first snippet names a language a producer covers, the second a typo of it:</p>
+<lem.mark("code", {language: "bash", info: "", code: "echo one"})>
+<lem.mark("code", {language: "bsah", info: "", code: "echo two"})>

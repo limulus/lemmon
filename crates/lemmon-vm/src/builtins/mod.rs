@@ -215,8 +215,10 @@ pub const BUILTINS: &[Builtin] = &[
     ambient("url", 1, values::url_type, values::url),
     ambient("asset", 1, values::asset_type, values::asset),
     ambient("uniqueId", 1, values::unique_id_type, values::unique_id),
-    // Written `mark("styles")` or `mark("toc", default: fallback)`: the one builtin
-    // with a named argument, and the compiler reads both (D42).
+    // Written `mark("styles")`, `mark("code", payload)`, or either with
+    // `default: fallback`: the one builtin with a named argument and the one with an
+    // optional positional, so `rules::mark_arity` counts its call rather than the
+    // `arity` here, and the compiler reads every part (D42).
     ambient("mark", 1, values::mark_type, values::mark),
     // `string`
     method(

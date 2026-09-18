@@ -402,11 +402,15 @@ moved it. Newest last. An entry is removed when its change has been applied.
   rather than leaving it to the toolchain's default, and which the ABI tests run on
   (∆vnI).
 
-- **WASM API, the host declaration** — add `marks?: {name, keys?, payload?}[]` beside
-  `assets`: the claims of the host's producers, consumed while compiling as the manifest
-  is, so a literal mark name or language word is checked with a did-you-mean and the
-  claims a unit read are its compile-time fact, one digest per name. No grammars ride on
-  the declaration and the core embeds none (D42, superseding D40 and ∆BfR's entry).
+- **WASM API, the host declaration** — add `marks?: {name, keys?, payload?, keyedBy?}[]`
+  beside `assets`: the claims of the host's handlers, consumed while compiling as the
+  manifest is, so a literal mark name or language word is checked with a did-you-mean.
+  `keys` are what one producer covers, `payload` the record a mark of the name carries,
+  and `keyedBy` the field of that record holding the key. What a unit read is its
+  compile-time fact per name *and key* — the answer itself, not a digest — so a producer
+  that starts covering one language leaves the files that named it stale and not the
+  files that named another. No grammars ride on the declaration and the core embeds none
+  (D42, superseding D40 and ∆BfR's entry; ∆7wK).
 
 - **WASM API, `render`** — `render` returns the page as UTF-8 bytes beside its metadata:
   `marks` (name, byte range, payload id, source span) and `fragments` (the collect tags'

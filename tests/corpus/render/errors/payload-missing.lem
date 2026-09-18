@@ -1,0 +1,8 @@
+<lem-type Code>
+  language: string?
+  info: string
+  code: string
+</lem-type>
+
+<p>A snippet placed with nothing for the producer to render:</p>
+<lem.mark("code")>

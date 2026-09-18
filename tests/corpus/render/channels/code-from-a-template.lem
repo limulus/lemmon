@@ -1,0 +1,13 @@
+<lem-type Code>
+  language: string?
+  info: string
+  code: string
+</lem-type>
+
+<lem-fn snippet(language: string, source: string): html
+  = mark("code", {language: language, info: "", code: source}) />
+
+<figure class="snippet">
+  <lem.snippet("bash", "git switch -c notes")>
+  <figcaption>Start a branch for the notes.</figcaption>
+</figure>

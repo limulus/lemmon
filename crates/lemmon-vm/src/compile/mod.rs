@@ -941,7 +941,7 @@ mod tests {
     use lemmon_syntax::Severity;
 
     use super::*;
-    use crate::host::Ambient;
+    use crate::host::{Ambient, Claim};
     use crate::render;
     use crate::testing::at;
     use crate::unit::Param;
@@ -951,10 +951,26 @@ mod tests {
     const LIB_RAW: &str = "<lem-fn raw(s: string): string = s />";
 
     /// The host every test below compiles against unless it needs another: the three
-    /// names the standard shell binds, none of them typed.
+    /// names the standard shell binds, none of them typed. Its handlers claim the three
+    /// names the shell's own bundler answers for, and `code` as a highlighter does —
+    /// two languages, a `Code` payload, keyed by its `language` field (D42).
     fn untyped_host() -> Host {
-        Host::untyped(["site", "page", "build"]).with_marks(["styles", "head", "scripts"])
+        Host::untyped(["site", "page", "build"]).with_claims([
+            ("styles", Claim::new()),
+            ("head", Claim::new()),
+            ("scripts", Claim::new()),
+            (
+                "code",
+                Claim::new()
+                    .with_keys(["bash", "css"])
+                    .with_payload("Code", Some("language")),
+            ),
+        ])
     }
+
+    /// The record that host's `code` claim names, as a site's `ambient.lem` declares it.
+    const CODE: &str = "<lem-type Code>\n  language: string?\n  info: string\n  \
+                        code: string\n</lem-type>\n";
 
     fn run(src: &str) -> Result<String, String> {
         run_files(&[SourceFile::new("t.lem", src)], "t.lem")
@@ -1684,6 +1700,257 @@ mod tests {
             (module.files[fragment.file as usize].as_str(), fragment.span),
             ("page.lem", at(PAGE, "<lem-style>.card {}</lem-style>"))
         );
+    }
+
+    #[test]
+    fn types_a_marks_payload_by_the_record_the_claim_names() {
+        // The claim names `Code`, so the record the call builds is checked against that
+        // declaration like any other record literal (D42).
+        let src = format!(
+            "{CODE}<lem.mark(\"code\", {{language: \"bash\", info: \"\", code: \"x\"}})>"
+        );
+        let compiled = compile(&[SourceFile::new("t.lem", &src)], &untyped_host());
+        assert_eq!(shown(&compiled.diagnostics), Vec::<String>::new());
+        // A field the record does not declare is the mistake a claimed payload catches.
+        let wrong =
+            format!("{CODE}<lem.mark(\"code\", {{language: \"bash\", nope: \"\"}})>");
+        let compiled = compile(&[SourceFile::new("t.lem", &wrong)], &untyped_host());
+        let messages = shown(&compiled.diagnostics);
+        assert!(
+            messages
+                .iter()
+                .any(|m| m.contains("`Code` has no field `nope`")),
+            "{messages:?}"
+        );
+    }
+
+    #[test]
+    fn refuses_a_payload_where_the_claim_takes_none_and_wants_one_where_it_does() {
+        // The two halves of the same rule: the claim says whether a mark of the name
+        // carries anything, so a call that disagrees is refused at the call.
+        const EXTRA: &str = "<lem.mark(\"styles\", {a: 1})>";
+        assert_eq!(
+            shown(&compile_errors(&[SourceFile::new("t.lem", EXTRA)])),
+            [format!(
+                "t.lem:{}: the handler for `styles` takes no payload",
+                at(EXTRA, "{a: 1}")
+            )]
+        );
+        const MISSING: &str = "<lem.mark(\"code\")>";
+        let src = format!("{CODE}{MISSING}");
+        assert_eq!(
+            shown(&compile_errors(&[SourceFile::new("t.lem", &src)])),
+            [format!(
+                "t.lem:{}: the producer for `code` takes a `Code` payload",
+                at(&src, "mark(\"code\")")
+            )]
+        );
+    }
+
+    #[test]
+    fn warns_at_a_key_no_producer_claims_where_the_key_is_written() {
+        // A producer lists the keys it covers and no wildcard (D42), so a key none of
+        // them lists is the author's mistake — and it is said at the key, not at the
+        // name, which is what the editor puts a squiggle under.
+        let src = format!(
+            "{CODE}<lem.mark(\"code\", {{language: \"bsah\", info: \"\", code: \"x\"}})>"
+        );
+        let compiled = compile(&[SourceFile::new("t.lem", &src)], &untyped_host());
+        assert_eq!(
+            shown(&compiled.diagnostics),
+            [format!(
+                "t.lem:{}: warning: no producer claims `bsah` for `code`; did you mean \
+                 `bash`?",
+                at(&src, "\"bsah\"")
+            )]
+        );
+        // The page is correct without a producer, so the unit is still built.
+        assert!(compiled.output.is_some());
+    }
+
+    #[test]
+    fn says_nothing_about_a_key_the_host_declares_no_handlers_for() {
+        // The other half: a playground declares no handlers, so neither the name nor
+        // the key is anything it can be wrong about.
+        let src = format!(
+            "{CODE}<lem.mark(\"code\", {{language: \"bsah\", info: \"\", code: \"x\"}})>"
+        );
+        let host = Host::untyped(["site", "page", "build"]);
+        let compiled = compile(&[SourceFile::new("t.lem", &src)], &host);
+        assert_eq!(shown(&compiled.diagnostics), Vec::<String>::new());
+    }
+
+    #[test]
+    fn keys_a_mark_by_the_payload_field_the_claim_names() {
+        // Written plainly, the key is taken at compile; computed, it is read from the
+        // record at render and left to the handler to check (D42).
+        let written = format!(
+            "{CODE}<lem.mark(\"code\", {{language: \"bash\", info: \"\", code: \"x\"}})>"
+        );
+        let computed = format!(
+            "{CODE}<lem-let lang = \"ba\" + \"sh\" />\\n\
+             <lem.mark(\"code\", {{language: lang, info: \"\", code: \"x\"}})>"
+        );
+        for src in [written, computed] {
+            let module =
+                compile(&[SourceFile::new("t.lem", &src)], &untyped_host()).expect_output();
+            let rendered = render(&module, "t.lem", &[]).expect("a page");
+            let [mark] = rendered.marks.as_slice() else {
+                panic!("one mark: {:?}", rendered.marks);
+            };
+            assert_eq!(
+                (&*mark.name, mark.key.as_deref()),
+                ("code", Some("bash")),
+                "{src}"
+            );
+            let Some(Value::Record(payload)) = &mark.payload else {
+                panic!("a record payload: {:?}", mark.payload);
+            };
+            assert_eq!(
+                (&*payload.name, payload.fields.get("code")),
+                ("Code", Some(&Value::str("x")))
+            );
+        }
+    }
+
+    #[test]
+    fn leaves_a_mark_unkeyed_where_the_claim_keys_by_nothing() {
+        // `styles` takes no payload and no key, so its marks reach every handler for the
+        // name — which is what a bundler wants.
+        let module = compile(
+            &[SourceFile::new("t.lem", "<lem.mark(\"styles\")>")],
+            &untyped_host(),
+        )
+        .expect_output();
+        let rendered = render(&module, "t.lem", &[]).expect("a page");
+        assert_eq!(
+            rendered.marks[0].key.as_deref(),
+            None,
+            "{:?}",
+            rendered.marks
+        );
+        assert_eq!(rendered.marks[0].payload, None);
+    }
+
+    #[test]
+    fn refuses_a_payload_that_is_no_record_and_one_that_holds_a_function() {
+        // Nothing is claimed here, so nothing types the payload — it only has to be
+        // something a handler could be given as data.
+        const LOOSE: &str = "<lem.mark(\"styles\", \"x\")>";
+        let host = Host::untyped(["site", "page", "build"]);
+        assert_eq!(
+            shown(&compile(&[SourceFile::new("t.lem", LOOSE)], &host).diagnostics),
+            [format!(
+                "t.lem:{}: a mark's payload is a record, got string",
+                at(LOOSE, "\"x\"")
+            )]
+        );
+        // And a claimed record whose fields reach a function cannot cross to a handler
+        // at all, whatever the call wrote.
+        const HELD: &str = "<lem-type Held>\n  render: (string): string\n</lem-type>\n\
+                            <lem-type Wrap>\n  held: Held\n</lem-type>\n";
+        let src = format!(
+            "{HELD}<lem.mark(\"code\", {{held: {{render: up}}}})>\n\
+                           <lem-fn up(s: string): string = s />"
+        );
+        let claiming = Host::untyped(["site", "page", "build"])
+            .with_claims([("code", Claim::new().with_payload("Wrap", None))]);
+        let messages =
+            shown(&compile(&[SourceFile::new("t.lem", &src)], &claiming).diagnostics);
+        assert!(
+            messages.iter().any(|m| m.contains(
+                "a mark's payload crosses to the handler as data, and `Wrap.held.render` \
+                 is a function, so `code` cannot carry it"
+            )),
+            "{messages:?}"
+        );
+    }
+
+    #[test]
+    fn refuses_a_claim_naming_a_payload_record_nothing_declares() {
+        // The record is the program's to declare, so a claim naming one it has not is a
+        // mistake in the host's declaration, said at the call that consumed it.
+        const SRC: &str = "<lem.mark(\"code\", {language: \"bash\"})>";
+        assert_eq!(
+            shown(&compile_errors(&[SourceFile::new("t.lem", SRC)])),
+            [format!(
+                "t.lem:{}: the host's claim for `code` names a payload `Code`, which \
+                 nothing declares",
+                at(SRC, "mark(\"code\", {language: \"bash\"})")
+            )]
+        );
+    }
+
+    #[test]
+    fn keys_a_mark_only_where_the_field_holds_a_string() {
+        // A written key can only be a string literal, so a computed one that is anything
+        // else keys nothing either: the handler answers for an unkeyed mark rather than
+        // for one keyed by a run of markup, and the two paths key alike.
+        const SRC: &str = "<lem-type Spec>\n  kind: any\n</lem-type>\n\
+                           <lem-let markup>a <b>diagram</b></lem-let>\n\
+                           <lem-let computed = \"pik\" + \"chr\" />\n\
+                           <lem.mark(\"diagram\", {kind: markup})>\
+                           <lem.mark(\"diagram\", {kind: computed})>\
+                           <lem.mark(\"diagram\", {kind: \"mermaid\"})>";
+        let host = Host::untyped(["site", "page", "build"])
+            .with_claims([("diagram", Claim::new().with_payload("Spec", Some("kind")))]);
+        let module = compile(&[SourceFile::new("t.lem", SRC)], &host).expect_output();
+        let rendered = render(&module, "t.lem", &[]).expect("a page");
+        assert_eq!(
+            rendered
+                .marks
+                .iter()
+                .map(|mark| mark.key.as_deref())
+                .collect::<Vec<_>>(),
+            [None, Some("pikchr"), Some("mermaid")]
+        );
+    }
+
+    #[test]
+    fn refuses_a_claim_whose_payload_names_an_enum() {
+        // No record literal could satisfy an enum, so the mistake is the host's and is
+        // said as the host's — telling the author their literal was the wrong shape
+        // would send them to fix the one thing here that is right.
+        const SRC: &str = "<lem-enum Placement = hero | left />\n\
+                           <lem.mark(\"code\", {language: \"bash\"})>";
+        let host = Host::untyped(["site", "page", "build"])
+            .with_claims([("code", Claim::new().with_payload("Placement", None))]);
+        assert_eq!(
+            shown(&compile(&[SourceFile::new("t.lem", SRC)], &host).diagnostics),
+            [format!(
+                "t.lem:{}: the host's claim for `code` names a payload `Placement`, \
+                 which is an enum, not a record",
+                at(SRC, "mark(\"code\", {language: \"bash\"})")
+            )]
+        );
+    }
+
+    #[test]
+    fn takes_one_or_two_positional_arguments() {
+        for (src, expect) in [
+            ("<lem.mark()>", "`mark` takes one or two arguments, got 0"),
+            (
+                "<lem.mark(\"code\", {a: 1}, 3)>",
+                "`mark` takes one or two arguments, got 3",
+            ),
+        ] {
+            let messages = shown(&compile_errors(&[SourceFile::new("t.lem", src)]));
+            assert!(messages.iter().any(|m| m.contains(expect)), "{messages:?}");
+        }
+    }
+
+    #[test]
+    fn refuses_a_payload_carrying_a_mark_however_deeply_it_is_held() {
+        // The third of the three places a mark cannot stand (D42): a payload is never
+        // printed, so a mark inside one would stand for a range of nothing. Held one
+        // level down, where a check of the value's own type would miss it.
+        const SRC: &str = "<lem-let inner><lem.mark(\"styles\")></lem-let>\n\
+                           <lem.mark(\"styles\", {held: [inner]})>";
+        let host = Host::untyped(["site", "page", "build"]);
+        let module = compile(&[SourceFile::new("t.lem", SRC)], &host).expect_output();
+        let error = render(&module, "t.lem", &[]).expect_err("a render error");
+        assert_eq!(error.message, "a mark cannot stand inside a payload");
+        assert_eq!(error.span, at(SRC, "mark(\"styles\", {held: [inner]})"));
     }
 
     #[test]

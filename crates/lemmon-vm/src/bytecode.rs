@@ -130,15 +130,45 @@ ops! {
     Capture,
     /// Stop capturing; push the buffer as `html`.
     EndCapture,
-    /// Pop an `html` default and push it marked under the name at `constants[name]`,
-    /// with one mark spanning its text (D42). A default carrying a mark is an error.
-    Mark { name: u32 },
+    /// Pop an `html` default — and, where `payload` says so, the record beneath it —
+    /// and push them marked under the name at `constants[name]`, with one mark spanning
+    /// the default's text (D42). A default or a payload carrying a mark is an error.
+    Mark {
+        name: u32,
+        key: MarkKey,
+        payload: MarkPayload,
+    },
     /// Pop the `html` a collect block rendered and add it to the render's fragments
     /// under the name at `constants[name]`, unless it is empty or they hold its text
     /// already (D42). Only a page render collects; a loader's run is an error.
     Collect { name: u32 },
     /// Pop the return value and leave the frame.
     Return,
+}
+
+/// Where a mark's key comes from — what the host's producers are dispatched on under
+/// its name (D42).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MarkKey {
+    /// None: the name's claims list no keys, or the call gave no payload to read one
+    /// from.
+    None,
+    /// The string at `constants[index]` — a key the call wrote as a literal, which the
+    /// compiler has already checked against the producers' keys.
+    Const { index: u32 },
+    /// What the payload's field named by `constants[index]` holds, read at render
+    /// because the call computed it; the handler checks it at build (D42). A field
+    /// holding anything but a string leaves the mark unkeyed.
+    Field { index: u32 },
+}
+
+/// What a mark carries for its handler beside its range (D42).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MarkPayload {
+    /// Nothing.
+    None,
+    /// A record on the stack, beneath the default.
+    Popped,
 }
 
 /// A compiled function: a `lem-fn`, a lambda, or a file's top-level items.

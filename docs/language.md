@@ -490,6 +490,10 @@ entry every page schema declares; `url`, which `Page` declares; and `prev` and `
 which only a generated page's type declares. Everything else it knows about a page is a
 field declared with a span, in `ambient.lem` or `site.lem`.
 
+`ambient.lem` also declares `Code`, the payload a `code` mark carries — `language:
+string?`, `info: string`, `code: string` — so that a template can build one where a
+document's fences are built by the core (§ Code blocks, D42).
+
 **Declared, not inferred.** Every surface one file offers another is read from heads
 alone, never from a body: a `lem-fn`'s parameters and return, a `lem-type`'s fields, and
 the top-level bindings of the file an ambient value reads. That is the rule behind the
@@ -770,7 +774,7 @@ collapsed blindly (D15's "normalized"; `scripts/lib/rendered-html.ts`).
 fills after the page renders. The default — an `html` value, captured and passed (D22) —
 is what the page holds until a handler replaces it, and nothing when there is none. It is
 written as a named argument, the one named argument any builtin takes, which is what
-leaves the positional slot to a payload (∆7wK).
+leaves the positional slot to the payload.
 
 The name is a literal: the claims are read while the file compiles, so a name a render
 computes could be checked against nothing, and is refused where it stands. It is checked
@@ -779,9 +783,25 @@ against the names the host's handlers claim, and a name none of them claims is a
 mark keeps its default content. A host that declares no handlers at all — the playground,
 the editor — says nothing about any name. What the claims said is a compile-time fact of
 the unit (D25), so a plugin that starts or stops claiming a name leaves the files that
-mark it stale, and them alone. A payload is a record the claim names, checked at the call,
-and a literal key in it is checked against the producer's keys, a computed one by the
-handler at build.
+mark it stale, and them alone.
+
+**A payload is a record the claim names**, and a claim that names none takes no payload,
+so a call that disagrees with its claim is refused at the call. It is checked there like
+any record literal. Where nothing claims the name the payload is unchecked, and only has
+to be a record or a map — a value with no fields is a mistake, since `default:` is named
+exactly so the positional slot means the payload. A payload crosses to the handler as
+data, so no field of the record the claim names, or of a record its fields hold, may be a
+function.
+
+**A mark's key is what the handlers for its name are dispatched on**, and the claim names
+the payload field that holds it — `language` on `code`. Written as a literal, the key is
+checked against the producers' keys while the file compiles, and one none of them covers
+is a **warning** at the key, with a did-you-mean; computed, it is read from the record at
+render and left to the handler to check at build. A claim naming no key field keys none of
+its marks, so every handler for the name sees them — which is what a bundler wants. What
+the claims said about a name *and a key* is the fact (D25), so a producer that starts
+covering one language leaves the files that named it stale, and not the files that named
+another.
 
 A host that claims a name ships an ordinary `lem-fn` wrapping it —
 `<lem-fn styles(): html = mark("styles") />` — so a layout reads `<lem.styles()>` and a
@@ -792,10 +812,10 @@ A mark travels on the value it was made in: a captured value carrying marks plac
 as often as it is printed, and none if it is never printed. `==` on `html` compares marks
 as well as text — by what they place, not by where the `mark()` that made them was
 written. `readingTime` counts a default's text like any other. A mark inside a
-`lem-style`/`lem-head` body, a payload, or a default is a render error at the block or
-the call. A rendered body that reaches a template as a value is a string of finished
-output the host loaded back for a second render phase, never `html` carrying marks.
-_Not yet (∆7wK): a payload._
+`lem-style`/`lem-head` body, a payload — at any depth inside it — or a default is a render
+error at the block or the call. A rendered body that reaches a template as a value is a
+string of finished output the host loaded back for a second render phase, never `html`
+carrying marks.
 
 ## Document mode (D07, D08)
 
