@@ -43,19 +43,21 @@ const GROUP: &str = "render";
 /// so a case can place a mark under any of them, and a case that misspells a name or a
 /// language warns.
 fn untyped_host() -> Host {
-    Host::untyped(["site", "page", "build"]).with_claims([
-        ("styles", Claim::new()),
-        ("head", Claim::new()),
-        ("scripts", Claim::new()),
-        // A highlighter's claim: the languages one producer covers, the record a
-        // mark of the name carries, and the field it is keyed by (D42).
-        (
-            "code",
-            Claim::new()
-                .with_keys(["bash", "css", "html", "sh"])
-                .with_payload("Code", Some("language")),
-        ),
-    ])
+    Host::untyped(["site", "page", "build"])
+        .with_claims([
+            ("styles", Claim::new()),
+            ("head", Claim::new()),
+            ("scripts", Claim::new()),
+            // A highlighter's claim: the languages one producer covers, the record a
+            // mark of the name carries, and the field it is keyed by (D42).
+            (
+                "code",
+                Claim::new()
+                    .with_keys(["bash", "css", "html", "sh"])
+                    .with_payload("Code", Some("language")),
+            ),
+        ])
+        .expect("claims that agree")
 }
 
 /// The declaration the `host/` group's environment files back: `page` a `Page`, `build`

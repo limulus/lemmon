@@ -62,23 +62,71 @@ export interface HostDecl {
    */
   assets?: Record<string, string>
   /**
-   * What the host's mark handlers claim (D42): the names `mark()` may place, which the
-   * core checks a literal name against while compiling. Omitted, the host declares no
-   * handlers at all and the core says nothing about any name — what a playground or an
-   * editor wants, since a mark there is meant to keep its default content. An empty
-   * list still declares handlers, and warns at every name none of them claims.
+   * What the host's mark handlers claim (D42): the names `mark()` may place, and for
+   * each the keys its producers cover and the payload its marks carry, which the core
+   * checks a call and a code block's language against while compiling. Omitted, the
+   * host declares no handlers at all and the core says nothing about any name — what a
+   * playground or an editor wants, since a mark there is meant to keep its default
+   * content. An empty list still declares handlers, and warns at every name none of
+   * them claims. Several claims for one name are merged; two naming different payloads
+   * make the call throw.
    *
    * On the declaration for the manifest's reason: the answer is given while a file
-   * compiles, so a plugin list that starts or stops claiming a name leaves the files
-   * that mark it stale, and only those.
+   * compiles, so a plugin list that changes what it says about a name and a key leaves
+   * the files that asked stale, and only those.
    */
   marks?: Claim[]
 }
 
-/** One claim a host's handlers make. ∆7wK adds the keys and payload beside the name. */
+/**
+ * One claim a host's handlers make (D42). A decorator's is the name alone; a producer's
+ * lists the keys it covers, since there is no wildcard producer, and names the record
+ * its marks carry.
+ */
 export interface Claim {
-  /** The name `mark()` places and the handler answers for. */
+  /** The name `mark()` places and the handler answers for — `code` for a code block. */
   name: string
+  /**
+   * The keys a producer covers: a highlighter's languages. A key none of the name's
+   * producers covers is a warning where the author wrote it.
+   */
+  keys?: string[]
+  /**
+   * The declared record a mark of this name carries, which a `mark()` call's payload is
+   * checked against — `Code` for `code`, which the shell's `ambient.lem` declares.
+   */
+  payload?: string
+  /**
+   * The field of {@link payload} holding a mark's key — `language` for `code` — so a
+   * template's mark is dispatched as a code block is. Needs `payload`.
+   */
+  keyedBy?: string
+}
+
+/**
+ * What a code block hands the producer for its language (D42), reported once by
+ * {@link Core.compile} and named by {@link Mark.payloadId} in every render that marks
+ * the block. The id is a hash of the info string and the code, so a host keeps what a
+ * producer made on it across builds.
+ */
+export interface CodePayload {
+  id: string
+  /** The first word of the info string — the mark's key — or `null` where none. */
+  language: string | null
+  /** The whole info string: `ts {1,3}` for a fence opening ```` ```ts {1,3} ````. */
+  info: string
+  /** The code, unescaped. */
+  code: string
+}
+
+/**
+ * What {@link Core.compile} returns: the diagnostics about the files it was given, and
+ * the payload of every code block they write, each once. `facts` (∆Qr2) is an additive
+ * field that arrives with that item.
+ */
+export interface CompileResult {
+  diagnostics: Diagnostic[]
+  payloads: CodePayload[]
 }
 
 /**
@@ -200,6 +248,18 @@ export interface Diagnostic {
 export interface Mark {
   /** The name the handlers are dispatched by. */
   name: string
+  /**
+   * What a producer is chosen by under that name: a code block's language, or the
+   * payload field the claim's `keyedBy` names. Absent where the mark has none.
+   */
+  key?: string
+  /** The payload a `mark()` call built, as JSON. */
+  payload?: JsonValue
+  /**
+   * The id of the {@link CodePayload} a code block carries, which {@link Core.compile}
+   * reported — the code never rides on the render.
+   */
+  payloadId?: string
   /** Byte offsets into {@link RenderResult.html}, not character indexes. */
   start: number
   end: number

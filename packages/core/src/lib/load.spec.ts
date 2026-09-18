@@ -33,7 +33,7 @@ const decoder = new TextDecoder()
 describe('loadCore()', () => {
   it('should load the staged artifact found from this module', async () => {
     const core = await loadCore()
-    expect(core.compile([{ path: 'page.lem', text: 'hi' }])).toEqual([])
+    expect(core.compile([{ path: 'page.lem', text: 'hi' }]).diagnostics).toEqual([])
     expect(decoder.decode(core.render({ path: 'page.lem' }).html!)).toBe('hi')
   })
 
@@ -45,7 +45,7 @@ describe('loadCore()', () => {
 
   it('should accept a directory as a URL', async () => {
     const core = await loadCore(stagingDir)
-    expect(core.compile([{ path: 'page.lem', text: 'hi' }])).toEqual([])
+    expect(core.compile([{ path: 'page.lem', text: 'hi' }]).diagnostics).toEqual([])
   })
 
   it('should say how to stage the artifact when it is not there', async () => {

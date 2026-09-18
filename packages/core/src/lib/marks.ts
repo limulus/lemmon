@@ -1,8 +1,8 @@
 import type { Fragment, Mark, RenderResult } from './types.ts'
 
 /**
- * What a producer is given: every mark of its name on this page, the fragments the page
- * collected under that name, and the page as the core returned it — so a handler can
+ * What a producer is given: every mark on this page it answers, the fragments the page
+ * collected under their name, and the page as the core returned it — so a handler can
  * read the default content a mark stands over.
  */
 export interface MarkContext {
@@ -14,8 +14,14 @@ export interface MarkContext {
 
 /**
  * One handler for one mark name (D42). A **producer** makes the content, and runs at
- * most once per page per name, whatever the page marks; a **decorator** transforms
- * whatever content a mark has, and runs per mark. A handler may be both.
+ * most once per page, for every mark it answers; a **decorator** transforms whatever
+ * content a mark has, and runs per mark. A handler may be both.
+ *
+ * Under one name a mark is dispatched by its key. A producer lists every key it covers
+ * and answers only marks carrying one of them — there is no wildcard producer — and a
+ * producer that lists none answers only marks with no key, as the shell's `styles`
+ * bundler does. A decorator that lists keys runs only on marks carrying one of them; one
+ * that lists none runs on every mark of its name.
  *
  * Content crosses as a string or as bytes: a string is encoded once, so a handler that
  * already holds bytes need not decode them.
@@ -23,10 +29,18 @@ export interface MarkContext {
 export interface MarkHandler {
   /** The name this handler answers for. */
   name: string
-  /** One replacement per mark of `name`, in the order the marks were given. */
+  /** The keys it answers for, where the name's marks are keyed (above). */
+  keys?: readonly string[]
+  /** One replacement per mark it answers, in the order the marks were given. */
   produce?: (context: MarkContext) => readonly (string | Uint8Array)[]
   /** This mark's content so far, replaced by what is returned. */
   decorate?: (mark: Mark, content: Uint8Array) => string | Uint8Array
+}
+
+/** A mark no handler answered: its name, and its key where it has one. */
+export interface Unclaimed {
+  name: string
+  key?: string
 }
 
 /** A page with its marks filled in, and what nothing answered for. */
@@ -37,11 +51,12 @@ export interface Resolved {
    */
   html: Uint8Array
   /**
-   * Every marked name no handler claimed, in the order the page marks them. Their marks
-   * keep the default content the core wrote, so the page is correct — this is what a
+   * Every name and key no producer or decorator answered, once each, in the order the
+   * page first marks it — a code block in a language no highlighter covers. Their marks
+   * keep the default content the core wrote, so the page is correct: this is what a
    * build reports, not what it fails on.
    */
-  unclaimed: string[]
+  unclaimed: Unclaimed[]
   /**
    * Every name the page collected fragments under but never marked, so nothing was
    * placed to receive them — a layout missing its `<lem.styles()>`. Look the fragments
@@ -52,19 +67,34 @@ export interface Resolved {
 
 const encoder = new TextEncoder()
 
+/** Whether `handler` is the producer for `mark`: no wildcard, and no key for no key. */
+const produces = (handler: MarkHandler, mark: Mark): boolean =>
+  handler.keys === undefined
+    ? mark.key === undefined
+    : mark.key !== undefined && handler.keys.includes(mark.key)
+
+/** Whether `handler` decorates `mark`: every mark of its name unless it lists keys. */
+const decorates = (handler: MarkHandler, mark: Mark): boolean =>
+  handler.keys === undefined || (mark.key !== undefined && handler.keys.includes(mark.key))
+
 /**
  * Fills each mark of a rendered page with what the host's handlers make of it, before
  * any output transform (D42).
  *
- * Handlers run in the order given: the one producer for a name makes each of its marks'
- * content, then every decorator for that name runs over what stands there, each over the
- * previous one's output. A name no handler claims keeps the default content the core
- * wrote and is reported in {@link Resolved.unclaimed}.
+ * Each producer runs once, over the marks of its name it answers, given the page as the
+ * core returned it — never another producer's output. Then every decorator runs over the
+ * marks it decorates, in the order the handlers are given, each over the previous
+ * one's output. A mark nothing answers keeps the default content the core wrote and is
+ * reported in {@link Resolved.unclaimed}.
  *
- * @throws If the render failed, if two handlers produce for one name, if a producer
- * returns a number of replacements other than one per mark, or if the marks do not stand
- * in order — each a caller bug rather than anything a template can provoke. (The
- * plugin-load error that names both plugins claiming a name is the shell's, ∆PgF.)
+ * A code block's mark carries a `payloadId`, not its code: a producer for `code` looks
+ * the payload up among those `Core.compile` returned, which the host keeps.
+ *
+ * @throws If the render failed, if two producers answer one name and key — or two
+ * produce one name without keys — if a producer returns a number of replacements other
+ * than one per mark it answers, or if the marks do not stand in order: each a caller
+ * bug rather than anything a template can provoke. (The plugin-load error naming both
+ * plugins that claim a key is the shell's, ∆PgF.)
  */
 export function resolveMarks(
   result: RenderResult,
@@ -74,48 +104,73 @@ export function resolveMarks(
   if (html === null || marks === null || fragments === null) {
     throw new TypeError('a render that failed has no page to resolve')
   }
+  const producers = handlers.filter((handler) => handler.produce)
+  refuseOverlap(producers)
   const unplaced = Object.keys(fragments).filter(
     (name) => !marks.some((mark) => mark.name === name)
   )
-  const unclaimed: string[] = []
   const contents = marks.map((mark) => html.subarray(mark.start, mark.end))
-  for (const name of new Set(marks.map((mark) => mark.name))) {
+  const answered = marks.map(() => false)
+  for (const producer of producers) {
     const mine = marks
       .map((mark, index) => ({ mark, index }))
-      .filter(({ mark }) => mark.name === name)
-    const producers = handlers.filter((handler) => handler.name === name && handler.produce)
-    if (producers.length > 1) {
-      throw new TypeError(`two handlers produce \`${name}\`; only one may`)
+      .filter(({ mark }) => mark.name === producer.name && produces(producer, mark))
+    if (mine.length === 0) continue
+    const made = producer.produce!({
+      name: producer.name,
+      marks: mine.map(({ mark }) => mark),
+      fragments: Object.hasOwn(fragments, producer.name) ? fragments[producer.name] : [],
+      page: html,
+    })
+    if (made.length !== mine.length) {
+      throw new TypeError(
+        `the producer for \`${producer.name}\` returned ${made.length} replacements ` +
+          `for ${mine.length} marks`
+      )
     }
-    const [producer] = producers
-    if (producer?.produce) {
-      const made = producer.produce({
-        name,
-        marks: mine.map(({ mark }) => mark),
-        fragments: Object.hasOwn(fragments, name) ? fragments[name] : [],
-        page: html,
-      })
-      if (made.length !== mine.length) {
-        throw new TypeError(
-          `the producer for \`${name}\` returned ${made.length} replacements for ` +
-            `${mine.length} marks`
-        )
-      }
-      for (const [at, { index }] of mine.entries()) {
-        contents[index] = bytes(made[at])
-      }
+    for (const [at, { index }] of mine.entries()) {
+      contents[index] = bytes(made[at])
+      answered[index] = true
     }
-    const decorators = handlers.filter(
-      (handler) => handler.name === name && handler.decorate
-    )
-    for (const decorator of decorators) {
-      for (const { mark, index } of mine) {
+  }
+  for (const decorator of handlers.filter((handler) => handler.decorate)) {
+    for (const [index, mark] of marks.entries()) {
+      if (mark.name === decorator.name && decorates(decorator, mark)) {
         contents[index] = bytes(decorator.decorate!(mark, contents[index]))
+        answered[index] = true
       }
     }
-    if (!producer && decorators.length === 0) unclaimed.push(name)
+  }
+  const unclaimed: Unclaimed[] = []
+  for (const [index, { name, key }] of marks.entries()) {
+    if (answered[index]) continue
+    if (unclaimed.some((seen) => seen.name === name && seen.key === key)) continue
+    unclaimed.push(key === undefined ? { name } : { name, key })
   }
   return { html: splice(html, marks, contents), unclaimed, unplaced }
+}
+
+/**
+ * Refuses producers that would both answer one mark: two keyless producers of one name,
+ * or two that list one key under it. Checked over the handlers rather than the page, so
+ * a plugin list that cannot work fails on the first page it meets.
+ */
+function refuseOverlap(producers: readonly MarkHandler[]): void {
+  const seen = new Set<string>()
+  for (const { name, keys } of producers) {
+    // One producer listing a key twice is still one producer.
+    for (const key of keys === undefined ? [undefined] : new Set(keys)) {
+      const slot = JSON.stringify([name, key ?? null])
+      if (seen.has(slot)) {
+        throw new TypeError(
+          key === undefined
+            ? `two handlers produce \`${name}\`; only one may`
+            : `two handlers produce \`${name}\` for \`${key}\`; only one may`
+        )
+      }
+      seen.add(slot)
+    }
+  }
 }
 
 /** A handler's answer as bytes: a string is encoded once, bytes pass through. */

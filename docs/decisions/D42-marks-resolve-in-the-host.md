@@ -15,7 +15,14 @@
   function, at any depth, and no mark; a `math` fence is not a mark after all, since
   comrak renders it before consulting any seam and no option turns that off, so the rest
   are marked through comrak's highlighter seam, which writes comrak's own markup behind a
-  sentinel; a payload's id is SipHash-1-3 over the info string and the code
+  sentinel; a payload's id is SipHash-1-3 over the info string and the code; `compile`
+  returns the payloads beside its diagnostics, reported by the call that compiled a
+  file even where another file's error stops the relink, since a resident unit is not
+  compiled again; a producer that lists no keys answers only marks with no key, so
+  "no wildcard producer" holds in the wrapper's dispatch as in the claims; a payload
+  crosses as JSON, so the VM also refuses one holding a function or a float that is not
+  a finite number, and two claims naming different payloads for one name are a
+  malformed declaration
 - **Backlog item:** ∆1Hp (the mark, claims by name, the collect tags, the boundary);
   ∆7wK (the `code` mark, keys and payloads, the core's highlighter removed)
 - **Normative text:** `docs/language.md` § Marks, § Document mode, Code blocks;

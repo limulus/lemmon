@@ -415,11 +415,21 @@ moved it. Newest last. An entry is removed when its change has been applied.
   (D42, superseding D40 and ∆BfR's entry; ∆7wK).
 
 - **WASM API, `render`** — `render` returns the page as UTF-8 bytes beside its metadata:
-  `marks` (name, byte range, payload id, source span) and `fragments` (the collect tags'
-  bodies under each name), with `deps` still ∆xBO's; the bulk-data rule gains the
-  exception, with ∆RGQ's measurement that the page inside JSON was over half a render
-  call. `@limulus/lemmon-core` ships `resolveMarks`, dispatching by name to producers and
-  decorators before any output transform (D42).
+  `marks` (name, key, a `mark()` call's payload as JSON or a code block's payload id,
+  byte range, source span) and `fragments` (the collect tags' bodies under each name),
+  with `deps` still ∆xBO's; the bulk-data rule gains the exception, with ∆RGQ's
+  measurement that the page inside JSON was over half a render call.
+  `@limulus/lemmon-core` ships `resolveMarks`, dispatching each mark by name and key
+  before any output transform: a producer lists the keys it covers and answers only
+  those — there is no wildcard producer, and one listing none answers only keyless
+  marks — while a decorator runs on the keys it lists, or on every mark of its name; a
+  mark nothing answers is reported by name and key (D42, ∆7wK).
+
+- **WASM API, `compile`** — `compile` returns `{diagnostics, payloads}` rather than the
+  diagnostics alone: every code block's `{id, language, info, code}`, each once,
+  reported by the call that compiled the file whether or not the program relinked,
+  since a resident unit is not compiled again. The host keeps them by id, which is what
+  a render's `code` mark names (D42, ∆7wK).
 
 - **Crates, Markdown row** — drop syntect and `two-face` from the row and every "comrak +
   syntect adds ~1 MB" sentence: the core embeds no highlighter. comrak's code-block

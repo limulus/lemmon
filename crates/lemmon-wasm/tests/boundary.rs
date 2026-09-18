@@ -34,6 +34,42 @@ fn reports_a_version_through_the_abi() {
     assert!(!version().is_empty());
 }
 
+/// A code block crosses as a `code` mark naming, by id, the payload `compile` sent —
+/// the id carried over the real ABI in both replies, so a host can pair them (D42).
+#[wasm_bindgen_test]
+fn names_a_code_blocks_payload_by_the_id_compile_sent() {
+    let host = r#"{"ambient": {}, "marks": [
+        {"name": "code", "keys": ["sh"], "payload": "Code", "keyedBy": "language"}]}"#;
+    let mut core = Core::new();
+    let reply = core
+        .compile(
+            r#"[{"path": "post.md", "text": "```sh\nls\n```\n"}]"#,
+            Some(host.to_owned()),
+        )
+        .expect("a well-formed compile payload");
+    let reply: serde_json::Value = serde_json::from_str(&reply).expect("JSON");
+    assert_eq!(reply["diagnostics"], serde_json::json!([]));
+    let payload = &reply["payloads"][0];
+    assert_eq!(payload["code"], "ls\n");
+    core.load_data(r#"{"ambient": {}}"#)
+        .expect("a well-formed loadData payload");
+    let (meta, _) = decode(
+        &core
+            .render(r#"{"path": "post.md"}"#)
+            .expect("a compiled page renders"),
+    );
+    let meta: serde_json::Value = serde_json::from_str(&meta).expect("JSON");
+    let mark = &meta["marks"][0];
+    assert_eq!(
+        (&mark["key"], &mark["payloadId"]),
+        (&serde_json::json!("sh"), &payload["id"])
+    );
+}
+
+/// What `compile` sends for files that compiled clean and write no code block:
+/// `{diagnostics, payloads}` with both empty (D42).
+const CLEAN: &str = r#"{"diagnostics":[],"payloads":[]}"#;
+
 #[wasm_bindgen_test]
 fn compiles_loads_and_renders_through_the_abi() {
     let mut core = Core::new();
@@ -43,7 +79,7 @@ fn compiles_loads_and_renders_through_the_abi() {
             Some(UNTYPED.to_owned()),
         )
         .expect("a well-formed compile payload");
-    assert_eq!(diagnostics, "[]");
+    assert_eq!(diagnostics, CLEAN);
     core.load_data(r#"{"ambient": {"site": {"name": "limulus.net"}}}"#)
         .expect("a well-formed loadData payload");
     let (meta, page) = decode(
@@ -98,7 +134,7 @@ fn reaches_the_depth_cap_through_nested_invokes_without_trapping() {
     let diagnostics = core
         .compile(&files, Some(UNTYPED.to_owned()))
         .expect("a well-formed compile payload");
-    assert_eq!(diagnostics, "[]");
+    assert_eq!(diagnostics, CLEAN);
     let (meta, page) = decode(
         &core
             .render(r#"{"path": "deep.lem"}"#)
@@ -128,7 +164,7 @@ fn renders_blocks_nested_to_the_parser_cap_without_trapping() {
     let diagnostics = core
         .compile(&nested(200), Some(UNTYPED.to_owned()))
         .expect("a well-formed compile payload");
-    assert_eq!(diagnostics, "[]");
+    assert_eq!(diagnostics, CLEAN);
     let (_, page) = decode(
         &core
             .render(r#"{"path": "deep.lem"}"#)
@@ -162,7 +198,7 @@ fn loads_data_against_the_program_through_the_abi() {
     let diagnostics = core
         .compile(&files, Some(host.to_owned()))
         .expect("a well-formed compile payload");
-    assert_eq!(diagnostics, "[]");
+    assert_eq!(diagnostics, CLEAN);
     let reported = core
         .load_data(
             r#"{"ambient": {}, "sources": {"photos": {

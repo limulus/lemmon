@@ -121,18 +121,21 @@ pub struct Host {
 ///
 /// Several handlers may claim one name — a producer and a decorator, two producers on
 /// disjoint keys — so this is the merge of what they said: keys are unioned, while the
-/// payload and the key field are the name's own and have to agree. Two producers on one
-/// key, and two claims disagreeing about a payload, are the host's to refuse before a
-/// declaration is built from them (D42; the plugin-load error is ∆PgF's).
+/// payload and the key field are the name's own, and two claims naming different ones
+/// are refused by [`Host::with_claims`]. Two producers on one key are the shell's to
+/// refuse, naming both plugins (D42; ∆PgF): the core unions them.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Claim {
     /// The keys the name's producers cover, sorted — what a did-you-mean at a key is
     /// drawn from, and what makes the listing deterministic.
     keys: BTreeSet<Rc<str>>,
-    /// Whether any claim for this name listed keys at all. A producer that lists keys
-    /// covers those and no others; a claim that lists none covers whatever comes, which
-    /// is every decorator and the shell's own `styles` bundler. The two are not the same
-    /// as an empty list, so this is a flag rather than `keys.is_empty()`.
+    /// Whether the name's marks are keyed: some claim for it listed keys, or named the
+    /// payload field its marks are keyed by. A producer that lists keys covers those and
+    /// no others, and one that names a key field without listing any covers none — there
+    /// is no wildcard producer (D42), and the host's dispatch gives a producer only the
+    /// keys it lists. A claim that does neither covers whatever comes, which is every
+    /// decorator and the shell's own `styles` bundler. Keyed with no keys is not the same
+    /// as unkeyed, so this is a flag rather than `keys.is_empty()`.
     keyed: bool,
     /// The record a mark of this name carries, where the handlers take a payload.
     payload: Option<Rc<str>>,
@@ -165,6 +168,7 @@ impl Claim {
     pub fn with_payload(mut self, record: &str, keyed_by: Option<&str>) -> Self {
         self.payload = Some(Rc::from(record));
         self.keyed_by = keyed_by.map(Rc::from);
+        self.keyed |= keyed_by.is_some();
         self
     }
 
@@ -179,11 +183,44 @@ impl Claim {
         self.keyed_by.as_deref()
     }
 
+    /// Folds `other`, another claim for the mark name `name`, into this one.
+    ///
+    /// # Errors
+    ///
+    /// Where the two name different payload records or different key fields: every mark
+    /// of a name carries one payload, so the handlers answering it have to agree on it.
+    fn merge(&mut self, name: &str, other: Self) -> Result<(), String> {
+        self.keys.extend(other.keys);
+        self.keyed |= other.keyed;
+        agree(name, "payloads", &mut self.payload, other.payload)?;
+        agree(name, "key fields", &mut self.keyed_by, other.keyed_by)
+    }
+
     /// What this claim says about `key`: `None` where none was asked about, or where the
     /// claim lists none and so covers whatever comes.
     fn covers(&self, key: Option<&str>) -> Option<bool> {
         let key = key.filter(|_| self.keyed)?;
         Some(self.keys.iter().any(|claimed| &**claimed == key))
+    }
+}
+
+/// Keeps `other` in `kept` where `kept` names nothing yet, and refuses two different
+/// names — of payloads or key fields, as `what` says — for the mark name `name`.
+fn agree(
+    name: &str,
+    what: &str,
+    kept: &mut Option<Rc<str>>,
+    other: Option<Rc<str>>,
+) -> Result<(), String> {
+    match (kept.as_deref(), other) {
+        (Some(was), Some(now)) if *was != *now => Err(format!(
+            "the claims for `{name}` name two {what}, `{was}` and `{now}`"
+        )),
+        (None, Some(now)) => {
+            *kept = Some(now);
+            Ok(())
+        }
+        _ => Ok(()),
     }
 }
 
@@ -294,8 +331,14 @@ impl Host {
     /// empty list still declares handlers — and so warns at every name none of them
     /// claims — where a host that never calls this warns at none.
     #[must_use]
-    pub fn with_marks<'a>(self, names: impl IntoIterator<Item = &'a str>) -> Self {
-        self.with_claims(names.into_iter().map(|name| (name, Claim::new())))
+    pub fn with_marks<'a>(mut self, names: impl IntoIterator<Item = &'a str>) -> Self {
+        self.marks = Some(
+            names
+                .into_iter()
+                .map(|name| (Rc::from(name), Claim::new()))
+                .collect(),
+        );
+        self
     }
 
     /// Declares what the host's handlers claim, by mark name: the keys a producer
@@ -303,21 +346,24 @@ impl Host {
     ///
     /// Replaces any already declared, like [`with_marks`](Self::with_marks). Two entries
     /// for one name are merged as [`Claim`] describes.
-    #[must_use]
+    ///
+    /// # Errors
+    ///
+    /// Where two entries for one name name different payload records or different key
+    /// fields — a host's mistake, which the boundary reports as a malformed declaration.
     pub fn with_claims<'a>(
         mut self,
         claims: impl IntoIterator<Item = (&'a str, Claim)>,
-    ) -> Self {
+    ) -> Result<Self, String> {
         let mut declared: BTreeMap<Rc<str>, Claim> = BTreeMap::new();
         for (name, claim) in claims {
-            let merged = declared.entry(Rc::from(name)).or_default();
-            merged.keys.extend(claim.keys.iter().cloned());
-            merged.keyed |= claim.keyed;
-            merged.payload = merged.payload.take().or(claim.payload);
-            merged.keyed_by = merged.keyed_by.take().or(claim.keyed_by);
+            declared
+                .entry(Rc::from(name))
+                .or_default()
+                .merge(name, claim)?;
         }
         self.marks = Some(declared);
-        self
+        Ok(self)
     }
 
     /// What the host's handlers claim for `name`, where any claims it.
@@ -531,16 +577,18 @@ mod tests {
         // What a site's plugin list looks like: a highlighter producing two languages
         // and a copy-button decorator producing none, both answering for `code`. Keys
         // are unioned across them, and the payload the producer named is the name's.
-        let host = Host::new().with_claims([
-            (
-                "code",
-                Claim::new()
-                    .with_keys(["rust"])
-                    .with_payload("Code", Some("language")),
-            ),
-            ("code", Claim::new()),
-            ("code", Claim::new().with_keys(["ts"])),
-        ]);
+        let host = Host::new()
+            .with_claims([
+                (
+                    "code",
+                    Claim::new()
+                        .with_keys(["rust"])
+                        .with_payload("Code", Some("language")),
+                ),
+                ("code", Claim::new()),
+                ("code", Claim::new().with_keys(["ts"])),
+            ])
+            .expect("claims that agree");
         let claim = host.claim("code").expect("a claim");
         assert_eq!(claim.keys().collect::<Vec<_>>(), ["rust", "ts"]);
         assert_eq!(claim.keyed_by(), Some("language"));
@@ -560,6 +608,70 @@ mod tests {
                 key: Some(false),
                 ..
             }
+        ));
+    }
+
+    #[test]
+    fn refuses_two_claims_for_one_name_that_disagree_about_its_payload() {
+        // Every mark of a name carries one payload, so the handlers answering it have to
+        // agree on the record and on the field that keys it. Saying the same thing twice
+        // is agreement, and so is one handler saying nothing.
+        let code = |payload: &str, keyed_by: &str| {
+            Claim::new()
+                .with_keys(["rust"])
+                .with_payload(payload, Some(keyed_by))
+        };
+        assert_eq!(
+            Host::new()
+                .with_claims([
+                    ("code", code("Code", "language")),
+                    ("code", code("Snippet", "language"))
+                ])
+                .unwrap_err(),
+            "the claims for `code` name two payloads, `Code` and `Snippet`"
+        );
+        assert_eq!(
+            Host::new()
+                .with_claims([
+                    ("code", code("Code", "language")),
+                    ("code", code("Code", "lang"))
+                ])
+                .unwrap_err(),
+            "the claims for `code` name two key fields, `language` and `lang`"
+        );
+        assert!(
+            Host::new()
+                .with_claims([
+                    ("code", code("Code", "language")),
+                    ("code", code("Code", "language")),
+                    ("code", Claim::new()),
+                ])
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn covers_no_key_for_a_claim_that_keys_its_marks_but_lists_none() {
+        // A claim naming the field its marks are keyed by is a producer's, and a producer
+        // covers only the keys it lists — as the host's dispatch has it, which gives a
+        // producer listing none only the marks with no key. So every key warns.
+        let host = Host::new()
+            .with_claims([("diagram", Claim::new().with_payload("Spec", Some("kind")))])
+            .expect("claims that agree");
+        assert!(matches!(
+            host.answer("diagram", Some("pikchr")),
+            ClaimAnswer::Claimed {
+                key: Some(false),
+                ..
+            }
+        ));
+        // Naming a payload with no key field keys nothing.
+        let unkeyed = Host::new()
+            .with_claims([("toc", Claim::new().with_payload("Toc", None))])
+            .expect("claims that agree");
+        assert!(matches!(
+            unkeyed.answer("toc", Some("any")),
+            ClaimAnswer::Claimed { key: None, .. }
         ));
     }
 

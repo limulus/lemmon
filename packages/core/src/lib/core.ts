@@ -1,5 +1,6 @@
 import type { BoundaryCore } from './boundary.ts'
 import type {
+  CompileResult,
   DataInput,
   Diagnostic,
   HostDecl,
@@ -37,6 +38,11 @@ export class Core {
    * reported by the call that compiled it. A caller that shows warnings keeps them per
    * path and replaces a path's entry when it recompiles that path.
    *
+   * The payloads are those of every code block the files that compiled write, each
+   * once (D42) — including a file that compiled beside one that did not, since it will
+   * not be compiled again. A caller keeps them by id, which is what a render's `code`
+   * mark names, and a producer's output is cached on that id.
+   *
    * `host` is the ambient declaration (D30), and is resident like the units: a call
    * that changes nothing about the environment omits it, and one that carries it
    * replaces what the core holds. A core given none has no ambient values at all, so
@@ -46,11 +52,11 @@ export class Core {
    * call {@link loadData} again before {@link render}, or an ambient read fails as
    * not bound.
    */
-  compile(files: SourceFileInput[], host?: HostDecl): Diagnostic[] {
+  compile(files: SourceFileInput[], host?: HostDecl): CompileResult {
     const declaration = host === undefined ? undefined : JSON.stringify(host)
     return JSON.parse(
       this.#core.compile(JSON.stringify(files), declaration)
-    ) as Diagnostic[]
+    ) as CompileResult
   }
 
   /**

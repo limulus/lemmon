@@ -213,7 +213,7 @@ async function corpusScenarios(): Promise<void> {
     const core = await loadCore()
     let diagnostics: Diagnostic[] = []
     compileOne(() => {
-      diagnostics = core.compile([input], HOST)
+      diagnostics = core.compile([input], HOST).diagnostics
       return { in: [input], out: diagnostics }
     })
     expectClean(diagnostics, `compiling ${input.path}`)
@@ -233,7 +233,7 @@ async function siteScenarios(): Promise<void> {
   const bigCall = record(`site compile (${files.length} files, 1 call)`)
   const bigCore = await loadCore()
   bigCall(() => {
-    const diagnostics = bigCore.compile(files, HOST)
+    const diagnostics = bigCore.compile(files, HOST).diagnostics
     expectClean(diagnostics, 'compiling the site in one call')
     return { in: files, out: diagnostics }
   })
@@ -242,7 +242,7 @@ async function siteScenarios(): Promise<void> {
   const smallCore = await loadCore()
   for (const file of files) {
     perFile(() => {
-      const diagnostics = smallCore.compile([file], HOST)
+      const diagnostics = smallCore.compile([file], HOST).diagnostics
       expectClean(diagnostics, `compiling ${file.path} incrementally`)
       return { in: [file], out: diagnostics }
     })
@@ -253,7 +253,7 @@ async function siteScenarios(): Promise<void> {
   if (!edited) throw new Error('the site has pages')
   for (let i = 0; i < INCREMENTAL_RUNS; i += 1) {
     incremental(() => {
-      const diagnostics = bigCore.compile([edited], HOST)
+      const diagnostics = bigCore.compile([edited], HOST).diagnostics
       expectClean(diagnostics, 'recompiling one page')
       return { in: [edited], out: diagnostics }
     })
@@ -282,7 +282,7 @@ async function siteScenarios(): Promise<void> {
 async function typedLoadScenarios(): Promise<void> {
   const { host, files, data } = typedSite()
   const core = await loadCore()
-  expectClean(core.compile(files, host), 'compiling the typed site')
+  expectClean(core.compile(files, host).diagnostics, 'compiling the typed site')
   const typed = record(`typed loadData (${SITE_PAGES} documents, positions included)`)
   for (let i = 0; i < TYPED_LOAD_RUNS; i += 1) {
     typed(() => {

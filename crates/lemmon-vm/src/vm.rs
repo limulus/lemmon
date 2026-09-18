@@ -554,8 +554,8 @@ impl<'a> Vm<'a> {
                     MarkPayload::None | MarkPayload::Reported { .. } => None,
                 };
                 if let Some(payload) = &value {
-                    if payload.carries_a_mark() {
-                        return Err("a mark cannot stand inside a payload".into());
+                    if let Some(refusal) = payload.payload_refusal() {
+                        return Err(refusal.into());
                     }
                     // Through `any`: the checker asks for a record at the call, and only
                     // where the host claimed nothing about the name.

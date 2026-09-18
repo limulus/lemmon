@@ -2249,12 +2249,14 @@ mod tests {
     /// A host whose handlers claim `code` for `keys`, with the payload record a mark of
     /// that name carries and the field it is keyed by.
     fn claiming(keys: &[&str], payload: &str) -> Host {
-        Host::untyped(["site", "page", "build"]).with_claims([(
-            "code",
-            Claim::new()
-                .with_keys(keys.iter().copied())
-                .with_payload(payload, Some("language")),
-        )])
+        Host::untyped(["site", "page", "build"])
+            .with_claims([(
+                "code",
+                Claim::new()
+                    .with_keys(keys.iter().copied())
+                    .with_payload(payload, Some("language")),
+            )])
+            .expect("claims that agree")
     }
 
     /// A file declaring the payload record and marking `code` under one written key.

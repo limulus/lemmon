@@ -203,25 +203,31 @@ impl Value {
         }))
     }
 
-    /// Whether this value holds marked markup anywhere inside it.
+    /// Why this value cannot be a mark's payload, where it cannot (D42), found at any
+    /// depth inside it.
     ///
-    /// The one thing a mark's payload may not carry (D42): a mark names a range of the
-    /// page it was printed into, and a payload is never printed, so a mark inside one
-    /// would stand for a range of nothing. Checked where the payload is made rather than
-    /// where a handler receives it, so the error points at the call (invariant 8).
+    /// A payload crosses to the host's handler as JSON data, so it may hold nothing JSON
+    /// has no form for: a function, or a float that is not a number or not finite. Nor
+    /// may it hold a mark, which names a range of the page it was printed into — and a
+    /// payload is never printed. Checked where the payload is made rather than where the
+    /// host receives it, so the error points at the call (invariant 8); the compiler
+    /// refuses a claimed record that could hold a function before any of this runs.
     #[must_use]
-    pub fn carries_a_mark(&self) -> bool {
+    pub fn payload_refusal(&self) -> Option<&'static str> {
         match self {
-            Self::Marked(_) => true,
-            Self::List(items) => items.iter().any(Self::carries_a_mark),
-            Self::Map(map) => map.iter().any(|(_, value)| value.carries_a_mark()),
+            Self::Marked(_) => Some("a mark cannot stand inside a payload"),
+            Self::Fn(_) => Some(
+                "a payload crosses to the handler as data, and a function has no form there",
+            ),
+            Self::Float(f) if !f.is_finite() => Some(
+                "a payload crosses to the handler as JSON, which has no NaN or infinity",
+            ),
+            Self::List(items) => items.iter().find_map(Self::payload_refusal),
+            Self::Map(map) => map.iter().find_map(|(_, value)| value.payload_refusal()),
             Self::Record(record) => record
                 .fields
                 .iter()
-                .any(|(_, value)| value.carries_a_mark()),
-            // A lambda's captures are copied values like any other, and a captured
-            // capture can hold a mark.
-            Self::Fn(closure) => closure.captures.iter().any(Self::carries_a_mark),
+                .find_map(|(_, value)| value.payload_refusal()),
             Self::Null
             | Self::Bool(_)
             | Self::Int(_)
@@ -231,7 +237,7 @@ impl Value {
             | Self::Datetime(_)
             | Self::Duration(_)
             | Self::Url(_)
-            | Self::Asset(_) => false,
+            | Self::Asset(_) => None,
         }
     }
 
@@ -407,6 +413,55 @@ mod tests {
 
     use super::*;
     use crate::rendered::{Mark, Payload};
+
+    /// A payload crosses to the handler as JSON, so each thing JSON cannot hold is
+    /// refused however deep it sits — and everything JSON can hold is let through.
+    #[test]
+    fn refuses_a_payload_holding_what_json_cannot_carry_at_any_depth() {
+        let record = |value: Value| {
+            Value::record(
+                "Spec",
+                [(Rc::from("held"), Value::list(vec![value]))]
+                    .into_iter()
+                    .collect(),
+            )
+        };
+        let marked = Value::Marked(Rc::new(Marked {
+            text: Rc::from(""),
+            marks: Box::new([]),
+        }));
+        let function = Value::Fn(Rc::new(Closure {
+            func: 0,
+            captures: Vec::new(),
+        }));
+        for (value, refusal) in [
+            (marked, "a mark cannot stand inside a payload"),
+            (
+                function,
+                "a payload crosses to the handler as data, and a function has no form there",
+            ),
+            (
+                Value::Float(f64::INFINITY),
+                "a payload crosses to the handler as JSON, which has no NaN or infinity",
+            ),
+            (
+                Value::Float(f64::NAN),
+                "a payload crosses to the handler as JSON, which has no NaN or infinity",
+            ),
+        ] {
+            assert_eq!(record(value).payload_refusal(), Some(refusal));
+        }
+        for fine in [
+            Value::Null,
+            Value::Float(1.5),
+            Value::html("<b>"),
+            Value::url("/a/"),
+            Value::Duration(60),
+            Value::map(Map::default()),
+        ] {
+            assert_eq!(record(fine).payload_refusal(), None);
+        }
+    }
 
     /// Two values that would put the same content in the same place are one value,
     /// wherever the `mark()` calls that made them were written: `==` on `html` asks

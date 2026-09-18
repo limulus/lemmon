@@ -22,6 +22,12 @@ const mark = (name: string, start: number, end = start): Mark => ({
   span,
 })
 
+/** A mark of `name` keyed by `key`, as a code block is by its language. */
+const keyed = (name: string, key: string, start: number, end = start): Mark => ({
+  ...mark(name, start, end),
+  key,
+})
+
 const fragment = (text: string): Fragment => ({ text, path: 'card.lem', span })
 
 /** A render as the core returns it: the page as bytes, its marks, its fragments. */
@@ -123,9 +129,83 @@ describe('resolveMarks()', () => {
     const result = rendered('<p>x</p>', [mark('toc', 3, 4), mark('toc', 8)], {})
     expect(resolved(result, [{ name: 'other', produce: () => [] }])).toEqual({
       html: '<p>x</p>',
-      unclaimed: ['toc'],
+      unclaimed: [{ name: 'toc' }],
       unplaced: [],
     })
+  })
+
+  it('should choose a producer by the key a mark carries', () => {
+    // One producer for the languages it lists, and nothing for a block with no
+    // language: there is no wildcard producer (D42). Each producer runs once, over its
+    // own marks in page order.
+    const result = rendered('[a][b][c][d]', [
+      keyed('code', 'ts', 0, 3),
+      keyed('code', 'rust', 3, 6),
+      mark('code', 6, 9),
+      keyed('code', 'ts', 9, 12),
+    ])
+    const seen: string[][] = []
+    const highlighter: MarkHandler = {
+      name: 'code',
+      keys: ['ts', 'rust'],
+      produce: ({ marks }) => {
+        seen.push(marks.map((m) => m.key!))
+        return marks.map((m) => `<${m.key}>`)
+      },
+    }
+    expect(resolved(result, [highlighter])).toEqual({
+      html: '<ts><rust>[c]<ts>',
+      unclaimed: [{ name: 'code' }],
+      unplaced: [],
+    })
+    expect(seen).toEqual([['ts', 'rust', 'ts']])
+  })
+
+  it('should give a keyless producer only the marks that carry no key', () => {
+    // The shell's `styles` bundler lists no keys and answers the marks that have none;
+    // a keyed mark of the same name is no mark it knows how to make.
+    const result = rendered('ab', [mark('styles', 1), keyed('styles', 'print', 2)])
+    const bundler: MarkHandler = {
+      name: 'styles',
+      produce: ({ marks }) => marks.map(() => 'S'),
+    }
+    expect(resolved(result, [bundler])).toEqual({
+      html: 'aSb',
+      unclaimed: [{ name: 'styles', key: 'print' }],
+      unplaced: [],
+    })
+  })
+
+  it('should decorate only the keys a decorator lists, and every mark where it lists none', () => {
+    const result = rendered('[a][b]', [
+      keyed('code', 'ts', 0, 3),
+      keyed('code', 'sh', 3, 6),
+    ])
+    const handlers: MarkHandler[] = [
+      { name: 'code', keys: ['sh'], decorate: (_, c) => `<sh>${decoder.decode(c)}</sh>` },
+      { name: 'code', decorate: (_, c) => `<copy>${decoder.decode(c)}</copy>` },
+    ]
+    // A decorator is enough to answer a mark, so nothing here goes unclaimed.
+    expect(resolved(result, handlers)).toEqual({
+      html: '<copy>[a]</copy><copy><sh>[b]</sh></copy>',
+      unclaimed: [],
+      unplaced: [],
+    })
+  })
+
+  it('should report each name and key nothing answered once, in page order', () => {
+    const result = rendered('abc', [
+      keyed('code', 'lem', 1),
+      keyed('code', 'bsah', 2),
+      keyed('code', 'lem', 3),
+      mark('code', 3),
+    ])
+    const highlighter: MarkHandler = { name: 'code', keys: ['sh'], produce: () => [] }
+    expect(resolved(result, [highlighter]).unclaimed).toEqual([
+      { name: 'code', key: 'lem' },
+      { name: 'code', key: 'bsah' },
+      { name: 'code' },
+    ])
   })
 
   it('should report a name whose fragments nothing placed', () => {
@@ -176,7 +256,27 @@ describe('resolveMarks()', () => {
       { name: 'styles', produce: () => ['x'] },
       { name: 'styles', produce: () => ['y'] },
     ]
-    expect(() => resolveMarks(result, handlers)).toThrow(/two handlers produce/)
+    expect(() => resolveMarks(result, handlers)).toThrow(/two handlers produce `styles`;/)
+  })
+
+  it('should throw when two producers list one key, and not when their keys are apart', () => {
+    // Checked over the handlers rather than the page, so a plugin list that cannot work
+    // fails on a page that marks nothing.
+    const page = rendered('a', [])
+    const ts: MarkHandler = { name: 'code', keys: ['ts', 'js'], produce: () => [] }
+    const js: MarkHandler = { name: 'code', keys: ['js'], produce: () => [] }
+    const rust: MarkHandler = { name: 'code', keys: ['rust'], produce: () => [] }
+    expect(() => resolveMarks(page, [ts, js])).toThrow(
+      /two handlers produce `code` for `js`/
+    )
+    expect(() => resolveMarks(page, [ts, rust])).not.toThrow()
+    // A producer listing a key twice — a language and its alias — is one producer.
+    const aliased: MarkHandler = {
+      name: 'code',
+      keys: ['js', 'ts', 'js'],
+      produce: () => [],
+    }
+    expect(() => resolveMarks(page, [aliased])).not.toThrow()
   })
 
   it('should throw when a producer answers with the wrong number of replacements', () => {

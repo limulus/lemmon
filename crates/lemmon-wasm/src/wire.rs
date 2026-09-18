@@ -20,8 +20,9 @@ use std::marker::PhantomData;
 use std::rc::Rc;
 
 use lemmon_vm::{
-    Ambient, Data, Host, HostSpan, LineIndex, Loaded, Map, Position, Range, Rendered,
-    RuntimeError, Severity, Source, Span, Spans, Value, repeated_path,
+    Ambient, Claim, CodePayload, Data, Host, HostSpan, LineIndex, Loaded, Map, Payload,
+    Position, Range, Rendered, RuntimeError, Severity, Source, Span, Spans, Value,
+    repeated_path,
 };
 use serde::de::value::{MapAccessDeserializer, SeqAccessDeserializer};
 use serde::de::{self, Deserializer, MapAccess, SeqAccess, Visitor};
@@ -153,12 +154,45 @@ pub(crate) struct HostInput {
     marks: Option<Vec<ClaimInput>>,
 }
 
-/// One claim a host declares: the name its handlers answer for. An object rather than a
-/// bare string, so that ∆7wK's `mode`, `keys` and `payload` are added beside it.
+/// One claim a host declares (D42): the name its handlers answer for, and, for a
+/// producer, the keys it covers; the record a mark of the name carries; and which field
+/// of that record holds a mark's key. A decorator's claim is the name alone. Several
+/// claims for one name are merged, and two naming different payloads are refused.
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct ClaimInput {
     name: String,
+    #[serde(default)]
+    keys: Option<Vec<String>>,
+    #[serde(default)]
+    payload: Option<String>,
+    #[serde(default)]
+    keyed_by: Option<String>,
+}
+
+impl ClaimInput {
+    /// The claim as the core holds it.
+    ///
+    /// # Errors
+    ///
+    /// Where the claim names a key field but no payload to find it in.
+    fn claim(&self) -> Result<Claim, String> {
+        let mut claim = Claim::new();
+        if let Some(keys) = &self.keys {
+            claim = claim.with_keys(keys.iter().map(String::as_str));
+        }
+        match (&self.payload, &self.keyed_by) {
+            (Some(payload), keyed_by) => {
+                Ok(claim.with_payload(payload, keyed_by.as_deref()))
+            }
+            (None, Some(field)) => Err(format!(
+                "the claim for `{}` keys its marks by `{field}` but names no payload to \
+                 find that field in",
+                self.name
+            )),
+            (None, None) => Ok(claim),
+        }
+    }
 }
 
 /// What one ambient name is bound to: a declared type by name, or the top-level
@@ -174,8 +208,14 @@ pub(crate) enum AmbientBinding {
     },
 }
 
-impl From<HostInput> for Host {
-    fn from(input: HostInput) -> Self {
+/// # Errors
+///
+/// Where the host's claims cannot be taken as one declaration: a key field with no
+/// payload, or two claims for one name naming different payloads or key fields.
+impl TryFrom<HostInput> for Host {
+    type Error = String;
+
+    fn try_from(input: HostInput) -> Result<Self, String> {
         let mut host = Self::new();
         for (name, ambient) in input.ambient {
             host = host.bind(
@@ -202,8 +242,14 @@ impl From<HostInput> for Host {
                 .map(|(path, url)| (path.as_str(), url.as_str())),
         );
         match input.marks {
-            Some(marks) => host.with_marks(marks.iter().map(|claim| claim.name.as_str())),
-            None => host,
+            Some(marks) => {
+                let claims = marks
+                    .iter()
+                    .map(|input| Ok((input.name.as_str(), input.claim()?)))
+                    .collect::<Result<Vec<_>, String>>()?;
+                host.with_claims(claims)
+            }
+            None => Ok(host),
         }
     }
 }
@@ -595,12 +641,22 @@ pub(crate) struct RenderMeta {
     pub(crate) diagnostics: Vec<Diagnostic>,
 }
 
-/// One mark: the name to dispatch on, the byte range of the page it stands for, and
-/// where the `mark()` that made it was written — `path` beside `span`, as a diagnostic
-/// carries them, so a handler's own diagnostic can point at source (invariant 8).
+/// One mark: the name to dispatch on, the key a producer is chosen by, what the
+/// handler is given — the payload itself for a `mark()` call's, or the id of the one
+/// `compile` reported for a code block — the byte range of the page it stands for, and
+/// where the mark was made: `path` beside `span`, as a diagnostic carries them, so a
+/// handler's own diagnostic can point at source (invariant 8). A field with nothing to
+/// say is absent rather than null.
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct MarkOut {
     name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    key: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    payload: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    payload_id: Option<String>,
     start: u32,
     end: u32,
     path: String,
@@ -634,8 +690,16 @@ impl RenderMeta {
             .iter()
             .map(|mark| {
                 let (path, span) = place(mark.file, mark.span);
+                let (payload, payload_id) = match &mark.payload {
+                    Some(Payload::Value(value)) => (Some(json_from_value(value)), None),
+                    Some(Payload::Reported(id)) => (None, Some(id.to_string())),
+                    None => (None, None),
+                };
                 MarkOut {
                     name: mark.name.to_string(),
+                    key: mark.key.as_deref().map(str::to_owned),
+                    payload,
+                    payload_id,
                     start: mark.start,
                     end: mark.end,
                     path,
@@ -708,6 +772,72 @@ pub(crate) fn encode_render(
 /// objects become insertion-ordered `Map`s in the key order the shell sent (which is
 /// what a `lem-for` over a map walks). Every string arrives untrusted (`Str`) —
 /// `raw()` is the only way to `html` (invariant 7).
+/// A payload as the host's handler receives it (D42): what JSON has a form for as that
+/// form; markup, a URL, an asset and a datetime (RFC 3339, in the offset it was written
+/// in) as strings; a duration as its whole seconds; a record as the object of its
+/// fields, in declared order, its type being the one the claim named.
+///
+/// A mark, a function, and a float that is not a finite number never reach here: the VM
+/// refuses a payload holding any of them, at the call that made it.
+fn json_from_value(value: &Value) -> serde_json::Value {
+    use serde_json::Value as Json;
+    let object = |map: &Map| {
+        Json::Object(
+            map.iter()
+                .map(|(key, value)| (key.to_string(), json_from_value(value)))
+                .collect(),
+        )
+    };
+    match value {
+        Value::Null => Json::Null,
+        Value::Bool(b) => Json::Bool(*b),
+        Value::Int(n) | Value::Duration(n) => Json::from(*n),
+        Value::Float(f) => serde_json::Number::from_f64(*f).map_or_else(
+            || unreachable!("the VM refuses a payload holding a float JSON cannot"),
+            Json::Number,
+        ),
+        Value::Str(text) | Value::Html(text) | Value::Url(text) | Value::Asset(text) => {
+            Json::String(text.to_string())
+        }
+        Value::Datetime(when) => Json::String(when.to_string()),
+        Value::List(items) => Json::Array(items.iter().map(json_from_value).collect()),
+        Value::Map(map) => object(map),
+        Value::Record(record) => object(&record.fields),
+        Value::Marked(_) | Value::Fn(_) => {
+            unreachable!("the VM refuses a payload holding a mark or a function")
+        }
+    }
+}
+
+/// What `compile` returns (D42): the diagnostics about the files it was given, and what
+/// their code blocks hand the host's producers — each payload once, whichever of the
+/// files wrote it. ∆Qr2 adds each unit's compile-time facts beside them.
+#[derive(Serialize)]
+pub(crate) struct CompileOut {
+    pub(crate) diagnostics: Vec<Diagnostic>,
+    pub(crate) payloads: Vec<PayloadOut>,
+}
+
+/// One code block's payload, named by the id a render's `code` mark carries.
+#[derive(Serialize)]
+pub(crate) struct PayloadOut {
+    id: String,
+    language: Option<String>,
+    info: String,
+    code: String,
+}
+
+impl From<&CodePayload> for PayloadOut {
+    fn from(payload: &CodePayload) -> Self {
+        Self {
+            id: payload.id.to_string(),
+            language: payload.language.as_deref().map(str::to_owned),
+            info: payload.info.to_string(),
+            code: payload.code.to_string(),
+        }
+    }
+}
+
 fn value_from_json(json: &serde_json::Value) -> Value {
     match json {
         serde_json::Value::Null => Value::Null,
@@ -733,6 +863,7 @@ fn value_from_json(json: &serde_json::Value) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use lemmon_vm::Datetime;
 
     fn range(line: u32, from: u32, to: u32) -> Range {
         Range {
@@ -918,12 +1049,52 @@ mod tests {
     }
 
     #[test]
+    fn sends_a_payload_as_the_json_a_handler_reads() {
+        // Each kind a payload can hold, in one record: its fields in declared order,
+        // markup and URLs and assets as the strings they are, a datetime in the offset it
+        // was written in, and a duration as its whole seconds.
+        let fields = [
+            ("none", Value::Null),
+            ("yes", Value::Bool(true)),
+            ("n", Value::Int(3)),
+            ("x", Value::Float(1.5)),
+            ("s", Value::str("a")),
+            ("h", Value::html("<b>")),
+            ("u", Value::url("/a/")),
+            ("asset", Value::asset("/a.1.css")),
+            (
+                "at",
+                Value::Datetime(Datetime::parse("2026-09-17T10:30:00-07:00").unwrap()),
+            ),
+            ("read", Value::Duration(90)),
+            ("list", Value::list(vec![Value::Int(1)])),
+            (
+                "map",
+                Value::map([(Rc::from("k"), Value::str("v"))].into_iter().collect()),
+            ),
+        ];
+        let record = Value::record(
+            "Spec",
+            fields
+                .into_iter()
+                .map(|(name, value)| (Rc::from(name), value))
+                .collect(),
+        );
+        assert_eq!(
+            serde_json::to_string(&json_from_value(&record)).unwrap(),
+            r#"{"none":null,"yes":true,"n":3,"x":1.5,"s":"a","h":"<b>","u":"/a/","asset":"/a.1.css","at":"2026-09-17T10:30:00-07:00","read":90,"list":[1],"map":{"k":"v"}}"#
+        );
+    }
+
+    #[test]
     fn keeps_the_hosts_names_in_declaration_order_and_each_once() {
-        let host: Host = serde_json::from_str::<HostInput>(
-            r#"{"ambient": {"site": {"bindingsOf": "site.lem"}, "brand": null, "a": "A"}}"#,
+        let host = Host::try_from(
+            serde_json::from_str::<HostInput>(
+                r#"{"ambient": {"site": {"bindingsOf": "site.lem"}, "brand": null, "a": "A"}}"#,
+            )
+            .unwrap(),
         )
-        .unwrap()
-        .into();
+        .unwrap();
         let names: Vec<&str> = host.names().collect();
         assert_eq!(names, ["site", "brand", "a"]);
         let twice =

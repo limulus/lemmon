@@ -958,17 +958,19 @@ mod tests {
     /// names the shell's own bundler answers for, and `code` as a highlighter does —
     /// two languages, a `Code` payload, keyed by its `language` field (D42).
     fn untyped_host() -> Host {
-        Host::untyped(["site", "page", "build"]).with_claims([
-            ("styles", Claim::new()),
-            ("head", Claim::new()),
-            ("scripts", Claim::new()),
-            (
-                "code",
-                Claim::new()
-                    .with_keys(["bash", "css"])
-                    .with_payload("Code", Some("language")),
-            ),
-        ])
+        Host::untyped(["site", "page", "build"])
+            .with_claims([
+                ("styles", Claim::new()),
+                ("head", Claim::new()),
+                ("scripts", Claim::new()),
+                (
+                    "code",
+                    Claim::new()
+                        .with_keys(["bash", "css"])
+                        .with_payload("Code", Some("language")),
+                ),
+            ])
+            .expect("claims that agree")
     }
 
     /// The record that host's `code` claim names, as a site's `ambient.lem` declares it.
@@ -1857,7 +1859,8 @@ mod tests {
                            <lem-fn up(s: string): string = s />"
         );
         let claiming = Host::untyped(["site", "page", "build"])
-            .with_claims([("code", Claim::new().with_payload("Wrap", None))]);
+            .with_claims([("code", Claim::new().with_payload("Wrap", None))])
+            .expect("claims that agree");
         let messages =
             shown(&compile(&[SourceFile::new("t.lem", &src)], &claiming).diagnostics);
         assert!(
@@ -1896,7 +1899,8 @@ mod tests {
                            <lem.mark(\"diagram\", {kind: computed})>\
                            <lem.mark(\"diagram\", {kind: \"mermaid\"})>";
         let host = Host::untyped(["site", "page", "build"])
-            .with_claims([("diagram", Claim::new().with_payload("Spec", Some("kind")))]);
+            .with_claims([("diagram", Claim::new().with_payload("Spec", Some("kind")))])
+            .expect("claims that agree");
         let module = compile(&[SourceFile::new("t.lem", SRC)], &host).expect_output();
         let rendered = render(&module, "t.lem", &[]).expect("a page");
         assert_eq!(
@@ -1917,7 +1921,8 @@ mod tests {
         const SRC: &str = "<lem-enum Placement = hero | left />\n\
                            <lem.mark(\"code\", {language: \"bash\"})>";
         let host = Host::untyped(["site", "page", "build"])
-            .with_claims([("code", Claim::new().with_payload("Placement", None))]);
+            .with_claims([("code", Claim::new().with_payload("Placement", None))])
+            .expect("claims that agree");
         assert_eq!(
             shown(&compile(&[SourceFile::new("t.lem", SRC)], &host).diagnostics),
             [format!(
@@ -2006,6 +2011,25 @@ mod tests {
             let messages = shown(&compile_errors(&[SourceFile::new("t.lem", src)]));
             assert!(messages.iter().any(|m| m.contains(expect)), "{messages:?}");
         }
+    }
+
+    #[test]
+    fn refuses_a_function_handed_to_a_handler_nothing_typed() {
+        // Nothing claims `toc`, so nothing types its payload and a map of anything
+        // compiles; the function in it is refused where the payload is made, since the
+        // handler would receive it as JSON.
+        const SRC: &str = "<lem-fn up(s: string): string = s />\n\
+                           <lem.mark(\"toc\", {render: up})>";
+        let host = Host::untyped(["site", "page", "build"]);
+        let module = compile(&[SourceFile::new("t.lem", SRC)], &host).expect_output();
+        let error = render(&module, "t.lem", &[]).expect_err("a render error");
+        assert_eq!(
+            (error.message.as_str(), error.span),
+            (
+                "a payload crosses to the handler as data, and a function has no form there",
+                at(SRC, "mark(\"toc\", {render: up})")
+            )
+        );
     }
 
     #[test]

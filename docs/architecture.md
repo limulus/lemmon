@@ -24,9 +24,10 @@ later, unchanged — a Lambda (`ContentSource` seam, D14).
 
 ```ts
 class Core {
-  compile(files: {path, text, record?}[], host?: HostDecl): Diagnostic[]
+  compile(files: {path, text, record?}[], host?: HostDecl): {diagnostics, payloads}
       // changed files only; per-file units, cached (D25). `record` names a document's
-      // schema; `host` names the ambient values and their types (D30)
+      // schema; `host` names the ambient values and their types (D30); `payloads` are
+      // the code blocks' `{id, language, info, code}`, each once (D42)
   loadData(input: DataInput): Diagnostic[]            // records, data files, build info
   upsertRecord(collection, record) / removeRecord(id) // dev server + future on-demand
   plan(): {path, index?, url?}[]                      // every loaded page (D43)
@@ -90,6 +91,14 @@ a warning at the word.
 settled the spike shapes the sketch left open — each chosen so the full form is additive,
 not a break:
 
+- `compile` returns `{diagnostics, payloads}`: the diagnostics about the files passed
+  and any resident unit the relink found stale, and the payload of every code block the
+  files that compiled write, `{id, language, info, code}`, each once (D42). A file that
+  compiles beside one that does not goes resident without the program relinking and is
+  not compiled again once the other is fixed, so its payloads are reported by the call
+  that compiled it, relink or no; the host keeps them by id. ∆Qr2 adds `facts` beside
+  them. A declaration whose claims cannot be merged — two naming different payloads or
+  key fields for one name, or a key field with no payload — is a thrown caller bug.
 - `DataInput` is `{ambient, sources?}` (D37, ∆iCW): `ambient` is bare JSON by any name
   the host bound — an untyped host's values pass through as sent — and `sources` fulfils
   each `from` binding by name: a list of `{path, value, spans}` for a glob, one such for
@@ -125,14 +134,20 @@ not a break:
 - `render` returns a four-byte little-endian length, that many bytes of
   `{marks, fragments, diagnostics}` as JSON, then the page's UTF-8 bytes. A failed render
   sends the diagnostic, null marks and fragments, and no page section at all, which is
-  what tells it from a page that rendered empty. A mark is `{name, start, end, path,
-  span}`, its offsets naming the page's bytes; a fragment is `{text, path, span}`. `deps`
-  is omitted until ∆xBO, not stubbed. A loaded page renders with the host's document
-  value bound to its own record from the store, its file's output passed as `body` to the
-  entry field's function, in one run of the VM; any other file — a template with no front
-  matter, or a document or page template no collection matched and no `type:` named —
-  renders its own output, reading the value the envelope carried, if it did, as sent
-  (D37).
+  what tells it from a page that rendered empty. A mark is `{name, key?, payload?,
+  payloadId?, start, end, path, span}`, its offsets naming the page's bytes: `key` is
+  what a producer is chosen by, `payload` the JSON a `mark()` call built, `payloadId`
+  the id of the payload `compile` reported for a code block, and a field with nothing to
+  say is absent. A payload's JSON is what JSON has a form for, with markup, a URL, an
+  asset and a datetime (RFC 3339) as strings, a duration as its whole seconds, and a
+  record as the object of its fields in declared order; the VM refuses, at the call, a
+  payload holding a mark, a function, or a float that is not a finite number. A
+  fragment is `{text, path, span}`. `deps` is omitted until ∆xBO, not stubbed. A loaded
+  page renders with the host's document value bound to its own record from the store,
+  its file's output passed as `body` to the entry field's function, in one run of the
+  VM; any other file — a template with no front matter, or a document or page template
+  no collection matched and no `type:` named — renders its own output, reading the value
+  the envelope carried, if it did, as sent (D37).
   Not yet (∆Bhz): no page renders through its entry, and a page template loads no record.
 - A `Diagnostic` is `{path, span: {start, end, range}, severity, message, labels}`. The
   span carries byte offsets (invariant 8) *and* `range`, the same two points as
@@ -177,8 +192,8 @@ not a break:
 3. **Compile** (core) — every changed `.lem`/`.md` → its own bytecode unit, then a link step
    joins the units into the module (D25, §Separate compilation); document prose rendered by
    comrak here and stored in the document's unit (markdown never runs at render time),
-   each code block a `code` mark whose payload is reported by content hash (D42) —
-   not yet across the boundary, whose `compile` still returns diagnostics alone (∆7wK).
+   each code block a `code` mark whose payload `compile` reports once, by content hash
+   (D42).
    Type checking is not a pass of its own: the walk that lowers an expression is the walk
    that types it (D31), so a type error is a compile diagnostic like any other and a file
    with one yields no unit.
@@ -198,8 +213,9 @@ not a break:
 6. **Render × N** (core) — body → the entry function → the page as bytes + its marks
    (name, range, payload id, span) + the fragments collected under each name +
    dependency set. Parallel via shell workers.
-7. **Resolve** (shell) — for each mark, its producer, then its decorators in plugin
-   order, over the page as the core returned it; output cached by payload id (D42). The
+7. **Resolve** (shell) — for each mark, the producer for its name and key, then its
+   decorators in plugin order, over the page as the core returned it; a code block's
+   output cached by payload id, the payload itself kept from `compile` (D42). The
    handlers are the plugins' (§Shell plugin API), the shell's own CSS bundler among them.
 8. **Write** (shell) — HTML, the per-page CSS bundle the `styles` producer wrote under
    `/assets/immutable/…`, passthrough.

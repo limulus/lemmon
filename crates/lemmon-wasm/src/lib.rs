@@ -17,7 +17,7 @@
 //! — a malformed envelope, rendering before a compile has succeeded, rendering a path
 //! the program does not have — which have no source span to point at.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::rc::Rc;
 
 use lemmon_vm::{
@@ -30,8 +30,8 @@ use wasm_bindgen::prelude::wasm_bindgen;
 mod wire;
 
 use wire::{
-    DataInput, Diagnostic, FileInput, HostInput, LineIndexes, PageRef, RenderMeta,
-    encode_render,
+    CompileOut, DataInput, Diagnostic, FileInput, HostInput, LineIndexes, PageRef,
+    PayloadOut, RenderMeta, encode_render,
 };
 
 /// The version of the core this `.wasm` was built from.
@@ -104,11 +104,14 @@ impl Core {
 
     /// Compiles the given files — only the changed ones — into resident units and
     /// relinks the program. `files` is JSON `[{path, text, record?}]`, where `record`
-    /// names the schema a document's content is (D30); the result is the JSON array of
-    /// diagnostics about those files (and about any resident unit the relink found
-    /// stale) — none of them an error on success, since a program is still produced
-    /// when the only diagnostics are warnings. A resident file's warnings are reported
-    /// by the call that compiled it, not again by later calls.
+    /// names the schema a document's content is (D30). The result is JSON
+    /// `{diagnostics, payloads}`: the diagnostics about those files (and about any
+    /// resident unit the relink found stale) — none of them an error on success, since a
+    /// program is still produced when the only diagnostics are warnings — and the
+    /// payload of every code block those files write, `{id, language, info, code}`, each
+    /// once (D42). A resident file's warnings and payloads are reported by the call that
+    /// compiled it, not again by later calls: a host keeps the payloads by id, which is
+    /// what a render's `code` mark names.
     ///
     /// `host` is the ambient declaration, JSON `{ambient, document?, entry?, assets?,
     /// marks?}`: it is resident too, so a call that changes nothing about the
@@ -193,6 +196,8 @@ impl Core {
         let host = host_json
             .map(|json| {
                 serde_json::from_str::<HostInput>(json)
+                    .map_err(|e| e.to_string())
+                    .and_then(Host::try_from)
                     .map_err(|e| format!("malformed `compile` host: {e}"))
             })
             .transpose()?;
@@ -217,7 +222,7 @@ impl Core {
         // Installed once the call is past everything that would refuse it: a rejected
         // call is a caller bug, and leaves the resident core exactly as it was.
         if let Some(host) = host {
-            self.host = Host::from(host);
+            self.host = host;
         }
         // Indexed up front, before `prepare`, so that a file which fails to even parse
         // can still have its own diagnostics placed.
@@ -226,6 +231,11 @@ impl Core {
             .map(|file| (file.path.clone(), Rc::new(LineIndex::new(&file.text))))
             .collect();
         let mut diagnostics: Vec<lemmon_vm::Diagnostic> = Vec::new();
+        // Every unit that goes resident reports its payloads now, whether or not the
+        // program relinks: a unit is not recompiled once resident, so a later call that
+        // fixes another file would never report them (D42).
+        let mut payloads: Vec<PayloadOut> = Vec::new();
+        let mut reported: HashSet<Rc<str>> = HashSet::new();
         let mut prepared = Vec::new();
         for file in &files {
             let mut source = SourceFile::new(file.path.clone(), file.text.clone());
@@ -253,6 +263,11 @@ impl Core {
             let compiled = compile_unit(p, &self.index, &self.host);
             diagnostics.extend(compiled.diagnostics);
             if let Some(unit) = compiled.output {
+                for payload in &unit.payloads {
+                    if reported.insert(payload.id.clone()) {
+                        payloads.push(PayloadOut::from(payload));
+                    }
+                }
                 // In lockstep: the index kept for a unit is the one over the text that
                 // produced it, so the unit's spans stay placeable for as long as it is
                 // resident — including after a later recompile of that path fails.
@@ -295,8 +310,11 @@ impl Core {
             .into_iter()
             .map(|d| Diagnostic::placed(d, Some(&incoming), &self.unit_indexes))
             .collect();
-        serde_json::to_string(&diagnostics)
-            .map_err(|e| format!("serialising diagnostics failed: {e}"))
+        serde_json::to_string(&CompileOut {
+            diagnostics,
+            payloads,
+        })
+        .map_err(|e| format!("serialising the compile result failed: {e}"))
     }
 
     fn load_data_json(&mut self, input_json: &str) -> Result<String, String> {
@@ -372,8 +390,16 @@ impl Core {
 mod tests {
     use super::*;
 
+    /// The diagnostics of a `compile` reply, `{diagnostics, payloads}`.
     fn diagnostics(json: &str) -> serde_json::Value {
-        serde_json::from_str(json).expect("diagnostics are JSON")
+        let reply: serde_json::Value = serde_json::from_str(json).expect("a JSON reply");
+        reply["diagnostics"].clone()
+    }
+
+    /// The payloads of a `compile` reply.
+    fn payloads(json: &str) -> serde_json::Value {
+        let reply: serde_json::Value = serde_json::from_str(json).expect("a JSON reply");
+        reply["payloads"].clone()
     }
 
     /// The host most tests compile against: the three names the standard shell binds,
@@ -383,7 +409,11 @@ mod tests {
 
     fn compile_clean_with(core: &mut Core, files: &str, host: Option<&str>) {
         let result = core.compile_json(files, host).unwrap();
-        assert_eq!(result, "[]", "expected a clean compile");
+        assert_eq!(
+            diagnostics(&result),
+            serde_json::json!([]),
+            "expected a clean compile"
+        );
     }
 
     fn compile_clean(core: &mut Core, files: &str) {
@@ -443,8 +473,10 @@ mod tests {
         }})
     }
 
+    /// Loads `envelope`, returning its diagnostics: `loadData` replies with the array.
     fn load(core: &mut Core, envelope: &serde_json::Value) -> serde_json::Value {
-        diagnostics(&core.load_data_json(&envelope.to_string()).unwrap())
+        serde_json::from_str(&core.load_data_json(&envelope.to_string()).unwrap())
+            .expect("a JSON reply")
     }
 
     /// A span as a host writes one, `start..end` running from one position to another.
@@ -955,8 +987,7 @@ mod tests {
         // Another file arrives under a declaration whose handlers claim nothing: the
         // page's unit is resident and marks, so relinking it reports.
         let other = r#"[{"path": "other.lem", "text": "<p>b</p>"}]"#;
-        let diagnostics = core.compile_json(other, Some(UNTYPED)).unwrap();
-        let diagnostics: serde_json::Value = serde_json::from_str(&diagnostics).unwrap();
+        let diagnostics = diagnostics(&core.compile_json(other, Some(UNTYPED)).unwrap());
         assert_eq!(diagnostics[0]["path"], "page.lem");
         assert!(
             diagnostics[0]["message"]
@@ -967,7 +998,7 @@ mod tests {
         // The same change says nothing about a file that marks nothing.
         let mut core = Core::new();
         compile_clean_with(&mut core, other, Some(CLAIMING));
-        assert_eq!(core.compile_json(other, Some(UNTYPED)).unwrap(), "[]");
+        compile_clean_with(&mut core, other, Some(UNTYPED));
     }
 
     #[test]
@@ -1338,15 +1369,34 @@ mod tests {
         );
     }
 
+    /// A host whose highlighter claims `code` for two languages, with the payload record
+    /// a code mark carries and the field it is keyed by, as `ambient.lem` declares it.
+    const HIGHLIGHTING: &str = r#"{"ambient": {"site": null, "page": null, "build": null},
+        "marks": [
+            {"name": "code", "keys": ["sh", "ts"], "payload": "Code", "keyedBy": "language"},
+            {"name": "code"}
+        ]}"#;
+
+    /// `Code` as the shell's `ambient.lem` declares it.
+    const CODE: &str = "<lem-type Code>\n  language: string?\n  info: string\n  \
+                        code: string\n</lem-type>";
+
     #[test]
     fn marks_a_code_block_over_the_element_comrak_wrote() {
-        // The core highlights nothing (D42): the page holds comrak's plain block, and a
-        // `code` mark names its bytes for the host's producer to replace.
-        // A host that declares no handlers, so nothing is said about the language.
+        // The core highlights nothing (D42): the page holds comrak's plain block, a
+        // `code` mark names its bytes and key, and the payload it names crossed once,
+        // with `compile`, rather than with every render.
         let mut core = Core::new();
-        compile_clean(
-            &mut core,
-            r#"[{"path": "post.md", "text": "```sh\necho <hi>\n```\n"}]"#,
+        let files = r#"[{"path": "post.md", "text": "```sh {1}\necho <hi>\n```\n"}]"#;
+        let result = core.compile_json(files, Some(HIGHLIGHTING)).unwrap();
+        assert_eq!(diagnostics(&result), serde_json::json!([]));
+        let payloads = payloads(&result);
+        let id = payloads[0]["id"].as_str().expect("an id").to_owned();
+        assert_eq!(
+            payloads,
+            serde_json::json!([
+                {"id": id, "language": "sh", "info": "sh {1}", "code": "echo <hi>\n"}
+            ])
         );
         let (meta, html) = rendered(&core, "post.md");
         let html = html.expect("a page");
@@ -1354,12 +1404,139 @@ mod tests {
         assert_eq!(html, format!("{element}\n"));
         let mark = &meta["marks"][0];
         assert_eq!(
-            (&mark["name"], &mark["start"], &mark["end"]),
+            (
+                &mark["name"],
+                &mark["key"],
+                &mark["payloadId"],
+                &mark["start"],
+                &mark["end"]
+            ),
             (
                 &serde_json::json!("code"),
+                &serde_json::json!("sh"),
+                &serde_json::json!(id),
                 &serde_json::json!(0),
                 &serde_json::json!(element.len())
             )
+        );
+        // A reported payload is named, never carried: nothing about the code rides on
+        // the render.
+        assert!(mark.get("payload").is_none(), "{mark}");
+    }
+
+    #[test]
+    fn sends_a_template_marks_key_and_payload_as_json() {
+        // A `mark()` call's payload crosses inline, as the JSON a handler can read: a
+        // record as its fields in declared order, and no field absent for being null.
+        let mut core = Core::new();
+        let page = format!(
+            "{CODE}\n<lem.mark(\"code\", {{language: \"ts\", info: \"ts\", code: \"let x\"}})>"
+        );
+        let files = serde_json::json!([{"path": "page.lem", "text": page}]).to_string();
+        compile_clean_with(&mut core, &files, Some(HIGHLIGHTING));
+        let (meta, _) = rendered(&core, "page.lem");
+        let mark = &meta["marks"][0];
+        assert_eq!(mark["key"], "ts");
+        assert_eq!(
+            serde_json::to_string(&mark["payload"]).unwrap(),
+            r#"{"language":"ts","info":"ts","code":"let x"}"#
+        );
+        assert!(mark.get("payloadId").is_none(), "{mark}");
+    }
+
+    #[test]
+    fn reports_each_payload_once_and_those_of_a_file_that_waits_on_another() {
+        // One block in two files is one payload. A file that compiles beside one that
+        // does not stays resident without the program relinking, and is not compiled
+        // again when the other is fixed — so its payloads go out now or never.
+        let mut core = Core::new();
+        let files = r#"[
+            {"path": "a.md", "text": "```sh\nls\n```\n"},
+            {"path": "b.md", "text": "```sh\nls\n```\n\n```ts\nx\n```\n"},
+            {"path": "broken.lem", "text": "<lem-if x>"}
+        ]"#;
+        let result = core.compile_json(files, Some(HIGHLIGHTING)).unwrap();
+        assert!(!diagnostics(&result).as_array().unwrap().is_empty());
+        let reported = payloads(&result);
+        let codes: Vec<&str> = reported
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|payload| payload["code"].as_str().unwrap())
+            .collect();
+        assert_eq!(codes, ["ls\n", "x\n"]);
+        // Fixing the broken file reports nothing again: a.md and b.md are resident.
+        let fixed = core
+            .compile_json(r#"[{"path": "broken.lem", "text": "ok"}]"#, None)
+            .unwrap();
+        assert_eq!(payloads(&fixed), serde_json::json!([]));
+    }
+
+    #[test]
+    fn refuses_claims_that_cannot_be_one_declaration() {
+        // Two claims for one name naming different payloads, and a key field with no
+        // payload to find it in, are caller bugs, and leave the resident core as it was.
+        let mut core = Core::new();
+        compile_clean(&mut core, r#"[{"path": "page.lem", "text": "ok"}]"#);
+        for (host, message) in [
+            (
+                r#"{"ambient": {}, "marks": [
+                    {"name": "code", "keys": ["sh"], "payload": "Code"},
+                    {"name": "code", "keys": ["ts"], "payload": "Snippet"}]}"#,
+                "the claims for `code` name two payloads, `Code` and `Snippet`",
+            ),
+            (
+                r#"{"ambient": {}, "marks": [{"name": "code", "keyedBy": "language"}]}"#,
+                "the claim for `code` keys its marks by `language` but names no payload",
+            ),
+        ] {
+            let refused = core.compile_json("[]", Some(host)).unwrap_err();
+            assert!(
+                refused.starts_with("malformed `compile` host:")
+                    && refused.contains(message),
+                "{refused}"
+            );
+        }
+        assert_eq!(
+            core.host,
+            Host::try_from(serde_json::from_str::<HostInput>(UNTYPED).unwrap()).unwrap()
+        );
+    }
+
+    #[test]
+    fn stales_a_resident_document_when_a_producer_starts_covering_its_language() {
+        // The fact is per language: a highlighter that starts covering `rust` leaves the
+        // document that names it stale and the one that names `sh` alone.
+        let mut core = Core::new();
+        compile_clean_with(
+            &mut core,
+            r#"[{"path": "a.md", "text": "```sh\nls\n```\n"}]"#,
+            Some(HIGHLIGHTING),
+        );
+        let result = core
+            .compile_json(
+                r#"[{"path": "b.md", "text": "```rust\nfn main() {}\n```\n"}]"#,
+                None,
+            )
+            .unwrap();
+        assert!(
+            diagnostics(&result)[0]["message"]
+                .as_str()
+                .is_some_and(|m| m.starts_with("no producer claims `rust` for `code`")),
+            "{result}"
+        );
+        let wider = HIGHLIGHTING.replace(r#""ts"]"#, r#""ts", "rust"]"#);
+        let relinked = core
+            .compile_json(r#"[{"path": "c.lem", "text": "ok"}]"#, Some(&wider))
+            .unwrap();
+        let stale = diagnostics(&relinked);
+        assert_eq!(stale.as_array().map(Vec::len), Some(1), "{stale}");
+        assert_eq!(stale[0]["path"], "b.md");
+        assert!(
+            stale[0]["message"]
+                .as_str()
+                .is_some_and(|m| m.contains("a producer claims `rust` for `code` now")),
+            "{stale}"
         );
     }
 

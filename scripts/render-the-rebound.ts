@@ -254,7 +254,7 @@ const host = { ambient: { site: null, page: null, build: null } }
 
 const compile = record(`compile (${files.length} files, 1 call)`)
 compile(() => {
-  expectClean(core.compile(files, host), 'compiling the spike')
+  expectClean(core.compile(files, host).diagnostics, 'compiling the spike')
 })
 
 const loadAmbient = record('loadData (full ambient)')

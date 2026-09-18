@@ -112,12 +112,12 @@ describe('Core', () => {
   describe('compile()', () => {
     it('should report success on a clean program as empty diagnostics', async () => {
       const core = await loadCore()
-      expect(core.compile(layoutChain, untyped)).toEqual([])
+      expect(core.compile(layoutChain, untyped).diagnostics).toEqual([])
     })
 
     it('should report problems as diagnostics with byte spans and positions', async () => {
       const core = await loadCore()
-      expect(core.compile([{ path: 'bad.lem', text: '<lem.nope>' }])).toEqual([
+      expect(core.compile([{ path: 'bad.lem', text: '<lem.nope>' }]).diagnostics).toEqual([
         {
           path: 'bad.lem',
           span: {
@@ -138,7 +138,7 @@ describe('Core', () => {
       // company on this line — which is the whole reason the core computes the position.
       const [diagnostic] = core.compile([
         { path: 'bad.lem', text: '<p>ok</p>\nI’m <lem.nope>' },
-      ])
+      ]).diagnostics
       expect(diagnostic.span.start).toBe(21)
       expect(diagnostic.span.range.start).toEqual({ line: 1, character: 9 })
     })
@@ -146,7 +146,9 @@ describe('Core', () => {
     it('should carry a secondary span as a path-qualified label', async () => {
       const core = await loadCore()
       core.compile([{ path: 'a.lem', text: '<lem-fn f(): int = 1 />' }])
-      const [collision] = core.compile([{ path: 'b.lem', text: '<lem-fn f(): int = 2 />' }])
+      const [collision] = core.compile([
+        { path: 'b.lem', text: '<lem-fn f(): int = 2 />' },
+      ]).diagnostics
       expect(collision.message).toBe('`f` is already defined')
       expect(collision.labels).toEqual([
         {
@@ -167,14 +169,16 @@ describe('Core', () => {
       core.loadData({ ambient: {} })
       const diagnostics = core.compile([
         { path: 'page.lem', text: '<lem-let raw = 1 />new<lem.raw>' },
-      ])
+      ]).diagnostics
       expect(diagnostics.map((d) => d.severity)).toEqual(['warning'])
       expect(page(core.render({ path: 'page.lem' }))).toBe('new1')
     })
 
     it('should leave an ambient name undefined when no host declares one', async () => {
       const core = await loadCore()
-      const [undeclared] = core.compile([{ path: 'page.lem', text: '<lem.page.title>' }])
+      const [undeclared] = core.compile([
+        { path: 'page.lem', text: '<lem.page.title>' },
+      ]).diagnostics
       expect(undeclared.message).toBe('undefined name `page`')
     })
 
@@ -182,19 +186,23 @@ describe('Core', () => {
       const core = await loadCore()
       expect(
         core.compile([...schema, { path: 'page.lem', text: '<lem.page.url>' }], declared)
+          .diagnostics
       ).toEqual([])
       const [wrong] = core.compile(
         [{ path: 'page.lem', text: '<lem.page.nope>' }],
         declared
-      )
+      ).diagnostics
       expect(wrong.message).toBe('`Page` has no field `nope`')
     })
 
     it('should compile a document as the record the host named', async () => {
       const core = await loadCore()
       const post = { path: 'post.md', text: '<lem.page.title>', record: 'Post' }
-      expect(core.compile([...schema, post], declared)).toEqual([])
-      const [wrong] = core.compile([{ ...post, text: '<lem.page.byline>' }], declared)
+      expect(core.compile([...schema, post], declared).diagnostics).toEqual([])
+      const [wrong] = core.compile(
+        [{ ...post, text: '<lem.page.byline>' }],
+        declared
+      ).diagnostics
       expect(wrong.message).toBe('`Post` has no field `byline`')
     })
 
@@ -202,8 +210,8 @@ describe('Core', () => {
       const core = await loadCore()
       const page = { path: 'page.lem', text: '<lem.asset("styles/site.css")>' }
       const built = { ...untyped, assets: { 'styles/site.css': '/site.abc123.css' } }
-      expect(core.compile([page], built)).toEqual([])
-      const [missing] = core.compile([page], untyped)
+      expect(core.compile([page], built).diagnostics).toEqual([])
+      const [missing] = core.compile([page], untyped).diagnostics
       expect(missing.message).toBe(
         'the manifest has no asset `styles/site.css`; the host declares none'
       )
@@ -212,7 +220,9 @@ describe('Core', () => {
     it('should keep the declaration for calls that carry none', async () => {
       const core = await loadCore()
       core.compile(schema, declared)
-      const [wrong] = core.compile([{ path: 'page.lem', text: '<lem.page.nope>' }])
+      const [wrong] = core.compile([
+        { path: 'page.lem', text: '<lem.page.nope>' },
+      ]).diagnostics
       expect(wrong.message).toBe('`Page` has no field `nope`')
     })
 
@@ -224,7 +234,7 @@ describe('Core', () => {
         '<html><main>Hi T</main></html>'
       )
       const edited = layoutChain[1].text.replaceAll('main>', 'article>')
-      expect(core.compile([{ path: 'layout.lem', text: edited }])).toEqual([])
+      expect(core.compile([{ path: 'layout.lem', text: edited }]).diagnostics).toEqual([])
       // The new program binds nothing until data is loaded against it.
       core.loadData({ ambient: { page: { title: 'T' } } })
       expect(page(core.render({ path: 'article.lem' }))).toBe(
@@ -236,9 +246,9 @@ describe('Core', () => {
       const core = await loadCore()
       core.compile(layoutChain, untyped)
       core.loadData({ ambient: { page: { title: 'T' } } })
-      expect(core.compile([{ path: 'article.lem', text: 'Hi <lem.page.title>' }])).toEqual(
-        []
-      )
+      expect(
+        core.compile([{ path: 'article.lem', text: 'Hi <lem.page.title>' }]).diagnostics
+      ).toEqual([])
       const [stale] = core.render({ path: 'article.lem' }).diagnostics
       expect(stale.message).toBe('`page` is not bound')
     })
@@ -259,7 +269,7 @@ describe('Core', () => {
 
     it('should load a collection and bind each document at render as its own record', async () => {
       const core = await loadCore()
-      expect(core.compile(site, typedSite)).toEqual([])
+      expect(core.compile(site, typedSite).diagnostics).toEqual([])
       expect(core.loadData(loaded)).toEqual([])
       // `title` was validated, `slug`'s default ran over the document's path, and
       // `motto` came through `site`.
@@ -268,8 +278,10 @@ describe('Core', () => {
 
     it("should bind the envelope's document value only where no loaded document stands", async () => {
       const core = await loadCore()
-      expect(core.compile(site, typedSite)).toEqual([])
-      expect(core.compile([{ path: 'loose.md', text: '<lem.page.title>' }])).toEqual([])
+      expect(core.compile(site, typedSite).diagnostics).toEqual([])
+      expect(
+        core.compile([{ path: 'loose.md', text: '<lem.page.title>' }]).diagnostics
+      ).toEqual([])
       expect(core.loadData({ ...loaded, ambient: { page: { title: 'Loose' } } })).toEqual(
         []
       )
@@ -279,7 +291,7 @@ describe('Core', () => {
 
     it('should place a load diagnostic by the positions the host sent', async () => {
       const core = await loadCore()
-      expect(core.compile(site, typedSite)).toEqual([])
+      expect(core.compile(site, typedSite).diagnostics).toEqual([])
       // The data file was never compiled, so only the carried positions can place it.
       const [diagnostic] = core.loadData({
         ...loaded,
@@ -300,7 +312,7 @@ describe('Core', () => {
 
     it('should place a load diagnostic at the declaration when the host sent no positions', async () => {
       const core = await loadCore()
-      expect(core.compile(site, typedSite)).toEqual([])
+      expect(core.compile(site, typedSite).diagnostics).toEqual([])
       // An environment value has no file behind it: the error is at the `from`
       // binding, the last line of site.lem.
       const [diagnostic] = core.loadData({
@@ -313,7 +325,7 @@ describe('Core', () => {
 
     it('should keep the last good data when a load reports an error', async () => {
       const core = await loadCore()
-      expect(core.compile(site, typedSite)).toEqual([])
+      expect(core.compile(site, typedSite).diagnostics).toEqual([])
       expect(core.loadData(loaded)).toEqual([])
       const diagnostics = core.loadData({
         ...loaded,
@@ -328,7 +340,7 @@ describe('Core', () => {
 
     it('should throw for an envelope the program cannot be loaded from', async () => {
       const core = await loadCore()
-      expect(core.compile(site, typedSite)).toEqual([])
+      expect(core.compile(site, typedSite).diagnostics).toEqual([])
       expect(() => core.loadData({ ambient: { weather: 1 } })).toThrow(
         /the host binds no `weather`/
       )
@@ -347,7 +359,7 @@ describe('Core', () => {
 
     it('should throw after the declaration changed without a compile succeeding', async () => {
       const core = await loadCore()
-      expect(core.compile(site, typedSite)).toEqual([])
+      expect(core.compile(site, typedSite).diagnostics).toEqual([])
       const changed: HostDecl = {
         ...typedSite,
         ambient: { ...typedSite.ambient, build: 'Build' },
@@ -355,7 +367,7 @@ describe('Core', () => {
       const [typo] = core.compile(
         [{ path: 'build.lem', text: '<lem-type Build>\n  generator: strng\n</lem-type>' }],
         changed
-      )
+      ).diagnostics
       expect(typo.severity).toBe('error')
       expect(() => core.loadData(loaded)).toThrow(/declaration changed/)
     })
@@ -384,7 +396,7 @@ describe('Core', () => {
         core.compile([{ path: 'page.lem', text }], {
           ...untyped,
           marks: [{ name: 'styles' }],
-        })
+        }).diagnostics
       ).toEqual([])
       const result = core.render({ path: 'page.lem' })
       expect(page(result)).toBe('<p>caf\u00e9</p>')
@@ -417,12 +429,69 @@ describe('Core', () => {
       expect([resolved.unclaimed, resolved.unplaced]).toEqual([[], []])
     })
 
+    it('should report each code block once and name it from the render', async () => {
+      // The highlighter claims two languages (D42). Two documents write one `sh` block
+      // between them, which is one payload; the render names it by id, the host keeps
+      // the payloads by id, and a `code` producer reads the code from there — never
+      // from the render, which carries none.
+      const core = await loadCore()
+      const host: HostDecl = {
+        ...untyped,
+        marks: [{ name: 'code', keys: ['sh', 'ts'], payload: 'Code', keyedBy: 'language' }],
+      }
+      const { diagnostics, payloads } = core.compile(
+        [
+          { path: 'a.md', text: '```sh\nls\n```\n' },
+          { path: 'b.md', text: '```sh\nls\n```\n\n```lem\n<lem.x>\n```\n' },
+        ],
+        host
+      )
+      expect(diagnostics.map((d) => d.message)).toEqual([
+        'no producer claims `lem` for `code`, so this mark keeps its default content',
+      ])
+      expect(payloads.map(({ language, code }) => [language, code])).toEqual([
+        ['sh', 'ls\n'],
+        ['lem', '<lem.x>\n'],
+      ])
+      core.loadData({ ambient: {} })
+      const result = core.render({ path: 'b.md' })
+      expect(result.marks?.map(({ key, payloadId }) => [key, payloadId])).toEqual(
+        payloads.map(({ id, language }) => [language, id])
+      )
+      const byId = new Map(payloads.map((payload) => [payload.id, payload]))
+      const resolved = resolveMarks(result, [
+        {
+          name: 'code',
+          keys: ['sh', 'ts'],
+          produce: ({ marks }) =>
+            marks.map(({ payloadId }) => `<kbd>${byId.get(payloadId!)!.code.trim()}</kbd>`),
+        },
+      ])
+      expect(decoder.decode(resolved.html)).toBe(
+        '<kbd>ls</kbd>\n<pre><code class="language-lem">&lt;lem.x&gt;\n</code></pre>\n'
+      )
+      expect(resolved.unclaimed).toEqual([{ name: 'code', key: 'lem' }])
+    })
+
+    it('should throw for two claims on one name that name different payloads', async () => {
+      const core = await loadCore()
+      expect(() =>
+        core.compile([], {
+          ...untyped,
+          marks: [
+            { name: 'code', keys: ['sh'], payload: 'Code' },
+            { name: 'code', keys: ['ts'], payload: 'Snippet' },
+          ],
+        })
+      ).toThrow(/two payloads, `Code` and `Snippet`/)
+    })
+
     it('should warn at a mark name the declaration claims no handler for', async () => {
       const core = await loadCore()
       const diagnostics = core.compile(
         [{ path: 'page.lem', text: '<lem.mark("stylez")>' }],
         { ...untyped, marks: [{ name: 'styles' }] }
-      )
+      ).diagnostics
       expect(diagnostics).toHaveLength(1)
       expect(diagnostics[0].severity).toBe('warning')
       expect(diagnostics[0].message).toContain('did you mean `styles`?')
@@ -432,6 +501,7 @@ describe('Core', () => {
       const quiet = await loadCore()
       expect(
         quiet.compile([{ path: 'page.lem', text: '<lem.mark("stylez")>' }], untyped)
+          .diagnostics
       ).toEqual([])
     })
 
