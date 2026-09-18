@@ -2,7 +2,7 @@
 //! parsing never panics and never loses a byte, and every diagnostic points inside the
 //! source.
 
-use lemmon_syntax::parse;
+use lemmon_syntax::{SyntaxKind, parse};
 use proptest::prelude::*;
 
 /// Biased towards Lemmon syntax so that the generator actually reaches the parser's
@@ -48,6 +48,7 @@ fn lemmon_like() -> impl Strategy<Value = String> {
         Just("\n<p>t</p>\n"),
         Just("<"),
         Just("é"),
+        Just("---\n"),
     ];
     prop::collection::vec(atom, 0..40).prop_map(|parts| parts.concat())
 }
@@ -66,5 +67,29 @@ proptest! {
         for d in &parse.diagnostics {
             prop_assert!(d.span.end as usize <= src.len());
         }
+    }
+
+    #[test]
+    fn front_matter_changes_nothing_about_how_the_body_parses(body in lemmon_like()) {
+        // A closed block is parsed past: the body's tree and diagnostics are the ones
+        // it gets on its own, placed after the block. A body that itself opens with a
+        // rule is the one exception, and only in its diagnostics: alone it is an
+        // unclosed block, after a block it is text, since a file has one front matter.
+        prop_assume!(!body.starts_with("---"));
+        const BLOCK: &str = "---\na: 1\n---\n";
+        let alone = parse(&body);
+        let after = parse(&format!("{BLOCK}{body}"));
+        let mut children = after.syntax().children_with_tokens();
+        let first = children.next().expect("the block");
+        prop_assert_eq!(first.kind(), SyntaxKind::FrontMatter);
+        prop_assert_eq!(first.text_range().len(), rowan::TextSize::of(BLOCK));
+        let rest: Vec<String> = children.map(|c| c.to_string()).collect();
+        let own: Vec<String> =
+            alone.syntax().children_with_tokens().map(|c| c.to_string()).collect();
+        prop_assert_eq!(rest, own);
+        let by = u32::try_from(BLOCK.len()).expect("a short block");
+        let shifted: Vec<_> =
+            alone.diagnostics.into_iter().map(|d| d.shifted(by)).collect();
+        prop_assert_eq!(after.diagnostics, shifted);
     }
 }

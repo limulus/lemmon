@@ -77,7 +77,7 @@ pub fn dump(parse: &Parse) -> String {
 /// grammar has to reproduce for every corpus case. A context-free grammar can say where
 /// a tag begins and ends; it cannot be held to the shape the Pratt parser gave a head.
 /// So heads, expressions, and the `Block` wrapper are dropped and their tag descendants
-/// lifted, while text runs stay.
+/// lifted, while text runs and the front-matter token stay.
 ///
 /// `Error` is kept, as a node or a token, but only where items stand — directly under a
 /// `Root` or a `Block`. There it marks bytes the parser could place in neither a tag nor
@@ -106,6 +106,7 @@ fn is_boundary(kind: SyntaxKind, in_items: bool) -> bool {
     matches!(
         kind,
         SyntaxKind::Root
+            | SyntaxKind::FrontMatter
             | SyntaxKind::TextRun
             | SyntaxKind::AccessTag
             | SyntaxKind::IfTag

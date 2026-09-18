@@ -22,7 +22,9 @@ tests/corpus/
 The top level groups by **what a case is for**. `syntax/` is parse-only; `render/` runs the
 compiler and VM, and supplies its own data with `lem-let` literals (`page` and `site` are
 bound to small fixed records by the test); `document/` is `.md` in document mode, checked by
-both crates — its `.cst` shows the segmentation and its `.html` the spliced output. Below
+both crates — its `.cst` shows the segmentation, with any front matter as one
+`FrontMatter` token in front (the same token a `.lem` file's leading `---` block is,
+`syntax/front-matter/`), and its `.html` the spliced output. Below
 that, directories group by **language feature**, and names are descriptive — no numeric
 prefixes, because a corpus that only grows makes them meaningless.
 
@@ -59,7 +61,7 @@ basename:
 | File          | Produced by                    | Contents                                                                                                                                                         |
 | ------------- | ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `<name>.cst`  | `lemmon_syntax::dump`          | The lossless tree, one node or token per line, then `--- diagnostics` and one `line:col..line:col: message` per line; for a `.md`, the tree `parse_document` assembled |
-| `<name>.tags` | `lemmon_syntax::tag_dump`      | The tag-boundary projection: text runs, tag nodes, close tags, and the errors standing where an item would, with heads, expressions, and `Block` wrappers elided |
+| `<name>.tags` | `lemmon_syntax::tag_dump`      | The tag-boundary projection: the front-matter token, text runs, tag nodes, close tags, and the errors standing where an item would, with heads, expressions, and `Block` wrappers elided |
 | `<name>.html` | `lemmon_vm::{compile, render}` | The rendered output; then each fragment the page's collect blocks gathered, under a `--- styles`, `--- head`, or `--- scripts` line of its own (below); then `--- diagnostics` and one `path:line:col..line:col: message` per compile diagnostic — warnings too — or for the runtime error that stopped the render |
 
 ### Marks in a render

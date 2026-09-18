@@ -191,7 +191,11 @@ moved it. Newest last. An entry is removed when its change has been applied.
   `lem-let` row drop "in documents the body is a document"; in the escape table say a
   fence protects prose only and `&lt;lem` is the escape inside a block. Drop both
   placeholder notes: front matter is parsed by the shell and validated by the loader
-  (D37), and that is the settled behaviour (∆Hbw).
+  (D37), and that is the settled behaviour (∆Hbw). Where the text describes the `---`
+  block, say one textual rule finds it in a `.lem` file as in a `.md` — a first line of
+  exactly `---` through the next such line, nothing inside scanned — and that a block
+  which never closes is an error at its opening line in both modes, not a rule and prose
+  (∆Bhz).
 
 - **Document mode, comrak configuration** — replace "syntect highlighting (class-based,
   generated theme CSS)" with a Code blocks subsection as `docs/language.md` § Code blocks

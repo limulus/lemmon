@@ -66,6 +66,17 @@ impl Diagnostic {
         self
     }
 
+    /// The same diagnostic `by` bytes later in the file, labels included — for a parser
+    /// that read a slice of the source and places what it found in the whole.
+    #[must_use]
+    pub fn shifted(mut self, by: u32) -> Self {
+        self.span = Span::new(self.span.start + by, self.span.end + by);
+        for label in &mut self.labels {
+            label.span = Span::new(label.span.start + by, label.span.end + by);
+        }
+        self
+    }
+
     /// Whether this diagnostic stops the file from compiling.
     #[must_use]
     pub fn is_error(&self) -> bool {
@@ -122,6 +133,16 @@ pub fn nearest<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shifts_a_diagnostic_and_its_labels_together() {
+        let shifted = Diagnostic::warning("w", Span::new(1, 2))
+            .with_label(Span::new(0, 1), "here")
+            .shifted(10);
+        assert_eq!(shifted.span, Span::new(11, 12));
+        assert_eq!(shifted.labels[0].span, Span::new(10, 11));
+        assert_eq!(shifted.severity, Severity::Warning);
+    }
 
     #[test]
     fn carries_its_message_and_span_as_an_error_with_no_labels() {

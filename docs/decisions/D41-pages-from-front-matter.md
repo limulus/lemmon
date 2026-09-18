@@ -1,7 +1,10 @@
 # D41 — Pages from front matter
 
 - **Status:** Accepted 2026-09-13 (∆RGQ), revising D30; the generator key's name and who
-  reads it, left to ∆c9S, settled 2026-09-14 by D43 — the planning that split ∆c9S
+  reads it, left to ∆c9S, settled 2026-09-14 by D43 — the planning that split ∆c9S. As
+  built (∆Bhz): one textual rule finds the block in both modes, and a block that never
+  closes is an error at its opening line rather than a rule and prose, in a `.md` too —
+  settled with Eric 2026-09-17
 - **Backlog item:** ∆RGQ (settled it); ∆Bhz (page templates) and ∆99b (generators) build
   it
 - **Normative text:** `docs/language.md` § Types › Ambient types

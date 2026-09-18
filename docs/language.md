@@ -27,6 +27,14 @@ Two modes over one buffer (logos `morph()`), plus one for a single tag's body:
   `</lem-type>` lexes as any close tag does and anything else standing there is the
   parser's to report.
 
+**Front matter** comes before either mode, in a `.lem` file as in a `.md` (D41). A first
+line that is exactly `---` opens a block that runs through the next line that is exactly
+`---`. Nothing inside it is scanned — a `<lem.` there is not a tag — and the core never
+reads the YAML: the shell parses it and the loader validates it (D37). The tree keeps the
+block as one `FrontMatter` token in front of the file's items, so a `.tags` projection
+shows it as a boundary. A block that never closes is an error at its opening line, in
+both modes: the author who typed `---` on line one meant front matter (invariant 10).
+
 Three delimitability rules (D21):
 
 1. **A head never contains `>`.** Ordering is `lt lte gt gte`; lambdas are `|a| expr`;
@@ -461,9 +469,10 @@ The standard shell (`@limulus/lemmon-shell`) ships this declaration and binds `p
   loader fills them with the pages before and after it in the list; the first page has no
   `prev`, the last no `next`, and a page that was not generated has neither. A default may
   not read one, since the loader fills them after every page of the generator is built.
-- _Not yet (∆Bhz): the scanner reads a `.lem` file's leading `---` block as text,
-  nothing renders a page — template or document — through its layout, no page's url is
-  reported or checked against another's, and no `body` read refuses a page template._
+- _Not yet (∆Bhz): a `.lem` file's leading `---` block is a token the compiler skips
+  and no more, nothing renders a page — template or document — through its layout, no
+  page's url is reported or checked against another's, and no `body` read refuses a
+  page template._
 - _Not yet (∆99b): nothing expands a generator or fills a neighbour field._
 - **`layout`** is a field every page schema declares, `(T, html): html` for its own `T`,
   usually with a default. At load its string value resolves to a project function of that

@@ -7,9 +7,10 @@ macro_rules! syntax_kinds {
         /// Every kind of token and node in a Lemmon syntax tree.
         ///
         /// The token kinds come first and mirror [`TokenKind`] one for one, so that the
-        /// scanner's output can be written into the tree unchanged; the node kinds
-        /// follow. One flat enumeration is what rowan wants — it stores kinds as a bare
-        /// `u16` and asks the [`Language`](rowan::Language) impl below to convert.
+        /// scanner's output can be written into the tree unchanged, then the one token
+        /// the parsers make without the scanner; the node kinds follow. One flat
+        /// enumeration is what rowan wants — it stores kinds as a bare `u16` and asks
+        /// the [`Language`](rowan::Language) impl below to convert.
         #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
         #[allow(missing_docs, reason = "the token kinds are documented on `TokenKind`")]
         #[repr(u16)]
@@ -74,6 +75,10 @@ syntax_kinds! {
     /// Bytes the scanner could not lex — and, as a node, a run of tokens the parser
     /// skipped while recovering. Nothing is ever dropped from the tree.
     Error,
+    /// A file's leading `---` block, in either mode (`docs/language.md` §Scanner). From
+    /// no scanner token: the parsers place it before the first item, and nothing
+    /// inside it is lexed.
+    FrontMatter,
 
     // --- Nodes ---
     /// The whole file.

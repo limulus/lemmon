@@ -27,6 +27,7 @@ use std::sync::OnceLock;
 
 use glob::Pattern;
 use lemmon_corpus::Case;
+use lemmon_syntax::FrontMatter;
 use lemmon_vm::{
     Ambient, Claim, Data, Decls as _, Fulfilled, Host, HostSpan, LineIndex, Loaded, Map,
     Mark, Module, Op, Payload, Rendered, Source, SourceFile, SourceKind, Span, Spans,
@@ -516,15 +517,19 @@ impl Document {
     }
 }
 
-/// The front matter of `source`, parsed, when it opens with a `---` line closed by
-/// another. Spans are offsets into `source`, where the YAML starts after the opening
-/// line.
+/// The front matter of `source`, parsed, when it opens with a closed block — found by
+/// the one rule the core applies (`lemmon_syntax::front_matter`), so the harness and
+/// the parsers never disagree about which files have it. Spans are offsets into
+/// `source`. An unclosed block is the parser's error, and nothing to parse here.
 fn front_matter(source: &str) -> Option<Parsed> {
-    let body = source.strip_prefix("---\n")?;
-    let end = body
-        .find("\n---\n")
-        .or_else(|| body.strip_suffix("\n---").map(|s| s.len()))?;
-    Some(Parsed::of(source, 4..4 + end, true))
+    match lemmon_syntax::front_matter(source) {
+        FrontMatter::Closed { inner, .. } => Some(Parsed::of(
+            source,
+            inner.start as usize..inner.end as usize,
+            true,
+        )),
+        FrontMatter::None | FrontMatter::Unclosed(_) => None,
+    }
 }
 
 /// A YAML (or JSON) text as a value with positions, as the shell's parser hands them to

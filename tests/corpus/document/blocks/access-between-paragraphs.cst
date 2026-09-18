@@ -1,6 +1,7 @@
 Root@0..90
-  Text@0..55
-    Text@0..55 "---\ntitle: ignored by the core\n---\n\nBefo"…
+  FrontMatter@0..35 "---\ntitle: ignored by the core\n---\n"
+  Text@35..55
+    Text@35..55 "\nBefore the block.\n\n"
   AccessTag@55..71
     OpenAccess@55..60 "<lem."
     Head@60..70

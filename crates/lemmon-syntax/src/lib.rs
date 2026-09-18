@@ -10,6 +10,7 @@ use std::fmt;
 pub mod ast;
 mod diagnostic;
 mod document;
+mod front_matter;
 mod line_index;
 mod parser;
 mod scanner;
@@ -19,6 +20,7 @@ mod token;
 pub use ast::AstNode;
 pub use diagnostic::{Diagnostic, Label, Severity, nearest};
 pub use document::{DocumentParse, parse_document};
+pub use front_matter::{FrontMatter, front_matter};
 pub use line_index::{LineIndex, Position, Range};
 pub use parser::{Parse, dump, parse, tag_dump};
 pub use scanner::{ScanResult, scan};
@@ -50,6 +52,15 @@ impl From<rowan::TextRange> for Span {
     fn from(range: rowan::TextRange) -> Self {
         Self::new(range.start().into(), range.end().into())
     }
+}
+
+/// A byte index as a [`Span`] endpoint.
+///
+/// # Panics
+///
+/// If `index` is past what a span can address (4 GiB), which no source is.
+pub(crate) fn index_u32(index: usize) -> u32 {
+    u32::try_from(index).expect("sources are smaller than 4 GiB")
 }
 
 impl Span {

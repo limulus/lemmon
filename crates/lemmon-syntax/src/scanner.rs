@@ -30,7 +30,7 @@
 
 use logos::{Lexer, Logos};
 
-use crate::{Diagnostic, Span, Token, TokenKind};
+use crate::{Diagnostic, Span, Token, TokenKind, index_u32};
 
 /// Why a run of bytes became an [`Error`](TokenKind::Error) token.
 ///
@@ -173,10 +173,6 @@ impl ScanResult {
             self.push(TokenKind::Trivia, sub(run, bytes.len()));
         }
     }
-}
-
-fn index_u32(index: usize) -> u32 {
-    u32::try_from(index).expect("sources are smaller than 4 GiB")
 }
 
 /// How a `lem-type` body stopped.

@@ -1,0 +1,17 @@
+Root@0..59
+  Text@0..37
+    Text@0..37 "---\ntitle: Lost its closing line\n<h1>"
+  AccessTag@37..53
+    OpenAccess@37..42 "<lem."
+    Head@42..52
+      MemberExpr@42..52
+        NameRef@42..46
+          Ident@42..46 "page"
+        Dot@46..47 "."
+        Ident@47..52 "title"
+    Close@52..53 ">"
+  Text@53..59
+    Text@53..59 "</h1>\n"
+
+--- diagnostics
+1:1..1:4: front matter opened here has no closing `---` line

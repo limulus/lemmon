@@ -1,8 +1,8 @@
 //! Document mode's segmenter: where the lem-blocks of a `.md` file are.
 //!
 //! A document is markdown prose with block-level Lemmon tags in it
-//! (`docs/language.md` §Document mode). This module finds the blocks and leaves
-//! everything else — the prose, and any front matter — alone: a block starts on a
+//! (`docs/language.md` §Document mode). This module finds the blocks and leaves the
+//! prose alone, with any front matter standing as one token in front: a block starts on a
 //! line whose first non-whitespace is `<lem.`, `<lem-`, or `</lem-` outside a fenced
 //! code block, and extends as far as the parser says that one item reaches, its close
 //! tag included. Rendering the prose is the compiler's job (`lemmon-vm`), since
@@ -19,15 +19,16 @@ use rowan::{GreenNode, GreenToken, NodeOrToken};
 
 use crate::parser::{Parse, parse_item_prefix};
 use crate::syntax_kind::SyntaxKind;
-use crate::{Diagnostic, Label, Span};
+use crate::{Diagnostic, Span, front_matter, index_u32};
 
 /// A parsed document: the tree over the whole file, plus where its parts are.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DocumentParse {
     /// The tree, with prose as text runs and each lem-block as the item it parsed to.
     pub parse: Parse,
-    /// The front matter, `---` lines included, when the file opens with one. The core
-    /// does not read it; the shell parses it as YAML.
+    /// The front matter, `---` lines included, when the file opens with a closed block
+    /// (`lemmon_syntax::front_matter`). The core does not read it; the shell parses it
+    /// as YAML. An unclosed block is a diagnostic, and this is `None`.
     pub front_matter: Option<Span>,
     /// Each lem-block, opener through close, in document order.
     pub blocks: Vec<Span>,
@@ -40,17 +41,21 @@ pub struct DocumentParse {
 ///
 /// Parse diagnostics come from the blocks; the segmenter adds one of its own when
 /// something other than whitespace follows a block's close on its line, since what
-/// that text would mean — prose, or part of the block — is not something to guess.
+/// that text would mean — prose, or part of the block — is not something to guess,
+/// and front matter that never closes is reported at its opening line.
 #[must_use]
 pub fn parse_document(src: &str) -> DocumentParse {
-    let front_matter = front_matter(src);
+    let (front_matter, unclosed) = front_matter::leading(src);
     let body_start = front_matter.map_or(0, |span| span.end as usize);
     let mut children: Vec<NodeOrToken<GreenNode, GreenToken>> = Vec::new();
-    let mut diagnostics = Vec::new();
+    if front_matter.is_some() {
+        children.push(front_matter::token(&src[..body_start]));
+    }
+    let mut diagnostics: Vec<Diagnostic> = unclosed.into_iter().collect();
     let mut blocks = Vec::new();
     let mut prose = Vec::new();
     let mut fence: Option<Fence> = None;
-    let mut text_start = 0;
+    let mut text_start = body_start;
     let mut prose_start = body_start;
     let mut pos = body_start;
     while pos < src.len() {
@@ -75,20 +80,12 @@ pub fn parse_document(src: &str) -> DocumentParse {
             let block = parse_item_prefix(&src[start..]);
             let end = start + usize::from(block.green.text_len());
             children.extend(block.green.children().map(|child| child.to_owned()));
-            diagnostics.extend(block.diagnostics.into_iter().map(|d| {
-                Diagnostic {
-                    span: shift(d.span, start),
-                    labels: d
-                        .labels
-                        .into_iter()
-                        .map(|l| Label {
-                            span: shift(l.span, start),
-                            ..l
-                        })
-                        .collect(),
-                    ..d
-                }
-            }));
+            diagnostics.extend(
+                block
+                    .diagnostics
+                    .into_iter()
+                    .map(|d| d.shifted(index_u32(start))),
+            );
             blocks.push(Span::new(index_u32(start), index_u32(end)));
             let rest_end = src[end..].find('\n').map_or(src.len(), |i| end + i);
             let rest = &src[end..rest_end];
@@ -155,26 +152,6 @@ fn push_text(children: &mut Vec<NodeOrToken<GreenNode, GreenToken>>, text: &str)
     );
 }
 
-/// A `---` first line through the next `---` line. Without a closing line there is no
-/// front matter, and the opening `---` is the thematic break markdown takes it for.
-fn front_matter(src: &str) -> Option<Span> {
-    let mut pos = 0;
-    let mut first = true;
-    while pos < src.len() {
-        let line_end = src[pos..].find('\n').map_or(src.len(), |i| pos + i + 1);
-        let is_rule = src[pos..line_end].trim_end_matches(['\r', '\n']) == "---";
-        if first && !is_rule {
-            return None;
-        }
-        if !first && is_rule {
-            return Some(Span::new(0, index_u32(line_end)));
-        }
-        first = false;
-        pos = line_end;
-    }
-    None
-}
-
 /// An open fenced code block: what it takes to close it.
 #[derive(Clone, Copy)]
 struct Fence {
@@ -208,14 +185,6 @@ impl Fence {
         let len = content.chars().take_while(|&c| c == self.marker).count();
         len >= self.len && content[len..].trim().is_empty()
     }
-}
-
-fn shift(span: Span, by: usize) -> Span {
-    Span::new(span.start + index_u32(by), span.end + index_u32(by))
-}
-
-fn index_u32(index: usize) -> u32 {
-    u32::try_from(index).expect("sources are smaller than 4 GiB")
 }
 
 #[cfg(test)]
@@ -306,18 +275,27 @@ mod tests {
     }
 
     #[test]
-    fn skips_front_matter_and_starts_prose_after_it() {
+    fn keeps_front_matter_as_a_token_in_front_of_the_prose() {
         let doc = parse_document("---\na: 1\n---\nbody\n");
         assert_eq!(doc.front_matter, Some(Span::new(0, 13)));
         assert_eq!(doc.prose, vec![Span::new(13, 18)]);
-        assert_eq!(items(&doc), vec!["Text@0..18"]);
+        // The token is no item: the typed view starts at the prose.
+        assert_eq!(items(&doc), vec!["Text@13..18"]);
+        let first = doc.parse.syntax().first_child_or_token().expect("a child");
+        assert_eq!(first.kind(), SyntaxKind::FrontMatter);
+        assert_eq!(u32::from(first.text_range().end()), 13);
+        assert!(doc.parse.diagnostics.is_empty());
     }
 
     #[test]
-    fn treats_an_unclosed_front_matter_as_prose() {
+    fn refuses_front_matter_that_never_closes_at_its_opening_line() {
         let doc = parse_document("---\na: 1\n");
         assert_eq!(doc.front_matter, None);
         assert_eq!(doc.prose, vec![Span::new(0, 9)]);
+        assert_eq!(items(&doc), vec!["Text@0..9"]);
+        let spans: Vec<Span> = doc.parse.diagnostics.iter().map(|d| d.span).collect();
+        assert_eq!(spans, vec![Span::new(0, 3)]);
+        assert!(doc.parse.diagnostics[0].message.contains("no closing"));
     }
 
     #[test]

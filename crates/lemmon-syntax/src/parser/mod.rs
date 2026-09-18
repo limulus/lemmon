@@ -30,7 +30,7 @@ use rowan::{GreenNode, GreenNodeBuilder};
 
 use crate::ast::{AstNode, Root};
 use crate::syntax_kind::{SyntaxKind, SyntaxNode};
-use crate::{Diagnostic, Span, Token, TokenKind, scan};
+use crate::{Diagnostic, Span, Token, TokenKind, front_matter, index_u32, scan};
 
 /// The result of parsing one source file: a lossless tree plus every diagnostic.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -60,16 +60,37 @@ impl Parse {
 /// Never fails and never panics on any input: malformed source yields a tree that still
 /// covers every byte, plus diagnostics that each point at the bytes at fault.
 ///
+/// A leading `---` block is front matter in a template as in a document
+/// (`docs/language.md` §Scanner): the file is parsed from the block's end, nothing
+/// inside it is ever lexed, and the block stands as one `FrontMatter` token in front of
+/// the items, with every span and diagnostic placed in the whole file.
+///
 /// # Panics
 ///
 /// If `src` is longer than a [`Span`] can address (4 GiB), as [`scan`] does.
 #[must_use]
 pub fn parse(src: &str) -> Parse {
-    let scanned = scan(src);
-    let mut parser = Parser::new(src, &scanned.tokens);
+    let (block, unclosed) = front_matter::leading(src);
+    let body_start = block.map_or(0, |span| span.end as usize);
+    let body = &src[body_start..];
+    let scanned = scan(body);
+    let mut parser = Parser::new(body, &scanned.tokens);
     template::root(&mut parser);
     let (green, mut diagnostics) = parser.finish();
     diagnostics.extend(scanned.diagnostics);
+    let green = if block.is_some() {
+        let children: Vec<_> = std::iter::once(front_matter::token(&src[..body_start]))
+            .chain(green.children().map(|child| child.to_owned()))
+            .collect();
+        GreenNode::new(SyntaxKind::Root.into(), children)
+    } else {
+        green
+    };
+    let mut diagnostics: Vec<Diagnostic> = diagnostics
+        .into_iter()
+        .map(|d| d.shifted(index_u32(body_start)))
+        .collect();
+    diagnostics.extend(unclosed);
     diagnostics.sort_by_key(|d| (d.span.start, d.span.end));
     Parse { green, diagnostics }
 }
@@ -554,6 +575,92 @@ impl Sink<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The kinds and byte ranges of a root's children, tokens included.
+    fn top_level(parse: &Parse) -> Vec<(SyntaxKind, u32, u32)> {
+        parse
+            .syntax()
+            .children_with_tokens()
+            .map(|e| {
+                let range = e.text_range();
+                (e.kind(), range.start().into(), range.end().into())
+            })
+            .collect()
+    }
+
+    #[test]
+    fn places_front_matter_as_a_token_in_front_of_the_items() {
+        // Nothing inside the block is lexed: the `<lem.` there is no tag.
+        let src = "---\na: <lem.not-a-tag>\n---\n<lem.x>";
+        let parsed = parse(src);
+        assert_eq!(
+            top_level(&parsed),
+            vec![
+                (SyntaxKind::FrontMatter, 0, 27),
+                (SyntaxKind::AccessTag, 27, 34)
+            ]
+        );
+        assert_eq!(parsed.root().items().count(), 1);
+        assert!(parsed.diagnostics.is_empty());
+        assert_eq!(parsed.syntax().text().to_string(), src);
+    }
+
+    #[test]
+    fn places_the_bodys_diagnostics_in_the_whole_file() {
+        // The body is parsed on its own; what it reports is shifted past the block, a
+        // scanner error at the very first byte after it included.
+        for body in ["<lem-if x>", "<lem-if \"unterminated", "</lem-if>"] {
+            let alone = parse(body);
+            assert!(!alone.diagnostics.is_empty(), "{body}");
+            let after = parse(&format!("---\n---\n{body}"));
+            let shifted: Vec<Diagnostic> = alone
+                .diagnostics
+                .into_iter()
+                .map(|d| d.shifted(8))
+                .collect();
+            assert_eq!(after.diagnostics, shifted, "{body}");
+        }
+    }
+
+    #[test]
+    fn refuses_front_matter_that_never_closes_and_parses_the_text_as_it_stands() {
+        let parsed = parse("---\ntitle: x\n<lem.y>");
+        assert_eq!(
+            top_level(&parsed),
+            vec![
+                (SyntaxKind::TextRun, 0, 13),
+                (SyntaxKind::AccessTag, 13, 20)
+            ]
+        );
+        let spans: Vec<Span> = parsed.diagnostics.iter().map(|d| d.span).collect();
+        assert_eq!(spans, vec![Span::new(0, 3)]);
+        assert!(parsed.diagnostics[0].message.contains("no closing"));
+    }
+
+    #[test]
+    fn takes_a_rule_anywhere_but_the_first_line_as_text() {
+        for src in ["<p>\n---\nx\n---\n", "\n---\nx\n---\n", "--- \nx\n---\n"] {
+            let parsed = parse(src);
+            assert_eq!(
+                top_level(&parsed),
+                vec![(SyntaxKind::TextRun, 0, index_u32(src.len()))],
+                "{src:?}"
+            );
+            assert!(parsed.diagnostics.is_empty(), "{src:?}");
+        }
+    }
+
+    #[test]
+    fn accepts_front_matter_with_carriage_returns() {
+        let parsed = parse("---\r\na: 1\r\n---\r\n<lem.x>");
+        assert_eq!(
+            top_level(&parsed),
+            vec![
+                (SyntaxKind::FrontMatter, 0, 16),
+                (SyntaxKind::AccessTag, 16, 23)
+            ]
+        );
+    }
 
     #[test]
     fn round_trips_the_source_through_the_tree() {

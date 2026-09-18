@@ -1,0 +1,6 @@
+---
+type: SitePage
+title: About <lem.not-a-tag>
+teaser: a > b
+---
+<h1><lem.page.title></h1>

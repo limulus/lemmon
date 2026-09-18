@@ -1,0 +1,5 @@
+---
+title: Never output
+teaser: a <lem.tag> in the YAML is text
+---
+<p>Only the body renders: <lem.1 + 1>.</p>
