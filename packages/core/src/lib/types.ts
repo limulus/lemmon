@@ -49,6 +49,13 @@ export interface HostDecl {
    */
   entry?: string
   /**
+   * The field a page's url is read from — `url` in the standard shell — which the
+   * document value's type declares as `url` (D43). {@link Core.plan} reports each
+   * page's url from it, and two loaded pages at one url is a load error. A host that
+   * names none has no page placed, and no url checked.
+   */
+  url?: string
+  /**
    * The manifest the host's build produced: each asset's logical path mapped to the URL
    * it shipped at, in the order a diagnostic should list them.
    *
@@ -130,39 +137,48 @@ export interface CompileResult {
 }
 
 /**
- * What {@link Core.loadData} takes (D37): the host's own ambient values, and what
- * fulfils each `from` binding of the program's bindings files. Which names must be
- * present is the program's to say, so an empty envelope is a well-formed one.
+ * What {@link Core.loadData} takes (D37): the host's own ambient values, what fulfils
+ * each `from` binding of the program's bindings files, and the pages no glob holds.
+ * Which names must be present is the program's to say, so an empty envelope is a
+ * well-formed one.
  */
 export interface DataInput {
   /**
    * The host's own values, by the name it bound each: `build`; `page` where no loaded
-   * document stands in for it — a template, or a document no collection matched;
+   * page stands in for it — a file that is no page, or a page no record typed;
    * whatever an untyped host names. A value the host reads from a file's bindings
    * (`{bindingsOf}`) is built by the core, never carried. The document value is bound
-   * as sent, not validated: it is one value for every such render. A page template
-   * loads its own record once ∆Bhz lands; a template with no front matter keeps this.
+   * as sent, not validated: it is one value for every such render, and a loaded page
+   * never reads it, since its own record stands in.
    */
   ambient?: Record<string, JsonValue>
   /**
    * What fulfils each `from` binding, by binding name: one {@link LoadedValue} per
-   * document, as a list, for a glob; one for a data file, a plugin, or an environment
-   * value. Every `from` binding the program declares is fulfilled here, or the call
-   * throws.
+   * page, as a list, for a glob — a document, or a template with front matter; one
+   * for a data file, a plugin, or an environment value. Every `from` binding the
+   * program declares is fulfilled here, or the call throws.
    */
   sources?: Record<string, LoadedValue | LoadedValue[]>
+  /**
+   * The front matter of every page no glob holds, whose own `type:` key typed it
+   * (D41), each with its path. Loaded after every binding, in this order, so a `by`
+   * index in one may read a map the site loaded. A page carried twice, here or in a
+   * glob, makes the call throw; a page not carried at all is simply not loaded —
+   * {@link Core.plan} omits it, and rendering it throws.
+   */
+  pages?: LoadedValue[]
 }
 
 /** One value the host loaded, with where it came from. */
 export interface LoadedValue {
   /**
    * The value as parsed — objects as maps in key order, every string untrusted. For a
-   * document, its front matter with the `type:` key stripped.
+   * page, its front matter with the `type:` key stripped.
    */
   value: JsonValue
   /**
-   * The file the value came from: required for a document, which the program must
-   * have compiled; a data file's path; absent for a plugin or environment value.
+   * The file the value came from: required for a page, which the program must have
+   * compiled; a data file's path; absent for a plugin or environment value.
    */
   path?: string
   /**
@@ -177,11 +193,21 @@ export interface LoadedValue {
 }
 
 /**
- * What {@link Core.render} takes — the spike's `PageRef`: a path names the page until
- * `plan()` exists to mint richer references.
+ * What {@link Core.render} takes: the path of a file the program compiled — a page
+ * {@link Core.plan} listed, or any other file. `index`, numbering a generator's pages,
+ * is an additive field that arrives with ∆99b.
  */
 export interface PageRef {
   path: string
+}
+
+/**
+ * One page as {@link Core.plan} lists it (D43): what {@link Core.render} takes, with
+ * the url the host-named field holds — absent where the host names no
+ * {@link HostDecl.url}.
+ */
+export interface PlannedPage extends PageRef {
+  url?: string
 }
 
 /**

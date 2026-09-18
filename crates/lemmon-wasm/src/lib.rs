@@ -5,7 +5,8 @@
 //! carrying its bulk data as one UTF-8 JSON string. `compile` takes only the files that
 //! changed, compiles each into its own unit against the resident signatures, and
 //! relinks; `loadData` validates the host's data against the program and keeps what it
-//! builds; `render` runs one file's entry over it.
+//! builds; `plan` lists the pages it loaded; `render` runs one file's entry over it, a
+//! loaded page's through its layout (D43).
 //!
 //! Diagnostics come back as a JSON array of
 //! `{path, span: {start, end, range}, severity, message, labels}`, every one pointing at
@@ -22,7 +23,7 @@ use std::rc::Rc;
 
 use lemmon_vm::{
     ExportIndex, Host, LineIndex, Module, SourceFile, Store, Unit, Value, compile_unit,
-    link, load, prepare, render, repeated_path,
+    link, load, prepare, render, render_page, repeated_path,
 };
 use wasm_bindgen::JsError;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -31,7 +32,7 @@ mod wire;
 
 use wire::{
     CompileOut, DataInput, Diagnostic, FileInput, HostInput, LineIndexes, PageRef,
-    PayloadOut, RenderMeta, encode_render,
+    PayloadOut, PlannedOut, RenderMeta, encode_render,
 };
 
 /// The version of the core this `.wasm` was built from.
@@ -113,8 +114,8 @@ impl Core {
     /// compiled it, not again by later calls: a host keeps the payloads by id, which is
     /// what a render's `code` mark names.
     ///
-    /// `host` is the ambient declaration, JSON `{ambient, document?, entry?, assets?,
-    /// marks?}`: it is resident too, so a call that changes nothing about the
+    /// `host` is the ambient declaration, JSON `{ambient, document?, entry?, url?,
+    /// assets?, marks?}`: it is resident too, so a call that changes nothing about the
     /// environment omits it, and one that carries it replaces what the core holds. A
     /// core given none has no ambient values at all.
     ///
@@ -136,11 +137,13 @@ impl Core {
     }
 
     /// Loads the data every render binds, validating it against the program (D37).
-    /// `input` is JSON `{ambient?, sources?}` — the envelope `DataInput` in `wire.rs`
-    /// defines and D37 §"The envelope grows additively" settles. The result is the JSON
-    /// array of load diagnostics, each placed by the positions the host sent or at the
-    /// declaration that expected the value. On an error the previous data stays bound,
-    /// stale until fixed.
+    /// `input` is JSON `{ambient?, sources?, pages?}` — the envelope `DataInput` in
+    /// `wire.rs` defines and D37 §"The envelope grows additively" settles, `pages`
+    /// carrying every page no glob holds (D41). The result is the JSON array of load
+    /// diagnostics, each placed by the positions the host sent or at the declaration
+    /// that expected the value. On an error the previous data stays bound, stale until
+    /// fixed. A page the envelope does not carry is not loaded: `plan` omits it, and
+    /// `render` of it is refused.
     ///
     /// # Errors
     ///
@@ -154,6 +157,21 @@ impl Core {
         self.load_data_json(input).map_err(|m| JsError::new(&m))
     }
 
+    /// Lists every page the last successful load built, in load order (D43): JSON
+    /// `[{path, url?}]`, each collection's pages as its binding loaded them, then the
+    /// envelope's `pages` in their order, with the url the host-named field holds.
+    /// After a load that reported an error it lists the stale data, as `render` binds
+    /// it.
+    ///
+    /// # Errors
+    ///
+    /// A call before any load has succeeded — before any compile, or after a compile
+    /// installed a new program and dropped the data — a caller bug with no source
+    /// span to carry.
+    pub fn plan(&self) -> Result<String, JsError> {
+        self.plan_json().map_err(|m| JsError::new(&m))
+    }
+
     /// Renders one page. `page` is JSON `{path}`; the result is bytes — a four-byte
     /// little-endian length, that many bytes of JSON
     /// `{marks, fragments, diagnostics}`, then the page's UTF-8 bytes.
@@ -164,13 +182,16 @@ impl Core {
     /// marks and fragments, and no page section at all — which is how a caller tells it
     /// from a page that rendered empty.
     ///
-    /// A loaded document is rendered with the host's document value bound to its own
-    /// record; any other file reads the value the envelope carried, if it did.
+    /// A loaded page renders through its record's entry field, with the host's
+    /// document value bound to that record and its own output passed as the body
+    /// (D43); any other file renders its own output, reading the value the envelope
+    /// carried, if it did.
     ///
     /// # Errors
     ///
-    /// A malformed `page` payload, rendering before any compile has succeeded, or a
-    /// path the program has no file for — caller bugs with no source span to carry.
+    /// A malformed `page` payload, rendering before any compile has succeeded, a path
+    /// the program has no file for, or a page — a file compiled with a record — that
+    /// the last load did not carry: caller bugs with no source span to carry.
     pub fn render(&self, page: &str) -> Result<Vec<u8>, JsError> {
         self.render_bytes(page).map_err(|m| JsError::new(&m))
     }
@@ -357,6 +378,27 @@ impl Core {
             .map_err(|e| format!("serialising diagnostics failed: {e}"))
     }
 
+    fn plan_json(&self) -> Result<String, String> {
+        let store = self
+            .linked
+            .as_ref()
+            .and_then(|linked| linked.store.as_ref().map(|store| (linked, store)));
+        let Some((linked, store)) = store else {
+            return Err(
+                "nothing is loaded — `plan` needs a `loadData` that succeeded against \
+                 the program"
+                    .to_owned(),
+            );
+        };
+        let pages: Vec<PlannedOut> = store
+            .plan(&linked.host)
+            .into_iter()
+            .map(PlannedOut::from)
+            .collect();
+        serde_json::to_string(&pages)
+            .map_err(|e| format!("serialising the plan failed: {e}"))
+    }
+
     fn render_bytes(&self, page_json: &str) -> Result<Vec<u8>, String> {
         let page: PageRef = serde_json::from_str(page_json)
             .map_err(|e| format!("malformed `render` input: {e}"))?;
@@ -367,12 +409,36 @@ impl Core {
         if linked.module.entry(&page.path).is_none() {
             return Err(format!("no compiled file at `{}`", page.path));
         }
-        let globals: Vec<(&str, Value)> = linked
-            .store
-            .as_ref()
+        let store = linked.store.as_ref();
+        let loaded = store.and_then(|store| store.page(&page.path));
+        // A page — a file compiled with a record — renders bound to the record the
+        // load built for it. With none, the envelope's value would stand in, typed by
+        // the checker as a record it is not (invariant 10): that is a caller bug, not
+        // a render that happens to read nothing.
+        if loaded.is_none()
+            && linked
+                .module
+                .document(&page.path)
+                .is_some_and(|source| source.record.is_some())
+        {
+            return Err(match store {
+                Some(_) => format!("`{}` is a page the last load did not carry", page.path),
+                None => format!(
+                    "`{}` is a page, and nothing is loaded for it to bind: `loadData` first",
+                    page.path
+                ),
+            });
+        }
+        let globals: Vec<(&str, Value)> = store
             .map(|store| store.globals(&linked.host, &page.path))
             .unwrap_or_default();
-        match render(&linked.module, &page.path, &globals) {
+        let rendered = match loaded {
+            Some(loaded) => {
+                render_page(&linked.module, loaded, linked.host.entry(), &globals)
+            }
+            None => render(&linked.module, &page.path, &globals),
+        };
+        match rendered {
             Ok(rendered) => {
                 let meta =
                     RenderMeta::placed(&rendered, &linked.module.files, &linked.indexes);
@@ -422,8 +488,7 @@ mod tests {
 
     /// The declaration a typed host makes: `Page` is declared in a file it compiles
     /// with the program, and a document says which record its content is.
-    const TYPED: &str =
-        r#"{"ambient": {"page": "Page"}, "document": "page", "entry": "layout"}"#;
+    const TYPED: &str = r#"{"ambient": {"page": "Page"}, "document": "page", "entry": "layout", "url": "url"}"#;
 
     const SCHEMA: &str = r#"[
         {"path": "ambient.lem", "text": "<lem-type Page>\n  url: url\n</lem-type>"},
@@ -433,7 +498,41 @@ mod tests {
     /// A typed site: the host reads `site` from `site.lem`, whose bindings collect the
     /// documents of `posts/*.md` as `Post`s, load a data file, and take an environment
     /// value. `posts/a.md` is one such document.
-    const SITE_HOST: &str = r#"{"ambient": {"page": "Page", "site": {"bindingsOf": "site.lem"}}, "document": "page", "entry": "layout"}"#;
+    const SITE_HOST: &str = r#"{"ambient": {"page": "Page", "site": {"bindingsOf": "site.lem"}}, "document": "page", "entry": "layout", "url": "url"}"#;
+
+    /// A page template no glob holds, typed by its own key as a `Post`.
+    const HOME_LEM: &str = "---\ntype: Post\ntitle: Home\n---\n<lem.page.title>";
+
+    /// The typed site with `home.lem` compiled beside it, and the envelope carrying
+    /// the template in `pages` with the url given.
+    fn site_core_with_home() -> (Core, serde_json::Value) {
+        let mut core = site_core();
+        compile_clean_with(
+            &mut core,
+            &serde_json::json!([{"path": "home.lem", "text": HOME_LEM, "record": "Post"}])
+                .to_string(),
+            None,
+        );
+        let mut envelope = loaded();
+        envelope["pages"] = serde_json::json!([{"path": "home.lem", "value": {"title": "Home", "url": "/"}}]);
+        (core, envelope)
+    }
+
+    /// The pages `plan` lists, as `(path, url)`.
+    fn planned(core: &Core) -> Vec<(String, Option<String>)> {
+        let plan: serde_json::Value =
+            serde_json::from_str(&core.plan_json().unwrap()).expect("a JSON reply");
+        plan.as_array()
+            .expect("an array")
+            .iter()
+            .map(|page| {
+                (
+                    page["path"].as_str().expect("a path").to_owned(),
+                    page["url"].as_str().map(str::to_owned),
+                )
+            })
+            .collect()
+    }
 
     const AMBIENT_LEM: &str = "<lem-type Page>\n  url: url\n</lem-type>";
 
@@ -1182,17 +1281,127 @@ mod tests {
             &serde_json::json!([{"path": "site.lem", "text": edited}]).to_string(),
             None,
         );
-        // Until the data is loaded again nothing is bound, so a read fails instead of
-        // showing the old program's value.
-        let (result, _) = rendered(&core, "posts/a.md");
-        assert!(
-            result["diagnostics"][0]["message"]
-                .as_str()
-                .is_some_and(|m| m.contains("is not bound")),
-            "{result}"
+        // Until the data is loaded again nothing is bound: a render of the page is
+        // refused rather than showing the old program's value, and so is a plan.
+        let refused = core.render_bytes(r#"{"path": "posts/a.md"}"#).unwrap_err();
+        assert_eq!(
+            refused,
+            "`posts/a.md` is a page, and nothing is loaded for it to bind: `loadData` first"
         );
+        assert!(core.plan_json().unwrap_err().contains("`loadData`"));
         assert_eq!(load(&mut core, &loaded()), serde_json::json!([]));
         assert!(html_of(&core, "posts/a.md").contains("A\n/posts/a.md\nhi"));
+    }
+
+    #[test]
+    fn renders_a_loaded_page_through_its_layout() {
+        // The document's own output is the body its layout takes; a page template in
+        // `pages` renders the same way (D43).
+        let (mut core, envelope) = site_core_with_home();
+        assert_eq!(load(&mut core, &envelope), serde_json::json!([]));
+        assert_eq!(
+            html_of(&core, "posts/a.md"),
+            "<h1>A</h1>A\nposts/a.md\nhi\n"
+        );
+        assert_eq!(html_of(&core, "home.lem"), "<h1>Home</h1>Home");
+    }
+
+    #[test]
+    fn plans_every_loaded_page_in_load_order_with_its_url() {
+        let (mut core, envelope) = site_core_with_home();
+        assert_eq!(load(&mut core, &envelope), serde_json::json!([]));
+        assert_eq!(
+            planned(&core),
+            [
+                ("posts/a.md".to_owned(), Some("/a/".to_owned())),
+                ("home.lem".to_owned(), Some("/".to_owned())),
+            ]
+        );
+        // A host that names no url field lists the pages and no url.
+        let unplaced = SITE_HOST.replace(r#", "url": "url""#, "");
+        assert_ne!(unplaced, SITE_HOST);
+        compile_clean_with(&mut core, "[]", Some(&unplaced));
+        assert_eq!(load(&mut core, &envelope), serde_json::json!([]));
+        assert_eq!(
+            planned(&core),
+            [
+                ("posts/a.md".to_owned(), None),
+                ("home.lem".to_owned(), None)
+            ]
+        );
+    }
+
+    #[test]
+    fn plans_nothing_before_a_load_has_succeeded_and_the_stale_data_after_one_fails() {
+        let fresh = Core::new();
+        assert!(fresh.plan_json().unwrap_err().contains("`loadData`"));
+        let (mut core, envelope) = site_core_with_home();
+        assert!(core.plan_json().unwrap_err().contains("`loadData`"));
+        assert_eq!(load(&mut core, &envelope), serde_json::json!([]));
+        let mut broken = envelope.clone();
+        broken["pages"][0]["value"]["title"] = serde_json::json!(3);
+        assert_eq!(load(&mut core, &broken).as_array().map(Vec::len), Some(1));
+        // Stale until fixed: the plan is the last good load's, as a render binds it.
+        assert_eq!(planned(&core).len(), 2);
+    }
+
+    #[test]
+    fn refuses_to_render_a_page_the_last_load_did_not_carry() {
+        // `home.lem` is compiled as a `Post` and the envelope leaves it out: a draft,
+        // or a file the shell deleted. It is not loaded, so the plan omits it, and a
+        // render of it would bind the envelope's untyped value as a `Post`.
+        let (mut core, mut envelope) = site_core_with_home();
+        envelope["pages"] = serde_json::json!([]);
+        assert_eq!(load(&mut core, &envelope), serde_json::json!([]));
+        assert_eq!(planned(&core).len(), 1);
+        assert_eq!(
+            core.render_bytes(r#"{"path": "home.lem"}"#).unwrap_err(),
+            "`home.lem` is a page the last load did not carry"
+        );
+        // A file compiled with no record is no page, and renders as before.
+        assert_eq!(
+            html_of(&core, "posts/a.md"),
+            "<h1>A</h1>A\nposts/a.md\nhi\n"
+        );
+    }
+
+    #[test]
+    fn refuses_two_pages_at_one_url_where_the_host_placed_the_second() {
+        let (mut core, mut envelope) = site_core_with_home();
+        let home = &mut envelope["pages"][0];
+        home["value"]["url"] = serde_json::json!("/a/");
+        home["spans"] = serde_json::json!({"url": span(20, 29, (3, 0), (3, 9))});
+        let reported = load(&mut core, &envelope);
+        assert_eq!(reported.as_array().map(Vec::len), Some(1), "{reported:?}");
+        assert_eq!(reported[0]["path"], "home.lem");
+        assert_eq!(reported[0]["span"], span(20, 29, (3, 0), (3, 9)));
+        assert_eq!(
+            reported[0]["message"],
+            "`home.lem` and `posts/a.md` are both at `/a/`"
+        );
+        // The first page sent no positions, so its label is at where its record was
+        // named — the front matter block — placed by the program's index.
+        assert_eq!(reported[0]["labels"][0]["path"], "posts/a.md");
+        assert_eq!(
+            reported[0]["labels"][0]["span"]["range"]["start"]["line"],
+            0
+        );
+    }
+
+    #[test]
+    fn checks_the_url_field_on_a_compile_that_only_changed_the_declaration() {
+        // Nothing is recompiled: the relink alone sees the renamed field, and reports
+        // it where `Page` is declared.
+        let mut core = site_core();
+        let renamed = SITE_HOST.replace(r#""url": "url""#, r#""url": "permalink""#);
+        let reported = diagnostics(&core.compile_json("[]", Some(&renamed)).unwrap());
+        assert_eq!(reported[0]["path"], "ambient.lem", "{reported:?}");
+        assert_eq!(
+            reported[0]["message"],
+            "`Page` is the host's document type, so it declares where a page goes: \
+             `permalink: url`"
+        );
+        assert_eq!(reported[0]["span"]["range"]["start"]["character"], 10);
     }
 
     /// A failed compile keeps the declaration its units compiled under, which is not

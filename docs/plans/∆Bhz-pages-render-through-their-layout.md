@@ -24,9 +24,9 @@ deleted.
    checkout, so a claim made in a worktree is not seen from `main`.
 4. If the checkout has no `target/` or `artifacts/wasm/`, the first `npm run rust:wasm`
    and `cargo test` are cold builds.
-5. Checkpoints 1a (`bc2b3ab`), 1b (`034dd88`), and 2 are built on the
-   `claude/delto-plan-bhz-d39cc6` branch (2026-09-17); 2 awaits Eric's review. Open
-   checkpoint 3 with a plain-language preview once it is committed.
+5. Checkpoints 1a (`bc2b3ab`), 1b (`034dd88`), 2 (`1d0d885`), and 3 are built on the
+   `claude/delto-plan-bhz-d39cc6` branch (2026-09-17/18); 3 awaits Eric's review. On
+   acceptance: item 23, the journal.
 
 ## What ∆7wK left for this item (2026-09-17)
 
@@ -414,6 +414,16 @@ deferred to checkpoint 3, where the boundary is what consumes it; the VM crate h
 Verification: as checkpoint 1a.
 
 ## Checkpoint 3 — the boundary, the wrapper, the scripts, the journal
+
+Built 2026-09-18, with these departures. `render` of a page with a record refuses two
+cases in two sentences: after a compile dropped the store, "`x` is a page, and nothing
+is loaded for it to bind: `loadData` first", and after a load that left it out, "`x` is
+a page the last load did not carry"; the boundary test that expected a render after a
+dropped store to fail with "`page` is not bound" now expects the throw. `plan()` before
+any successful load throws "nothing is loaded — `plan` needs a `loadData` that
+succeeded against the program" in every case. The benchmark's fixture filter found a
+checkpoint 1a fallout: `document/front-matter/unclosed.md` became a deliberate error in
+1a and moved to `document/errors/front-matter-unclosed.md`, which the filter skips.
 
 19. `crates/lemmon-wasm/src/wire.rs`: `HostInput.url` (beside `entry` and `marks`, since
     ∆7wK has removed `grammars`), `DataInput.pages`, the planned-page output;

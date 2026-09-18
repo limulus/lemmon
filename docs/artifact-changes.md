@@ -361,8 +361,8 @@ moved it. Newest last. An entry is removed when its change has been applied.
   field paths to complete spans the host computed, and `pages` the same entries for
   every page — a document or a page template — whose `type:` key typed it and no glob
   holds, loaded after every binding in the envelope's order, a page carried twice
-  refused as a caller bug and a page not carried simply not loaded (∆Bhz; the wire's
-  `pages` lands with the boundary work); that the core validates, defaults, tags,
+  refused as a caller bug and a page not carried simply not loaded (∆Bhz); that the
+  core validates, defaults, tags,
   and keeps the result resident as the store every render binds; that a load reporting
   an error leaves the previous data bound, as a failed compile leaves the program; and
   that an envelope the program cannot be loaded from throws. Say the store lives with

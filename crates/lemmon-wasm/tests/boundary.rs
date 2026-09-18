@@ -180,6 +180,48 @@ fn renders_blocks_nested_to_the_parser_cap_without_trapping() {
     );
 }
 
+/// A page no glob holds crosses in `pages`, the plan lists what loaded with the url the
+/// host-named field holds, and the page renders through its layout (D43).
+#[wasm_bindgen_test]
+fn plans_and_renders_loaded_pages_through_the_abi() {
+    let mut core = Core::new();
+    let files = serde_json::json!([
+        {"path": "ambient.lem", "text": "<lem-type Page>\n  url: url\n</lem-type>"},
+        {
+            "path": "site.lem",
+            "text": "<lem-type Post extends Page>\n  title: string\n  layout: (Post, html): html = post\n</lem-type>\n<lem-fn post(p: Post, body: html)><h1><lem.p.title></h1><lem.body></lem-fn>\n<lem-let posts: [Post] from \"posts/*.md\" />",
+        },
+        {"path": "home.lem", "text": "---\ntype: Post\ntitle: Home\n---\nhi", "record": "Post"},
+    ])
+    .to_string();
+    let host = r#"{"ambient": {"page": "Page", "site": {"bindingsOf": "site.lem"}}, "document": "page", "entry": "layout", "url": "url"}"#;
+    let diagnostics = core
+        .compile(&files, Some(host.to_owned()))
+        .expect("a well-formed compile payload");
+    assert_eq!(diagnostics, CLEAN);
+    assert!(
+        core.plan().is_err(),
+        "a plan before any load is a caller bug"
+    );
+    let reported = core
+        .load_data(
+            r#"{"ambient": {}, "sources": {"posts": []},
+                "pages": [{"path": "home.lem", "value": {"title": "Home", "url": "/"}}]}"#,
+        )
+        .expect("a well-formed loadData payload");
+    assert_eq!(reported, "[]");
+    assert_eq!(
+        core.plan().expect("a plan after a load"),
+        r#"[{"path":"home.lem","url":"/"}]"#
+    );
+    let (_, page) = decode(
+        &core
+            .render(r#"{"path": "home.lem"}"#)
+            .expect("a loaded page renders"),
+    );
+    assert_eq!(page, "<h1>Home</h1>hi");
+}
+
 /// A load crosses with the host's positions and its diagnostics come back placed by
 /// them: the data file was never compiled, so nothing but the carried range could
 /// place an error in it (D37). An envelope the program cannot be loaded from throws.

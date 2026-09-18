@@ -2,7 +2,9 @@
 
 - **Status:** Accepted 2026-09-08 (∆iCW); revised 2026-09-12 (∆Q6L) — a string in
   data also resolves as a `datetime`, a `url`, or an `asset` by its declared type
-  (D38); revised 2026-09-09 (∆HF0) in one clause —
+  (D38); extended 2026-09-18 (∆Bhz) — the envelope's `pages` carries every page no
+  glob holds, loaded after every binding, and the store keeps its pages in load order
+  for `plan()`; revised 2026-09-09 (∆HF0) in one clause —
   the recorded reads are closed through calls by name at link, so the order is exact
   for reads through a `lem-fn` too, and only a call through a value stays a load error
   at the read; revised 2026-09-10 (∆eag) — a `by` index names one field of one

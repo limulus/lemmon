@@ -21,8 +21,8 @@ use std::rc::Rc;
 
 use lemmon_vm::{
     Ambient, Claim, CodePayload, Data, Host, HostSpan, LineIndex, Loaded, Map, Payload,
-    Position, Range, Rendered, RuntimeError, Severity, Source, Span, Spans, Value,
-    repeated_path,
+    PlannedPage, Position, Range, Rendered, RuntimeError, Severity, Source, Span, Spans,
+    Value, repeated_path,
 };
 use serde::de::value::{MapAccessDeserializer, SeqAccessDeserializer};
 use serde::de::{self, Deserializer, MapAccess, SeqAccess, Visitor};
@@ -143,6 +143,11 @@ pub(crate) struct HostInput {
     document: Option<String>,
     #[serde(default)]
     pub(crate) entry: Option<String>,
+    /// The field a page's url is read from (D43), which the document value's type
+    /// declares as `url`. A host that names none has no page placed: `plan()` reports
+    /// no url, and none is checked against another's.
+    #[serde(default)]
+    url: Option<String>,
     /// In declaration order, like `ambient`: what a did-you-mean lists a near miss
     /// from, and the order a diagnostic shows.
     #[serde(default, deserialize_with = "ordered")]
@@ -235,6 +240,9 @@ impl TryFrom<HostInput> for Host {
         if let Some(entry) = input.entry {
             host = host.rendered_through(&entry);
         }
+        if let Some(url) = input.url {
+            host = host.addressed_by(&url);
+        }
         host = host.with_assets(
             input
                 .assets
@@ -254,12 +262,13 @@ impl TryFrom<HostInput> for Host {
     }
 }
 
-/// What `loadData` receives (D37): `{ambient?, sources?}`. `ambient` is bare JSON by
-/// the name the host bound each value, and `sources` fulfils each `from` binding of the
-/// bindings files by name — a list of entries, one per document, for a glob, and one
-/// entry for a data file, a plugin, or an environment value. Which names may appear,
-/// and which must, is the program's to say, so the loader checks them; what an entry
-/// may hold is the wire's, so `deny_unknown_fields` does.
+/// What `loadData` receives (D37): `{ambient?, sources?, pages?}`. `ambient` is bare
+/// JSON by the name the host bound each value; `sources` fulfils each `from` binding of
+/// the bindings files by name — a list of entries, one per page, for a glob, and one
+/// entry for a data file, a plugin, or an environment value; and `pages` carries the
+/// entries of every page no glob holds, whose own `type:` key typed it (D41). Which
+/// names may appear, and which must, is the program's to say, so the loader checks
+/// them; what an entry may hold is the wire's, so `deny_unknown_fields` does.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct DataInput {
@@ -267,6 +276,8 @@ pub(crate) struct DataInput {
     ambient: Vec<(String, serde_json::Value)>,
     #[serde(default, deserialize_with = "sources")]
     sources: Vec<(String, SourceInput)>,
+    #[serde(default)]
+    pages: Vec<LoadedInput>,
 }
 
 /// What fulfils one `from` binding on the wire: one entry, or a list of them.
@@ -333,14 +344,15 @@ fn sources<'de, D: Deserializer<'de>>(
     deserializer.deserialize_map(Sources)
 }
 
-/// One value the host loaded, as an entry of `sources`: `{value, path?, spans?}`.
+/// One value the host loaded, as an entry of `sources` or of `pages`:
+/// `{value, path?, spans?}`.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct LoadedInput {
-    /// The value as parsed — a document's front matter with the `type:` key stripped.
+    /// The value as parsed — a page's front matter with the `type:` key stripped.
     value: serde_json::Value,
-    /// The file it came from: always for a document, a data file's path otherwise,
-    /// and absent for a plugin or environment value.
+    /// The file it came from: always for a page, a data file's path otherwise, and
+    /// absent for a plugin or environment value.
     #[serde(default)]
     path: Option<String>,
     /// Where each field path stands in that file, spanning the key through the value;
@@ -355,8 +367,8 @@ impl DataInput {
     ///
     /// # Errors
     ///
-    /// A span in an entry of `sources` that ends before it starts, named for its
-    /// binding and field.
+    /// A span in an entry of `sources` or `pages` that ends before it starts, named for
+    /// its binding or page, and its field.
     pub(crate) fn into_data(self) -> Result<Data, String> {
         let ambient = self
             .ambient
@@ -365,28 +377,40 @@ impl DataInput {
             .collect();
         let mut sources = Vec::with_capacity(self.sources.len());
         for (name, source) in self.sources {
+            let holder = format!("source `{name}`");
             let source = match source {
-                SourceInput::One(entry) => Source::One(loaded(&name, entry)?),
+                SourceInput::One(entry) => Source::One(loaded(&holder, entry)?),
                 SourceInput::Many(entries) => Source::Many(
                     entries
                         .into_iter()
-                        .map(|entry| loaded(&name, entry))
+                        .map(|entry| loaded(&holder, entry))
                         .collect::<Result<_, _>>()?,
                 ),
             };
             sources.push((name, source));
         }
-        // A page no glob holds is not here yet (∆Bhz): the wire carries none.
+        let pages = self
+            .pages
+            .into_iter()
+            .map(|entry| {
+                let holder = match &entry.path {
+                    Some(path) => format!("page `{path}`"),
+                    None => "a page in `pages`".to_owned(),
+                };
+                loaded(&holder, entry)
+            })
+            .collect::<Result<_, _>>()?;
         Ok(Data {
             ambient,
             sources,
-            pages: Vec::new(),
+            pages,
         })
     }
 }
 
-/// One entry of `sources` under `name`, as the loader takes it.
-fn loaded(name: &str, entry: LoadedInput) -> Result<Loaded, String> {
+/// One entry of `sources` or `pages`, as the loader takes it; `holder` names it in a
+/// refusal.
+fn loaded(holder: &str, entry: LoadedInput) -> Result<Loaded, String> {
     let mut spans = Spans::new();
     for (field, span) in entry.spans {
         // The core holds no text to check these against (D37); what it can check is
@@ -399,7 +423,7 @@ fn loaded(name: &str, entry: LoadedInput) -> Result<Loaded, String> {
                 format!("`{field}`")
             };
             return Err(format!(
-                "source `{name}`: the span for {what} ends before it starts"
+                "{holder}: the span for {what} ends before it starts"
             ));
         }
         spans.insert(field, span.into());
@@ -411,12 +435,31 @@ fn loaded(name: &str, entry: LoadedInput) -> Result<Loaded, String> {
     })
 }
 
-/// What `render` receives — the spike's `PageRef`: a path names the page until `plan()`
-/// exists to mint richer references. An object, so those stay additive.
+/// What `render` receives — a `PageRef`, `{path}`: the path of a file the program
+/// compiled, a page `plan()` listed or any other. An object, so that `index`, which
+/// numbers a generator's pages (∆99b), stays additive.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct PageRef {
     pub(crate) path: String,
+}
+
+/// One page as `plan()` reports it (D43): its path, and its url where the host names
+/// the field it is read from.
+#[derive(Serialize)]
+pub(crate) struct PlannedOut {
+    pub(crate) path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) url: Option<String>,
+}
+
+impl From<PlannedPage> for PlannedOut {
+    fn from(page: PlannedPage) -> Self {
+        Self {
+            path: page.path,
+            url: page.url,
+        }
+    }
 }
 
 /// The boundary form of every diagnostic. A `code` would be an additive field; nothing
@@ -981,7 +1024,43 @@ mod tests {
     #[test]
     fn takes_an_envelope_with_nothing_in_it() {
         let data = data("{}").unwrap();
-        assert!(data.ambient.is_empty() && data.sources.is_empty());
+        assert!(
+            data.ambient.is_empty() && data.sources.is_empty() && data.pages.is_empty()
+        );
+    }
+
+    #[test]
+    fn takes_the_pages_no_glob_holds_as_entries_of_their_own() {
+        let carried = data(
+            r#"{"pages": [{"path": "home.lem", "value": {"title": "H"}, "spans": {
+                "title": {"start": 4, "end": 12, "range": {
+                    "start": {"line": 1, "character": 0},
+                    "end": {"line": 1, "character": 8}}}}}]}"#,
+        )
+        .unwrap();
+        assert_eq!(carried.pages[0].path.as_deref(), Some("home.lem"));
+        assert_eq!(carried.pages[0].spans["title"].span, Span::new(4, 12));
+        let inverted = data(
+            r#"{"pages": [{"path": "home.lem", "value": {}, "spans": {
+                "url": {"start": 2, "end": 0, "range": {
+                    "start": {"line": 0, "character": 2},
+                    "end": {"line": 0, "character": 0}}}}}]}"#,
+        );
+        assert_eq!(
+            inverted.unwrap_err(),
+            "page `home.lem`: the span for `url` ends before it starts"
+        );
+        // A page with no path is the loader's to refuse; the wire names it as it can.
+        let nameless = data(
+            r#"{"pages": [{"value": {}, "spans": {
+                "": {"start": 2, "end": 0, "range": {
+                    "start": {"line": 0, "character": 2},
+                    "end": {"line": 0, "character": 0}}}}}]}"#,
+        );
+        assert_eq!(
+            nameless.unwrap_err(),
+            "a page in `pages`: the span for the value as a whole ends before it starts"
+        );
     }
 
     #[test]

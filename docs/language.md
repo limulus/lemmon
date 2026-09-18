@@ -476,9 +476,6 @@ The standard shell (`@limulus/lemmon-shell`) ships this declaration and binds `p
   loader fills them with the pages before and after it in the list; the first page has no
   `prev`, the last no `next`, and a page that was not generated has neither. A default may
   not read one, since the loader fills them after every page of the generator is built.
-- _Not yet (∆Bhz): the WASM boundary still renders every page as its own output and
-  reports no page's url; the core's `render_page` and `plan()` reach it with the
-  boundary work._
 - _Not yet (∆99b): nothing expands a generator or fills a neighbour field._
 - **`layout`** is a field every page schema declares, `(T, html): html` for its own `T`,
   usually with a default. At load its string value resolves to a project function of that

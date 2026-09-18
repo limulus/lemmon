@@ -5,6 +5,7 @@ import type {
   Diagnostic,
   HostDecl,
   PageRef,
+  PlannedPage,
   RenderResult,
   SourceFileInput,
 } from './types.ts'
@@ -71,27 +72,47 @@ export class Core {
    *
    * A throw is a caller bug: an envelope the program cannot be loaded from — a name
    * the host does not bind, a source no `from` binding asked for, positions with no
-   * file to place them in, a document the program never compiled — a load before any
-   * compile has succeeded, or one after the declaration changed without a compile
-   * succeeding under it.
+   * file to place them in, a page the program never compiled or carried twice — a
+   * load before any compile has succeeded, or one after the declaration changed
+   * without a compile succeeding under it.
    */
   loadData(input: DataInput): Diagnostic[] {
     return JSON.parse(this.#core.loadData(JSON.stringify(input))) as Diagnostic[]
   }
 
   /**
+   * Every page the last successful load built, in load order (D43): each
+   * collection's pages as its binding loaded them, then the envelope's `pages` in
+   * their order, each with the url the host-named field holds. After a load that
+   * reported an error it lists the stale data, as {@link render} binds it. A page the
+   * envelope did not carry is not listed.
+   *
+   * A throw is a caller bug: a plan before any load has succeeded — before any
+   * compile, or after a compile installed a new program and dropped the data.
+   */
+  plan(): PlannedPage[] {
+    return JSON.parse(this.#core.plan()) as PlannedPage[]
+  }
+
+  /**
    * Renders one page: its bytes with the marks standing in them and the fragments it
-   * collected, or `null`s alongside the runtime diagnostic. A loaded document renders
-   * with the host's document value bound to its own record; any other file reads the
-   * value the envelope carried, if it did.
+   * collected, or `null`s alongside the runtime diagnostic. A loaded page renders
+   * through its record's entry field, with the host's document value bound to that
+   * record and its own output passed as the body, in one run — so ids, fragments, and
+   * marks are continuous across the two (D43). Any other file renders its own output,
+   * reading the value the envelope carried, if it did.
    *
    * The reply crosses as a four-byte length, that many bytes of metadata JSON, then the
    * page. `html` is a view onto those bytes, so a caller reading `html.buffer` must
    * honour `byteOffset`; it is `null` only where the render failed, an empty page being
    * an empty view.
+   *
+   * A throw is a caller bug: a render before any compile has succeeded, a path the
+   * program has no file for, or a page the last load did not carry.
    */
   render(page: PageRef): RenderResult {
-    const reply = this.#core.render(JSON.stringify(page))
+    // A `PlannedPage` is a `PageRef` with more, and the wire takes exactly a `PageRef`.
+    const reply = this.#core.render(JSON.stringify({ path: page.path }))
     const length = new DataView(reply.buffer, reply.byteOffset, 4).getUint32(0, true)
     const meta = JSON.parse(decoder.decode(reply.subarray(4, 4 + length))) as RenderMeta
     return {

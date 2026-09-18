@@ -25,6 +25,7 @@ const declared: HostDecl = {
   ambient: { page: 'Page' },
   document: 'page',
   entry: 'layout',
+  url: 'url',
 }
 
 const schema: SourceFileInput[] = [
@@ -63,6 +64,7 @@ const typedSite: HostDecl = {
   ambient: { page: 'Page', site: { bindingsOf: 'site.lem' } },
   document: 'page',
   entry: 'layout',
+  url: 'url',
 }
 
 const site: SourceFileInput[] = [
@@ -93,6 +95,19 @@ const site: SourceFileInput[] = [
 
 /** A component file: what a `.lem` that is no page holds, its output inside a `lem-fn`. */
 const card = (body: string): string => `<lem-fn card()>${body}</lem-fn>`
+
+/** A page template no glob holds, typed by its own key as a `Post` (D41). */
+const home: SourceFileInput = {
+  path: 'home.lem',
+  text: '---\ntype: Post\ntitle: Home\n---\n<p><lem.page.title></p>',
+  record: 'Post',
+}
+
+/** `home` as the shell sends it in `pages`, with the url it derived. */
+const homeLoaded = (url: string): DataInput => ({
+  ...loaded,
+  pages: [{ path: 'home.lem', value: { title: 'Home', url } }],
+})
 
 /** The envelope that loads the typed site cleanly. */
 const loaded: DataInput = {
@@ -279,8 +294,37 @@ describe('Core', () => {
       expect(core.compile(site, typedSite).diagnostics).toEqual([])
       expect(core.loadData(loaded)).toEqual([])
       // `title` was validated, `slug`'s default ran over the document's path, and
-      // `motto` came through `site`.
-      expect(page(core.render({ path: 'posts/a.md' }))).toBe('A\nposts/a.md\nhi\n')
+      // `motto` came through `site` — and the document rendered through its layout,
+      // its own output the body.
+      expect(page(core.render({ path: 'posts/a.md' }))).toBe(
+        '<h1>A</h1>A\nposts/a.md\nhi\n'
+      )
+    })
+
+    it('should load a page no glob holds from `pages` and render it through its layout', async () => {
+      const core = await loadCore()
+      expect(core.compile([...site, home], typedSite).diagnostics).toEqual([])
+      expect(core.loadData(homeLoaded('/'))).toEqual([])
+      expect(page(core.render({ path: 'home.lem' }))).toBe('<h1>Home</h1><p>Home</p>')
+    })
+
+    it('should refuse two pages at one url at the second, labelled at the first', async () => {
+      const core = await loadCore()
+      expect(core.compile([...site, home], typedSite).diagnostics).toEqual([])
+      const [clash] = core.loadData(homeLoaded('/a/'))
+      expect(clash.path).toBe('home.lem')
+      expect(clash.message).toBe('`home.lem` and `posts/a.md` are both at `/a/`')
+      expect(clash.labels.map((label) => label.path)).toEqual(['posts/a.md'])
+    })
+
+    it('should refuse a document type that declares no url field the host names', async () => {
+      const core = await loadCore()
+      const [missing] = core.compile(site, { ...typedSite, url: 'permalink' }).diagnostics
+      expect(missing.path).toBe('ambient.lem')
+      expect(missing.message).toBe(
+        "`Page` is the host's document type, so it declares where a page goes: " +
+          '`permalink: url`'
+      )
     })
 
     it("should bind the envelope's document value only where no loaded document stands", async () => {
@@ -293,7 +337,9 @@ describe('Core', () => {
         []
       )
       expect(page(core.render({ path: 'loose.md' }))).toBe('Loose\n')
-      expect(page(core.render({ path: 'posts/a.md' }))).toBe('A\nposts/a.md\nhi\n')
+      expect(page(core.render({ path: 'posts/a.md' }))).toBe(
+        '<h1>A</h1>A\nposts/a.md\nhi\n'
+      )
     })
 
     it('should place a load diagnostic by the positions the host sent', async () => {
@@ -342,7 +388,9 @@ describe('Core', () => {
         },
       })
       expect(diagnostics).toHaveLength(1)
-      expect(page(core.render({ path: 'posts/a.md' }))).toBe('A\nposts/a.md\nhi\n')
+      expect(page(core.render({ path: 'posts/a.md' }))).toBe(
+        '<h1>A</h1>A\nposts/a.md\nhi\n'
+      )
     })
 
     it('should throw for an envelope the program cannot be loaded from', async () => {
@@ -377,6 +425,46 @@ describe('Core', () => {
       ).diagnostics
       expect(typo.severity).toBe('error')
       expect(() => core.loadData(loaded)).toThrow(/declaration changed/)
+    })
+  })
+
+  describe('plan()', () => {
+    it('should list every loaded page in load order with its url', async () => {
+      const core = await loadCore()
+      expect(core.compile([...site, home], typedSite).diagnostics).toEqual([])
+      expect(core.loadData(homeLoaded('/'))).toEqual([])
+      expect(core.plan()).toEqual([
+        { path: 'posts/a.md', url: '/a/' },
+        { path: 'home.lem', url: '/' },
+      ])
+      // What the plan lists is what `render` takes.
+      const [post] = core.plan()
+      expect(page(core.render(post))).toBe('<h1>A</h1>A\nposts/a.md\nhi\n')
+    })
+
+    it('should list no url for a host that names no url field', async () => {
+      const core = await loadCore()
+      const { url: _, ...unplaced } = typedSite
+      expect(core.compile(site, unplaced).diagnostics).toEqual([])
+      expect(core.loadData(loaded)).toEqual([])
+      expect(core.plan()).toEqual([{ path: 'posts/a.md' }])
+    })
+
+    it('should omit a page the envelope did not carry, whose render then throws', async () => {
+      const core = await loadCore()
+      expect(core.compile([...site, home], typedSite).diagnostics).toEqual([])
+      expect(core.loadData(loaded)).toEqual([])
+      expect(core.plan()).toEqual([{ path: 'posts/a.md', url: '/a/' }])
+      expect(() => core.render({ path: 'home.lem' })).toThrow(
+        /`home.lem` is a page the last load did not carry/
+      )
+    })
+
+    it('should throw before any load has succeeded', async () => {
+      const core = await loadCore()
+      expect(() => core.plan()).toThrow(/`loadData`/)
+      expect(core.compile(site, typedSite).diagnostics).toEqual([])
+      expect(() => core.plan()).toThrow(/`loadData`/)
     })
   })
 

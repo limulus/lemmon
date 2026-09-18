@@ -20,6 +20,7 @@ export interface WasmBoundary {
 export interface BoundaryCore {
   compile(files: string, host?: string): string
   loadData(input: string): string
+  plan(): string
   /**
    * A four-byte little-endian length, that many bytes of metadata JSON, then the page's
    * UTF-8 bytes — nothing after the metadata where the render failed (D42).

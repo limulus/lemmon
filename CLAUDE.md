@@ -18,7 +18,7 @@ program compiles in, and `loadData` validates the host's data against the declar
 schemas (D30, D36, D37); each file compiles to its own `Unit`, and a link step joins
 units into the `Module` the VM runs (D25, invariant 11); `compile` returns its warnings
 beside the module and keeps none on a unit. `crates/lemmon-wasm` exposes the resident
-`Core` (`compile`/`loadData`/`render`), and `@limulus/lemmon-core` wraps the staged
+`Core` (`compile`/`loadData`/`plan`/`render`), and `@limulus/lemmon-core` wraps the staged
 artifact — so `npm run rust:wasm` must have run before `npm run verify`.
 
 ## Canonical references

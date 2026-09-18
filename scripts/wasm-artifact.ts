@@ -34,6 +34,7 @@ export const EXPECTED_EXPORTS = [
   'core_new',
   'core_compile',
   'core_loadData',
+  'core_plan',
   'core_render',
   '__wbg_core_free',
 ]

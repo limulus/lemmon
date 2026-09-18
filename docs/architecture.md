@@ -62,7 +62,7 @@ ambient value name to a declared type, to the top-level bindings of a file (`sit
 a file's `record` retypes, and `entry` names the field a page is rendered through
 (`layout`). `url` names the field `plan()` reports a page's url from, and `neighbours`
 the two fields the loader fills on a generated page with the pages beside it (D43; not
-yet: `url` ∆Bhz, `neighbours` ∆99b). The declaration is resident like the units, so a
+yet: `neighbours` ∆99b). The declaration is resident like the units, so a
 call that changes nothing about the environment omits it, and what each unit was
 compiled against is one of its facts: a host that rebinds a name leaves the units that
 read it stale, named for recompiling, as a changed signature does (D25). A core given no
@@ -129,7 +129,6 @@ not a break:
   expanded where it stands. `DataInput` gains `pages`, `{path, value, spans}` for every
   page no glob holds, a generator's carrying its `for:` pair. A page the envelope did not
   carry is not loaded: `plan()` omits it, and rendering it is a thrown caller bug.
-  Not yet (∆Bhz): there is no `plan()` or `pages`.
   Not yet (∆99b): `PageRef` is `{path}`, and no page carries a `for:` pair.
 - `render` returns a four-byte little-endian length, that many bytes of
   `{marks, fragments, diagnostics}` as JSON, then the page's UTF-8 bytes. A failed render
@@ -148,8 +147,6 @@ not a break:
   VM; any other file — a template with no front matter, or a document or page template
   no collection matched and no `type:` named — renders its own output, reading the value
   the envelope carried, if it did, as sent (D37).
-  Not yet (∆Bhz): the boundary's `render` still renders every file as its own output;
-  the core's `render_page` reaches it with the boundary work.
 - A `Diagnostic` is `{path, span: {start, end, range}, severity, message, labels}`. The
   span carries byte offsets (invariant 8) *and* `range`, the same two points as
   `{line, character}` LSP positions — zero-based, `character` in UTF-16 code units. The
@@ -205,10 +202,10 @@ not a break:
    bindings, resolve reference fields (D37) and `[asset]` fields, the latter against the
    manifest the declaration carried into step 3; then load the pages no glob holds,
    expand each generator into one page per item with its neighbours filled, and refuse
-   two pages at one url (D43; not yet: ∆Bhz, ∆99b). Failures point at the YAML positions
-   the shell sent with the data.
+   two pages at one url (D43; not yet: generators, ∆99b). Failures point at the YAML
+   positions the shell sent with the data.
 5. **Plan** (core) — list every loaded page with its url, from the field the host named
-   (D43; not yet: ∆Bhz); deps come with ∆xBO. A file with no record — a document or
+   (D43); deps come with ∆xBO. A file with no record — a document or
    page template no glob matched and no `type:` named — is no page: `plan()` omits it,
    and the shell renders it with `render({path})` at the url it derives.
 6. **Render × N** (core) — body → the entry function → the page as bytes + its marks
