@@ -864,8 +864,8 @@ renders prose; the VM renders Lemmon blocks; outputs are spliced.
 
 comrak configuration: CommonMark + footnotes, attribute-style heading ids (`<h2 id="…">`,
 slugged from the text and made unique, no anchor link injected), `header_attributes`
-(`{#id}`), a `code` mark per code block (below), `render.unsafe` (raw HTML passes
-through). A shell-side `markdown` override hook is reserved but not built.
+(`{#id}`), a `code` mark per code block but a `math` fence (below), `render.unsafe` (raw
+HTML passes through). A shell-side `markdown` override hook is reserved but not built.
 
 ### Code blocks (D42)
 
@@ -881,14 +881,17 @@ An indented block has none.
 - **A language no producer claims is a warning at the word**, with a did-you-mean over
   the claimed keys, raised while compiling, so `lem check` and the editor report it
   without a build; a producer that fails on the code reports at build, at the same span.
-- **The claims are a compile-time fact.** A document whose code names a language records
-  a digest of the claims for `code`, so a producer arriving for a language that had none
-  leaves the document to recompile (D25).
-- **A `math` fence is a code block** like any other, keyed `math`.
-
-_Not yet (∆7wK): today a block is highlighted while compiling, by syntect against the
-`.sublime-syntax` grammars the host declares (D40), its spans classed `syn-`; a host
-that declares none gets every block as comrak writes it, and a `lem` fence warns._
+- **The claims are a compile-time fact.** A block that names a language records what the
+  claims said about `code` and that word, so a producer arriving for the language leaves
+  the documents that named it to recompile, and no others (D25). A block that names none
+  asks nothing: no producer could claim it.
+- **The payload is reported once.** Its id is a hash of the info string and the code, so
+  the same block anywhere is one payload, reported when the document compiles; a render's
+  mark carries only the id.
+- **A `math` fence is not a mark.** comrak renders it itself, as
+  `<pre><code class="language-math" data-math-style="display">`, before it consults
+  anything the core could mark it through, and no option turns that off — so the block
+  stays comrak's.
 
 ## Canonical example
 

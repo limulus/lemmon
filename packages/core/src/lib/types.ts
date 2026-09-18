@@ -62,19 +62,6 @@ export interface HostDecl {
    */
   assets?: Record<string, string>
   /**
-   * The grammars a document's code blocks are highlighted with, as `.sublime-syntax`
-   * text, in the order that decides a language two of them claim: the later wins (D40).
-   * Omitted, the core highlights nothing and leaves every block as markdown writes it,
-   * for a host that colours code some other way; an empty list still highlights, and
-   * warns at every language no grammar answers.
-   *
-   * It belongs to the declaration for the manifest's reason: code is highlighted while
-   * compiling, and a document whose code names a language records which grammars it was
-   * highlighted with. The core parses them all when the first block that names a
-   * language needs them, and keeps what it parsed while later declarations repeat them.
-   */
-  grammars?: GrammarFile[]
-  /**
    * What the host's mark handlers claim (D42): the names `mark()` may place, which the
    * core checks a literal name against while compiling. Omitted, the host declares no
    * handlers at all and the core says nothing about any name — what a playground or an
@@ -92,14 +79,6 @@ export interface HostDecl {
 export interface Claim {
   /** The name `mark()` places and the handler answers for. */
   name: string
-}
-
-/** One grammar a host declares. */
-export interface GrammarFile {
-  /** The path a diagnostic's label names the grammar by. */
-  path: string
-  /** The grammar, as `.sublime-syntax` YAML. */
-  text: string
 }
 
 /**

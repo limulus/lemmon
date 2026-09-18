@@ -1,0 +1,25 @@
+Root@0..87
+  LetVoid@0..24
+    OpenTag@0..8 "<lem-let"
+    Trivia@8..9 " "
+    Head@9..21
+      Ident@9..14 "shell"
+      Trivia@14..15 " "
+      Eq@15..16 "="
+      Trivia@16..17 " "
+      Literal@17..21
+        StringLit@17..21 "\"sh\""
+    Trivia@21..22 " "
+    SelfClose@22..24 "/>"
+  Text@24..75
+    Text@24..75 "\n```sh\nls\n```\n\nThe listing above names i"…
+  AccessTag@75..86
+    OpenAccess@75..80 "<lem."
+    Head@80..85
+      NameRef@80..85
+        Ident@80..85 "shell"
+    Close@85..86 ">"
+  Text@86..87
+    Text@86..87 "\n"
+
+--- diagnostics

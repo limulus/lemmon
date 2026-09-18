@@ -8,7 +8,7 @@
 //! function of its file's text plus the signatures it consumed ([`Unit::facts`]) and
 //! nothing else: no file's bytecode depends on another file's body.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::rc::Rc;
 
 use lemmon_syntax::Span;
@@ -20,6 +20,7 @@ use crate::bytecode::{
 use crate::closure::{self, Closed, ReadClosure};
 use crate::compile::{Compiled, Diagnostic, Runs, index_u32, refused_at_load};
 use crate::decls::{DeclKind, Declaration, Decls, Shape, TypeFact};
+use crate::document::CodePayload;
 use crate::exports::ExportIndex;
 use crate::host::{ClaimAnswer, Host};
 use crate::plan::{
@@ -48,7 +49,7 @@ pub struct Unit {
     pub types: Vec<Declaration>,
     /// The compile-time facts this unit consumed: the foreign signatures its calls were
     /// compiled against. With the file's text and the other facts below — `type_refs`,
-    /// `ambient_refs`, `asset_refs`, `grammar_ref`, and `record` — these are the whole
+    /// `ambient_refs`, `asset_refs`, `claim_refs`, and `record` — these are the whole
     /// cache key (D25): an edit that changes none of them leaves this unit
     /// byte-identical.
     pub facts: Vec<ImportedSignature>,
@@ -65,14 +66,9 @@ pub struct Unit {
     /// bytecode, so a build that re-hashes that asset leaves this unit stale and every
     /// unit that never named it untouched — which is invariant 11 stated as a test.
     pub asset_refs: Vec<AssetRef>,
-    /// The fifth: the grammars a document's code was highlighted against, when any of
-    /// its code names a language. Prose renders while compiling and the highlighted
-    /// HTML is in the constant pool, so a host that changes its grammars — or starts or
-    /// stops declaring any — leaves this unit stale, and a document with no language
-    /// named untouched.
-    pub grammar_ref: Option<GrammarRef>,
-    /// The sixth: what the host's claims said about each mark name this file placed, at
-    /// the first `mark()` that named it.
+    /// The fifth: what the host's claims said about each mark name this file placed and
+    /// each key it placed it under — a `mark()` call's, or a code block's language word
+    /// (D42) — at the first place that asked.
     pub claim_refs: Vec<ClaimRef>,
     /// The record the host compiled this file as, which types its document value: a
     /// fact of the unit like the rest, and the reason two documents of different
@@ -100,6 +96,10 @@ pub struct Unit {
     /// A document's prose as rendered, its blocks' output absent: what `body` is when
     /// the loader runs the document's defaults (D37). `None` for a template.
     pub body: Option<Rc<str>>,
+    /// What this document's code blocks hand their producers, one per distinct block
+    /// (D42): reported when the file compiles, and named by id in every render that marks
+    /// one. Part of this unit and no consumer's, like `body`: the code is this file's text.
+    pub payloads: Vec<CodePayload>,
 }
 
 /// One loader-run function a unit compiled for a field's default of a record it
@@ -225,20 +225,6 @@ pub struct AmbientRef {
 pub struct AssetRef {
     pub path: Rc<str>,
     pub url: Rc<str>,
-    pub span: Span,
-}
-
-/// The grammars a document's code was highlighted against: the host's declared set as a
-/// digest, or `None` where the host declared none, and the first language word, where a
-/// stale unit is reported.
-///
-/// One digest for the whole set rather than one per grammar used: a grammar embeds
-/// others by scope, so which grammars a block's HTML depends on reaches past the one
-/// its language names, and a grammar arriving for a language that had none changes a
-/// block that used no grammar at all.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct GrammarRef {
-    pub digest: Option<u64>,
     pub span: Span,
 }
 
@@ -406,35 +392,9 @@ pub fn link(units: &[Unit], index: &ExportIndex, host: &Host) -> Compiled<Module
                     )),
                 }
             }
-            // The grammars are the host's too, and the highlighted code is in this
-            // unit's constants: a set that changed under it, or arrived or went away,
-            // leaves it stale.
-            if let Some(reference) = &unit.grammar_ref {
-                let declared = host.grammar_digest();
-                if declared != reference.digest {
-                    diagnostics.push(Diagnostic::error(
-                        &unit.path,
-                        reference.span,
-                        match (reference.digest, declared) {
-                            (None, _) => {
-                                "the host declares grammars now, and this file's code was \
-                                 compiled with none"
-                            }
-                            (_, None) => {
-                                "the host declares no grammars now, and this file's code \
-                                 was highlighted with the ones it did"
-                            }
-                            _ => {
-                                "the host declares different grammars now, and this file's \
-                                 code was highlighted with the ones before"
-                            }
-                        },
-                    ));
-                }
-            }
-            // A claim is the host's as a grammar is, and what it said was answered
-            // while the file compiled: the warning at the word, the warning at a key,
-            // and the record a payload was checked against.
+            // A claim is the host's as a manifest entry is, and what it said was
+            // answered while the file compiled: the warning at the word, the warning at
+            // a key, and the record a payload was checked against.
             for reference in &unit.claim_refs {
                 let now = host.answer(
                     &reference.name,
@@ -571,6 +531,7 @@ pub fn link(units: &[Unit], index: &ExportIndex, host: &Host) -> Compiled<Module
         bindings,
         ..Module::default()
     };
+    let mut payload_ids: HashSet<Rc<str>> = HashSet::new();
     for (position, unit) in units.iter().enumerate() {
         let (constant_offset, function_offset) =
             (constant_offsets[position], function_offsets[position]);
@@ -591,6 +552,14 @@ pub fn link(units: &[Unit], index: &ExportIndex, host: &Host) -> Compiled<Module
                 record_span: unit.record_span,
                 body: body.clone(),
             }));
+        // Two documents writing the same block report one payload between them: the id
+        // is the content, and the host keys what its producer made on it. Kept by a set,
+        // since a relink walks every unit's payloads and must stay cheaper than a compile.
+        for payload in &unit.payloads {
+            if payload_ids.insert(payload.id.clone()) {
+                module.payloads.push(payload.clone());
+            }
+        }
         module.constants.extend(unit.constants.iter().cloned());
         for function in &unit.functions {
             let mut function = function.clone();
@@ -620,6 +589,9 @@ pub fn link(units: &[Unit], index: &ExportIndex, host: &Host) -> Compiled<Module
                             MarkKey::None => {}
                         }
                         match payload {
+                            MarkPayload::Reported { index } => {
+                                *index = add_u32(constant_offset, *index);
+                            }
                             MarkPayload::None | MarkPayload::Popped => {}
                         }
                     }
@@ -1285,7 +1257,7 @@ mod tests {
     use super::*;
     use crate::compile::{compile_unit, prepare};
     use crate::host::{Ambient, Claim};
-    use crate::testing::{GRAMMARS, at};
+    use crate::testing::at;
     use crate::{SourceFile, Value, render};
 
     /// The host every test below compiles against unless it needs another: the three
@@ -2217,59 +2189,6 @@ mod tests {
         }
     }
 
-    /// The corpus's grammars, with the one at `path` swapped for `text` — or dropped,
-    /// for `None`.
-    fn grammars_with(path: &str, text: Option<&str>) -> Host {
-        Host::new().with_grammars(GRAMMARS.iter().filter_map(|&(declared, original)| {
-            if declared.ends_with(path) {
-                text.map(|text| (declared, text))
-            } else {
-                Some((declared, original))
-            }
-        }))
-    }
-
-    #[test]
-    fn refuses_to_link_a_document_whose_code_was_highlighted_with_other_grammars() {
-        // Highlighted HTML is in the unit's constants, so the grammars it was made with
-        // are a fact like a manifest entry: any change to the set leaves the document
-        // stale, at the first block that named a language.
-        const DOC: &str = "Setup:\n\n```sh\necho \"hi\"\n```\n";
-        let highlighted = Host::new().with_grammars(GRAMMARS.iter().copied());
-        let unit = unit_against(&highlighted, "post.md", &[("post.md", DOC)]);
-        let shell = "name: Shell\nscope: source.shell\nfile_extensions: [sh]\n\
-                     contexts:\n  main: []\n";
-        for (host, message) in [
-            (
-                grammars_with("shell.sublime-syntax", Some(shell)),
-                "the host declares different grammars now, and this file's code was \
-                 highlighted with the ones before",
-            ),
-            (
-                Host::new(),
-                "the host declares no grammars now, and this file's code was highlighted \
-                 with the ones it did",
-            ),
-        ] {
-            let units = [unit.clone()];
-            let linked = link(&units, &ExportIndex::of(&units), &host);
-            assert_eq!(
-                linked
-                    .diagnostics
-                    .iter()
-                    .map(ToString::to_string)
-                    .collect::<Vec<_>>(),
-                [format!("post.md:{}: {message}", at(DOC, "sh"))]
-            );
-        }
-        let units = [unit];
-        assert!(
-            link(&units, &ExportIndex::of(&units), &highlighted)
-                .output
-                .is_some()
-        );
-    }
-
     #[test]
     fn refuses_to_link_a_file_whose_marks_the_host_claims_differently_now() {
         // What the claims said was answered while the file compiled — the warning at the
@@ -2420,26 +2339,29 @@ mod tests {
     }
 
     #[test]
-    fn refuses_to_link_a_document_whose_language_has_a_grammar_now() {
-        // The way a host delivers grammars on demand: a language no grammar answered
-        // renders plain and warns, and the grammar arriving leaves exactly that document
-        // stale — as does a host that starts declaring grammars at all.
+    fn refuses_to_link_a_document_whose_language_a_producer_claims_now() {
+        // A fence asks what a `mark()` with a written key asks, so a highlighter that
+        // starts covering its language leaves exactly that document stale, the message
+        // at the word — as does a host that starts declaring handlers at all. A producer
+        // arriving for another language leaves it alone.
         const DOC: &str = "```sh\necho\n```\n";
-        let everything = Host::new().with_grammars(GRAMMARS.iter().copied());
         for (compiled, message) in [
             (
-                grammars_with("shell.sublime-syntax", None),
-                "the host declares different grammars now, and this file's code was \
-                 highlighted with the ones before",
+                claiming(&["css"], "Code"),
+                "a producer claims `sh` for `code` now, and this file was compiled where \
+                 none did",
             ),
             (
                 Host::new(),
-                "the host declares grammars now, and this file's code was compiled with \
-                 none",
+                "a handler claims `code` now, and this file was compiled where none did",
             ),
         ] {
             let units = [unit_against(&compiled, "post.md", &[("post.md", DOC)])];
-            let linked = link(&units, &ExportIndex::of(&units), &everything);
+            let linked = link(
+                &units,
+                &ExportIndex::of(&units),
+                &claiming(&["css", "sh"], "Code"),
+            );
             assert_eq!(
                 linked
                     .diagnostics
@@ -2449,28 +2371,55 @@ mod tests {
                 [format!("post.md:{}: {message}", at(DOC, "sh"))]
             );
         }
+        let units = [unit_against(
+            &claiming(&["css"], "Code"),
+            "post.md",
+            &[("post.md", DOC)],
+        )];
+        assert!(
+            link(
+                &units,
+                &ExportIndex::of(&units),
+                &claiming(&["css", "rust"], "Code")
+            )
+            .diagnostics
+            .is_empty()
+        );
     }
 
     #[test]
-    fn compiles_a_document_whose_code_names_no_language_the_same_under_any_grammars() {
-        // Invariant 11 for grammars: a document with no language named does not depend
-        // on them, so no change to the set touches its unit or its link.
+    fn compiles_a_document_whose_code_names_no_language_the_same_under_any_claims() {
+        // Invariant 11 for claims: a block with no language asks no producer anything,
+        // so no change to the claims touches its unit or its link — and it is still a
+        // mark, with its payload reported, either way.
         const DOC: &str = "Plain:\n\n```\necho\n```\n\n    indented\n";
         let files = [("post.md", DOC)];
         let without = unit_against(&Host::new(), "post.md", &files);
-        let with = unit_against(
-            &Host::new().with_grammars(GRAMMARS.iter().copied()),
-            "post.md",
-            &files,
-        );
+        let with = unit_against(&claiming(&["sh"], "Code"), "post.md", &files);
         assert_eq!(without, with);
-        assert_eq!(with.grammar_ref, None);
+        assert!(with.claim_refs.is_empty());
+        assert_eq!(with.payloads.len(), 2);
         let units = [with];
         assert!(
             link(&units, &ExportIndex::of(&units), &Host::new())
                 .output
                 .is_some()
         );
+    }
+
+    #[test]
+    fn reports_one_payload_for_the_same_block_in_two_documents() {
+        // The id is the content, so the module keeps one payload for a block two
+        // documents both write, and each document's unit keeps its own.
+        const DOC: &str = "```sh\necho\n```\n";
+        let host = claiming(&["sh"], "Code");
+        let units = [
+            unit_against(&host, "a.md", &[("a.md", DOC)]),
+            unit_against(&host, "b.md", &[("b.md", DOC)]),
+        ];
+        assert_eq!(units[0].payloads, units[1].payloads);
+        let module = link(&units, &ExportIndex::of(&units), &host).expect_output();
+        assert_eq!(module.payloads, units[0].payloads);
     }
 
     #[test]

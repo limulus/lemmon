@@ -43,6 +43,7 @@ use lemmon_syntax::{Parse, Span, SyntaxToken};
 
 use crate::bytecode::{Function, Module, Op};
 use crate::decls::{DeclKind, Decls, Shape};
+use crate::document::Piece;
 use crate::exports::{Export, ExportIndex};
 use crate::host::Host;
 use crate::types::Type;
@@ -162,17 +163,18 @@ pub fn compile_unit(
             ambient_refs: Vec::new(),
             asset_refs: Vec::new(),
             claim_refs: Vec::new(),
-            grammar_ref: prepared.grammar_ref.clone(),
             record: prepared.record.clone(),
             defaults: Vec::new(),
             indexes: Vec::new(),
             bindings: Vec::new(),
             uses: BTreeMap::new(),
             record_span: prepared.record_span(),
-            body: prepared
-                .chunks
-                .as_ref()
-                .map(|chunks| Rc::from(chunks.concat())),
+            // Code blocks included, as the page first holds them: `readingTime` counts
+            // what a reader would be shown with no handler run.
+            body: prepared.chunks.as_ref().map(|chunks| {
+                Rc::from(chunks.iter().flatten().map(Piece::text).collect::<String>())
+            }),
+            payloads: prepared.payloads.clone(),
         },
         strings: HashMap::new(),
         index,
@@ -719,7 +721,7 @@ impl<'a> Compiler<'a> {
     fn compile_entry(
         &mut self,
         source: &ParsedFile,
-        chunks: Option<&[String]>,
+        chunks: Option<&[Vec<Piece>]>,
         fields_of: Option<Rc<str>>,
     ) {
         if let Some(value) = fields_of {
@@ -943,6 +945,7 @@ mod tests {
     use super::*;
     use crate::host::{Ambient, Claim};
     use crate::render;
+    use crate::rendered::Payload;
     use crate::testing::at;
     use crate::unit::Param;
 
@@ -1803,7 +1806,7 @@ mod tests {
                 ("code", Some("bash")),
                 "{src}"
             );
-            let Some(Value::Record(payload)) = &mark.payload else {
+            let Some(Payload::Value(Value::Record(payload))) = &mark.payload else {
                 panic!("a record payload: {:?}", mark.payload);
             };
             assert_eq!(
@@ -1926,6 +1929,72 @@ mod tests {
     }
 
     #[test]
+    fn marks_every_code_block_of_a_document_and_warns_at_a_language_none_covers() {
+        // A fence is a `code` mark over the element comrak wrote, keyed by its language
+        // word and carrying the payload the document reported; a word no producer covers
+        // warns there, and a block that names no language asks nothing (D42).
+        const SRC: &str = "```bash\necho\n```\n\n```bsah\necho\n```\n\n```\nplain\n```\n";
+        let compiled = compile(&[SourceFile::new("doc.md", SRC)], &untyped_host());
+        assert_eq!(
+            shown(&compiled.diagnostics),
+            [format!(
+                "doc.md:{}: warning: no producer claims `bsah` for `code`; did you mean \
+                 `bash`?",
+                at(SRC, "bsah")
+            )]
+        );
+        let module = compiled.expect_output();
+        let rendered = render(&module, "doc.md", &[]).expect("a page");
+        let marks: Vec<_> = rendered
+            .marks
+            .iter()
+            .map(|mark| {
+                let Some(Payload::Reported(id)) = &mark.payload else {
+                    panic!("a reported payload: {mark:?}");
+                };
+                let payload = module
+                    .payloads
+                    .iter()
+                    .find(|payload| &payload.id == id)
+                    .expect("the module holds every payload a mark names");
+                (
+                    &*mark.name,
+                    mark.key.as_deref(),
+                    &rendered.html[mark.start as usize..mark.end as usize],
+                    &*payload.code,
+                    mark.span,
+                )
+            })
+            .collect();
+        assert_eq!(
+            marks,
+            [
+                (
+                    "code",
+                    Some("bash"),
+                    "<pre><code class=\"language-bash\">echo\n</code></pre>",
+                    "echo\n",
+                    at(SRC, "bash"),
+                ),
+                (
+                    "code",
+                    Some("bsah"),
+                    "<pre><code class=\"language-bsah\">echo\n</code></pre>",
+                    "echo\n",
+                    at(SRC, "bsah"),
+                ),
+                (
+                    "code",
+                    None,
+                    "<pre><code>plain\n</code></pre>",
+                    "plain\n",
+                    at(SRC, "```\nplain\n```"),
+                ),
+            ]
+        );
+    }
+
+    #[test]
     fn takes_one_or_two_positional_arguments() {
         for (src, expect) in [
             ("<lem.mark()>", "`mark` takes one or two arguments, got 0"),
@@ -1979,6 +2048,37 @@ mod tests {
                     (mark.start, mark.end)
                 ),
                 ("styles", "lib.lem", at(LIB, "mark(\"styles\")"), (8, 8))
+            );
+        }
+    }
+
+    #[test]
+    fn keys_and_names_a_code_blocks_payload_whichever_order_its_file_is_linked_in() {
+        // A code mark's key and payload id are this file's constants, like its name, so a
+        // link that rebased only the name would read another file's pool for them. The
+        // template beside it interns strings of its own, so its pool offsets the
+        // document's whenever it is linked first.
+        const LIB: &str = "<lem-fn tag(): string = \"sh\" + \"-\" + \"x\" />";
+        const POST: &str = "```sh\nls\n```\n";
+        let lib = SourceFile::new("lib.lem", LIB);
+        let post = SourceFile::new("post.md", POST);
+        for files in [[lib.clone(), post.clone()], [post, lib]] {
+            let module = compile(&files, &untyped_host()).expect_output();
+            let rendered = render(&module, "post.md", &[]).unwrap();
+            let [mark] = rendered.marks.as_slice() else {
+                panic!("one mark: {:?}", rendered.marks);
+            };
+            let Some(Payload::Reported(id)) = &mark.payload else {
+                panic!("a reported payload: {mark:?}");
+            };
+            let payload = module
+                .payloads
+                .iter()
+                .find(|payload| &payload.id == id)
+                .expect("the id names a payload the module holds");
+            assert_eq!(
+                (&*mark.name, mark.key.as_deref(), &*payload.code),
+                ("code", Some("sh"), "ls\n")
             );
         }
     }

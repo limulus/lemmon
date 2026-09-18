@@ -12,7 +12,10 @@
   declares the record is what knows which field it dispatches on; a unit's fact is the
   answer about a name *and* a key rather than one digest per name, so a producer gaining
   a language stales only the files that named it; a payload crossing as data may hold no
-  function, at any depth, and no mark
+  function, at any depth, and no mark; a `math` fence is not a mark after all, since
+  comrak renders it before consulting any seam and no option turns that off, so the rest
+  are marked through comrak's highlighter seam, which writes comrak's own markup behind a
+  sentinel; a payload's id is SipHash-1-3 over the info string and the code
 - **Backlog item:** ∆1Hp (the mark, claims by name, the collect tags, the boundary);
   ∆7wK (the `code` mark, keys and payloads, the core's highlighter removed)
 - **Normative text:** `docs/language.md` § Marks, § Document mode, Code blocks;

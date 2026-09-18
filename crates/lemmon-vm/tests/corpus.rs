@@ -29,8 +29,8 @@ use glob::Pattern;
 use lemmon_corpus::Case;
 use lemmon_vm::{
     Ambient, Claim, Data, Decls as _, Fulfilled, Host, HostSpan, LineIndex, Loaded, Map,
-    Mark, Module, Op, Rendered, Source, SourceFile, SourceKind, Span, Spans, Value,
-    collects, compile, field_path, is_document, load, render,
+    Mark, Module, Op, Payload, Rendered, Source, SourceFile, SourceKind, Span, Spans,
+    Value, collects, compile, field_path, is_document, load, render,
 };
 use saphyr::{LoadableYamlNode, MarkedYaml, Scalar, YamlData};
 
@@ -38,51 +38,24 @@ const GROUP: &str = "render";
 
 /// The host a `render/` or `document/` case compiles against: the three names the
 /// standard shell binds, none of them typed. That is a host a site really has — the
-/// Phase 0 spike's — and what any document no collection matched sees. It declares the
-/// grammars in `document/grammars/`, as a shell declares its set (D40), so a case's code
-/// is highlighted by fixtures its reader can hold the output against, and it claims the
-/// three names the shell's own bundler handles (D42), so a case can place a mark under
-/// one and a case that misspells one warns.
+/// Phase 0 spike's — and what any document no collection matched sees. It claims the
+/// three names the shell's own bundler handles, and `code` as a highlighter does (D42),
+/// so a case can place a mark under any of them, and a case that misspells a name or a
+/// language warns.
 fn untyped_host() -> Host {
-    Host::untyped(["site", "page", "build"])
-        .with_claims([
-            ("styles", Claim::new()),
-            ("head", Claim::new()),
-            ("scripts", Claim::new()),
-            // A highlighter's claim: the languages one producer covers, the record a
-            // mark of the name carries, and the field it is keyed by (D42).
-            (
-                "code",
-                Claim::new()
-                    .with_keys(["bash", "css", "html", "sh"])
-                    .with_payload("Code", Some("language")),
-            ),
-        ])
-        .with_grammars(
-            grammars()
-                .iter()
-                .map(|(path, text)| (path.as_str(), text.as_str())),
-        )
-}
-
-/// The fixture grammars, as `(path, text)` in file-name order.
-fn grammars() -> &'static [(String, String)] {
-    static GRAMMARS: OnceLock<Vec<(String, String)>> = OnceLock::new();
-    GRAMMARS.get_or_init(|| {
-        let dir = "document/grammars";
-        let mut files: Vec<(String, String)> =
-            fs::read_dir(lemmon_corpus::root().join(dir))
-                .expect("the grammar fixtures are readable")
-                .map(|entry| {
-                    let path = entry.expect("a directory entry").path();
-                    let name = path.file_name().expect("a file").to_string_lossy();
-                    let text = fs::read_to_string(&path).expect("a grammar is text");
-                    (format!("{dir}/{name}"), text)
-                })
-                .collect();
-        files.sort();
-        files
-    })
+    Host::untyped(["site", "page", "build"]).with_claims([
+        ("styles", Claim::new()),
+        ("head", Claim::new()),
+        ("scripts", Claim::new()),
+        // A highlighter's claim: the languages one producer covers, the record a
+        // mark of the name carries, and the field it is keyed by (D42).
+        (
+            "code",
+            Claim::new()
+                .with_keys(["bash", "css", "html", "sh"])
+                .with_payload("Code", Some("language")),
+        ),
+    ])
 }
 
 /// The declaration the `host/` group's environment files back: `page` a `Page`, `build`
@@ -202,8 +175,10 @@ fn page() -> Value {
 ///
 /// The output is the page with its marks shown where they stand, then each fragment it
 /// collected under a `--- name` line of its own, in name order and then in the order the
-/// render reached them. The sections stand above the diagnostics trailer, which is found
-/// by its last header, so they pass through blessing as page text does.
+/// render reached them, then under `--- payloads` every payload the page's code marks
+/// name, in the order it first names each. The sections stand above the diagnostics
+/// trailer, which is found by its last header, so they pass through blessing as page
+/// text does.
 fn rendered(
     module: &Module,
     path: &str,
@@ -220,6 +195,33 @@ fn rendered(
                 for fragment in fragments {
                     let _ = write!(out, "\n--- {name}\n{}", fragment.text);
                 }
+            }
+            let mut named: Vec<&str> = Vec::new();
+            for mark in &marks {
+                if let Some(Payload::Reported(id)) = &mark.payload
+                    && !named.contains(&&**id)
+                {
+                    named.push(id);
+                }
+            }
+            if !named.is_empty() {
+                out.push_str("\n--- payloads");
+            }
+            for id in named {
+                let payload = module
+                    .payloads
+                    .iter()
+                    .find(|payload| &*payload.id == id)
+                    .expect("the module holds every payload a mark names");
+                let language = payload
+                    .language
+                    .as_deref()
+                    .map_or_else(|| "null".to_owned(), |word| format!("{word:?}"));
+                let _ = write!(
+                    out,
+                    "\n#{id} {{language: {language}, info: {:?}, code: {:?}}}",
+                    payload.info, payload.code
+                );
             }
             (out, None)
         }
@@ -243,8 +245,13 @@ fn marked(html: &str, marks: &[Mark]) -> String {
         if let Some(key) = &mark.key {
             head.push_str(&format!(" {key}"));
         }
-        if let Some(payload) = &mark.payload {
-            head.push_str(&format!(" {}", shown_value(payload)));
+        match &mark.payload {
+            Some(Payload::Value(value)) => {
+                head.push_str(&format!(" {}", shown_value(value)))
+            }
+            // Named by id, which the `--- payloads` section below the page resolves.
+            Some(Payload::Reported(id)) => head.push_str(&format!(" #{id}")),
+            None => {}
         }
         head.push('⟧');
         out.insert_str(at(mark.start), &head);

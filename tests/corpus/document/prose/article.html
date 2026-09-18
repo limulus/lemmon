@@ -2,10 +2,10 @@
 <h2 id="the-last-glacial-period">The Last Glacial Period</h2>
 <p>Ice sheets sequestered so much water that sea levels fell.<sup class="footnote-ref"><a href="#fn-1" id="fnref-1" data-footnote-ref>1</a></sup></p>
 <h2 id="glaciers">Custom Heading</h2>
-<pre><code class="language-lem">&lt;lem-if shown&gt;
+⟦mark code lem #b7bc42ee22214ade⟧<pre><code class="language-lem">&lt;lem-if shown&gt;
   this is a code sample, not a block
 &lt;/lem-if&gt;
-</code></pre>
+</code></pre>⟦/mark⟧
 <p>A paragraph with <code>&lt;lem.inline&gt;</code> in a code span, and a <b>raw</b> tag.</p>
 <div class="aside">
 Raw HTML blocks pass through.
@@ -18,5 +18,7 @@ Raw HTML blocks pass through.
 </ol>
 </section>
 
+--- payloads
+#b7bc42ee22214ade {language: "lem", info: "lem", code: "<lem-if shown>\n  this is a code sample, not a block\n</lem-if>\n"}
 --- diagnostics
-document/prose/article.md:16:4..16:7: warning: the host declares no grammar for `lem`, so this code is not highlighted
+document/prose/article.md:16:4..16:7: warning: no producer claims `lem` for `code`, so this mark keeps its default content

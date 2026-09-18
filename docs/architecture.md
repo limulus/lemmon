@@ -50,14 +50,14 @@ crosses as one UTF-8 JSON buffer (rmp-serde if profiling demands) — except a r
 page, which crosses as bytes beside a JSON header of its marks and fragments, since
 escaping the page into that JSON and parsing it back is more than half of a `render` call
 (the spike's page: 108 µs to 49 µs) and a mark's offsets name the page's own bytes (D42);
-one instance per worker thread, nothing shared. Whole-site data ≪ 10 MB. The core embeds no highlighter (D42);
-syntect still adds 1.97 MB to the `.wasm`, not yet removed (∆7wK).
+one instance per worker thread, nothing shared. Whole-site data ≪ 10 MB. The core embeds
+no highlighter (D42): removing syntect took the staged `.wasm` from 4.21 MB to 2.26 MB.
 
 Ambient declarations (D30, D36): the core knows no type or value by name. The host passes
 its environment with `compile` — the declarations as Lemmon source (the shell ships
-`ambient.lem`, declaring `Page` and `Build`) and `host`, which binds each ambient value
-name to a declared type, to the top-level bindings of a file (`site` → `site.lem`), or to
-nothing at all, which names the value without typing it. `document` says which of them
+`ambient.lem`, declaring `Page`, `Build`, and `Code`) and `host`, which binds each
+ambient value name to a declared type, to the top-level bindings of a file (`site` →
+`site.lem`), or to nothing at all, which names the value without typing it. `document` says which of them
 a file's `record` retypes, and `entry` names the field a page is rendered through
 (`layout`). `url` names the field `plan()` reports a page's url from, and `neighbours`
 the two fields the loader fills on a generated page with the pages beside it (D43; not
@@ -73,17 +73,18 @@ requires to extend that element type — or, where no glob matched, the document
 type. The unit depends on that type as a compile-time fact (D25). A document
 without one compiles with `page` unknown-typed, which is how the spike renders today.
 
-Code blocks are marks (D42). comrak's adapter records a `code` mark for every code block,
-keyed by its language word, with the info string and the literal as a payload the
-document reports once, by content hash, when it compiles; the block's default content —
-comrak's own `<pre><code class="language-x">`, escaped — stands in the page, and a
-render's mark names the range and the payload id. The core embeds no grammars and
-highlights nothing: the host's producers do, after render, and the claims they declare
-on the declaration are what the compiler checks a language word against, with a
-did-you-mean, recording a digest of the claims a document read as its compile-time
-fact. A host that declares no producer for a language gets the block as comrak writes
-it and a warning at the word. Not yet (∆7wK): today the core highlights while compiling,
-with syntect, against `.sublime-syntax` grammars on the declaration, as D40 had it.
+Code blocks are marks (D42). Every code block but a `math` fence, which comrak renders
+before consulting any seam, is a `code` mark keyed by its language word, with the info
+string and the literal as a payload the document reports once, by content hash, when it
+compiles; the block's default content — comrak's own `<pre><code class="language-x">`,
+escaped — stands in the page, and a render's mark names the range and the payload id.
+The core's adapter fills comrak's highlighter seam with comrak's own markup and a
+sentinel before each `<pre>`, which is how the element is found in the output. The core
+embeds no grammars and highlights nothing: the host's producers do, after render, and
+the claims they declare are what the compiler checks a language word against, with a
+did-you-mean, recording the answer about that word as the document's compile-time fact.
+A host that declares no producer for a language gets the block as comrak writes it and
+a warning at the word.
 
 ∆TNT built the `compile`/`loadData`/`render` subset of that class (plus `version`), and
 settled the spike shapes the sketch left open — each chosen so the full form is additive,
@@ -108,10 +109,7 @@ not a break:
   asset manifest rides on the declaration, not on the envelope: `asset("…")` is answered
   while compiling (D10, D38), so it has to be there by then, and a rebuild that re-hashes
   an asset is a change to the declaration. So do the mark claims (D42), for the same
-  reason: a document's language words are checked while it compiles. Not yet (∆7wK):
-  today the grammars (D40) ride there instead, a new declaration repeating them leaving
-  them parsed, and a label pointing into a grammar file arriving with positions the
-  core computed, since no index it keeps covers a file it never compiled. A file passed to
+  reason: a document's language words are checked while it compiles. A file passed to
   `compile` may carry `recordSpan`, the byte offsets of the `type:` key's value, so a
   diagnostic about the record points at the key; offsets that are not a span of the
   file's text are refused as a caller bug, since a line index panics on them.
@@ -179,8 +177,8 @@ not a break:
 3. **Compile** (core) — every changed `.lem`/`.md` → its own bytecode unit, then a link step
    joins the units into the module (D25, §Separate compilation); document prose rendered by
    comrak here and stored in the document's unit (markdown never runs at render time),
-   each code block a `code` mark whose payload is reported by content hash (D42;
-   not yet — ∆7wK).
+   each code block a `code` mark whose payload is reported by content hash (D42) —
+   not yet across the boundary, whose `compile` still returns diagnostics alone (∆7wK).
    Type checking is not a pass of its own: the walk that lowers an expression is the walk
    that types it (D31), so a type error is a compile diagnostic like any other and a file
    with one yields no unit.
@@ -234,8 +232,7 @@ A unit depends on its text and on the **compile-time facts** it consumed, nothin
 - for a file that names a mark, or a document whose code names a language, what the
   host's claims said about that name and that key — the answer itself, not a digest of
   the claim, so a producer that starts covering one language leaves the files that named
-  it stale and not the files that named another (D42). Not yet (∆7wK): a document's
-  fences ask nothing yet, and the grammar set's digest is still a fact of its own (D40).
+  it stale and not the files that named another (D42).
 
 The compiler reports those facts per file, and the shell's cache key is
 `hash(text) + hash(facts)`. That is the guarantee: a content edit re-runs comrak and codegen
@@ -332,12 +329,13 @@ VM time (that number is the Phase 0 exit criterion).
 | Parser         | hand-written RD + Pratt                                  | Chosen in the ∆7Ib bake-off over `lelwel` 0.10 (`docs/journal/∆7Ib-parser-bake-off.md`): LL(1) forced tag names into the token vocabulary and junk out of heads, costing recovery fidelity for ~700 fewer owned lines    |
 | Syntax tree    | `rowan` 0.17 green/red CST                               | lossless + recovering; no incremental reparse needed (rust-analyzer's own conclusion). `lemmon_syntax::ast` is the typed view over it that the checker and codegen read; the CST stays for the formatter and diagnostics |
 | Diagnostics    | structured JSON + `ariadne`/`annotate-snippets` renderer | spans first-class; `line-index` 0.1 (rust-analyzer's, sharing rowan's `text-size`) turns a byte offset into an LSP position at the boundary                                                                                                                                                                                                        |
-| Markdown       | `comrak` 0.54; `syntect` 5.3 not yet removed (∆7wK) | in-core (D08); wasm32-clean. comrak with `default-features = false` + `attributes`, a heading adapter since its renderer ignores `{#id}`, and the core's own code-block adapter, which records a `code` mark per block (D42). Until ∆7wK it highlights with syntect against the host's grammars instead (D40) — the core's own adapter, since comrak's `SyntectAdapter` writes code unescaped when syntect errs and guesses a language from the first line — at 1.97 MB of staged `.wasm` (2.12 → 4.10 MB) |
+| Markdown       | `comrak` 0.54                                            | in-core (D08); wasm32-clean. comrak with `default-features = false` + `attributes`, a heading adapter since its renderer ignores `{#id}`, and the core's own code-block adapter, which writes comrak's own markup behind a sentinel so each block becomes a `code` mark (D42). No highlighter: syntect, which D40 had highlight against the host's grammars, cost 1.95 MB of the staged `.wasm` and was removed by ∆7wK (4.21 → 2.26 MB) |
 | WASM           | `wasm-bindgen` 0.2.127, CLI direct (no wasm-pack)        | `wasm-bindgen --target web` runs in `scripts/stage-wasm.ts`: caller-supplied bytes keep loading injectable and browser-reusable, and the repo owns staging, so wasm-pack’s own package layout would only fight it (∆TNT)                                                                                                                                                                                   |
 | Dates          | `jiff` 0.2                                               | `default-features = false`, `alloc` only: no clock, no system zone, no tzdb, so invariant 1 is structural rather than reviewed. Parsing, the civil calendar, RFC 3339/2822 and strftime; a `datetime` is an instant and the offset it was written in (D38) |
 | URL encoding   | `percent-encoding` 2.3                                   | one encoding pass behind `url()`. The WHATWG `url` crate was rejected: it refuses a relative reference like `/feed/` without a base, which is most of what a site composes, and pulls `idna`'s tables in (D38) |
 | Latin folding  | `unicode-normalization` 0.1                              | canonical decomposition behind `slugify`, so a letter carrying a mark slugs as the letter. Transliteration was measured and rejected: `deunicode` cost 479 KB of the `.wasm` and `any_ascii` 582 KB, to answer a question no site in the corpus asks — and `@sindresorhus/slugify`'s answer applies German's `ü`→`ue` to every language's `ü` (D38) |
 | Word counting  | `unicode-segmentation` 1.13                              | UAX #29 word boundaries behind `html.readingTime()`, so a script that does not space its words is counted rather than read as one long one. Splitting on whitespace would have made the core assume English |
+| Payload ids    | `siphasher` 1.0                                          | SipHash-1-3 with zero keys behind a code block's payload id (D42): a fixed algorithm, since a host caches producer output across builds of the core and `std`'s `DefaultHasher` may change between Rust releases. Already in the tree through comrak's `phf` |
 | Suggestions    | `strsim` 0.11                                             | optimal string alignment behind `lemmon_syntax::nearest`, which owns the threshold deciding whether to suggest at all; shared so that every stage's did-you-mean reads the same, rather than each growing its own and drifting                                                                                |
 | Corpus diffs   | `similar` 3.2                                             | the unified diff a failing corpus case reports, so what changed can be read from the failure instead of by blessing and diffing the result; dev-only, since `lemmon-corpus` is never anything but a dev-dependency                                                       |
 | Serde          | `serde_json` (rmp-serde optional)                        | avoid serde-wasm-bindgen for bulk data                                                                                                                                                                                   |

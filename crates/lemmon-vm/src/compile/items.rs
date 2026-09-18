@@ -15,8 +15,10 @@ use super::expr::{decode_string, unparen};
 use super::names::{BindingKind, already_bound};
 use super::whitespace::{Arm, Body, BodyKind, Case, Piece};
 use super::{Compiler, Diagnostic, Runs, TokenSpan, required, rules};
-use crate::bytecode::Op;
+use crate::Value;
+use crate::bytecode::{MarkKey, MarkPayload, Op};
 use crate::decls::Decls;
+use crate::document::{CODE, Code, Piece as ProsePiece};
 use crate::plan::SourceKind;
 use crate::types::Type;
 use crate::unit::{BindingFn, Supplied};
@@ -74,7 +76,7 @@ impl Compiler<'_> {
         &mut self,
         items: Vec<Item>,
         prose: &[Span],
-        chunks: &[String],
+        chunks: &[Vec<ProsePiece>],
     ) {
         self.push_scope();
         let mut block = 0;
@@ -85,20 +87,68 @@ impl Compiler<'_> {
             }
             let piece = Piece::build(item);
             let silent = piece.renders_nothing();
-            self.emit_chunk(prose[block], chunk(&chunks[block], after_silent));
+            self.emit_chunk(prose[block], &chunks[block], after_silent);
             self.lower_piece(piece, Level::Document);
             after_silent = silent;
             block += 1;
         }
-        self.emit_chunk(prose[block], chunk(&chunks[block], after_silent));
+        self.emit_chunk(prose[block], &chunks[block], after_silent);
         self.pop_scope();
     }
 
-    fn emit_chunk(&mut self, span: Span, chunk: &str) {
-        if !chunk.is_empty() {
-            let index = self.intern(chunk);
-            self.emit(Op::EmitText { index }, span);
+    /// Emits one gap of a document's prose: its text as written text, and each code
+    /// block in it as a `code` mark over the element comrak wrote.
+    fn emit_chunk(&mut self, span: Span, pieces: &[ProsePiece], after_silent: bool) {
+        for (at, piece) in pieces.iter().enumerate() {
+            match piece {
+                ProsePiece::Text(text) => {
+                    // The line a silent block took is the one its sentinel left at the
+                    // head of the chunk, so only the chunk's first run can lose it.
+                    let text = if at == 0 {
+                        chunk(text, after_silent)
+                    } else {
+                        text
+                    };
+                    if !text.is_empty() {
+                        let index = self.intern(text);
+                        self.emit(Op::EmitText { index }, span);
+                    }
+                }
+                ProsePiece::Code(code) => self.lower_code(code),
+            }
         }
+    }
+
+    /// Lowers a code block to a `code` mark over its element, keyed by its language word
+    /// and carrying the payload the document reported for it (D42).
+    ///
+    /// A block that names a language asks the host's claims about it, as a `mark()` call
+    /// with a written key does — the same question, answered and recorded in one place —
+    /// so a language no producer covers is a warning at the word. A block that names
+    /// none asks nothing: no producer can claim it, and its author asked for nothing.
+    fn lower_code(&mut self, code: &Code) {
+        if let Some(key) = &code.key {
+            self.claim_ref(CODE, code.span, Some((key, code.span)));
+        }
+        let default = self.constant(Value::html(&code.html));
+        self.emit(Op::Const { index: default }, code.span);
+        let key = match &code.key {
+            Some(key) => MarkKey::Const {
+                index: self.intern(key),
+            },
+            None => MarkKey::None,
+        };
+        let id = self.intern(&code.id);
+        let name = self.intern(CODE);
+        self.emit(
+            Op::Mark {
+                name,
+                key,
+                payload: MarkPayload::Reported { index: id },
+            },
+            code.span,
+        );
+        self.emit(Op::Emit, code.span);
     }
 
     /// Lowers one piece of a body.

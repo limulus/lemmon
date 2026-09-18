@@ -406,7 +406,7 @@ mod tests {
     use lemmon_syntax::Span;
 
     use super::*;
-    use crate::rendered::Mark;
+    use crate::rendered::{Mark, Payload};
 
     /// Two values that would put the same content in the same place are one value,
     /// wherever the `mark()` calls that made them were written: `==` on `html` asks
@@ -437,7 +437,7 @@ mod tests {
         let keyed = |key: Option<&str>, payload: Option<Value>| {
             marked(Mark {
                 key: key.map(Rc::from),
-                payload,
+                payload: payload.map(Payload::Value),
                 ..mark("code", 1, 4)
             })
         };
@@ -457,6 +457,15 @@ mod tests {
             keyed(None, Some(Value::str("a"))).equals(&keyed(None, Some(Value::str("b")))),
             Ok(false)
         );
+        // Two code blocks at one place, reported under different ids, are two blocks.
+        let reported = |id: &str| {
+            marked(Mark {
+                payload: Some(Payload::Reported(Rc::from(id))),
+                ..mark("code", 1, 4)
+            })
+        };
+        assert_eq!(reported("a").equals(&reported("a")), Ok(true));
+        assert_eq!(reported("a").equals(&reported("b")), Ok(false));
         // Markup of the same text with no mark in it places nothing, so it is neither.
         assert_eq!(styles.equals(&Value::html("x")), Ok(false));
         assert_eq!(Value::html("x").equals(&styles), Ok(false));

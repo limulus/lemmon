@@ -101,25 +101,6 @@ const loaded: DataInput = {
   },
 }
 
-/** A declaration carrying one grammar, found by the language `toylang`. */
-const highlighting: HostDecl = {
-  ...untyped,
-  grammars: [
-    {
-      path: 'toylang.sublime-syntax',
-      text: [
-        'name: Toylang',
-        'scope: source.toylang',
-        'file_extensions: [toylang]',
-        'contexts:',
-        '  main:',
-        '    - match: go',
-        '      scope: keyword',
-      ].join('\n'),
-    },
-  ],
-}
-
 /** Where `x.caption` stands in the data file, as a shell computes it from the JSON. */
 const captionSpan: Span = {
   start: 20,
@@ -226,34 +207,6 @@ describe('Core', () => {
       expect(missing.message).toBe(
         'the manifest has no asset `styles/site.css`; the host declares none'
       )
-    })
-
-    it('should highlight code with the grammars the declaration carries', async () => {
-      const core = await loadCore()
-      const post = { path: 'post.md', text: '```toylang\ngo\n```\n' }
-      expect(core.compile([post], highlighting)).toEqual([])
-      core.loadData({ ambient: {} })
-      expect(page(core.render({ path: 'post.md' }))).toBe(
-        '<pre><code class="language-toylang"><span class="syn-source syn-toylang">' +
-          '<span class="syn-keyword">go</span>\n</span></code></pre>\n'
-      )
-    })
-
-    it('should place a label in a grammar file by its own positions', async () => {
-      const core = await loadCore()
-      const broken = 'name: Toylang\nfile_extensions: [toylang]\nscope: source.toylang\n'
-      const [warning] = core.compile([{ path: 'post.md', text: '```toylang\ngo\n```\n' }], {
-        ...untyped,
-        grammars: [{ path: 'toylang.sublime-syntax', text: broken }],
-      })
-      expect(warning.message).toBe(
-        'the grammar for `toylang` does not load, so this code is not highlighted'
-      )
-      expect(warning.labels[0].path).toBe('toylang.sublime-syntax')
-      expect(warning.labels[0].span.range).toEqual({
-        start: { line: 0, character: 0 },
-        end: { line: 3, character: 0 },
-      })
     })
 
     it('should keep the declaration for calls that carry none', async () => {

@@ -14,22 +14,21 @@
 //! [`options`] lives here rather than with the adapters because it is not only a set of
 //! markdown preferences: `render.unsafe` is what lets a sentinel line through to be cut
 //! on, so it is part of the splice below. What comrak cannot do at all is supplied
-//! through its plugin seams: heading ids by [`adapters`], and code highlighted by the
-//! host's grammars by [`highlight`].
+//! through its plugin seams: heading ids by [`adapters`], and the marking of every code
+//! block by [`code`] (D42) — the core highlights nothing.
 
 mod adapters;
-mod highlight;
+mod code;
 
 use comrak::nodes::{NodeValue, Sourcepos};
 use comrak::{Arena, Options, format_html_with_plugins, options::Plugins, parse_document};
 use lemmon_syntax::{DocumentParse, Span};
 
 use crate::compile::Diagnostic;
-use crate::host::Host;
-use crate::unit::GrammarRef;
 use adapters::Headings;
-use highlight::Block;
-pub(crate) use highlight::Grammars;
+pub use code::CodePayload;
+use code::{Block, CodeFences};
+pub(crate) use code::{CODE, Code, Piece};
 
 /// comrak's configuration (D08): CommonMark plus footnotes, `{#id}` heading attributes,
 /// and raw HTML passed through — prose is the author's own. Heading ids are
@@ -50,17 +49,17 @@ fn sentinel(index: usize) -> String {
 
 /// A document's prose, rendered.
 pub(crate) struct Prose {
-    /// One HTML chunk per gap between the document's blocks: the chunk at `i` stands
-    /// before block `i`, the last one after every block.
-    pub chunks: Vec<String>,
-    /// What highlighting the code had to say, as warnings.
-    pub warnings: Vec<Diagnostic>,
-    /// The grammars the code was highlighted against, when a block names a language: a
-    /// compile-time fact of the document's unit (D25).
-    pub grammar_ref: Option<GrammarRef>,
+    /// The HTML of each gap between the document's lem-blocks, cut into text and the
+    /// code blocks to mark: the chunk at `i` stands before lem-block `i`, the last one
+    /// after every lem-block.
+    pub chunks: Vec<Vec<Piece>>,
+    /// What the document's code blocks hand their producers, one per distinct block, in
+    /// the order the document first writes each (D42).
+    pub payloads: Vec<CodePayload>,
 }
 
-/// Renders a document's prose, highlighting its code with the `host`'s grammars.
+/// Renders a document's prose, every code block in it written as comrak writes it and
+/// cut out to be marked.
 ///
 /// # Errors
 ///
@@ -70,7 +69,6 @@ pub(crate) fn render_prose(
     path: &str,
     src: &str,
     doc: &DocumentParse,
-    host: &Host,
 ) -> Result<Prose, Vec<Diagnostic>> {
     let mut errors = Vec::new();
     let error = |errors: &mut Vec<Diagnostic>, span: Span, message: &str| {
@@ -179,28 +177,28 @@ pub(crate) fn render_prose(
             // comrak's own split of the info string: the language is the first word.
             let word = block.info.split(is_cmark_space).next().unwrap_or_default();
             if word == "math" {
-                // Rendered by comrak itself, without asking the highlighter.
+                // Rendered by comrak itself, without asking the adapter: no mark.
                 return None;
             }
-            let language = (!word.is_empty()).then(|| {
-                let (start, _) = source_range(data.sourcepos);
+            let (start, end) = source_range(data.sourcepos);
+            let span = if word.is_empty() {
+                to_source(start, end - start)
+            } else {
                 let (at, len) = language_word(&joined, start);
-                (word.to_owned(), to_source(at, len))
-            });
+                to_source(at, len)
+            };
             Some(Block {
-                language,
-                code: block.literal.clone(),
+                payload: CodePayload::new(&block.info, &block.literal),
+                span,
             })
         })
         .collect();
-    let highlighted = highlight::highlight(path, &blocks, host.grammars());
 
     let headings = Headings::new(root);
+    let fences = CodeFences::new();
     let mut plugins = Plugins::default();
     plugins.render.heading_adapter = Some(&headings);
-    if let Some(adapter) = &highlighted.adapter {
-        plugins.render.codefence_syntax_highlighter = Some(adapter);
-    }
+    plugins.render.codefence_syntax_highlighter = Some(&fences);
     let mut html = String::new();
     format_html_with_plugins(root, &options(), &mut html, &plugins)
         .expect("writing to a String cannot fail");
@@ -211,17 +209,19 @@ pub(crate) fn render_prose(
         let at = rest
             .find(&marker)
             .expect("a sentinel found in the tree is in the output");
-        chunks.push(rest[..at].to_owned());
+        chunks.push(code::pieces(&rest[..at], &blocks));
         // The sentinel's own newline stays with the chunk after it: a block is a line
         // of the document, and its output ends that line the way the prose's does.
         rest = &rest[at + marker.len()..];
     }
-    chunks.push(rest.to_owned());
-    Ok(Prose {
-        chunks,
-        warnings: highlighted.diagnostics,
-        grammar_ref: highlighted.grammar_ref,
-    })
+    chunks.push(code::pieces(rest, &blocks));
+    let mut payloads: Vec<CodePayload> = Vec::new();
+    for block in blocks {
+        if payloads.iter().all(|kept| kept.id != block.payload.id) {
+            payloads.push(block.payload);
+        }
+    }
+    Ok(Prose { chunks, payloads })
 }
 
 /// A byte CommonMark counts as whitespace where it splits an info string.
@@ -285,9 +285,17 @@ mod tests {
     use super::*;
     use crate::testing::at;
 
+    /// Each chunk as the page first holds it: its text and its code blocks' elements,
+    /// the sentinels gone.
     fn render(src: &str) -> Result<Vec<String>, Vec<Diagnostic>> {
         let doc = lemmon_syntax::parse_document(src);
-        render_prose("doc.md", src, &doc, &Host::new()).map(|prose| prose.chunks)
+        render_prose("doc.md", src, &doc).map(|prose| {
+            prose
+                .chunks
+                .iter()
+                .map(|pieces| pieces.iter().map(Piece::text).collect())
+                .collect()
+        })
     }
 
     fn messages(result: Result<Vec<String>, Vec<Diagnostic>>) -> Vec<String> {
@@ -411,11 +419,157 @@ mod tests {
         assert!(chunks[0].contains("&lt;lem-if y&gt;"));
     }
 
+    /// Every code block the document holds, as the prose cut them out.
+    fn codes(src: &str) -> Vec<Code> {
+        let doc = lemmon_syntax::parse_document(src);
+        render_prose("doc.md", src, &doc)
+            .unwrap_or_else(|e| panic!("{e:?}"))
+            .chunks
+            .into_iter()
+            .flatten()
+            .filter_map(|piece| match piece {
+                Piece::Code(code) => Some(code),
+                Piece::Text(_) => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn writes_every_code_block_exactly_as_comrak_does_with_no_adapter() {
+        // The markup contract a producer and a page with no producer both depend on
+        // (D42): marking a block changes nothing a reader sees until a handler runs. A
+        // fenced block with and without a language, an indented one, a `math` fence, and
+        // fences inside a list item, a blockquote, and a footnote.
+        const SRC: &str = "Code[^n]:\n\n```sh {1}\necho \"<b>\" & done\n```\n\n\
+                           ```\nplain\n```\n\n    indented <i>\n\n```math\nx^2\n```\n\n\
+                           - item\n\n  ```css\n  a {}\n  ```\n\n> ```html\n> <p>\n> ```\n\n\
+                           [^n]: A note:\n\n    ```sh\n    ls\n    ```\n";
+        let plain = comrak::markdown_to_html(SRC, &options());
+        assert_eq!(render(SRC).unwrap(), [plain]);
+    }
+
+    #[test]
+    fn cuts_out_every_code_block_but_a_math_fence() {
+        // comrak renders a `math` fence before it asks any seam, so it is no mark and
+        // its block stays comrak's own; every other block, indented or fenced, labelled
+        // or not, is one. The `math` fence comes first, so a walk that counted it would
+        // pair every later element with the block before it.
+        const SRC: &str = "```math\nx^2\n```\n\n```sh\na\n```\n\n```\nb\n```\n\n    c\n";
+        let codes = codes(SRC);
+        assert_eq!(
+            codes
+                .iter()
+                .map(|code| code.key.as_deref())
+                .collect::<Vec<_>>(),
+            [Some("sh"), None, None]
+        );
+        assert!(codes.iter().all(|code| !code.html.contains("math")));
+        assert!(
+            codes[0]
+                .html
+                .starts_with("<pre><code class=\"language-sh\">")
+        );
+        assert!(codes[0].html.ends_with("</code></pre>"));
+    }
+
+    #[test]
+    fn points_a_blocks_mark_at_its_language_word_or_at_the_whole_block() {
+        // The word as written, entity and all, since that is where an editor puts the
+        // warning; a block with no word has nothing smaller to point at.
+        const SRC: &str = "```bs&#97;h\necho\n```\n\n```\nplain\n```\n";
+        let codes = codes(SRC);
+        assert_eq!(codes[0].key.as_deref(), Some("bsah"));
+        assert_eq!(codes[0].span, at(SRC, "bs&#97;h"));
+        assert_eq!(codes[1].span, at(SRC, "```\nplain\n```"));
+    }
+
+    #[test]
+    fn pairs_a_block_in_a_footnote_with_its_own_payload() {
+        // The footnote is written before the `css` fence and rendered after it, since
+        // comrak puts footnotes last. The walk that finds each block's payload has to
+        // meet them in the order comrak renders them, or the `sh` element would be
+        // marked with the `css` block's key and payload.
+        const SRC: &str = "Text[^n].\n\n[^n]: See:\n\n    ```sh\n    ls\n    ```\n\n\
+                           ```css\na {}\n```\n";
+        let codes = codes(SRC);
+        assert_eq!(
+            codes
+                .iter()
+                .map(|code| (code.key.as_deref(), code.html.contains("ls")))
+                .collect::<Vec<_>>(),
+            [(Some("css"), false), (Some("sh"), true)]
+        );
+    }
+
+    #[test]
+    fn pairs_blocks_in_footnotes_comrak_drops_or_reorders() {
+        // Each element is paired with the walk's block by position, which holds because
+        // comrak takes an unreferenced footnote out of the tree and puts the rest in the
+        // order they are referenced before it renders. A comrak that stopped doing
+        // either would mark a footnote's block with another block's key and payload.
+        const UNUSED: &str = "Text[^b].\n\n[^a]: Unused:\n\n    ```css\n    a {}\n    ```\n\n\
+                              [^b]: Used:\n\n    ```sh\n    ls\n    ```\n";
+        const REVERSED: &str = "Text[^b] and[^a].\n\n[^a]: A:\n\n    ```css\n    a {}\n    \
+                                ```\n\n[^b]: B:\n\n    ```sh\n    ls\n    ```\n";
+        let paired = |src: &str| {
+            codes(src)
+                .iter()
+                .map(|code| {
+                    (
+                        code.key.as_deref().map(str::to_owned),
+                        code.html.contains("ls"),
+                    )
+                })
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(paired(UNUSED), [(Some("sh".to_owned()), true)]);
+        assert_eq!(
+            paired(REVERSED),
+            [
+                (Some("sh".to_owned()), true),
+                (Some("css".to_owned()), false)
+            ]
+        );
+        // A block comrak never renders reports no payload either.
+        let doc = lemmon_syntax::parse_document(UNUSED);
+        assert_eq!(
+            render_prose("doc.md", UNUSED, &doc).unwrap().payloads.len(),
+            1
+        );
+    }
+
+    #[test]
+    fn reports_one_payload_for_a_block_written_twice() {
+        // Two marks, one payload: the id is the content, so the host produces it once.
+        const SRC: &str = "```sh\nls\n```\n\n```sh\nls\n```\n\n```sh\npwd\n```\n";
+        let doc = lemmon_syntax::parse_document(SRC);
+        let prose = render_prose("doc.md", SRC, &doc).unwrap();
+        let codes = codes(SRC);
+        assert_eq!(codes.len(), 3);
+        assert_eq!(codes[0].id, codes[1].id);
+        assert_eq!(
+            prose
+                .payloads
+                .iter()
+                .map(|payload| &*payload.code)
+                .collect::<Vec<_>>(),
+            ["ls\n", "pwd\n"]
+        );
+        assert_eq!(prose.payloads[0].id, codes[0].id);
+    }
+
     #[test]
     fn rejects_a_hand_written_sentinel() {
-        let src = "x\n\n<!--lem:0-->\n\n<lem.y>\n";
-        let msgs = messages(render(src));
-        let expected = format!("doc.md:{}: `<!--lem:` is reserved", at(src, "<!--lem:"));
-        assert!(msgs[0].starts_with(&expected), "{msgs:?}");
+        // A code block's sentinel too, which would otherwise mark a range of the author's
+        // choosing: `<!--lem:` is reserved wherever it is written in the prose.
+        for src in [
+            "x\n\n<!--lem:0-->\n\n<lem.y>\n",
+            "x\n\n<!--lem:code:0--><pre><code></code></pre>\n",
+        ] {
+            let msgs = messages(render(src));
+            let expected =
+                format!("doc.md:{}: `<!--lem:` is reserved", at(src, "<!--lem:"));
+            assert!(msgs[0].starts_with(&expected), "{msgs:?}");
+        }
     }
 }

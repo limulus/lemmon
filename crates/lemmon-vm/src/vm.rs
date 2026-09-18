@@ -21,7 +21,7 @@ use lemmon_syntax::Span;
 
 use crate::builtins::{self, BUILTINS, Fault, Machine, ReceiverKind};
 use crate::bytecode::{Function, MarkKey, MarkPayload, Module, Op};
-use crate::rendered::{Buffer, Fragment, Fragments, Mark, Marked, Rendered};
+use crate::rendered::{Buffer, Fragment, Fragments, Mark, Marked, Payload, Rendered};
 use crate::value::{Closure, Map};
 use crate::{RuntimeError, Value};
 
@@ -526,9 +526,13 @@ impl<'a> Vm<'a> {
                 let captured = self.out.pop().expect("a capture buffer");
                 self.stack.push(captured.into_value());
             }
-            Op::Mark { name, key, payload } => {
-                // The default is on top and the payload beneath it, which is the order
-                // the compiler lowered them in.
+            Op::Mark {
+                name,
+                key,
+                payload: carried,
+            } => {
+                // The default is on top and a popped payload beneath it, which is the
+                // order the compiler lowered them in.
                 let text = match self.pop() {
                     Value::Html(text) => text,
                     Value::Marked(_) => {
@@ -545,11 +549,11 @@ impl<'a> Vm<'a> {
                         .into());
                     }
                 };
-                let payload = match payload {
-                    MarkPayload::None => None,
+                let value = match carried {
                     MarkPayload::Popped => Some(self.pop()),
+                    MarkPayload::None | MarkPayload::Reported { .. } => None,
                 };
-                if let Some(payload) = &payload {
+                if let Some(payload) = &value {
                     if payload.carries_a_mark() {
                         return Err("a mark cannot stand inside a payload".into());
                     }
@@ -572,7 +576,7 @@ impl<'a> Vm<'a> {
                     // literal string does too, so the two paths key alike.
                     MarkKey::Field { index } => {
                         let field = self.constant_str(index);
-                        match payload.as_ref().and_then(|value| match value {
+                        match value.as_ref().and_then(|payload| match payload {
                             Value::Record(record) => record.fields.get(field),
                             Value::Map(map) => map.get(field),
                             _ => None,
@@ -580,6 +584,13 @@ impl<'a> Vm<'a> {
                             Some(Value::Str(key)) => Some(key.clone()),
                             _ => None,
                         }
+                    }
+                };
+                let payload = match carried {
+                    MarkPayload::None => None,
+                    MarkPayload::Popped => value.map(Payload::Value),
+                    MarkPayload::Reported { index } => {
+                        Some(Payload::Reported(self.constant_name(index).clone()))
                     }
                 };
                 let name = self.constant_name(name).clone();

@@ -3,8 +3,8 @@
 Lemmon is a static site generator and a typed, tag-based template language. A
 Node/TypeScript **shell** owns files, processes, plugins, and the dev server; a Rust
 **core** (scanner → parser → bytecode compiler that checks as it lowers → VM, plus comrak
-for markdown and syntect for code highlighting) is compiled to WebAssembly and does
-everything deterministic. Distributed via npm; open source.
+for markdown, its code blocks left as marks for the shell's highlighters) is compiled to
+WebAssembly and does everything deterministic. Distributed via npm; open source.
 Its first production site is limulus.net, which it will take over from Eleventy + WebC once
 a parity harness shows zero unexpected output diffs.
 

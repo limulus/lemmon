@@ -406,12 +406,6 @@ fn relative(path: &Path) -> PathBuf {
 mod tests {
     use super::*;
 
-    /// Where a file the cases compile *with* stands, rather than a case, and the extension
-    /// it carries: the grammars the `document/` host declares, which its code blocks are
-    /// highlighted by. A fixture has no expectations of its own; what it does shows in
-    /// the cases that use it, and one anywhere else is used by nothing.
-    const FIXTURES: &[(&str, &str)] = &[("document/grammars", "sublime-syntax")];
-
     /// Everything under `dir` that is not an input, a known expectation belonging to
     /// one, or the README, as one message each — so a renamed case cannot leave its old
     /// expectations behind.
@@ -428,14 +422,8 @@ mod tests {
             if path.file_name().is_some_and(|n| n == "README.md") {
                 return;
             }
-            let fixture = |ext: &str| {
-                let parent = path.parent().and_then(|p| p.strip_prefix(dir).ok());
-                FIXTURES
-                    .iter()
-                    .any(|&(at, fixture)| ext == fixture && parent == Some(Path::new(at)))
-            };
             match path.extension().and_then(|e| e.to_str()) {
-                Some(ext) if is_input(ext) || fixture(ext) => {}
+                Some(ext) if is_input(ext) => {}
                 Some(ext) if EXPECTATIONS.contains(&ext) => {
                     if !INPUTS.iter().any(|i| path.with_extension(i).exists()) {
                         problems.push(format!("{shown}: expectation with no input"));
@@ -705,13 +693,10 @@ mod tests {
     /// A corpus tree with one file of each shape `orphans_in` has an opinion about.
     fn broken_corpus() -> tempfile::TempDir {
         let dir = tempfile::tempdir().expect("temp dir");
-        fs::create_dir_all(dir.path().join("document/grammars")).expect("mkdir");
         for name in [
             "README.md",
             "kept.lem",
             "kept.cst",
-            "document/grammars/grammar.sublime-syntax",
-            "stray.sublime-syntax",
             "renamed-away.cst",
             "notes.txt",
             "Makefile",
@@ -752,7 +737,7 @@ mod tests {
     }
 
     #[test]
-    fn accepts_an_input_its_readme_a_fixture_and_an_expectation_that_has_one() {
+    fn accepts_an_input_its_readme_and_an_expectation_that_has_one() {
         let dir = broken_corpus();
         let problems = orphans_in(dir.path());
         assert!(
@@ -760,24 +745,7 @@ mod tests {
             "{problems:?}"
         );
         assert!(
-            !problems.iter().any(|p| p.starts_with("document")),
-            "{problems:?}"
-        );
-        assert!(
             !problems.iter().any(|p| p.starts_with("README")),
-            "{problems:?}"
-        );
-    }
-
-    #[test]
-    fn reports_a_fixture_outside_the_directory_that_uses_it() {
-        let dir = broken_corpus();
-        let problems = orphans_in(dir.path());
-        assert!(
-            problems.contains(
-                &"stray.sublime-syntax: `.sublime-syntax` is not a corpus extension"
-                    .to_owned()
-            ),
             "{problems:?}"
         );
     }

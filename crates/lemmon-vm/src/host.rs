@@ -16,7 +16,6 @@ use std::rc::Rc;
 
 use lemmon_syntax::nearest;
 
-use crate::document::Grammars;
 use crate::types::Type;
 
 /// What a host binds one ambient name to.
@@ -108,12 +107,6 @@ pub struct Host {
     /// makes a manifest change a *declaration* change to the derived `PartialEq`, which
     /// is what the resident `Core` compares to decide whether a recompile is needed.
     assets: Vec<(Rc<str>, Rc<str>)>,
-    /// The grammars a document's code is highlighted with, as `.sublime-syntax` text
-    /// (D40); `None` for a host that asks for no highlighting, which leaves every code
-    /// block as comrak writes it. On the declaration for the manifest's reason: prose
-    /// renders while compiling, so the grammars are consumed there, and a document
-    /// records the set it was highlighted against.
-    grammars: Option<Grammars>,
     /// What the host's handlers claim (D42), by mark name; `None` for a host that
     /// declares no handlers at all — a playground, an editor — which is silent about
     /// every name rather than warning at each. On the declaration for the manifest's
@@ -199,9 +192,9 @@ impl Claim {
 /// This is the whole of what compiling a `mark()` or a code block consumes of a claim —
 /// the warning at a name, the warning at a key, and the record a payload is checked
 /// against all read it and nothing else — which is why it is also what the unit records
-/// as its fact ([`ClaimRef`](crate::ClaimRef)). The one thing it leaves out is the key
-/// list a did-you-mean is drawn from, so that text can go stale where the answer itself
-/// did not change.
+/// as its fact ([`Unit::claim_refs`](crate::Unit::claim_refs)). The one thing it leaves
+/// out is the key list a did-you-mean is drawn from, so that text can go stale where the
+/// answer itself did not change.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ClaimAnswer {
     /// The host declares no handlers, so it says nothing about any name.
@@ -293,35 +286,6 @@ impl Host {
         self.assets.iter().map(|(path, _)| &**path)
     }
 
-    /// Declares the grammars code is highlighted with, as `(path, .sublime-syntax text)`
-    /// pairs. Where two declare the same scope, language, or name, the later one wins,
-    /// so grammars a site adds after a default set take precedence over it.
-    ///
-    /// Replaces any already declared, as [`with_assets`](Self::with_assets) does. An
-    /// empty list still asks for highlighting — and so for a warning at every language
-    /// no grammar answers — where a host that never calls this asks for none.
-    #[must_use]
-    pub fn with_grammars<'a>(
-        mut self,
-        grammars: impl IntoIterator<Item = (&'a str, &'a str)>,
-    ) -> Self {
-        self.grammars = Some(Grammars::new(grammars));
-        self
-    }
-
-    /// This declaration, holding `previous`'s grammars where the two declare the same
-    /// ones: a resident core handed a new declaration — a rebuild that re-hashed an
-    /// asset, say — then keeps the set it already parsed instead of parsing every grammar
-    /// again at the next code block. Equal either way, so nothing a comparison of the
-    /// two declarations decides changes.
-    #[must_use]
-    pub fn keeping_grammars_of(mut self, previous: &Self) -> Self {
-        if self.grammars.is_some() && self.grammars == previous.grammars {
-            self.grammars.clone_from(&previous.grammars);
-        }
-        self
-    }
-
     /// Declares the mark names the host's handlers claim, each carrying nothing beyond
     /// being made — as the shell's default plugin claims `styles`, `scripts` and `head`
     /// (D42).
@@ -380,17 +344,6 @@ impl Host {
     /// did-you-mean is drawn from.
     pub fn claimed_names(&self) -> impl Iterator<Item = &str> {
         self.marks.iter().flatten().map(|(name, _)| &**name)
-    }
-
-    /// The grammars the host declared, if it asked for highlighting.
-    pub(crate) const fn grammars(&self) -> Option<&Grammars> {
-        self.grammars.as_ref()
-    }
-
-    /// What a document highlighted against this declaration records: a digest of the
-    /// grammars, or `None` where the host declared none.
-    pub(crate) fn grammar_digest(&self) -> Option<u64> {
-        self.grammars.as_ref().map(Grammars::digest)
     }
 
     /// How `name` is bound where this is read, if the host names it at all: the
@@ -504,7 +457,6 @@ impl Host {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testing::GRAMMARS;
 
     fn shell() -> Host {
         Host::new()
@@ -545,27 +497,6 @@ mod tests {
         let rebuilt = built().with_assets([("styles/site.css", "/site.999.css")]);
         assert_eq!(rebuilt.asset("styles/site.css"), Some("/site.999.css"));
         assert_eq!(rebuilt.asset("scripts/gallery.js"), None);
-    }
-
-    #[test]
-    fn keeps_the_grammars_it_parsed_for_a_declaration_that_repeats_them() {
-        let before = Host::new().with_grammars(GRAMMARS.iter().copied());
-        before.grammars().unwrap().lookup("sh");
-        let rebuilt = built()
-            .with_grammars(GRAMMARS.iter().copied())
-            .keeping_grammars_of(&before);
-        assert!(rebuilt.grammars().unwrap().is_parsed());
-        // Other grammars are parsed afresh, and a host that declares none keeps none.
-        let other = Host::new()
-            .with_grammars([GRAMMARS[0]])
-            .keeping_grammars_of(&before);
-        assert!(!other.grammars().unwrap().is_parsed());
-        assert!(
-            Host::new()
-                .keeping_grammars_of(&before)
-                .grammars()
-                .is_none()
-        );
     }
 
     #[test]

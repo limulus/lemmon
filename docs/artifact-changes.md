@@ -195,13 +195,15 @@ moved it. Newest last. An entry is removed when its change has been applied.
 
 - **Document mode, comrak configuration** — replace "syntect highlighting (class-based,
   generated theme CSS)" with a Code blocks subsection as `docs/language.md` § Code blocks
-  now reads: a block's language is the first word of its info string; every code block is
-  a `code` mark keyed by that word, the whole `<pre><code class="language-x">` element its
-  default content and the info string and code its payload; a producer the host declares
-  for the key replaces the element after render and a decorator may wrap it; a language
-  no producer claims is a warning at the word, with a did-you-mean, while compiling; the
-  claims for `code` are the document's compile-time fact; a `math` fence is a code block;
-  the core embeds no grammars and no theme (D42, superseding D40).
+  now reads: a block's language is the first word of its info string; every code block
+  but a `math` fence is a `code` mark keyed by that word, the whole
+  `<pre><code class="language-x">` element its default content and the info string and
+  code its payload, reported once by a hash of the two; a producer the host declares for
+  the key replaces the element after render and a decorator may wrap it; a language no
+  producer claims is a warning at the word, with a did-you-mean, while compiling; what
+  the claims said about that word is the document's compile-time fact; a `math` fence is
+  comrak's own block and no mark, since comrak renders it before consulting any seam; the
+  core embeds no grammars and no theme (D42, superseding D40; ∆7wK).
 
 - **Tags, Names, and Ambient types: page templates** — remove the `lem-page` row. Where
   the text describes page templates, say a `.lem` file is a page when it opens with front
@@ -421,9 +423,10 @@ moved it. Newest last. An entry is removed when its change has been applied.
 
 - **Crates, Markdown row** — drop syntect and `two-face` from the row and every "comrak +
   syntect adds ~1 MB" sentence: the core embeds no highlighter. comrak's code-block
-  adapter is the core's own, recording a `code` mark per block. Keep the measurement as
-  the reason: syntect alone grew the staged `.wasm` from 2.12 MB to 4.10 MB (D42; ∆7wK
-  removes it).
+  adapter is the core's own, writing comrak's own markup behind a sentinel so each block
+  becomes a `code` mark. Keep the measurement as the reason: removing syntect took the
+  staged `.wasm` from 4.21 MB to 2.26 MB (D42, ∆7wK). Add `siphasher` for the payload
+  id, a fixed SipHash-1-3 so a host's cache survives a new build of the core.
 
 - **Highlighter seam** — where the text says syntect highlights code fences, say a code
   block is a `code` mark: the page holds comrak's plain escaped block, and the host's

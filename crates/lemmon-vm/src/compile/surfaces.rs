@@ -20,10 +20,10 @@ use lemmon_syntax::{DocumentParse, Parse, Span, parse_document};
 
 use crate::SourceFile;
 use crate::decls::{Declaration, FieldDecl, Shape};
-use crate::document;
+use crate::document::{self, CodePayload, Piece};
 use crate::host::Host;
 use crate::types::Type;
-use crate::unit::{ExportedSignature, GrammarRef, ImportRef, Param};
+use crate::unit::{ExportedSignature, ImportRef, Param};
 
 use super::annotations::Reserved;
 use super::names::Names;
@@ -38,10 +38,11 @@ pub struct PreparedFile {
     /// Where the host says the record was named, when it can say.
     record_span: Option<Span>,
     pub(super) source: ParsedFile,
-    /// A document's prose, rendered by comrak here so markdown never runs later.
-    pub(super) chunks: Option<Vec<String>>,
-    /// The grammars that prose's code was highlighted against, when it names a language.
-    pub(super) grammar_ref: Option<GrammarRef>,
+    /// A document's prose, rendered by comrak here so markdown never runs later: one
+    /// run of text and code blocks per gap between its lem-blocks.
+    pub(super) chunks: Option<Vec<Vec<Piece>>>,
+    /// What that prose's code blocks hand their producers (D42).
+    pub(super) payloads: Vec<CodePayload>,
     pub(super) exports: Vec<ExportedSignature>,
     pub(super) types: Vec<Declaration>,
     /// Every declared type name the signatures and declarations use, where it is
@@ -113,14 +114,11 @@ pub fn prepare(file: &SourceFile, host: &Host) -> Result<PreparedFile, Vec<Diagn
     // Prose is rendered before anything is lowered, and a document markdown rejected
     // fails the file the way a parse error does: its blocks may be fine, but where
     // their output would go is not known.
-    let (chunks, grammar_ref) = match &source {
-        ParsedFile::Template(_) => (None, None),
+    let (chunks, payloads) = match &source {
+        ParsedFile::Template(_) => (None, Vec::new()),
         ParsedFile::Document(doc) => {
-            match document::render_prose(&file.path, &file.text, doc, host) {
-                Ok(prose) => {
-                    diagnostics.extend(prose.warnings);
-                    (Some(prose.chunks), prose.grammar_ref)
-                }
+            match document::render_prose(&file.path, &file.text, doc) {
+                Ok(prose) => (Some(prose.chunks), prose.payloads),
                 Err(errors) => {
                     diagnostics.extend(errors);
                     return Err(diagnostics);
@@ -150,7 +148,7 @@ pub fn prepare(file: &SourceFile, host: &Host) -> Result<PreparedFile, Vec<Diagn
         record_span: file.record_span,
         source,
         chunks,
-        grammar_ref,
+        payloads,
         exports,
         types,
         type_uses,

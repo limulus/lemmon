@@ -42,12 +42,10 @@ hidden. `render/` and `document/` deliberately keep an untyped host, which names
 three values and types none: that is a host a site really has (the Phase 0 spike's), and
 what any document no collection matched sees.
 
-That host also declares the grammars in `document/grammars/`, which highlight the code
-blocks of every `document/` case (D40). They are fixtures, not cases: `.sublime-syntax`
-files with no expectations of their own, written small — a shell, CSS, and an HTML that
-embeds the CSS — so that a highlighted block's `.html` can be read span by span against
-the fence it came from. A real grammar would bury that reading, and would carry its own
-licence into the repo. `document/fences/` holds the cases about highlighting itself.
+Every code block a document writes, but a `math` fence, is a `code` mark over the block
+as comrak writes it (D42), so `document/fences/` holds the cases about code blocks: which
+are marked, what key and payload each carries, and where a language no producer covers
+warns.
 
 There is no `ok/` versus `broken/` split. Whether a case parses clean is _data_: its
 diagnostics section is empty. That keeps a case in the directory that says what it tests
@@ -89,6 +87,16 @@ fragments in the order the render first reached them — which is also where ded
 component called three times leaves one section. The sections sit above the diagnostics
 trailer, which is found by its last `--- diagnostics` line, so fragment text never reads
 as one. The notation exists only here; nothing in the core writes it.
+
+### Payloads in a render
+
+A code block's mark carries only the id of its payload, `⟦mark code sh #4429e5aa07a9b5e3⟧`,
+since the payload was reported when the document compiled (D42). So an `.html`
+expectation resolves each id under a `--- payloads` line after the fragments: one line per
+payload the page's marks name, in the order it first names each — `#id {language: …,
+info: …, code: …}` — which is also where dedup shows, as two marks naming one id. The ids
+are hashes of the content, so a change to how they are computed moves every one of them
+here, which is what should happen: a host's cache is keyed on them.
 
 ### Positions in a trailer
 

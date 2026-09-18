@@ -9,8 +9,7 @@ publish.workspace = true
 [dependencies]
 lemmon-syntax = { path = "../lemmon-syntax" }
 comrak = { workspace = true }
-syntect = { workspace = true }
-yaml-rust = { workspace = true }
+siphasher = { workspace = true }
 unicode-normalization = { workspace = true }
 unicode-segmentation = { workspace = true }
 jiff = { workspace = true }

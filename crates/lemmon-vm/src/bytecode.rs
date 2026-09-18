@@ -12,6 +12,7 @@ use lemmon_syntax::Span;
 
 use crate::Value;
 use crate::decls::{Declaration, Decls, Shape};
+use crate::document::CodePayload;
 use crate::plan::{Bindings, RecordPlan};
 use crate::types::Type;
 
@@ -169,6 +170,9 @@ pub enum MarkPayload {
     None,
     /// A record on the stack, beneath the default.
     Popped,
+    /// A payload the document reported when it compiled, named by the id at
+    /// `constants[index]` — a code block's, whose content is fixed at compile time.
+    Reported { index: u32 },
 }
 
 /// A compiled function: a `lem-fn`, a lambda, or a file's top-level items.
@@ -250,6 +254,11 @@ pub struct Module {
     /// One plan per ambient value the host reads from a file the program has, in the
     /// host's declaration order.
     pub bindings: Vec<Bindings>,
+    /// What the program's documents hand the host's producers for their code blocks, one
+    /// per distinct block, in file order and then the order each document first writes
+    /// one (D42). The host looks a code mark's payload up here by its id; the VM never
+    /// reads it.
+    pub payloads: Vec<CodePayload>,
 }
 
 impl Module {

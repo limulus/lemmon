@@ -2,10 +2,9 @@
 //!
 //! comrak renders most of a document itself; what it cannot do is supplied here through
 //! the adapter traits it exposes, and passed to it as `Plugins` by
-//! [`render_prose`](super::render_prose). Here that is heading ids; code highlighting,
-//! which answers to the host's grammars, is a module of its own,
-//! [`highlight`](super::highlight). Options comrak *does* honour belong with the splice
-//! they constrain, in [`super`], not here.
+//! [`render_prose`](super::render_prose). Here that is heading ids; the seam that marks
+//! every code block is a module of its own, [`code`](super::code). Options comrak *does*
+//! honour belong with the splice they constrain, in [`super`], not here.
 
 use std::collections::HashSet;
 use std::fmt;
@@ -102,8 +101,13 @@ mod tests {
     /// nothing about the HTML a document actually gets.
     fn render(src: &str) -> Result<Vec<String>, Vec<Diagnostic>> {
         let doc = lemmon_syntax::parse_document(src);
-        super::super::render_prose("doc.md", src, &doc, &crate::Host::new())
-            .map(|prose| prose.chunks)
+        super::super::render_prose("doc.md", src, &doc).map(|prose| {
+            prose
+                .chunks
+                .iter()
+                .map(|pieces| pieces.iter().map(super::super::Piece::text).collect())
+                .collect()
+        })
     }
 
     #[test]

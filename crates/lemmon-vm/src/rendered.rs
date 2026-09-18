@@ -25,8 +25,8 @@ pub struct Mark {
     /// What the handlers for that name are dispatched on, where the claim keys them: a
     /// code block's language word, or the payload field a `mark()` call filled (D42).
     pub key: Option<Rc<str>>,
-    /// What the handler is given beside the range, where the claim takes one.
-    pub payload: Option<Value>,
+    /// What the handler is given beside the range, where there is anything to give.
+    pub payload: Option<Payload>,
     pub start: u32,
     pub end: u32,
     /// The file the `mark()` call stands in: an index into
@@ -35,6 +35,16 @@ pub struct Mark {
     pub file: u32,
     /// The call, so that a handler's diagnostic can point at source (invariant 8).
     pub span: Span,
+}
+
+/// What a mark carries for its handler (D42).
+#[derive(Clone, Debug, PartialEq)]
+pub enum Payload {
+    /// A record the `mark()` call built, carried with the mark.
+    Value(Value),
+    /// A payload the document reported when it compiled — a code block's — named by its
+    /// id, so that nothing about the code crosses per render.
+    Reported(Rc<str>),
 }
 
 /// Equality is what `==` on `html` asks: two marks that would place the same content in

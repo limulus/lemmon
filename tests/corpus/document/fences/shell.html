@@ -1,9 +1,11 @@
 <h1 id="keeping-a-branch-private">Keeping a branch private</h1>
 <p>Git still pushes the branch unless the config says otherwise:</p>
-<pre><code class="language-bash"><span class="syn-source syn-shell"><span class="syn-comment syn-line syn-number-sign"># keep the notes branch off the remote</span>
+⟦mark code bash #2b5b86c383af4de9⟧<pre><code class="language-bash"># keep the notes branch off the remote
 git config branch.notes.pushRemote no_push
-<span class="syn-keyword syn-control">if</span> git diff --quiet; <span class="syn-keyword syn-control">then</span> echo <span class="syn-string syn-quoted syn-double"><span class="syn-punctuation syn-definition syn-string syn-begin">&quot;</span>clean<span class="syn-punctuation syn-definition syn-string syn-end">&quot;</span></span>; <span class="syn-keyword syn-control">fi</span>
-</span></code></pre>
+if git diff --quiet; then echo &quot;clean&quot;; fi
+</code></pre>⟦/mark⟧
 <p>Nothing else changes.</p>
 
+--- payloads
+#2b5b86c383af4de9 {language: "bash", info: "bash", code: "# keep the notes branch off the remote\ngit config branch.notes.pushRemote no_push\nif git diff --quiet; then echo \"clean\"; fi\n"}
 --- diagnostics

@@ -1,10 +1,13 @@
 <p>A typo in the language:</p>
-<pre><code class="language-bsah">echo &quot;hello&quot;
-</code></pre>
-<p>And a language the host has no grammar for:</p>
-<pre><code class="language-lem">&lt;lem.page.title&gt;
-</code></pre>
+⟦mark code bsah #c6e477fdb3005682⟧<pre><code class="language-bsah">echo &quot;hello&quot;
+</code></pre>⟦/mark⟧
+<p>And a language no producer claims:</p>
+⟦mark code lem #071ec7203561aef3⟧<pre><code class="language-lem">&lt;lem.page.title&gt;
+</code></pre>⟦/mark⟧
 
+--- payloads
+#c6e477fdb3005682 {language: "bsah", info: "bsah", code: "echo \"hello\"\n"}
+#071ec7203561aef3 {language: "lem", info: "lem", code: "<lem.page.title>\n"}
 --- diagnostics
-document/fences/unknown-language.md:3:4..3:8: warning: the host declares no grammar for `bsah`; did you mean `bash`?
-document/fences/unknown-language.md:9:4..9:7: warning: the host declares no grammar for `lem`, so this code is not highlighted
+document/fences/unknown-language.md:3:4..3:8: warning: no producer claims `bsah` for `code`; did you mean `bash`?
+document/fences/unknown-language.md:9:4..9:7: warning: no producer claims `lem` for `code`, so this mark keeps its default content

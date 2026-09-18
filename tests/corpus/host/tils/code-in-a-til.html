@@ -1,0 +1,10 @@
+<p>A branch a public repo should never see can live in a private fork, added as a second
+remote with the branch's push remote pointed at it:</p>
+⟦mark code bash #1420ee1be0bf9872⟧<pre><code class="language-bash">git remote add drafts git@github.com:limulus/drafts.git
+git config branch.notes.pushRemote drafts
+</code></pre>⟦/mark⟧
+12
+
+--- payloads
+#1420ee1be0bf9872 {language: "bash", info: "bash", code: "git remote add drafts git@github.com:limulus/drafts.git\ngit config branch.notes.pushRemote drafts\n"}
+--- diagnostics

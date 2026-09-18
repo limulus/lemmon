@@ -41,15 +41,16 @@ pub use compile::{
 };
 pub use datetime::Datetime;
 pub use decls::{DeclKind, Declaration, Decls, FieldDecl, Shape, ShapeFact, TypeFact};
+pub use document::CodePayload;
 pub use exports::{Export, ExportIndex, TypeExport};
 pub use host::{Ambient, Claim, ClaimAnswer, Host};
 pub use load::{Data, HostSpan, Loaded, Source, Spans, Store, collects, field_path, load};
 pub use plan::{BindingStep, Bindings, Fulfilled, Index, RecordPlan, SourceKind, Step};
-pub use rendered::{Fragment, Fragments, Mark, Marked, Rendered};
+pub use rendered::{Fragment, Fragments, Mark, Marked, Payload, Rendered};
 pub use types::Type;
 pub use unit::{
-    Access, BindingFn, Call, DefaultFn, ExportedSignature, GrammarRef, ImportRef,
-    ImportedSignature, IndexDecl, Param, Root, Supplied, Unit, Uses, link,
+    Access, BindingFn, Call, DefaultFn, ExportedSignature, ImportRef, ImportedSignature,
+    IndexDecl, Param, Root, Supplied, Unit, Uses, link,
 };
 pub use value::{Closure, Map, Value};
 pub use vm::{invoke, render};

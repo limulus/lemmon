@@ -4,7 +4,7 @@ A typo in the language:
 echo "hello"
 ```
 
-And a language the host has no grammar for:
+And a language no producer claims:
 
 ```lem
 <lem.page.title>

@@ -144,46 +144,6 @@ fn renders_blocks_nested_to_the_parser_cap_without_trapping() {
     );
 }
 
-/// Highlighting runs on the pinned stack too, over code an author controls: a fence of
-/// many lines, one very long line, and brackets nested thousands deep, each a push onto
-/// syntect's context stack and a span the HTML nests. syntect keeps both stacks on the
-/// heap, and this is what shows it does under the real wasm32 build — a trap here would
-/// leave the worker's instance unusable (D40).
-#[wasm_bindgen_test]
-fn highlights_large_long_and_deeply_nested_code_without_trapping() {
-    let grammar = "name: Nest\nscope: source.nest\nfile_extensions: [nest]\ncontexts:\n  \
-                   main:\n    - match: '\\('\n      push: group\n    \
-                   - match: '\"[^\"]*\"'\n      scope: string\n  group:\n    \
-                   - meta_scope: meta.group\n    - match: '\\)'\n      pop: true\n    \
-                   - include: main\n";
-    let host = serde_json::json!({
-        "ambient": {"site": null, "page": null, "build": null},
-        "grammars": [{"path": "nest.sublime-syntax", "text": grammar}],
-    })
-    .to_string();
-    let code = [
-        "(\"many lines\")\n".repeat(20_000),
-        format!("{}\n", "\"a\" ".repeat(25_000)),
-        format!("{}{}\n", "(".repeat(5_000), ")".repeat(5_000)),
-    ]
-    .concat();
-    let text = format!("```nest\n{code}```\n");
-    let files = serde_json::json!([{"path": "big.md", "text": text}]).to_string();
-    let mut core = Core::new();
-    let diagnostics = core
-        .compile(&files, Some(host))
-        .expect("a well-formed compile payload");
-    assert_eq!(diagnostics, "[]");
-    core.load_data(r#"{"ambient": {}}"#)
-        .expect("a well-formed loadData payload");
-    let (_, page) = decode(
-        &core
-            .render(r#"{"path": "big.md"}"#)
-            .expect("a compiled page renders"),
-    );
-    assert!(page.contains("syn-meta syn-group"), "a highlighted page");
-}
-
 /// A load crosses with the host's positions and its diagnostics come back placed by
 /// them: the data file was never compiled, so nothing but the carried range could
 /// place an error in it (D37). An envelope the program cannot be loaded from throws.
