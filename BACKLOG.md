@@ -28,8 +28,8 @@ further at claim time.
 - ∆7wK Code marks — every code block a `code` mark keyed by its language word, the whole
   `<pre>` its default content, its payload (language, info, code) reported at compile by
   content hash and referenced by id; `mark()` gains a payload typed by the record a claim
-  names, claims gain keys, the shell's `ambient.lem` declares `Code`; syntect, the grammars
-  on the declaration, and the grammar digest fact leave the core (D42); needs: ∆1Hp
+  names, claims gain keys, the shell's `ambient.lem` declares `Code`; syntect and the
+  grammars leave the core (D42). Planned in `docs/plans/∆7wK-code-marks.md`; needs: ∆1Hp
 - ∆Bhz Pages render through their layout — a `.lem` file's leading `---` block is front
   matter; page templates load as documents do, and a page typed by `type:` alone loads
   from a new `pages` envelope section; `render` calls a page's layout with its record and
