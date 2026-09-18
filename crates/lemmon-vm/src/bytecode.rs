@@ -214,17 +214,19 @@ pub struct Declared {
     pub decl: Declaration,
 }
 
-/// What a document is to the loader: the record the host compiled it as, where that
-/// was named, and its prose as rendered — what `body` is in a default (D37).
+/// What a page-shaped file — a document, or a template with front matter (D41) — is to
+/// the loader: the record the host compiled it as, where that was named, and a
+/// document's prose as rendered, which is what `body` is in a default (D37).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Document {
-    /// The record this document's content is, if the host named one (D30).
+    /// The record this page's content is, if the host named one (D30).
     pub record: Option<Rc<str>>,
     /// Where the record was named: the `type:` key's value when the host said, else
     /// the front matter.
     pub record_span: Span,
-    /// The prose, rendered, with what the document's blocks would emit absent.
-    pub body: Rc<str>,
+    /// The prose, rendered, with what the document's blocks would emit absent. `None`
+    /// for a page template, which has no prose: its body is what it renders.
+    pub body: Option<Rc<str>>,
 }
 
 /// A compiled program: every file of a site, sharing one constant pool.
@@ -234,8 +236,9 @@ pub struct Module {
     pub files: Vec<String>,
     /// The entry function of each file, parallel to `files`.
     pub entries: Vec<u32>,
-    /// What each file is to the loader, parallel to `files`: a document's record and
-    /// rendered prose, or `None` for a template.
+    /// What each file is to the loader, parallel to `files`: a page-shaped file's
+    /// record, with its rendered prose when it is a document; `None` for a template
+    /// with no front matter, which is no page.
     pub documents: Vec<Option<Document>>,
     /// Literals, text runs, and names.
     pub constants: Vec<Value>,
@@ -303,7 +306,8 @@ impl Module {
         self.files.iter().position(|p| p == path)
     }
 
-    /// What the file at `path` is to the loader, if it is a document the module has.
+    /// What the file at `path` is to the loader, if it is a page-shaped file the module
+    /// has.
     #[must_use]
     pub fn document(&self, path: &str) -> Option<&Document> {
         self.file(path).and_then(|i| self.documents[i].as_ref())
@@ -406,7 +410,7 @@ mod tests {
                 Some(Document {
                     record: Some(Rc::from("Article")),
                     record_span: Span::new(4, 11),
-                    body: Rc::from("<p>b</p>\n"),
+                    body: Some(Rc::from("<p>b</p>\n")),
                 }),
             ],
             exports: vec![Exported {

@@ -1,0 +1,9 @@
+---
+title: A page no collection matched
+---
+<a href="<lem.page.url>"><lem.site.tagline></a>
+
+A template with front matter is a page, and one no glob matched and no `type:` named has
+no schema: `page` is unknown-typed and the file renders — a field nothing declares is the
+VM's to find (D30). The front matter loads nothing, so `page.title` here would be the
+envelope's value, not the one above.

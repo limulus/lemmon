@@ -376,7 +376,12 @@ impl DataInput {
             };
             sources.push((name, source));
         }
-        Ok(Data { ambient, sources })
+        // A page no glob holds is not here yet (∆Bhz): the wire carries none.
+        Ok(Data {
+            ambient,
+            sources,
+            pages: Vec::new(),
+        })
     }
 }
 

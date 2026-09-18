@@ -1,0 +1,7 @@
+<lem-fn card(title: string)>
+  <div class="card"><lem.title></div>
+</lem-fn>
+
+<lem-style>
+  .card { border: 1px solid }
+</lem-style>

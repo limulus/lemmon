@@ -148,7 +148,8 @@ pub fn compile_unit(
     index: &ExportIndex,
     host: &Host,
 ) -> Compiled<Unit> {
-    let seen = host.for_file(&prepared.path, prepared.record.as_deref());
+    let page_shaped = prepared.source.page_shaped();
+    let seen = host.for_file(page_shaped, prepared.record.as_deref());
     let mut compiler = Compiler {
         path: &prepared.path,
         unit: Unit {
@@ -164,6 +165,7 @@ pub fn compile_unit(
             asset_refs: Vec::new(),
             claim_refs: Vec::new(),
             record: prepared.record.clone(),
+            page_shaped,
             defaults: Vec::new(),
             indexes: Vec::new(),
             bindings: Vec::new(),
@@ -180,6 +182,9 @@ pub fn compile_unit(
         index,
         host,
         exports_bindings: host.binds_from(&prepared.path),
+        // Only a host that types its documents has pages at all; a playground or the
+        // untyped spike renders whatever it is handed, and is told nothing.
+        warns_output: !page_shaped && host.document_type().is_some(),
         names: Names::new(&prepared.path, Some(index), &seen),
         diagnostics: prepared.diagnostics.clone(),
         ctxs: Vec::new(),
@@ -278,6 +283,10 @@ struct Compiler<'a> {
     /// Whether this file's top-level bindings are an ambient value's fields (D30) —
     /// which makes each of them a surface the project reads, not a local.
     exports_bindings: bool,
+    /// Whether output at this file's top level is warned about: a template with no
+    /// front matter is no page, so under a host that renders pages its entry never
+    /// runs, and a `lem-style` or a text run there silently never renders.
+    warns_output: bool,
     /// Every name the file binds and everything a name may mean; its frames mirror
     /// `ctxs`.
     names: Names<'a>,
@@ -297,15 +306,26 @@ struct Compiler<'a> {
     top_bindings: Vec<(Rc<str>, Span)>,
 }
 
+/// The binders of the implicit names a function the loader may run takes: the `self`
+/// of a default, and the `body` of one on a page-backed record. Matched by binder and
+/// not by name, since a lambda parameter may be called `body` too.
+#[derive(Clone, Copy, Default)]
+struct Implicit {
+    self_binder: Option<Span>,
+    body_binder: Option<Span>,
+}
+
 /// The reads and calls of a function the loader may run, being collected.
 struct Collecting {
     /// What the loader runs this function as, when it runs it itself — which decides
     /// the ambient values it may read ([`refused_at_load`]); `None` for a `lem-fn`,
     /// which runs at render too and may read them all.
     runs: Option<Runs>,
-    /// The `self` of a default, by its binder — what tells a read of the record
-    /// being built from any other.
-    self_binder: Option<Span>,
+    /// The `self` and `body` of a default, by binder — what tells a read of the
+    /// record being built, or of the page's body, from any other.
+    implicit: Implicit,
+    /// Where `body` was first read, when it was.
+    body_read: Option<Span>,
     /// A `lem-fn`'s parameters, by binder, in declaration order.
     params: Vec<Span>,
     uses: Uses,
@@ -314,7 +334,7 @@ struct Collecting {
 impl Collecting {
     /// The root the local `binder` is, if it is one.
     fn root(&self, binder: Span) -> Option<Root> {
-        if self.self_binder == Some(binder) {
+        if self.implicit.self_binder == Some(binder) {
             return Some(Root::Own);
         }
         self.params
@@ -382,18 +402,19 @@ impl<'a> Compiler<'a> {
             // A `lem-fn` runs at render as much as at load, so its body may read the
             // host's document value; what it reads is noted for the link step to
             // close through the calls that reach it from a loader-run function (∆HF0).
-            let uses = self.collecting(None, None, binders, |c| match &item {
-                Item::FnBlock(f) => {
-                    let body = required(f.body());
-                    c.emit(Op::Capture, f.span());
-                    c.lower_block(body.items().collect(), BodyKind::Value);
-                    c.emit(Op::EndCapture, f.span());
-                }
-                Item::FnVoid(f) => {
-                    c.check(&required(f.value()), &ret);
-                }
-                _ => unreachable!("only functions reach here"),
-            });
+            let uses =
+                self.collecting(None, Implicit::default(), binders, |c| match &item {
+                    Item::FnBlock(f) => {
+                        let body = required(f.body());
+                        c.emit(Op::Capture, f.span());
+                        c.lower_block(body.items().collect(), BodyKind::Value);
+                        c.emit(Op::EndCapture, f.span());
+                    }
+                    Item::FnVoid(f) => {
+                        c.check(&required(f.value()), &ret);
+                    }
+                    _ => unreachable!("only functions reach here"),
+                });
             self.emit(Op::Return, item.span());
             let (ctx, frame) = self.pop_frame();
             self.finish(
@@ -402,7 +423,7 @@ impl<'a> Compiler<'a> {
                 &frame,
                 params.iter().map(|p| p.name.clone()).collect(),
             );
-            self.unit.uses.insert(func, uses);
+            self.unit.uses.insert(func, uses.uses);
         }
     }
 
@@ -460,7 +481,7 @@ impl<'a> Compiler<'a> {
                 let span = field_name.span();
                 let name = format!("{}.{}", declared.name, field_decl.name);
                 if let Some(default) = field.default() {
-                    let func =
+                    let (func, reads_body) =
                         self.compile_step(&name, &declared.name, page_backed, span, |c| {
                             c.check(&default, &ty);
                         });
@@ -469,6 +490,7 @@ impl<'a> Compiler<'a> {
                         field: field_decl.name.clone(),
                         func,
                         span,
+                        reads_body,
                     });
                 }
                 if let Some(index) = field.index() {
@@ -570,7 +592,8 @@ impl<'a> Compiler<'a> {
     /// Compiles one function the loader runs for the record `record`: `self` bound
     /// as that record, and `path`/`body` too when `page_backed`, then whatever `lower`
     /// emits as its return value. Collects what the body reads while it runs, lambdas
-    /// inside included. The three implicit names are the language's, so they take
+    /// inside included, and returns the function's index with where it first read
+    /// `body`, if it did. The three implicit names are the language's, so they take
     /// [`BindingKind::Implicit`], and they are told apart by binder at three distinct
     /// spans inside the field's name — nothing is ever reported at one.
     fn compile_step(
@@ -580,41 +603,48 @@ impl<'a> Compiler<'a> {
         page_backed: bool,
         span: Span,
         lower: impl FnOnce(&mut Self),
-    ) -> u32 {
+    ) -> (u32, Option<Span>) {
         let mut params: Vec<(&str, Type, Span)> =
             vec![("self", Type::Named(record.clone()), span)];
+        let mut implicit = Implicit {
+            self_binder: Some(span),
+            body_binder: None,
+        };
         if page_backed {
+            let body = Span::new(span.end, span.end);
             params.push(("path", Type::String, Span::new(span.start, span.start)));
-            params.push(("body", Type::Html, Span::new(span.end, span.end)));
+            params.push(("body", Type::Html, body));
+            implicit.body_binder = Some(body);
         }
         self.function_for_loader(
             name,
             &params,
             Runs::Default { page_backed },
-            Some(span),
+            implicit,
             span,
             lower,
         )
     }
 
     /// Compiles a function of `params` the loader calls, returning what `lower` leaves
-    /// on the stack, with its reads and calls recorded in the unit — `self_binder`
-    /// being the binder of the `self` among the parameters, if one is.
+    /// on the stack, with its reads and calls recorded in the unit — `implicit` naming
+    /// the binders of the `self` and the `body` among the parameters, where there are
+    /// such. Returns the function's index and where it first read `body`.
     fn function_for_loader(
         &mut self,
         name: &str,
         params: &[(&str, Type, Span)],
         runs: Runs,
-        self_binder: Option<Span>,
+        implicit: Implicit,
         span: Span,
         lower: impl FnOnce(&mut Self),
-    ) -> u32 {
+    ) -> (u32, Option<Span>) {
         self.push_frame();
         for (param, ty, binder) in params {
             self.names
                 .bind_local(param, *binder, BindingKind::Implicit, ty.clone());
         }
-        let uses = self.collecting(Some(runs), self_binder, Vec::new(), lower);
+        let collected = self.collecting(Some(runs), implicit, Vec::new(), lower);
         self.emit(Op::Return, span);
         let (ctx, frame) = self.pop_frame();
         let func = self.reserve(name);
@@ -627,8 +657,8 @@ impl<'a> Compiler<'a> {
                 .map(|(param, _, _)| Rc::from(*param))
                 .collect(),
         );
-        self.unit.uses.insert(func, uses);
-        func
+        self.unit.uses.insert(func, collected.uses);
+        (func, collected.body_read)
     }
 
     /// Runs `lower` with a collector open for the function it lowers — `runs` set when
@@ -638,20 +668,32 @@ impl<'a> Compiler<'a> {
     fn collecting(
         &mut self,
         runs: Option<Runs>,
-        self_binder: Option<Span>,
+        implicit: Implicit,
         params: Vec<Span>,
         lower: impl FnOnce(&mut Self),
-    ) -> Uses {
+    ) -> Collecting {
         let outer = self.uses.replace(Collecting {
             runs,
-            self_binder,
+            implicit,
+            body_read: None,
             params,
             uses: Uses::default(),
         });
         lower(self);
         let collected = self.uses.take().expect("the collector opened above");
         self.uses = outer;
-        collected.uses
+        collected
+    }
+
+    /// Records that the local `binder` was read at `span`, when it is the `body` of
+    /// the default being compiled and this is its first read.
+    fn note_local_read(&mut self, binder: Span, span: Span) {
+        if let Some(collecting) = &mut self.uses
+            && collecting.implicit.body_binder == Some(binder)
+            && collecting.body_read.is_none()
+        {
+            collecting.body_read = Some(span);
+        }
     }
 
     /// Records `read` as one the function being compiled makes, once.
@@ -734,7 +776,7 @@ impl<'a> Compiler<'a> {
             (ParsedFile::Document(doc), Some(chunks)) => {
                 self.lower_document(items, &doc.prose, chunks);
             }
-            (ParsedFile::Template(_), None) => {
+            (ParsedFile::Template { .. }, None) => {
                 self.lower_block(items, BodyKind::File);
             }
             _ => unreachable!("a document has its chunks and a template has none"),
@@ -1283,6 +1325,38 @@ mod tests {
         assert_eq!(
             uses_of(&unit, "here").reads,
             [Access::Whole(Rc::from("page"))]
+        );
+    }
+
+    #[test]
+    fn records_where_a_default_first_reads_body() {
+        // The first read, by binder: a lambda parameter called `body` is a local of
+        // its own, and a default reading only `path` or `self` reads no body.
+        const SCHEMA: &str = "<lem-type Post extends Page>\n  \
+             slug: string = path\n  \
+             excerpt: html = body\n  \
+             twice: int = body.readingTime().seconds() + body.readingTime().seconds()\n  \
+             ids: [int] = [1].map(|body| body)\n  \
+             layout: (Post, html): html\n</lem-type>";
+        let files = [
+            SourceFile::new("ambient.lem", PAGE),
+            SourceFile::new("schema.lem", SCHEMA),
+        ];
+        assert_eq!(shown_with(&shell_host(), &files), Vec::<String>::new());
+        let unit = unit_with(&shell_host(), "schema.lem", &files);
+        let reads: Vec<(&str, Option<Span>)> = unit
+            .defaults
+            .iter()
+            .map(|row| (&*row.field, row.reads_body))
+            .collect();
+        assert_eq!(
+            reads,
+            [
+                ("slug", None),
+                ("excerpt", Some(at(SCHEMA, "excerpt: html = «body»"))),
+                ("twice", Some(at(SCHEMA, "= «body».readingTime"))),
+                ("ids", None),
+            ]
         );
     }
 

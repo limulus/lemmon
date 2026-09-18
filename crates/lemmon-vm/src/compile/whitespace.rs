@@ -281,6 +281,26 @@ impl Piece {
     }
 }
 
+/// Where a file's top level first renders something, if it does: a text run that is
+/// not blank, a tag that renders where it stands or collects for the host, or a flow
+/// construct, whose body is output. What a file that is no page is warned at.
+pub(super) fn first_output(pieces: &[Piece]) -> Option<Span> {
+    pieces.iter().find_map(|piece| match piece {
+        // Blank across lines, not within one: the line rule's blankness is a line's,
+        // and the newlines between two declarations render nothing worth a warning.
+        Piece::Text { text, span } => (!text.trim().is_empty()).then_some(*span),
+        Piece::Tag { item, .. } => (!piece.renders_nothing()
+            || matches!(
+                item,
+                Item::StyleBlock(_) | Item::HeadBlock(_) | Item::ScriptVoid(_)
+            ))
+        .then(|| item.span()),
+        Piece::If { arms } => Some(arms[0].span),
+        Piece::For { tag, .. } => Some(tag.span()),
+        Piece::Match { tag, .. } => Some(tag.span()),
+    })
+}
+
 /// Applies the line rule across a body's pieces. `ends_are_boundaries` says whether the
 /// start and end of the piece list count as line boundaries, the way the start and end
 /// of a file do; inside a block the opener and close tag share those lines with whatever

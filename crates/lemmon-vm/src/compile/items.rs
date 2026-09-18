@@ -13,8 +13,8 @@ use lemmon_syntax::{Span, SyntaxToken};
 
 use super::expr::{decode_string, unparen};
 use super::names::{BindingKind, already_bound};
-use super::whitespace::{Arm, Body, BodyKind, Case, Piece};
-use super::{Compiler, Diagnostic, Runs, TokenSpan, required, rules};
+use super::whitespace::{self, Arm, Body, BodyKind, Case, Piece};
+use super::{Compiler, Diagnostic, Implicit, Runs, TokenSpan, required, rules};
 use crate::Value;
 use crate::bytecode::{MarkKey, MarkPayload, Op};
 use crate::decls::Decls;
@@ -60,6 +60,19 @@ impl Compiler<'_> {
         } else {
             Level::Nested
         };
+        // Once per file, at the first thing that would render: a definition, a
+        // declaration, a binding, or a blank line between them is what a component or
+        // layout file holds, and says nothing.
+        if level == Level::File
+            && self.warns_output
+            && let Some(span) = whitespace::first_output(&body.pieces)
+        {
+            self.warn(
+                span,
+                "this file has no front matter, so it is no page and its top-level \
+                 output never renders",
+            );
+        }
         for piece in body.pieces {
             self.lower_piece(piece, level);
         }
@@ -519,10 +532,14 @@ impl Compiler<'_> {
         lower: impl FnOnce(&mut Self, bool),
     ) {
         let admitted = self.admit_exported(name);
-        let func =
-            self.function_for_loader(name.text(), &[], Runs::Binding, None, span, |c| {
-                lower(c, admitted);
-            });
+        let (func, _) = self.function_for_loader(
+            name.text(),
+            &[],
+            Runs::Binding,
+            Implicit::default(),
+            span,
+            |c| lower(c, admitted),
+        );
         if admitted {
             self.unit.bindings.push(BindingFn {
                 name: Rc::from(name.text()),
@@ -871,7 +888,8 @@ mod tests {
     fn narrows_a_sibling_read_by_its_bare_name() {
         let files = [SourceFile::new(
             "site.lem",
-            "<lem-let sub: string? = null />\n<lem-if sub><lem.sub></lem-if>",
+            "<lem-let sub: string? = null />\n\
+             <lem-let shown><lem-if sub><lem.sub></lem-if></lem-let>",
         )];
         assert!(shown(&shell_host(), &files).is_empty());
     }
@@ -946,7 +964,7 @@ mod tests {
 
     #[test]
     fn refuses_a_from_binding_nested_in_the_bindings_file() {
-        const SRC: &str = "<lem-if true><lem-let x: [string] from \"f/*.md\" /></lem-if>";
+        const SRC: &str = "<lem-let all><lem-let x: [string] from \"f/*.md\" /></lem-let>";
         assert_eq!(
             shown(&shell_host(), &[SourceFile::new("site.lem", SRC)]),
             [format!(
@@ -1000,11 +1018,80 @@ mod tests {
         assert_eq!(unit.functions[func as usize].name, "intro");
     }
 
+    /// What a file that is no page is warned at, if anything, under the shell host.
+    fn warned_at(src: &str) -> Vec<String> {
+        shown(&shell_host(), &[SourceFile::new("card.lem", src)])
+    }
+
+    const NO_PAGE: &str = "warning: this file has no front matter, so it is no page \
+                           and its top-level output never renders";
+
+    #[test]
+    fn warns_once_at_the_first_top_level_output_of_a_file_that_is_no_page() {
+        // A WebC port's shape: a component, then its style at the top level, where a
+        // shell never renders it. Then a text run, an interpolation, and a flow
+        // construct, each the first output of a file — and one warning per file.
+        const STYLE: &str = "<lem-fn card()>x</lem-fn>\n\
+                             <lem-style>.card {}</lem-style>\n\
+                             <p>never</p>";
+        assert_eq!(
+            warned_at(STYLE),
+            [format!(
+                "card.lem:{}: {NO_PAGE}",
+                at(STYLE, "<lem-style>.card {}</lem-style>")
+            )]
+        );
+        const TEXT: &str = "<lem-fn card()>x</lem-fn>\n\nnever\n<lem.card()>";
+        assert_eq!(
+            warned_at(TEXT),
+            [format!("card.lem:{}: {NO_PAGE}", at(TEXT, "\n\nnever\n"))]
+        );
+        const ACCESS: &str = "<lem-fn card()>x</lem-fn>\n<lem.card()>";
+        assert_eq!(
+            warned_at(ACCESS),
+            [format!(
+                "card.lem:{}: {NO_PAGE}",
+                at(ACCESS, "<lem.card()>")
+            )]
+        );
+        const FLOW: &str = "<lem-if true>x</lem-if>";
+        assert_eq!(
+            warned_at(FLOW),
+            [format!(
+                "card.lem:{}: {NO_PAGE}",
+                at(FLOW, "<lem-if true>x")
+            )]
+        );
+    }
+
+    #[test]
+    fn says_nothing_of_a_file_whose_top_level_renders_nothing() {
+        // Declarations, definitions, and the blank lines between them; and the
+        // bindings file, whose top-level `lem-let`s are what it is for.
+        const QUIET: &str = "<lem-type A>\n  a: string\n</lem-type>\n\n\
+                             <lem-fn card()>x</lem-fn>\n";
+        assert_eq!(warned_at(QUIET), Vec::<String>::new());
+        let site = [SourceFile::new("site.lem", "<lem-let x: int = 1 />\n")];
+        assert_eq!(shown(&shell_host(), &site), Vec::<String>::new());
+    }
+
+    #[test]
+    fn says_nothing_of_a_page_template_or_under_a_host_with_no_document_type() {
+        // A page's top level is its body; and a host that types no documents has no
+        // pages, so a file rendering its own output is all there is.
+        assert_eq!(warned_at("---\n---\n<p>the body</p>"), Vec::<String>::new());
+        let untyped = Host::untyped(["page"]).documents("page");
+        assert_eq!(
+            shown(&untyped, &[SourceFile::new("card.lem", "<p>rendered</p>")]),
+            Vec::<String>::new()
+        );
+    }
+
     #[test]
     fn reads_a_binding_that_declared_no_type_without_a_second_diagnostic() {
         let files = [SourceFile::new(
             "site.lem",
-            "<lem-let name = \"x\" />\n<lem.name>",
+            "<lem-let name = \"x\" />\n<lem-let tagline: string = name />",
         )];
         let reported = shown(&shell_host(), &files);
         assert_eq!(reported.len(), 1, "{reported:?}");

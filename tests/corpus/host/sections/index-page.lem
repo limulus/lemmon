@@ -1,0 +1,9 @@
+---
+title: Sections
+teaser: Nothing in front matter is scanned, so <lem.x> here is text
+---
+<h1><lem.page.title></h1>
+<lem-if page.teaser>
+  <p><lem.page.teaser></p>
+</lem-if>
+<p>at <lem.page.url></p>

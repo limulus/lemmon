@@ -1,3 +1,5 @@
+---
+---
 <lem-type Recipe extends Page>
   topic: string
   layout: (Page, html): html

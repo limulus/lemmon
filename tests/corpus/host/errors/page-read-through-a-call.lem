@@ -1,3 +1,5 @@
+---
+---
 <lem-type Note extends Page>
   at: url = urlOf()
   layout: (Note, html): html

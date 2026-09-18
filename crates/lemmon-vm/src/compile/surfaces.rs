@@ -16,7 +16,7 @@
 use std::rc::Rc;
 
 use lemmon_syntax::ast::{EnumDecl, Item, Spanned, TypeDecl};
-use lemmon_syntax::{DocumentParse, Parse, Span, parse_document};
+use lemmon_syntax::{DocumentParse, FrontMatter, Parse, Span, parse_document};
 
 use crate::SourceFile;
 use crate::decls::{Declaration, FieldDecl, Shape};
@@ -77,18 +77,11 @@ impl PreparedFile {
 
     /// Where a diagnostic about the record this file was compiled as points: the
     /// `type:` key's value when the host said where that is, else the front matter,
-    /// which is where such a key stands, and the start of the file for a template,
-    /// which has none.
+    /// which is where such a key stands, and the start of the file when it has none.
     pub(super) fn record_span(&self) -> Span {
-        if let Some(span) = self.record_span {
-            return span;
-        }
-        match &self.source {
-            ParsedFile::Document(doc) => {
-                doc.front_matter.unwrap_or_else(|| Span::new(0, 0))
-            }
-            ParsedFile::Template(_) => Span::new(0, 0),
-        }
+        self.record_span
+            .or(self.source.front_matter())
+            .unwrap_or_else(|| Span::new(0, 0))
     }
 }
 
@@ -115,7 +108,7 @@ pub fn prepare(file: &SourceFile, host: &Host) -> Result<PreparedFile, Vec<Diagn
     // fails the file the way a parse error does: its blocks may be fine, but where
     // their output would go is not known.
     let (chunks, payloads) = match &source {
-        ParsedFile::Template(_) => (None, Vec::new()),
+        ParsedFile::Template { .. } => (None, Vec::new()),
         ParsedFile::Document(doc) => {
             match document::render_prose(&file.path, &file.text, doc) {
                 Ok(prose) => (Some(prose.chunks), prose.payloads),
@@ -460,7 +453,13 @@ fn enum_shape(path: &str, decl: &EnumDecl, diagnostics: &mut Vec<Diagnostic>) ->
 /// A file as parsed: a template, or a document in document mode. Decided by the path,
 /// as it is in a site — `.md` is a document, anything else a template.
 pub(super) enum ParsedFile {
-    Template(Parse),
+    Template {
+        parse: Parse,
+        /// The front matter, `---` lines included, when the template opens with a
+        /// closed block — what makes it a page (D41). Found by the one rule the
+        /// parser applies, so the tree's token and this span are the same bytes.
+        front_matter: Option<Span>,
+    },
     Document(DocumentParse),
 }
 
@@ -469,7 +468,15 @@ impl ParsedFile {
         if crate::is_document(&file.path) {
             Self::Document(parse_document(&file.text))
         } else {
-            Self::Template(lemmon_syntax::parse(&file.text))
+            let front_matter = match lemmon_syntax::front_matter(&file.text) {
+                FrontMatter::Closed { block, .. } => Some(block),
+                // Unclosed is the parser's error, and no such file is compiled.
+                FrontMatter::None | FrontMatter::Unclosed(_) => None,
+            };
+            Self::Template {
+                parse: lemmon_syntax::parse(&file.text),
+                front_matter,
+            }
         }
     }
 
@@ -477,8 +484,26 @@ impl ParsedFile {
     /// items, so every pass but the entry's reads it exactly like a template's.
     pub(super) fn parse(&self) -> &Parse {
         match self {
-            Self::Template(parse) => parse,
+            Self::Template { parse, .. } => parse,
             Self::Document(doc) => &doc.parse,
+        }
+    }
+
+    /// The file's front matter, `---` lines included, in either mode.
+    pub(super) fn front_matter(&self) -> Option<Span> {
+        match self {
+            Self::Template { front_matter, .. } => *front_matter,
+            Self::Document(doc) => doc.front_matter,
+        }
+    }
+
+    /// Whether the file is shaped like a page: a document, or a template that opens
+    /// with front matter (D41). What decides that it reads the host's document value
+    /// as its own record, and that the link step builds a page source for it.
+    pub(super) fn page_shaped(&self) -> bool {
+        match self {
+            Self::Template { front_matter, .. } => front_matter.is_some(),
+            Self::Document(_) => true,
         }
     }
 }

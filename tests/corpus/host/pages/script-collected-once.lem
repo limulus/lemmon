@@ -1,3 +1,5 @@
+---
+---
 <lem-fn gallery(title: string)>
   <section class="gallery"><h2><lem.title></h2></section>
   <lem-script src = asset("scripts/gallery.js") />

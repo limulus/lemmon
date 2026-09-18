@@ -1,3 +1,5 @@
+---
+---
 <lem-type Note extends Page>
   title: string = titleOf(self)
   slug: string = self.title

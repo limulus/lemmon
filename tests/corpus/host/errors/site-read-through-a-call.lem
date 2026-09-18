@@ -1,3 +1,5 @@
+---
+---
 <lem-type Note extends Page>
   banner: string = brand()
   layout: (Note, html): html

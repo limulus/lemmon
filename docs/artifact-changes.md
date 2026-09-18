@@ -226,7 +226,14 @@ moved it. Newest last. An entry is removed when its change has been applied.
   ancestor, the loader fills them in list order, and every other page has neither. Where
   the text says the shell reads two names of its own, list the keys `type` and `for` and
   the declared fields `layout`, `url`, `prev`, and `next`. A page template has no `body`
-  before it renders, so a record whose default reads `body` cannot type one (D43).
+  before it renders, so a record whose default reads `body` cannot type one: the link
+  step refuses the template where its record was named, labelled at each default —
+  inherited ones included — that reads `body` (D43, ∆Bhz). A `.lem` file with no front
+  matter is no page, so a record the host names for it is a compile error, and under a
+  host that declares a document type its top-level output — a text run, a `<lem.x>`, a
+  `lem-style` — warns once, at the first such item, since a shell never renders that
+  file's entry; definitions, declarations, a top-level `lem-let`, and a host that types
+  no documents draw no warning (∆Bhz).
 
 - **Tags, the side-channel rows; Names; Functions & components; Escaping** — drop the
   `lem-emit` row: placement is `<lem.mark("styles")>`, an ambient constructor beside
@@ -348,10 +355,14 @@ moved it. Newest last. An entry is removed when its change has been applied.
   `range` — the host's positions, set by the loader for a file the host holds — and
   the boundary places such a span by it rather than by an index (D37, D35 revised, ∆iCW).
 - **WASM API, `loadData` and `render`** — where the class sketch and the boundary rules
-  describe `loadData`, say its input is `{ambient, sources?}`: `ambient` bare JSON by
-  the name the host bound each value, `sources` fulfilling each `from` binding by name
-  with `{value, path?, spans?}` entries (a list for a glob) whose `spans` map field
-  paths to complete spans the host computed; that the core validates, defaults, tags,
+  describe `loadData`, say its input is `{ambient, sources?, pages?}`: `ambient` bare
+  JSON by the name the host bound each value, `sources` fulfilling each `from` binding
+  by name with `{value, path?, spans?}` entries (a list for a glob) whose `spans` map
+  field paths to complete spans the host computed, and `pages` the same entries for
+  every page — a document or a page template — whose `type:` key typed it and no glob
+  holds, loaded after every binding in the envelope's order, a page carried twice
+  refused as a caller bug and a page not carried simply not loaded (∆Bhz; the wire's
+  `pages` lands with the boundary work); that the core validates, defaults, tags,
   and keeps the result resident as the store every render binds; that a load reporting
   an error leaves the previous data bound, as a failed compile leaves the program; and
   that an envelope the program cannot be loaded from throws. Say the store lives with

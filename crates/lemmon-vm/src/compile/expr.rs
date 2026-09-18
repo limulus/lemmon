@@ -174,6 +174,7 @@ impl Compiler<'_> {
         let span = token.span();
         match self.resolve(token.text()) {
             Some(Resolved::Local { slot, ty, binder }) => {
+                self.note_local_read(binder, span);
                 self.emit(Op::Local { slot }, span);
                 self.narrowed(&Path::local(binder)).unwrap_or(ty)
             }

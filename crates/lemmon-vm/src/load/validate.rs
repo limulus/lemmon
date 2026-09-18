@@ -395,9 +395,14 @@ impl Loader<'_> {
         // a page-backed record takes the document, one declared on a record above the
         // document type — which a page-backed subtype still inherits — does not.
         if self.module.functions[step.func as usize].params.len() > 1 {
-            let doc = doc.expect("a step taking the document runs for a document's record");
+            let doc = doc.expect("a step taking the page runs for a page's record");
             args.push(Value::str(doc.path));
-            args.push(Value::Html(doc.body.clone()));
+            // Null for a page template: a default that would read it was refused at
+            // link, so no function ever sees the null.
+            args.push(
+                doc.body
+                    .map_or(Value::Null, |body| Value::Html(body.clone())),
+            );
         }
         match invoke(self.module, step.func, args, &self.globals()) {
             Ok(value) => Some(value),
@@ -539,6 +544,7 @@ mod tests {
                     }]),
                 ),
             ],
+            pages: Vec::new(),
         }
     }
 
@@ -556,7 +562,8 @@ mod tests {
         let store = load(&site_module(), &shell(), data(object(front)))
             .unwrap()
             .expect_output();
-        let Value::Record(article) = &store.documents["pages/a.md"] else {
+        let Value::Record(article) = &store.page("pages/a.md").expect("a loaded page")
+        else {
             panic!("a tagged record");
         };
         article.clone()
@@ -633,6 +640,7 @@ mod tests {
                     spans: spans(TEXT, &[("", record()), ("title", record())]),
                 }]),
             )],
+            pages: Vec::new(),
         };
         let result = load(&module, &shell(), data).unwrap();
         assert!(result.output.is_none());
@@ -829,6 +837,7 @@ mod tests {
                     spans: Spans::new(),
                 }),
             )],
+            pages: Vec::new(),
         };
         assert_eq!(
             errors(&module, &shell(), data),
@@ -863,6 +872,7 @@ mod tests {
                     spans: spans(TEXT, &[("", record())]),
                 }]),
             )],
+            pages: Vec::new(),
         };
         let result = load(&module, &shell(), data).unwrap();
         assert_eq!(
@@ -892,6 +902,7 @@ mod tests {
                     spans: Spans::new(),
                 }),
             )],
+            pages: Vec::new(),
         };
         assert_eq!(
             errors(&module, &shell(), data),
@@ -947,6 +958,7 @@ mod tests {
                     }]),
                 ),
             ],
+            pages: Vec::new(),
         };
         assert_eq!(
             errors(&module, &shell(), data),
@@ -975,6 +987,7 @@ mod tests {
                     spans: Spans::new(),
                 }),
             )],
+            pages: Vec::new(),
         };
         assert_eq!(
             errors(&module, &shell(), data),
@@ -1020,6 +1033,7 @@ mod tests {
                     spans: Spans::new(),
                 }),
             )],
+            pages: Vec::new(),
         };
         let store = load(&module, &shell(), with(good)).unwrap().expect_output();
         let Value::Record(loaded) = &store.ambient[1].1 else {
@@ -1108,6 +1122,7 @@ mod tests {
                     spans: Spans::new(),
                 }),
             )],
+            pages: Vec::new(),
         };
         let store = load(&module, &shell(), data).unwrap().expect_output();
         let Value::Record(site) = &store.ambient[1].1 else {
@@ -1131,6 +1146,7 @@ mod tests {
                     spans: Spans::new(),
                 }),
             )],
+            pages: Vec::new(),
         };
         assert_eq!(
             errors(&module, &shell(), data),
@@ -1168,9 +1184,11 @@ mod tests {
                     spans: Spans::new(),
                 }]),
             )],
+            pages: Vec::new(),
         };
         let store = load(&module, &shell(), data).unwrap().expect_output();
-        let Value::Record(article) = &store.documents["pages/a.md"] else {
+        let Value::Record(article) = &store.page("pages/a.md").expect("a loaded page")
+        else {
             panic!("a record");
         };
         assert_eq!(article.fields.get("kind"), Some(&Value::str("note")));
@@ -1204,6 +1222,7 @@ mod tests {
                     spans: spans(TEXT, &[("", record()), ("related", related)]),
                 }]),
             )],
+            pages: Vec::new(),
         };
         assert_eq!(
             errors(&module, &shell(), data),
@@ -1235,9 +1254,11 @@ mod tests {
                     spans: Spans::new(),
                 }]),
             )],
+            pages: Vec::new(),
         };
         let store = load(&module, &shell(), data).unwrap().expect_output();
-        let Value::Record(article) = &store.documents["pages/a.md"] else {
+        let Value::Record(article) = &store.page("pages/a.md").expect("a loaded page")
+        else {
             panic!("a record");
         };
         assert_eq!(article.fields.get("blurb"), Some(&Value::str("none")));
@@ -1267,6 +1288,7 @@ mod tests {
                     spans: spans(TEXT, &[("", record())]),
                 }]),
             )],
+            pages: Vec::new(),
         };
         // One diagnostic: the computed binding that reads `tils` is not run over a
         // value that failed, so it cannot add a fault of its own.
@@ -1296,6 +1318,7 @@ mod tests {
                     spans: Spans::new(),
                 }),
             )],
+            pages: Vec::new(),
         };
         assert_eq!(
             errors(&module, &shell(), data(object(&[]))),
@@ -1332,6 +1355,7 @@ mod tests {
                     spans: Spans::new(),
                 }),
             )],
+            pages: Vec::new(),
         };
         assert!(
             load(&module, &shell(), data(1 << 53))
@@ -1374,6 +1398,7 @@ mod tests {
                     spans: Spans::new(),
                 }),
             )],
+            pages: Vec::new(),
         };
         assert_eq!(
             errors(&module, &shell(), data),
@@ -1420,9 +1445,11 @@ mod tests {
                     }]),
                 ),
             ],
+            pages: Vec::new(),
         };
         let store = load(&module, &shell(), data).unwrap().expect_output();
-        let Value::Record(article) = &store.documents["pages/a.md"] else {
+        let Value::Record(article) = &store.page("pages/a.md").expect("a loaded page")
+        else {
             panic!("a tagged record");
         };
         assert_eq!(article.fields.get("caption"), Some(&Value::str("Sunset")));
@@ -1449,6 +1476,7 @@ mod tests {
                     spans: Spans::new(),
                 }),
             )],
+            pages: Vec::new(),
         };
         assert_eq!(
             errors(&module, &host, data),

@@ -13,7 +13,7 @@
 //! Two kinds of problem come out. A load diagnostic is about the data — a field of the
 //! wrong type, a key no schema declares, a string no index resolves — and points at the
 //! host's positions, or at the declaration of what was expected when the host had none
-//! (invariant 8). A caller bug — a source no binding asked for, a document the program
+//! (invariant 8). A caller bug — a source no binding asked for, a page the program
 //! never compiled — is an `Err`, since it has no data to point at.
 
 mod place;
@@ -39,10 +39,10 @@ pub use place::{HostSpan, Spans, field_path};
 #[derive(Clone, Debug, PartialEq)]
 pub struct Loaded {
     /// The value as parsed — objects as maps, every string untrusted — before any
-    /// validation. A document's is its front matter with the `type:` key stripped.
+    /// validation. A page's is its front matter with the `type:` key stripped.
     pub value: Value,
-    /// The file the value came from: always for a document, which the program must
-    /// have compiled; a data file's path otherwise; `None` for a plugin or environment
+    /// The file the value came from: always for a page, which the program must have
+    /// compiled; a data file's path otherwise; `None` for a plugin or environment
     /// source.
     pub path: Option<String>,
     /// Where each field path stands in that file. Empty when there is no file.
@@ -50,7 +50,8 @@ pub struct Loaded {
 }
 
 /// What fulfils one `from` binding: one value for a data file, plugin, or environment
-/// source, and one value per document for a glob.
+/// source, and one value per page for a glob — a document, or a template with front
+/// matter (D41).
 #[derive(Clone, Debug, PartialEq)]
 pub enum Source {
     One(Loaded),
@@ -66,6 +67,10 @@ pub struct Data {
     pub ambient: Vec<(String, Value)>,
     /// What fulfils each `from` binding of the bindings files, by binding name.
     pub sources: Vec<(String, Source)>,
+    /// The front matter of every page no glob holds — a document or template whose
+    /// `type:` key named its record — each with its path. Loaded after every binding,
+    /// in this order, so a `by` index in one may read a map the site loaded.
+    pub pages: Vec<Loaded>,
 }
 
 /// What a load produced: what every render binds.
@@ -75,16 +80,34 @@ pub struct Store {
     /// the host typed it, assembled from its bindings where the host reads it from a
     /// file, and as the host sent it where the host said nothing about it.
     pub ambient: Vec<(Rc<str>, Value)>,
-    /// Every loaded document's record, by the document's path — what a render of that
-    /// document binds the host's document value to.
-    pub documents: BTreeMap<String, Value>,
+    /// Every loaded page, in load order: each collection's members as its binding
+    /// loaded them, the bindings in their link order, then the pages the envelope
+    /// carried on their own, in its order.
+    pub pages: Vec<LoadedPage>,
+}
+
+/// One page as loaded: its path, and the record its front matter was loaded as —
+/// what a render of the page binds the host's document value to.
+#[derive(Clone, Debug, PartialEq)]
+pub struct LoadedPage {
+    pub path: String,
+    pub record: Value,
 }
 
 impl Store {
+    /// The record of the loaded page at `path`, if one is.
+    #[must_use]
+    pub fn page(&self, path: &str) -> Option<&Value> {
+        self.pages
+            .iter()
+            .find(|page| page.path == path)
+            .map(|page| &page.record)
+    }
+
     /// What a render of the file at `path` binds: every ambient value, with the host's
     /// document value replaced by the file's own record when the file is a loaded
-    /// document. The value the envelope carried under that name, if any, stands only
-    /// where no loaded document does (D37).
+    /// page. The value the envelope carried under that name, if any, stands only
+    /// where no loaded page does (D37).
     #[must_use]
     pub fn globals<'a>(&'a self, host: &'a Host, path: &str) -> Vec<(&'a str, Value)> {
         let mut globals: Vec<(&str, Value)> = self
@@ -92,7 +115,7 @@ impl Store {
             .iter()
             .map(|(name, value)| (&**name, value.clone()))
             .collect();
-        if let Some((document, record)) = host.document().zip(self.documents.get(path)) {
+        if let Some((document, record)) = host.document().zip(self.page(path)) {
             match globals.iter_mut().find(|(name, _)| *name == document) {
                 Some(slot) => slot.1 = record.clone(),
                 None => globals.push((document, record.clone())),
@@ -111,22 +134,23 @@ impl Store {
 ///
 /// A caller bug, with no data to point at: an ambient name the host does not bind, or
 /// one the host builds from a file; a source no `from` binding asked for, or one
-/// fulfilled in the wrong shape; a document the program never compiled, or compiled
-/// with no record.
+/// fulfilled in the wrong shape; a page the program never compiled, or compiled with
+/// no record, or carried twice.
 pub fn load(module: &Module, host: &Host, data: Data) -> Result<Compiled<Store>, String> {
     let Data {
         mut ambient,
         mut sources,
+        pages,
     } = data;
-    // The file table is a list; a load looks every document up in it, so it is
-    // indexed once here rather than scanned per document.
+    // The file table is a list; a load looks every page up in it, so it is indexed
+    // once here rather than scanned per page.
     let files: Files<'_> = module
         .files
         .iter()
         .enumerate()
         .map(|(i, path)| (path.as_str(), i))
         .collect();
-    check_envelope(module, host, &files, &ambient, &sources)?;
+    check_envelope(module, host, &files, &ambient, &sources, &pages)?;
     let mut loader = Loader {
         module,
         host,
@@ -134,23 +158,25 @@ pub fn load(module: &Module, host: &Host, data: Data) -> Result<Compiled<Store>,
         document_type: host.document_type(),
         ambient: Vec::new(),
         incomplete: false,
-        documents: BTreeMap::new(),
+        pages: Vec::new(),
         diagnostics: Vec::new(),
     };
     loader.own_values(&mut ambient);
     for plan in &module.bindings {
         loader.bindings(plan, &mut sources);
     }
+    // A page no glob holds is still a page of the site — it is loaded like a member,
+    // after every binding, since its `by` indexes may read maps the site loaded.
+    for loaded in &pages {
+        loader.page(loaded, None);
+    }
     let Loader {
         ambient,
-        documents,
+        pages,
         diagnostics,
         ..
     } = loader;
-    Ok(Compiled::new(
-        Some(Store { ambient, documents }),
-        diagnostics,
-    ))
+    Ok(Compiled::new(Some(Store { ambient, pages }), diagnostics))
 }
 
 /// Refuses an envelope the program cannot be loaded from before anything is loaded,
@@ -161,6 +187,7 @@ fn check_envelope(
     files: &Files<'_>,
     ambient: &[(String, Value)],
     sources: &[(String, Source)],
+    pages: &[Loaded],
 ) -> Result<(), String> {
     if let Some(name) = repeated_path(ambient.iter().map(|(name, _)| name.as_str())) {
         return Err(format!("`{name}` is carried twice"));
@@ -199,6 +226,8 @@ fn check_envelope(
             ));
         }
     }
+    // Every page the envelope carries, in a glob or on its own: a page is loaded once,
+    // since one path is one render, and there is one record it binds.
     let mut paths: BTreeSet<&str> = BTreeSet::new();
     for (name, source) in sources {
         let step = module
@@ -216,29 +245,13 @@ fn check_envelope(
             .field(&plan.record, name)
             .expect("a binding is a field of its record");
         match (collects(module, host, kind, &ty), source) {
-            (Some(_), Source::Many(documents)) => {
-                for document in documents {
-                    let Some(path) = document.path.as_deref() else {
-                        return Err(format!("a document in `{name}` has no path"));
-                    };
-                    let Some(compiled) =
-                        files.get(path).and_then(|&i| module.documents[i].as_ref())
-                    else {
-                        return Err(format!("no compiled document at `{path}`"));
-                    };
-                    if compiled.record.is_none() {
-                        return Err(format!(
-                            "`{path}` was compiled with no record, so it belongs to no \
-                             collection"
-                        ));
-                    }
-                    if !paths.insert(path) {
-                        return Err(format!("`{path}` is loaded twice"));
-                    }
+            (Some(_), Source::Many(members)) => {
+                for member in members {
+                    check_page(module, files, &mut paths, member, name)?;
                 }
             }
             (Some(_), Source::One(_)) => {
-                return Err(format!("`{name}` collects documents, so it takes a list"));
+                return Err(format!("`{name}` collects pages, so it takes a list"));
             }
             (None, Source::Many(_)) => {
                 return Err(format!("`{name}` is one value, not a list"));
@@ -263,6 +276,36 @@ fn check_envelope(
                 return Err(format!("nothing was loaded for `{}`", step.name));
             }
         }
+    }
+    for loaded in pages {
+        check_page(module, files, &mut paths, loaded, "pages")?;
+    }
+    Ok(())
+}
+
+/// Refuses one page of the envelope — carried in `holder`, a glob binding or `pages`
+/// — that cannot be loaded: it has no path, nothing page-shaped was compiled there,
+/// what was compiled has no record, or the same path was carried before.
+fn check_page<'a>(
+    module: &Module,
+    files: &Files<'_>,
+    paths: &mut BTreeSet<&'a str>,
+    loaded: &'a Loaded,
+    holder: &str,
+) -> Result<(), String> {
+    let Some(path) = loaded.path.as_deref() else {
+        return Err(format!("a page in `{holder}` has no path"));
+    };
+    let Some(compiled) = files.get(path).and_then(|&i| module.documents[i].as_ref()) else {
+        return Err(format!("no compiled page at `{path}`"));
+    };
+    if compiled.record.is_none() {
+        return Err(format!(
+            "`{path}` was compiled with no record, so it is no page to load"
+        ));
+    }
+    if !paths.insert(path) {
+        return Err(format!("`{path}` is loaded twice"));
     }
     Ok(())
 }
@@ -309,15 +352,17 @@ struct Loader<'a> {
     /// failed and is missing. No function runs past that point: it could only fault
     /// after the error already reported.
     incomplete: bool,
-    documents: BTreeMap<String, Value>,
+    /// Every page loaded so far, in load order.
+    pages: Vec<LoadedPage>,
     diagnostics: Vec<Diagnostic>,
 }
 
-/// The document a record is being loaded from, for the `path` and `body` its defaults
-/// take.
+/// The page a record is being loaded from, for the `path` and `body` its defaults
+/// take. A page template has no body until it renders — `None`, which the link step
+/// keeps out of every default's reach by refusing a template whose record reads it.
 struct Doc<'a> {
     path: &'a str,
-    body: &'a Rc<str>,
+    body: Option<&'a Rc<str>>,
 }
 
 impl Loader<'_> {
@@ -406,11 +451,11 @@ impl Loader<'_> {
                         .map(|i| sources.remove(i).1)
                         .expect("checked by `check_envelope`");
                     match (collects(self.module, self.host, kind, &ty), taken) {
-                        (Some(element), Source::Many(documents)) => {
-                            let mut records = Vec::with_capacity(documents.len());
+                        (Some(element), Source::Many(members)) => {
+                            let mut records = Vec::with_capacity(members.len());
                             let mut failed = false;
-                            for document in documents {
-                                match self.document(&document, &element, &step.name) {
+                            for member in members {
+                                match self.page(&member, Some((&element, &step.name))) {
                                     Some(record) => records.push(record),
                                     None => failed = true,
                                 }
@@ -475,15 +520,15 @@ impl Loader<'_> {
         Value::record(name, map)
     }
 
-    /// Loads one document of a glob binding collecting `element`: its front matter as
-    /// the record it was compiled as, which must extend `element`, with its path and
-    /// rendered prose in reach of the record's defaults. The record is kept by path for
-    /// the render that binds it.
-    fn document(
+    /// Loads one page: its front matter as the record it was compiled as, with its
+    /// path and, for a document, its rendered prose in reach of the record's defaults.
+    /// A member of a glob binding's `collection` — the element type it collects and
+    /// the binding's name — must be of a record extending that type. The record is
+    /// kept, in load order, for the render that binds it.
+    fn page(
         &mut self,
         loaded: &Loaded,
-        element: &Rc<str>,
-        binding: &str,
+        collection: Option<(&Rc<str>, &str)>,
     ) -> Option<Value> {
         let path = loaded.path.as_deref().expect("checked by `check_envelope`");
         let compiled = self.files[path];
@@ -494,7 +539,9 @@ impl Loader<'_> {
             .record
             .clone()
             .expect("checked by `check_envelope`");
-        if !self.module.is_a(&record, element) {
+        if let Some((element, binding)) = collection
+            && !self.module.is_a(&record, element)
+        {
             self.diagnostics
                 .push(Place::resident(path, compiled.record_span).error(format!(
                     "`{record}` does not extend `{element}`, the type `{binding}` collects"
@@ -511,10 +558,13 @@ impl Loader<'_> {
         };
         let doc = Doc {
             path,
-            body: &compiled.body,
+            body: compiled.body.as_ref(),
         };
         let value = self.record(given, &record, &at, Some(&doc))?;
-        self.documents.insert(path.to_owned(), value.clone());
+        self.pages.push(LoadedPage {
+            path: path.to_owned(),
+            record: value.clone(),
+        });
         Some(value)
     }
 
@@ -658,6 +708,7 @@ pub(crate) mod tests {
         let data = Data {
             ambient: vec![("build".to_owned(), object(&[("banner", banner.clone())]))],
             sources: Vec::new(),
+            pages: Vec::new(),
         };
         let store = load(&module, &shell(), data).unwrap().expect_output();
         let Value::Record(build) = &store.ambient[0].1 else {
@@ -672,6 +723,7 @@ pub(crate) mod tests {
         let data = Data {
             ambient: vec![build()],
             sources: Vec::new(),
+            pages: Vec::new(),
         };
         let store = load(&module, &shell(), data).unwrap().expect_output();
         let names: Vec<&str> = store.ambient.iter().map(|(n, _)| &**n).collect();
@@ -692,6 +744,7 @@ pub(crate) mod tests {
                 object(&[("generator", Value::Int(3)), ("extra", Value::Null)]),
             )],
             sources: Vec::new(),
+            pages: Vec::new(),
         };
         assert_eq!(
             errors(&module, &shell(), data),
@@ -715,6 +768,7 @@ pub(crate) mod tests {
         let data = Data {
             ambient: vec![build(), ("page".to_owned(), page.clone())],
             sources: Vec::new(),
+            pages: Vec::new(),
         };
         let store = load(&module, &shell(), data).unwrap().expect_output();
         assert_eq!(store.ambient[0].1, page);
@@ -723,6 +777,7 @@ pub(crate) mod tests {
         let data = Data {
             ambient: vec![("site".to_owned(), Value::Int(1))],
             sources: Vec::new(),
+            pages: Vec::new(),
         };
         let store = load(&bare, &untyped, data).unwrap().expect_output();
         assert_eq!(store.ambient, [(Rc::from("site"), Value::Int(1))]);
@@ -746,6 +801,7 @@ pub(crate) mod tests {
         let data = Data {
             ambient: Vec::new(),
             sources: Vec::new(),
+            pages: Vec::new(),
         };
         assert_eq!(
             errors(&module, &host, data),
@@ -765,6 +821,7 @@ pub(crate) mod tests {
             refused(Data {
                 ambient: vec![build(), ("nope".to_owned(), Value::Null)],
                 sources: Vec::new(),
+                pages: Vec::new(),
             }),
             "the host binds no `nope`"
         );
@@ -772,6 +829,7 @@ pub(crate) mod tests {
             refused(Data {
                 ambient: vec![build(), ("site".to_owned(), Value::Null)],
                 sources: Vec::new(),
+                pages: Vec::new(),
             }),
             "`site` is built from the bindings of `site.lem`, not carried in the envelope"
         );
@@ -783,6 +841,7 @@ pub(crate) mod tests {
             refused(Data {
                 ambient: vec![build()],
                 sources: vec![("posts".to_owned(), one(Value::Null))],
+                pages: Vec::new(),
             }),
             "no `from` binding is named `posts`"
         );
@@ -811,15 +870,16 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn binds_a_loaded_documents_record_under_the_name_the_host_declared() {
+    fn binds_a_loaded_pages_record_under_the_name_the_host_declared() {
         let store = Store {
             ambient: vec![
                 (Rc::from("build"), Value::Int(1)),
                 (Rc::from("entry"), Value::str("sent")),
             ],
-            documents: [("pages/a.md".to_owned(), Value::str("record"))]
-                .into_iter()
-                .collect(),
+            pages: vec![LoadedPage {
+                path: "pages/a.md".to_owned(),
+                record: Value::str("record"),
+            }],
         };
         // The name is the host's, not `page`: the record replaces the envelope's value
         // in place, keeping the host's order.
@@ -828,7 +888,7 @@ pub(crate) mod tests {
             store.globals(&host, "pages/a.md"),
             vec![("build", Value::Int(1)), ("entry", Value::str("record"))]
         );
-        // No loaded document at the path: the envelope's value stands.
+        // No loaded page at the path: the envelope's value stands.
         assert_eq!(
             store.globals(&host, "pages/b.md")[1],
             ("entry", Value::str("sent"))
@@ -836,7 +896,7 @@ pub(crate) mod tests {
         // The envelope carried no document value: the record is bound anyway.
         let uncarried = Store {
             ambient: vec![(Rc::from("build"), Value::Int(1))],
-            documents: store.documents.clone(),
+            pages: store.pages.clone(),
         };
         assert_eq!(
             uncarried.globals(&host, "pages/a.md"),
@@ -859,6 +919,7 @@ pub(crate) mod tests {
                 Data {
                     ambient: vec![build()],
                     sources,
+                    pages: Vec::new(),
                 },
             )
             .unwrap_err()
@@ -866,7 +927,7 @@ pub(crate) mod tests {
         let motto = || ("motto".to_owned(), one(Value::str("m")));
         assert_eq!(
             refused(vec![("posts".to_owned(), one(Value::Null)), motto()]),
-            "`posts` collects documents, so it takes a list"
+            "`posts` collects pages, so it takes a list"
         );
         assert_eq!(
             refused(vec![
@@ -894,7 +955,7 @@ pub(crate) mod tests {
                 ("posts".to_owned(), Source::Many(vec![nameless])),
                 motto()
             ]),
-            "a document in `posts` has no path"
+            "a page in `posts` has no path"
         );
         let unplaced = Loaded {
             value: Value::str("m"),
@@ -916,7 +977,7 @@ pub(crate) mod tests {
                 ),
                 motto(),
             ]),
-            "no compiled document at `pages/b.md`"
+            "no compiled page at `pages/b.md`"
         );
         let twice = vec![
             page("pages/a.md", object(&[])),
@@ -929,7 +990,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn refuses_a_document_compiled_with_no_record() {
+    fn refuses_a_page_compiled_with_no_record() {
         let files = [
             SourceFile::new("ambient.lem", AMBIENT),
             SourceFile::new("site.lem", SITE),
@@ -945,15 +1006,16 @@ pub(crate) mod tests {
                 ),
                 ("motto".to_owned(), one(Value::str("m"))),
             ],
+            pages: Vec::new(),
         };
         assert_eq!(
             load(&module, &shell(), data).unwrap_err(),
-            "`pages/a.md` was compiled with no record, so it belongs to no collection"
+            "`pages/a.md` was compiled with no record, so it is no page to load"
         );
     }
 
     #[test]
-    fn assembles_the_bindings_value_in_declaration_order_and_keeps_documents_by_path() {
+    fn assembles_the_bindings_value_in_declaration_order_and_keeps_the_page() {
         let module = site_module();
         let text = "---\ntitle: A\n---\nbody";
         let front = object(&[
@@ -986,6 +1048,7 @@ pub(crate) mod tests {
                     }]),
                 ),
             ],
+            pages: Vec::new(),
         };
         let store = load(&module_with_layout, &shell(), data)
             .unwrap()
@@ -1001,7 +1064,7 @@ pub(crate) mod tests {
             panic!("posts is a list");
         };
         assert_eq!(posts.len(), 1);
-        assert_eq!(store.documents.get("pages/a.md"), Some(&posts[0]));
+        assert_eq!(store.page("pages/a.md"), Some(&posts[0]));
         let Value::Record(article) = &posts[0] else {
             panic!("a tagged record");
         };
@@ -1031,6 +1094,7 @@ pub(crate) mod tests {
                     Source::Many(vec![page("pages/n.md", object(&[]))]),
                 ),
             ],
+            pages: Vec::new(),
         };
         assert_eq!(
             errors(&module, &shell(), data),
@@ -1054,6 +1118,7 @@ pub(crate) mod tests {
                     Source::Many(vec![page("pages/a.md", Value::list(vec![]))]),
                 ),
             ],
+            pages: Vec::new(),
         };
         assert_eq!(
             errors(&module, &shell(), data),
@@ -1073,6 +1138,7 @@ pub(crate) mod tests {
         let data = Data {
             ambient: vec![build()],
             sources: Vec::new(),
+            pages: Vec::new(),
         };
         let result = load(&module, &shell(), data).unwrap();
         let shown: Vec<String> =
@@ -1112,6 +1178,7 @@ pub(crate) mod tests {
                     ),
                 }),
             )],
+            pages: Vec::new(),
         };
         let result = load(&module, &shell(), data).unwrap();
         assert_eq!(
@@ -1136,6 +1203,7 @@ pub(crate) mod tests {
         let twice = Data {
             ambient: vec![build(), build()],
             sources: Vec::new(),
+            pages: Vec::new(),
         };
         assert_eq!(
             load(&module, &shell(), twice).unwrap_err(),
@@ -1147,6 +1215,7 @@ pub(crate) mod tests {
         let data = Data {
             ambient: vec![build()],
             sources: Vec::new(),
+            pages: Vec::new(),
         };
         assert_eq!(
             load(&unread, &shell(), data).unwrap_err(),
@@ -1169,10 +1238,280 @@ pub(crate) mod tests {
                 ("motto".to_owned(), one(Value::str("m"))),
                 ("posts".to_owned(), Source::Many(vec![])),
             ],
+            pages: Vec::new(),
         };
         assert_eq!(
             load(&module, &shell(), data).unwrap_err(),
             "`motto` is loaded twice"
+        );
+    }
+
+    /// A site whose `Article` indexes a map the site computes once `notes` is loaded,
+    /// so `posts` — declared first — loads last, and a page's load reads what the
+    /// bindings loaded first. Each schema's layout takes its own type: one taking
+    /// `Page` would make every page schema reachable from `notes`, `Article` and its
+    /// index included, and close a cycle.
+    const INDEXED: &str = "<lem-type Photo>\n  caption: string\n</lem-type>\n\
+         <lem-type Article extends Page>\n  title: string\n  \
+         hero: Photo? by site.photos\n  layout: (Article, html): html = f\n</lem-type>\n\
+         <lem-type Note extends Page>\n  layout: (Note, html): html = g\n</lem-type>\n\
+         <lem-fn f(a: Article, b: html)><lem.a.url><lem.b></lem-fn>\n\
+         <lem-fn g(n: Note, b: html)><lem.n.url><lem.b></lem-fn>\n\
+         <lem-let posts: [Article] from \"pages/*.md\" />\n\
+         <lem-let notes: [Note] from \"notes/*.md\" />\n\
+         <lem-let photos: {string: Photo} = {\"sunset\": {\"caption\": \
+         notes.length() gt 0 ? \"Sunset over notes\" : \"Sunset\"}} />";
+
+    /// The `INDEXED` site with a member of each collection and a page no glob holds
+    /// — a document and a template — compiled under the shell host.
+    fn indexed_module() -> Module {
+        let files = [
+            SourceFile::new("ambient.lem", AMBIENT),
+            SourceFile::new("site.lem", INDEXED),
+            document("pages/a.md", "---\ntitle: A\n---\nbody", "Article"),
+            document("notes/n.md", "---\n---\nnote", "Note"),
+            document(
+                "about.md",
+                "---\ntype: Article\ntitle: About\n---\n",
+                "Article",
+            ),
+            document(
+                "home.lem",
+                "---\ntype: Article\ntitle: Home\n---\n<lem.page.title>",
+                "Article",
+            ),
+        ];
+        compile(&files, &shell()).expect_output()
+    }
+
+    fn paths(store: &Store) -> Vec<&str> {
+        store.pages.iter().map(|page| page.path.as_str()).collect()
+    }
+
+    #[test]
+    fn loads_a_page_template_as_a_member_of_its_collection() {
+        // A template with front matter is a member like a document: its record is
+        // built from the front matter, bound at its path for the render, and its
+        // `body` is null, which no default of `Article` reads.
+        let module = indexed_module();
+        let data = Data {
+            ambient: vec![build()],
+            sources: vec![
+                (
+                    "posts".to_owned(),
+                    Source::Many(vec![page(
+                        "home.lem",
+                        object(&[("title", Value::str("Home")), ("url", Value::str("/"))]),
+                    )]),
+                ),
+                ("notes".to_owned(), Source::Many(vec![])),
+            ],
+            pages: Vec::new(),
+        };
+        let store = load(&module, &shell(), data).unwrap().expect_output();
+        let Some(Value::Record(home)) = store.page("home.lem") else {
+            panic!("a tagged record");
+        };
+        assert_eq!(&*home.name, "Article");
+        assert_eq!(home.fields.get("title"), Some(&Value::str("Home")));
+        assert_eq!(home.fields.get("draft"), Some(&Value::Bool(false)));
+        let host = shell();
+        let globals = store.globals(&host, "home.lem");
+        assert_eq!(globals.last().map(|(name, _)| *name), Some("page"));
+        assert_eq!(globals.last().map(|(_, v)| v), store.page("home.lem"));
+    }
+
+    #[test]
+    fn loads_a_page_no_glob_holds_after_the_bindings() {
+        // `about.md` resolves `hero` through `site.photos`, which the bindings loaded
+        // before any page in `pages` was; and its record is kept after the members.
+        let module = indexed_module();
+        let data = Data {
+            ambient: vec![build()],
+            sources: vec![
+                (
+                    "posts".to_owned(),
+                    Source::Many(vec![page(
+                        "pages/a.md",
+                        object(&[("title", Value::str("A")), ("url", Value::str("/a/"))]),
+                    )]),
+                ),
+                ("notes".to_owned(), Source::Many(vec![])),
+            ],
+            pages: vec![page(
+                "about.md",
+                object(&[
+                    ("title", Value::str("About")),
+                    ("hero", Value::str("sunset")),
+                    ("url", Value::str("/about/")),
+                ]),
+            )],
+        };
+        let store = load(&module, &shell(), data).unwrap().expect_output();
+        assert_eq!(paths(&store), ["pages/a.md", "about.md"]);
+        let Some(Value::Record(about)) = store.page("about.md") else {
+            panic!("a tagged record");
+        };
+        let Some(Value::Record(hero)) = about.fields.get("hero") else {
+            panic!("a resolved photo: {:?}", about.fields.get("hero"));
+        };
+        assert_eq!(hero.fields.get("caption"), Some(&Value::str("Sunset")));
+    }
+
+    #[test]
+    fn reports_a_page_no_glob_holds_at_the_hosts_positions() {
+        let module = indexed_module();
+        let text = "---\ntype: Article\ntitle: 3\n---\n";
+        let data = Data {
+            ambient: vec![build()],
+            sources: vec![
+                ("posts".to_owned(), Source::Many(vec![])),
+                ("notes".to_owned(), Source::Many(vec![])),
+            ],
+            pages: vec![Loaded {
+                value: object(&[("title", Value::Int(3)), ("url", Value::str("/about/"))]),
+                path: Some("about.md".to_owned()),
+                spans: spans(text, &[("title", at(text, "title: 3"))]),
+            }],
+        };
+        assert_eq!(
+            errors(&module, &shell(), data),
+            [format!(
+                "about.md:{}: expected `string` for `title`, got `int`",
+                at(text, "title: 3")
+            )]
+        );
+    }
+
+    #[test]
+    fn refuses_a_page_the_envelope_cannot_load() {
+        // Caller bugs, each with no data to point at: the checks a glob's members get,
+        // and one path carried twice, whichever way.
+        let files = [
+            SourceFile::new("ambient.lem", AMBIENT),
+            SourceFile::new("site.lem", SITE),
+            document("pages/a.md", "---\ntitle: A\n---\nbody", "Article"),
+            SourceFile::new("layout.lem", "<lem-fn g()>x</lem-fn>"),
+            SourceFile::new("free.lem", "---\n---\nx"),
+        ];
+        let module = compile(&files, &shell()).expect_output();
+        let refused = |members: Vec<Loaded>, pages: Vec<Loaded>| {
+            load(
+                &module,
+                &shell(),
+                Data {
+                    ambient: vec![build()],
+                    sources: vec![
+                        ("posts".to_owned(), Source::Many(members)),
+                        ("motto".to_owned(), one(Value::str("m"))),
+                    ],
+                    pages,
+                },
+            )
+            .unwrap_err()
+        };
+        let mut nameless = page("pages/a.md", object(&[]));
+        nameless.path = None;
+        assert_eq!(
+            refused(vec![], vec![nameless]),
+            "a page in `pages` has no path"
+        );
+        assert_eq!(
+            refused(vec![], vec![page("layout.lem", object(&[]))]),
+            "no compiled page at `layout.lem`"
+        );
+        assert_eq!(
+            refused(vec![], vec![page("nowhere.md", object(&[]))]),
+            "no compiled page at `nowhere.md`"
+        );
+        assert_eq!(
+            refused(vec![], vec![page("free.lem", object(&[]))]),
+            "`free.lem` was compiled with no record, so it is no page to load"
+        );
+        let a = || page("pages/a.md", object(&[]));
+        assert_eq!(
+            refused(vec![], vec![a(), a()]),
+            "`pages/a.md` is loaded twice"
+        );
+        assert_eq!(
+            refused(vec![a()], vec![a()]),
+            "`pages/a.md` is loaded twice"
+        );
+    }
+
+    #[test]
+    fn leaves_a_page_the_envelope_does_not_carry_unloaded() {
+        // Not an error: the resident core cannot forget a unit the shell deleted or
+        // held back, so the page is simply absent, and a render of it binds whatever
+        // the envelope carried for the document value — here nothing.
+        let module = site_module();
+        let data = Data {
+            ambient: vec![build()],
+            sources: vec![
+                ("posts".to_owned(), Source::Many(vec![])),
+                ("motto".to_owned(), one(Value::str("m"))),
+            ],
+            pages: Vec::new(),
+        };
+        let store = load(&module, &shell(), data).unwrap().expect_output();
+        assert_eq!(store.page("pages/a.md"), None);
+        assert!(
+            store
+                .globals(&shell(), "pages/a.md")
+                .iter()
+                .all(|(name, _)| *name != "page")
+        );
+    }
+
+    #[test]
+    fn keeps_pages_in_load_order_across_collections_and_the_envelope() {
+        // `posts` is declared first and loads last among the collections: its records
+        // index `photos`, computed from `notes`, so link order is not declaration
+        // order — and the store follows the load, then takes `pages` in the envelope's
+        // order.
+        let module = indexed_module();
+        let steps: Vec<&str> = module.bindings[0]
+            .steps
+            .iter()
+            .map(|step| &*step.name)
+            .collect();
+        assert_eq!(steps, ["notes", "photos", "posts"]);
+        let data = Data {
+            ambient: vec![build()],
+            sources: vec![
+                (
+                    "posts".to_owned(),
+                    Source::Many(vec![page(
+                        "pages/a.md",
+                        object(&[("title", Value::str("A")), ("url", Value::str("/a/"))]),
+                    )]),
+                ),
+                (
+                    "notes".to_owned(),
+                    Source::Many(vec![page(
+                        "notes/n.md",
+                        object(&[("url", Value::str("/n/"))]),
+                    )]),
+                ),
+            ],
+            pages: vec![
+                page(
+                    "home.lem",
+                    object(&[("title", Value::str("Home")), ("url", Value::str("/"))]),
+                ),
+                page(
+                    "about.md",
+                    object(&[
+                        ("title", Value::str("About")),
+                        ("url", Value::str("/about/")),
+                    ]),
+                ),
+            ],
+        };
+        let store = load(&module, &shell(), data).unwrap().expect_output();
+        assert_eq!(
+            paths(&store),
+            ["notes/n.md", "pages/a.md", "home.lem", "about.md"]
         );
     }
 
@@ -1187,6 +1526,7 @@ pub(crate) mod tests {
                 ("motto".to_owned(), one(Value::str("m"))),
                 ("posts".to_owned(), Source::Many(vec![])),
             ],
+            pages: Vec::new(),
         };
         assert_eq!(
             errors(&module, &shell(), data),

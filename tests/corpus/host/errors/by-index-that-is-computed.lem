@@ -1,3 +1,5 @@
+---
+---
 <lem-type Gallery extends Page>
   hero: Photo? by lookup()
   layout: (Gallery, html): html

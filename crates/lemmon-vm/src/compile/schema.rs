@@ -265,6 +265,15 @@ impl Compiler<'_> {
             return;
         };
         let span = prepared.record_span();
+        // A record would type the document value as itself, and the render binds the
+        // envelope's unchecked value to a file that is no page (invariant 10).
+        if !prepared.source.page_shaped() {
+            self.error(
+                span,
+                "a template with no front matter is no page, so it takes no record",
+            );
+            return;
+        }
         // Named *and* bound: a host that names a document value it never bound has no
         // value for the record to type, and recording the fact anyway would leave the
         // unit looking as though the host had dropped a binding it never made.
@@ -481,27 +490,33 @@ mod tests {
         shown(&compile(files, host).diagnostics)
     }
 
+    /// A layout reading the page: what a template that is no page does with the
+    /// document value.
+    fn layout(body: &str) -> String {
+        format!("<lem-fn layout()>{body}</lem-fn>")
+    }
+
     #[test]
     fn types_an_ambient_value_from_the_hosts_declaration() {
         let files = [
             SourceFile::new("ambient.lem", AMBIENT),
-            SourceFile::new("t.lem", "<lem.page.url>"),
+            SourceFile::new("t.lem", layout("<lem.page.url>")),
         ];
         assert!(diagnostics_with(&shell_host(), &files).is_empty());
     }
 
     #[test]
     fn refuses_a_field_the_ambient_values_type_does_not_declare() {
-        const NOPE: &str = "<lem.page.nope>";
+        let nope = layout("<lem.page.nope>");
         let files = [
             SourceFile::new("ambient.lem", AMBIENT),
-            SourceFile::new("t.lem", NOPE),
+            SourceFile::new("t.lem", &nope),
         ];
         assert_eq!(
             diagnostics_with(&shell_host(), &files),
             [format!(
                 "t.lem:{}: `Page` has no field `nope`",
-                at(NOPE, "page.nope")
+                at(&nope, "page.nope")
             )]
         );
     }
@@ -510,37 +525,88 @@ mod tests {
     fn reports_a_type_the_host_names_that_no_file_declares() {
         // The mistake is the host's, so it is reported where the file first reads the
         // value, once, and the value is `any` from there.
-        const SRC: &str = "<lem.page.a><lem.page.b>";
+        let src = layout("<lem.page.a><lem.page.b>");
         assert_eq!(
-            diagnostics_with(&shell_host(), &[SourceFile::new("t.lem", SRC)]),
+            diagnostics_with(&shell_host(), &[SourceFile::new("t.lem", &src)]),
             [format!(
                 "t.lem:{}: the host binds `page` to `Page`, which no file declares",
-                at(SRC, "«page».a")
+                at(&src, "«page».a")
             )]
         );
+    }
+
+    /// A page schema beside the host's declaration, for a file to be compiled as.
+    const ARTICLE: &str = "<lem-type Page>\n  url: url\n</lem-type>\n\
+                           <lem-type Article extends Page>\n  title: string\n  \
+                           layout: (Article, html): html\n</lem-type>";
+
+    #[test]
+    fn refuses_a_record_for_a_template_with_no_front_matter() {
+        // The record would type `page` as an `Article` while the render binds the
+        // envelope's unchecked value: a template with no front matter is no page.
+        let files = [
+            SourceFile::new("ambient.lem", ARTICLE),
+            SourceFile::new("t.lem", layout("<lem.page.title>")).with_record("Article"),
+        ];
+        assert_eq!(
+            diagnostics_with(&shell_host(), &files),
+            [
+                "t.lem:0..0: a template with no front matter is no page, so it takes no \
+              record"
+            ]
+        );
+    }
+
+    #[test]
+    fn reads_the_document_value_as_a_page_templates_own_record() {
+        // Front matter makes the template a page: it takes the record, reads `page` as
+        // it, and a field the record does not declare is refused at the read.
+        const NOPE: &str = "---\ntitle: x\n---\n<lem.page.title><lem.page.nope>";
+        let files = [
+            SourceFile::new("ambient.lem", ARTICLE),
+            SourceFile::new("t.lem", NOPE).with_record("Article"),
+        ];
+        assert_eq!(
+            diagnostics_with(&shell_host(), &files),
+            [format!(
+                "t.lem:{}: `Article` has no field `nope`",
+                at(NOPE, "page.nope")
+            )]
+        );
+    }
+
+    #[test]
+    fn leaves_a_page_templates_document_value_unknown_typed_without_a_record() {
+        // No glob matched and no `type:` named it: the template renders its own
+        // output, and `page` is whatever the envelope carries.
+        let files = [
+            SourceFile::new("ambient.lem", ARTICLE),
+            SourceFile::new("t.lem", "---\n---\n<lem.page.anything>"),
+        ];
+        assert!(diagnostics_with(&shell_host(), &files).is_empty());
     }
 
     #[test]
     fn reads_the_site_files_bindings_as_the_record_that_value_has() {
         let files = [
             SourceFile::new("site.lem", "<lem-let name: string = \"limulus.net\" />"),
-            SourceFile::new("t.lem", "<lem.site.name>"),
+            SourceFile::new("t.lem", layout("<lem.site.name>")),
         ];
         assert!(diagnostics_with(&shell_host(), &files).is_empty());
     }
 
     #[test]
     fn refuses_a_binding_the_site_file_does_not_make() {
-        const NOPE: &str = "<lem.site.nope>";
+        let nope = layout("<lem.site.nope>");
         let files = [
             SourceFile::new("site.lem", "<lem-let name: string = \"limulus.net\" />"),
-            SourceFile::new("t.lem", NOPE),
+            SourceFile::new("t.lem", &nope),
         ];
         assert_eq!(
             diagnostics_with(&shell_host(), &files),
             [format!(
                 "t.lem:{}: `site.lem` has no field `nope`; did you mean `name`?",
-                at(NOPE, "site.nope")
+                at(&nope, "site.nope")
             )]
         );
     }
@@ -564,7 +630,7 @@ mod tests {
         // infers as it always has.
         let files = [SourceFile::new(
             "t.lem",
-            "<lem-let name = \"limulus.net\" /><lem.name>",
+            layout("<lem-let name = \"limulus.net\" /><lem.name>"),
         )];
         assert!(diagnostics_with(&shell_host(), &files).is_empty());
     }
@@ -573,7 +639,7 @@ mod tests {
     fn takes_a_capture_body_in_the_site_file_as_an_html_binding() {
         let files = [
             SourceFile::new("site.lem", "<lem-let intro><p>hi</p></lem-let>"),
-            SourceFile::new("t.lem", "<lem.site.intro>"),
+            SourceFile::new("t.lem", layout("<lem.site.intro>")),
         ];
         assert!(diagnostics_with(&shell_host(), &files).is_empty());
     }
@@ -584,7 +650,10 @@ mod tests {
         // the head: `site` is typed by it with nothing loaded yet.
         let files = [
             SourceFile::new("site.lem", "<lem-let posts: [string] from \"f/*.md\" />"),
-            SourceFile::new("t.lem", "<lem-for p in site.posts><lem.p></lem-for>"),
+            SourceFile::new(
+                "t.lem",
+                layout("<lem-for p in site.posts><lem.p></lem-for>"),
+            ),
         ];
         assert!(diagnostics_with(&shell_host(), &files).is_empty());
     }

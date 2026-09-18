@@ -1,3 +1,5 @@
+---
+---
 <lem-type Note extends Page>
   slug: string = page.url
   layout: (Note, html): html

@@ -331,14 +331,17 @@ fn html(case: &Case) -> String {
 
 /// A `host/` case, compiled with the environment the declaration describes — the two
 /// files skipped where the case is one of them, since one compile may not name a file
-/// twice — then loaded and rendered as the shell would: a document as the one member of
-/// its collection, with the values the shell derives (`url`, `inputPath`) added to its
-/// front matter; the shell's own `build`; and an untyped `page` for whatever is not a
-/// loaded document, which is what a document no collection matched renders with.
+/// twice — then loaded and rendered as the shell would: a page as the one member of its
+/// collection, or on its own in `pages` when its `type:` key typed it and no glob holds
+/// it, with the values the shell derives (`url`, `inputPath`) added to its front matter;
+/// the shell's own `build`; and an untyped `page` for whatever is not a loaded page,
+/// which is what a page no collection matched renders with. A `.lem` is a page when it
+/// opens with front matter (D41), a `.md` always.
 fn typed_html(case: &Case) -> String {
     let path = case.path();
     let host = declared_host();
-    let document = is_document(&path).then(|| Document::of(case));
+    let page_shaped = is_document(&path) || front_matter(&case.source).is_some();
+    let document = page_shaped.then(|| PageInput::of(case));
     let mut files: Vec<SourceFile> = environment()
         .into_iter()
         .filter(|environment| environment.path != path)
@@ -374,11 +377,17 @@ fn typed_html(case: &Case) -> String {
 }
 
 /// What the shell hands `loadData` for one case: `build` and an untyped `page` as its
-/// own values, and every `from` binding of the environment fulfilled — the case's
-/// document as the one member of the glob that matched it, the fixtures above for the
-/// rest.
-fn envelope(module: &Module, host: &Host, path: &str, document: Option<&Document>) -> Data {
+/// own values, every `from` binding of the environment fulfilled — the case's page as
+/// the one member of the glob that matched it, the fixtures above for the rest — and,
+/// in `pages`, the case's page when it has a record and no glob matched it.
+fn envelope(
+    module: &Module,
+    host: &Host,
+    path: &str,
+    document: Option<&PageInput>,
+) -> Data {
     let mut sources = Vec::new();
+    let mut in_glob = false;
     for plan in &module.bindings {
         for step in &plan.steps {
             let Fulfilled::ByHost(kind) = &step.fulfilled else {
@@ -394,6 +403,7 @@ fn envelope(module: &Module, host: &Host, path: &str, document: Option<&Document
                     let member = document
                         .filter(|_| matches(pattern, path))
                         .map(|document| document.loaded(path));
+                    in_glob |= member.is_some();
                     Source::Many(member.into_iter().collect())
                 }
                 SourceKind::File(file) => {
@@ -436,6 +446,11 @@ fn envelope(module: &Module, host: &Host, path: &str, document: Option<&Document
             ("page".to_owned(), page()),
         ],
         sources,
+        pages: document
+            .filter(|document| !in_glob && document.record.is_some())
+            .map(|document| document.loaded(path))
+            .into_iter()
+            .collect(),
     }
 }
 
@@ -449,9 +464,10 @@ fn matches(pattern: &str, path: &str) -> bool {
         .matches(relative)
 }
 
-/// A document case as the shell would hand it over: its front matter as a value with
-/// positions, the record it is compiled as, and where that was named.
-struct Document {
+/// A page case — a document, or a template with front matter — as the shell would hand
+/// it over: its front matter as a value with positions, the record it is compiled as,
+/// and where that was named.
+struct PageInput {
     /// The front matter with the `type:` key stripped; an empty mapping without one.
     value: Value,
     spans: Spans,
@@ -461,7 +477,7 @@ struct Document {
     record: Option<(String, Option<Span>)>,
 }
 
-impl Document {
+impl PageInput {
     fn of(case: &Case) -> Self {
         let path = case.path();
         let parsed = front_matter(&case.source);
@@ -485,9 +501,9 @@ impl Document {
         }
     }
 
-    /// The document as loaded: its front matter with the values the shell derives —
-    /// `url` from the path, `inputPath` the path itself — added where the front matter
-    /// gave none.
+    /// The page as loaded: its front matter with the values the shell derives — `url`
+    /// from the path without its extension, `inputPath` the path itself — added where
+    /// the front matter gave none.
     fn loaded(&self, path: &str) -> Loaded {
         let Value::Map(front) = &self.value else {
             return Loaded {
@@ -500,7 +516,10 @@ impl Document {
             .iter()
             .map(|(key, value)| (key.clone(), value.clone()))
             .collect();
-        let stem = path.strip_suffix(".md").unwrap_or(path);
+        let stem = path
+            .strip_suffix(".md")
+            .or_else(|| path.strip_suffix(".lem"))
+            .unwrap_or(path);
         for (key, derived) in [
             ("url", Value::str(format!("/{stem}/"))),
             ("inputPath", Value::str(path)),

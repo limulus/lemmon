@@ -405,8 +405,15 @@ The standard shell (`@limulus/lemmon-shell`) ships this declaration and binds `p
   in for — a document or page template no collection matched and no `type:` named,
   whose `page` is unknown-typed, and a template with no front matter, whose `page` is
   the declared type — so it is bound as sent, not validated.
-- _Not yet (∆Bhz): a page template loads no record of its own, so its `page` is the
-  envelope's value, checked by the compiler and not by the loader._
+- **A page no glob holds is carried in the envelope's `pages`**: the front matter of
+  every document or page template whose `type:` key named its record, with its path.
+  They load after every binding, in the envelope's order, so a `by` index in one reads
+  a map the site loaded. A page carried twice — in a glob and in `pages`, or twice in
+  either — is refused as a caller bug, since one path is one render. A page the envelope
+  does not carry is not loaded and not an error: the resident core cannot forget a unit
+  the shell deleted or held back as a draft. The loader keeps every page it loaded in
+  load order — each collection's members as its binding loaded them, the bindings in
+  their link order, then `pages` — which is the order a render is offered them in.
 
 ```
 <lem-let posts:    [Article]        from "feed/*/index.md" />
@@ -469,10 +476,8 @@ The standard shell (`@limulus/lemmon-shell`) ships this declaration and binds `p
   loader fills them with the pages before and after it in the list; the first page has no
   `prev`, the last no `next`, and a page that was not generated has neither. A default may
   not read one, since the loader fills them after every page of the generator is built.
-- _Not yet (∆Bhz): a `.lem` file's leading `---` block is a token the compiler skips
-  and no more, nothing renders a page — template or document — through its layout, no
-  page's url is reported or checked against another's, and no `body` read refuses a
-  page template._
+- _Not yet (∆Bhz): nothing renders a page — template or document — through its layout,
+  and no page's url is reported or checked against another's._
 - _Not yet (∆99b): nothing expands a generator or fills a neighbour field._
 - **`layout`** is a field every page schema declares, `(T, html): html` for its own `T`,
   usually with a default. At load its string value resolves to a project function of that

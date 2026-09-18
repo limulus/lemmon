@@ -1,3 +1,5 @@
+---
+---
 <lem-let drafts: [Article] from "drafts/*.md" />
 
 Only the file the host reads `site` from can bind a source; anywhere else nothing would

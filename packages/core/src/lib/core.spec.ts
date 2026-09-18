@@ -91,6 +91,9 @@ const site: SourceFileInput[] = [
   },
 ]
 
+/** A component file: what a `.lem` that is no page holds, its output inside a `lem-fn`. */
+const card = (body: string): string => `<lem-fn card()>${body}</lem-fn>`
+
 /** The envelope that loads the typed site cleanly. */
 const loaded: DataInput = {
   ambient: {},
@@ -184,12 +187,16 @@ describe('Core', () => {
 
     it('should type an ambient value from the declaration it compiles with', async () => {
       const core = await loadCore()
+      // A component reads the value as declared; a template with no front matter is
+      // no page, so output at its top level would only draw the warning for it.
       expect(
-        core.compile([...schema, { path: 'page.lem', text: '<lem.page.url>' }], declared)
-          .diagnostics
+        core.compile(
+          [...schema, { path: 'card.lem', text: card('<lem.page.url>') }],
+          declared
+        ).diagnostics
       ).toEqual([])
       const [wrong] = core.compile(
-        [{ path: 'page.lem', text: '<lem.page.nope>' }],
+        [{ path: 'card.lem', text: card('<lem.page.nope>') }],
         declared
       ).diagnostics
       expect(wrong.message).toBe('`Page` has no field `nope`')
@@ -221,7 +228,7 @@ describe('Core', () => {
       const core = await loadCore()
       core.compile(schema, declared)
       const [wrong] = core.compile([
-        { path: 'page.lem', text: '<lem.page.nope>' },
+        { path: 'card.lem', text: card('<lem.page.nope>') },
       ]).diagnostics
       expect(wrong.message).toBe('`Page` has no field `nope`')
     })

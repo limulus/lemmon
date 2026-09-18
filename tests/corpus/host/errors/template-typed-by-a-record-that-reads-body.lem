@@ -1,0 +1,9 @@
+---
+type: Til
+topic: templates
+---
+<h1><lem.page.title></h1>
+
+`Til` computes `excerpt` and `readingTime` from `body`, the prose a document is loaded
+with. A template has no body until it renders, so the link step refuses the record for
+it, naming each default that reads `body`.

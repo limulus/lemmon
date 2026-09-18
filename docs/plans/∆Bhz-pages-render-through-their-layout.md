@@ -24,8 +24,9 @@ deleted.
    checkout, so a claim made in a worktree is not seen from `main`.
 4. If the checkout has no `target/` or `artifacts/wasm/`, the first `npm run rust:wasm`
    and `cargo test` are cold builds.
-5. Checkpoint 1a is built on the `claude/delto-plan-bhz-d39cc6` branch (2026-09-17),
-   awaiting Eric's review; open 1b with a plain-language preview once it is committed.
+5. Checkpoints 1a (`bc2b3ab`) and 1b are built on the `claude/delto-plan-bhz-d39cc6`
+   branch (2026-09-17); 1b awaits Eric's review. Open checkpoint 2 with a plain-language
+   preview once it is committed.
 
 ## What ∆7wK left for this item (2026-09-17)
 
@@ -308,9 +309,12 @@ verify`.
 
 ## Checkpoint 1b — page templates at compile and load
 
-Opens only once ∆7wK's third checkpoint is on `main`, and after every anchor in
-`surfaces.rs`, `compile/mod.rs`, `unit.rs`, `bytecode.rs`, `host.rs`, `load/mod.rs`,
-and `tests/corpus.rs` has been rechecked there.
+Built on the branch after 1a landed (`bc2b3ab`). Two departures from the items below:
+the store keeps `{path, record}` per page and finds one by a scan, since nothing reads
+a page's spans or `record_span` until checkpoint 2's url pass, which adds them with
+their consumer; and the corpus's `.lem` cases that render output — the `errors/`,
+`schemas/`, and `pages/` templates — were given front matter rather than a warning
+line each, the shape Eric chose for the wrapper's fixture (item 20).
 
 ### Compiler (`crates/lemmon-vm`)
 

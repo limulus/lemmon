@@ -458,15 +458,17 @@ impl Host {
             })
     }
 
-    /// The host as the file at `path` sees it: a file the host gave a `record` reads
-    /// the document value as that record, and a document the host gave none reads it
-    /// unknown-typed — D30's document that no glob matched, which renders all the same.
+    /// The host as one file sees it: a file the host gave a `record` reads the document
+    /// value as that record, and a page-shaped file the host gave none — a document,
+    /// or a template with front matter (D41) — reads it unknown-typed: D30's page that
+    /// no glob matched, which renders all the same. A template with no front matter
+    /// is no page, and reads the value as the host declared it.
     ///
     /// The declaration itself is never rewritten. The type a page schema extends and
     /// the field a page renders through stay what the host declared, whatever one file
     /// was compiled as.
     #[must_use]
-    pub fn for_file(&self, path: &str, record: Option<&str>) -> Self {
+    pub fn for_file(&self, page_shaped: bool, record: Option<&str>) -> Self {
         let mut seen = self.clone();
         let Some(document) = seen.document.clone() else {
             return seen;
@@ -476,7 +478,7 @@ impl Host {
         }
         seen.document_binding = match record {
             Some(record) => Some(Ambient::Named(Rc::from(record))),
-            None if crate::is_document(path) => Some(Ambient::Untyped),
+            None if page_shaped => Some(Ambient::Untyped),
             None => return seen,
         };
         seen
@@ -760,7 +762,7 @@ mod tests {
 
     #[test]
     fn reads_a_files_own_record_as_the_document_value() {
-        let seen = shell().for_file("feed/a/index.md", Some("Article"));
+        let seen = shell().for_file(true, Some("Article"));
         assert_eq!(
             seen.binding("page"),
             Some(&Ambient::Named(Rc::from("Article")))
@@ -768,14 +770,14 @@ mod tests {
     }
 
     #[test]
-    fn leaves_a_document_no_record_matched_unknown_typed() {
-        let seen = shell().for_file("feed/a/index.md", None);
+    fn leaves_a_page_no_record_matched_unknown_typed() {
+        let seen = shell().for_file(true, None);
         assert_eq!(seen.binding("page"), Some(&Ambient::Untyped));
     }
 
     #[test]
-    fn leaves_a_templates_document_value_as_the_host_declared_it() {
-        let seen = shell().for_file("layout.lem", None);
+    fn leaves_a_non_page_files_document_value_as_the_host_declared_it() {
+        let seen = shell().for_file(false, None);
         assert_eq!(
             seen.binding("page"),
             Some(&Ambient::Named(Rc::from("Page")))
@@ -784,20 +786,20 @@ mod tests {
 
     #[test]
     fn keeps_the_page_schema_base_when_a_file_is_compiled_as_a_record() {
-        let seen = shell().for_file("feed/a/index.md", Some("Article"));
+        let seen = shell().for_file(true, Some("Article"));
         assert_eq!(seen.document_type().as_deref(), Some("Page"));
     }
 
     #[test]
     fn has_nothing_to_retype_for_a_host_that_renders_no_documents() {
         let host = Host::untyped(["page"]);
-        assert_eq!(host.for_file("a.md", Some("Article")), host);
+        assert_eq!(host.for_file(true, Some("Article")), host);
     }
 
     #[test]
     fn retypes_nothing_for_a_document_value_the_host_never_bound() {
         let host = Host::untyped(["site"]).documents("page");
-        let seen = host.for_file("a.md", Some("Article"));
+        let seen = host.for_file(true, Some("Article"));
         assert_eq!(seen.binding("page"), None);
     }
 

@@ -1,0 +1,8 @@
+---
+type: SitePage
+title: Home
+teaser: A template no glob holds, typed by its own key
+---
+<h1><lem.page.title></h1>
+<p><lem.page.teaser ?? "no teaser"></p>
+<p>at <lem.page.url></p>

@@ -74,6 +74,11 @@ pub struct Unit {
     /// fact of the unit like the rest, and the reason two documents of different
     /// schemas cannot share one.
     pub record: Option<String>,
+    /// Whether the file is shaped like a page: a document, or a template with front
+    /// matter (D41). A fact of the file's text, kept here because the link step,
+    /// which has no text, builds a page source for such a file and none for any
+    /// other, and reads the host as the file saw it ([`Host::for_file`]).
+    pub page_shaped: bool,
     /// The functions the loader runs for the records this file declares: each field's
     /// default (∆iCW). Part of this unit and no consumer's: a default is not part of
     /// a type's shape fact.
@@ -112,6 +117,10 @@ pub struct DefaultFn {
     pub func: u32,
     /// The field's name in the declaration.
     pub span: Span,
+    /// Where the default first reads `body`, if it does — a page template has no
+    /// body until it renders, so the link step refuses one typed by a record whose
+    /// plan runs such a default, and points here (D43).
+    pub reads_body: Option<Span>,
 }
 
 /// One field's `by value.key` index, as declared: the map a string in data resolves
@@ -348,7 +357,7 @@ pub fn link(units: &[Unit], index: &ExportIndex, host: &Host) -> Compiled<Module
             // it — leaves the unit stale rather than merely relinkable. Compared
             // against the host as *this file* saw it, since a file compiled as a record
             // reads the document value as that record.
-            let seen = host.for_file(&unit.path, unit.record.as_deref());
+            let seen = host.for_file(unit.page_shaped, unit.record.as_deref());
             for reference in &unit.ambient_refs {
                 let bound = seen.binding(&reference.name).map(|a| a.ty());
                 match bound {
@@ -508,6 +517,7 @@ pub fn link(units: &[Unit], index: &ExportIndex, host: &Host) -> Compiled<Module
     };
     let records = places.record_plans(&mut diagnostics);
     let bindings = places.bindings_plans(&records, &mut diagnostics);
+    diagnostics.extend(places.refuse_page_templates(&records));
     // A cycle among what the loader runs is as fatal as an unresolved import: the
     // program could never load.
     if diagnostics.iter().any(Diagnostic::is_error) {
@@ -545,13 +555,11 @@ pub fn link(units: &[Unit], index: &ExportIndex, host: &Host) -> Compiled<Module
         };
         module.files.push(unit.path.clone());
         module.entries.push(function_offset);
-        module
-            .documents
-            .push(unit.body.as_ref().map(|body| Document {
-                record: unit.record.as_deref().map(Rc::from),
-                record_span: unit.record_span,
-                body: body.clone(),
-            }));
+        module.documents.push(unit.page_shaped.then(|| Document {
+            record: unit.record.as_deref().map(Rc::from),
+            record_span: unit.record_span,
+            body: unit.body.clone(),
+        }));
         // Two documents writing the same block report one payload between them: the id
         // is the content, and the host keys what its producer made on it. Kept by a set,
         // since a relink walks every unit's payloads and must stay cheaper than a compile.
@@ -798,6 +806,55 @@ impl Places<'_> {
             });
         }
         plans
+    }
+
+    /// The refusal of every page template whose record's plan reads `body` (D43): a
+    /// template has no body until it renders, and the loader would hand such a
+    /// default null, so the record cannot type it. One error per template, at where
+    /// its record was named, labelled at each default that reads `body` — an
+    /// inherited one included, since the plan runs it all the same. A document of the
+    /// same record is untouched: its prose is the body.
+    fn refuse_page_templates(&self, records: &[RecordPlan]) -> Vec<Diagnostic> {
+        self.units
+            .iter()
+            .filter(|unit| unit.page_shaped && unit.body.is_none())
+            .filter_map(|template| {
+                let record = template.record.as_deref()?;
+                let plan = records
+                    .iter()
+                    .find(|plan| &*plan.name == record)
+                    .expect("a unit's record is a declared record, or it never compiled");
+                let readers: Vec<(&str, Span)> = plan
+                    .steps
+                    .iter()
+                    .filter_map(|step| {
+                        let position = step.file as usize;
+                        let owner = &self.units[position];
+                        let row = owner
+                            .defaults
+                            .iter()
+                            .find(|row| self.func(position, row.func) == step.func)
+                            .expect("a step runs a default of the file it names");
+                        row.reads_body.map(|span| (owner.path.as_str(), span))
+                    })
+                    .collect();
+                if readers.is_empty() {
+                    return None;
+                }
+                let mut diagnostic = Diagnostic::error(
+                    &template.path,
+                    template.record_span,
+                    format!(
+                        "`{record}` cannot type a page template: its defaults read \
+                         `body`, and a template has no body until it renders"
+                    ),
+                );
+                for (path, span) in readers {
+                    diagnostic = diagnostic.with_label(path, span, "reads `body` here");
+                }
+                Some(diagnostic)
+            })
+            .collect()
     }
 
     /// The refusals of a function the loader runs as `runs` that reaches an ambient
@@ -1258,7 +1315,7 @@ mod tests {
     use crate::compile::{compile_unit, prepare};
     use crate::host::{Ambient, Claim};
     use crate::testing::at;
-    use crate::{SourceFile, Value, render};
+    use crate::{SourceFile, Value, compile, render};
 
     /// The host every test below compiles against unless it needs another: the three
     /// names the standard shell binds, none of them typed.
@@ -1715,6 +1772,83 @@ mod tests {
             .iter()
             .map(|step| &*step.field)
             .collect()
+    }
+
+    /// A page schema whose `excerpt` reads `body`, and one below it that adds a
+    /// default reading nothing of the page.
+    const READS_BODY: &str = "<lem-type Post extends Page>\n  \
+         excerpt: html = body\n  slug: string = path\n  \
+         layout: (Post, html): html\n</lem-type>\n\
+         <lem-type Tip extends Post>\n  n: int = 1\n</lem-type>\n\
+         <lem-type Memo extends Page>\n  slug: string = path\n  \
+         layout: (Memo, html): html\n</lem-type>";
+
+    /// A page template typed as `record` by its own key, beside a document of the
+    /// same record, compiled and linked under the shell host.
+    fn page_template_of(record: &str) -> (String, Compiled<Module>) {
+        let template = format!("---\ntype: {record}\n---\n<p>the body</p>");
+        let files = [
+            SourceFile::new("ambient.lem", PAGE),
+            SourceFile::new("schema.lem", READS_BODY),
+            SourceFile::new("t.lem", &template)
+                .with_record(record)
+                .named_at(at(&template, record)),
+            SourceFile::new("d.md", format!("---\ntype: {record}\n---\nprose"))
+                .with_record(record),
+        ];
+        (template, compile(&files, &shell_host()))
+    }
+
+    #[test]
+    fn refuses_a_page_template_typed_by_a_record_whose_defaults_read_body() {
+        // The document of the same record is untouched: its prose is the body. The
+        // template is refused where its record was named, and the label says which
+        // default would read what the loader can only hand it as null.
+        let (template, linked) = page_template_of("Post");
+        assert!(linked.output.is_none());
+        assert_eq!(
+            shown_all(&linked.diagnostics),
+            [format!(
+                "t.lem:{}: `Post` cannot type a page template: its defaults read \
+                 `body`, and a template has no body until it renders\n  \
+                 schema.lem:{}: reads `body` here",
+                at(&template, "Post"),
+                at(READS_BODY, "excerpt: html = «body»")
+            )]
+        );
+    }
+
+    #[test]
+    fn refuses_a_page_template_through_the_default_its_record_inherits() {
+        // `Tip` declares no default reading `body`; its plan runs `Post`'s all the same.
+        let (template, linked) = page_template_of("Tip");
+        assert!(linked.output.is_none());
+        assert_eq!(
+            shown_all(&linked.diagnostics),
+            [format!(
+                "t.lem:{}: `Tip` cannot type a page template: its defaults read \
+                 `body`, and a template has no body until it renders\n  \
+                 schema.lem:{}: reads `body` here",
+                at(&template, "Tip"),
+                at(READS_BODY, "excerpt: html = «body»")
+            )]
+        );
+    }
+
+    #[test]
+    fn links_a_page_template_typed_by_a_record_that_reads_only_its_path() {
+        let (_, linked) = page_template_of("Memo");
+        let module = linked.expect_output();
+        let t = module
+            .document("t.lem")
+            .expect("a page source for the template");
+        assert_eq!(t.record.as_deref(), Some("Memo"));
+        assert_eq!(t.body, None);
+        let d = module
+            .document("d.md")
+            .expect("a page source for the document");
+        assert_eq!(d.body.as_deref(), Some("<p>prose</p>\n"));
+        assert_eq!(module.document("schema.lem"), None);
     }
 
     #[test]
