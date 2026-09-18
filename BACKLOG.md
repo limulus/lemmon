@@ -25,11 +25,6 @@ refactor priority: reshaping is cheapest before more code is built on what it re
 Seed items for the next phase (architecture doc 3, phase 1); expect these to be split
 further at claim time.
 
-- ∆Bhz Pages render through their layout — a `.lem` file's leading `---` block is front
-  matter; page templates load as documents do, and a page typed by `type:` alone loads
-  from a new `pages` envelope section; `render` calls a page's layout with its record and
-  body; `plan()` lists pages with their urls (D43). Today no page renders through its
-  layout. Planned in `docs/plans/∆Bhz-pages-render-through-their-layout.md`; needs: ∆1Hp
 - ∆99b Generators and neighbours — a page template whose `for:` key names a field and an
   `<ambient value>.<field>` list becomes one page per item at load, its url from its type's
   default; the loader fills the `prev`/`next` fields a generated page's type declares, in
