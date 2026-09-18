@@ -58,6 +58,7 @@ pub(crate) use expr::{Runs, refused_at_load};
 pub(crate) use names::duplicate_named;
 use names::{BindingKind, Frame, Names, Resolved};
 pub(crate) use rules::omittable;
+pub(crate) use schema::{EntryFault, entry_fault, misshaped_entry_field, no_entry_field};
 use surfaces::ParsedFile;
 pub use surfaces::{PreparedFile, prepare};
 use whitespace::BodyKind;

@@ -24,9 +24,9 @@ deleted.
    checkout, so a claim made in a worktree is not seen from `main`.
 4. If the checkout has no `target/` or `artifacts/wasm/`, the first `npm run rust:wasm`
    and `cargo test` are cold builds.
-5. Checkpoints 1a (`bc2b3ab`) and 1b are built on the `claude/delto-plan-bhz-d39cc6`
-   branch (2026-09-17); 1b awaits Eric's review. Open checkpoint 2 with a plain-language
-   preview once it is committed.
+5. Checkpoints 1a (`bc2b3ab`), 1b (`034dd88`), and 2 are built on the
+   `claude/delto-plan-bhz-d39cc6` branch (2026-09-17); 2 awaits Eric's review. Open
+   checkpoint 3 with a plain-language preview once it is committed.
 
 ## What ∆7wK left for this item (2026-09-17)
 
@@ -381,6 +381,18 @@ Verification: `npm run rust`; `npm run corpus:bless`, then read the diff; `npm r
 verify`.
 
 ## Checkpoint 2 — render through the entry, the url field, `plan()` in the VM
+
+Built 2026-09-17, with these departures from the text below. The entry-field rule is
+one predicate, `entry_fault` in `compile/schema.rs`, that the compiler and the link
+step both ask, and link also refuses an entry field of the wrong shape and a url field
+of a type other than `url`, each where it is declared. `render_page` takes the entry
+field's name as an `Option<&str>` — `host.entry()` — and renders the page as its own
+output when it is `None`. `LoadedPage` carries `spans` and `record_span`, and the url
+pass is a pure function over the store's pages, so its unreachable arm — a loaded page
+with no url — is tested directly. The refusal of a `render` of an uncarried page is
+deferred to checkpoint 3, where the boundary is what consumes it; the VM crate has no
+`render` entry to refuse it in. The repeat's wording is "`b` and `a` are both at
+`/x/`", labelled "the first page at this url".
 
 14. `host.rs`: `url`. `unit.rs` link: the url field check and the entry field check, with
     unit tests — missing, mistyped, a declaration-only change caught on relink, no host

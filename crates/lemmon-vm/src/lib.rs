@@ -45,7 +45,8 @@ pub use document::CodePayload;
 pub use exports::{Export, ExportIndex, TypeExport};
 pub use host::{Ambient, Claim, ClaimAnswer, Host};
 pub use load::{
-    Data, HostSpan, Loaded, LoadedPage, Source, Spans, Store, collects, field_path, load,
+    Data, HostSpan, Loaded, LoadedPage, PlannedPage, Source, Spans, Store, collects,
+    field_path, load,
 };
 pub use plan::{BindingStep, Bindings, Fulfilled, Index, RecordPlan, SourceKind, Step};
 pub use rendered::{Fragment, Fragments, Mark, Marked, Payload, Rendered};
@@ -55,7 +56,7 @@ pub use unit::{
     IndexDecl, Param, Root, Supplied, Unit, Uses, link,
 };
 pub use value::{Closure, Map, Value};
-pub use vm::{invoke, render};
+pub use vm::{invoke, render, render_page};
 
 /// Whether the file at `path` holds a document rather than a template: `.md` is a
 /// document, anything else a template. The rule a site runs on, read from the path

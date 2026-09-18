@@ -1,0 +1,16 @@
+---
+type: Labeled
+title: One counter
+---
+<lem-type Labeled extends Page>
+  title: string
+  layout: (Labeled, html): html = labeled
+</lem-type>
+
+<lem-fn labeled(p: Labeled, body: html)>
+  <h1 id="<lem.uniqueId("h")>"><lem.p.title></h1>
+  <lem.body>
+</lem-fn>
+
+<p id="<lem.uniqueId("h")>">The body renders first, so its id is the first one out;
+the layout's heading takes the next, since both render in one run.</p>

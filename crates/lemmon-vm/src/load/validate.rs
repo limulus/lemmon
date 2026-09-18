@@ -562,7 +562,8 @@ mod tests {
         let store = load(&site_module(), &shell(), data(object(front)))
             .unwrap()
             .expect_output();
-        let Value::Record(article) = &store.page("pages/a.md").expect("a loaded page")
+        let Value::Record(article) =
+            &store.page("pages/a.md").expect("a loaded page").record
         else {
             panic!("a tagged record");
         };
@@ -1187,7 +1188,8 @@ mod tests {
             pages: Vec::new(),
         };
         let store = load(&module, &shell(), data).unwrap().expect_output();
-        let Value::Record(article) = &store.page("pages/a.md").expect("a loaded page")
+        let Value::Record(article) =
+            &store.page("pages/a.md").expect("a loaded page").record
         else {
             panic!("a record");
         };
@@ -1257,7 +1259,8 @@ mod tests {
             pages: Vec::new(),
         };
         let store = load(&module, &shell(), data).unwrap().expect_output();
-        let Value::Record(article) = &store.page("pages/a.md").expect("a loaded page")
+        let Value::Record(article) =
+            &store.page("pages/a.md").expect("a loaded page").record
         else {
             panic!("a record");
         };
@@ -1448,7 +1451,8 @@ mod tests {
             pages: Vec::new(),
         };
         let store = load(&module, &shell(), data).unwrap().expect_output();
-        let Value::Record(article) = &store.page("pages/a.md").expect("a loaded page")
+        let Value::Record(article) =
+            &store.page("pages/a.md").expect("a loaded page").record
         else {
             panic!("a tagged record");
         };

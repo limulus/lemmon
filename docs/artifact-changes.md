@@ -497,7 +497,13 @@ moved it. Newest last. An entry is removed when its change has been applied.
   no glob holds, a generator's with its `for:` pair. `render` renders a loaded page through
   its entry — the file's output passed as `body` to the entry field's function in one VM run
   — and any other file as its own output. In the pipeline, Plan lists loaded pages rather
-  than expanding generators, which Load does (D43).
+  than expanding generators, which Load does (D43). Two pages at one url is a load error
+  at the second page's `url` key — else at its record, as for a url a default derived —
+  labelled at the first. The document type declares the url field as `url` and every
+  page's record the entry field as a layout of it, checked at link rather than while a
+  file compiles, since neither name is a fact of any unit: a declaration that only
+  renames a field relinks every unit as it is, and only the link step sees the new name
+  (∆Bhz).
 
 - **VM, neighbour references** — where the text lists the value set, say a neighbour
   field holds a reference into the store's page table that a field read resolves to the

@@ -210,49 +210,23 @@ impl Compiler<'_> {
     /// below it, so the field is looked up through the chain and only a declaration
     /// this file makes is judged for its shape — the file that declares one is the file
     /// that hears about it.
-    fn check_entry_field(&mut self, decl: &Declaration, base: &str, fields: &[FieldDecl]) {
-        let (Some(entry), Some(document)) = (
-            self.host.entry().map(str::to_owned),
-            self.host.document_type(),
-        ) else {
+    fn check_entry_field(&mut self, decl: &Declaration, base: &str) {
+        let (Some(entry), Some(document)) = (self.host.entry(), self.host.document_type())
+        else {
             return;
         };
         if *base != *document {
             return;
         }
-        let shape = |name: &str| format!("`{entry}: ({name}, html): html`");
-        let Some(ty) = self.index.field(&decl.name, &entry) else {
-            self.error(
-                decl.name_span,
-                format!(
-                    "`{}` extends `{document}`, so it declares how a page renders: {}",
-                    decl.name,
-                    shape(&decl.name)
-                ),
-            );
-            return;
-        };
-        // The page passed is this record or one it extends: a layout free to take the
-        // base and narrow inside is what makes one layout serve a family of schemas.
-        let takes_a_page = match &ty {
-            Type::Fn(params, ret) => matches!(
-                (params.first(), params.get(1), &**ret),
-                (Some(Type::Named(page)), Some(Type::Html), Type::Html)
-                    if **page == *decl.name || self.index.extends(&decl.name, page)
-            ),
-            _ => false,
-        };
-        if let Some(field) = fields.iter().find(|field| *field.name == *entry)
-            && !takes_a_page
-        {
-            self.error(
-                field.span,
-                format!(
-                    "`{entry}` renders a `{}`: declare it {}",
-                    decl.name,
-                    shape(&decl.name)
-                ),
-            );
+        match entry_fault(self.index, &decl.name, entry) {
+            Some(EntryFault::Undeclared) => {
+                self.error(decl.name_span, no_entry_field(&decl.name, &document, entry))
+            }
+            // A field an ancestor declared is the ancestor's to hear about.
+            Some(EntryFault::Misshaped(owner, field)) if owner.name == decl.name => {
+                self.error(field.span, misshaped_entry_field(&decl.name, entry));
+            }
+            Some(EntryFault::Misshaped(..)) | None => {}
         }
     }
 
@@ -377,7 +351,7 @@ impl Compiler<'_> {
                 );
                 continue;
             }
-            self.check_entry_field(decl, base, fields);
+            self.check_entry_field(decl, base);
             for field in fields {
                 let redeclared = chain.iter().find_map(|ancestor| match &ancestor.shape {
                     Shape::Record { fields, .. } => fields
@@ -457,6 +431,60 @@ impl Compiler<'_> {
             }
         }
     }
+}
+
+/// What keeps `record` from rendering through the field `entry` (D30): it declares
+/// none, or the one it has is not a layout of it.
+pub(crate) enum EntryFault<'a> {
+    Undeclared,
+    /// The field as declared, with the declaration in the chain that made it.
+    Misshaped(&'a Declaration, &'a FieldDecl),
+}
+
+/// Whether `record` can render through `entry`, and what is wrong if not. The page the
+/// field's function takes is the record or one it extends: a layout free to take the
+/// base and narrow inside is what makes one layout serve a family of schemas. One
+/// predicate for the compiler, which asks it of every schema it declares, and for the
+/// link step, which asks it of every page's record on a relink the declaration alone
+/// changed.
+pub(crate) fn entry_fault<'a>(
+    decls: &'a dyn Decls,
+    record: &str,
+    entry: &str,
+) -> Option<EntryFault<'a>> {
+    let Some((owner, field)) = decls.field_in(record, entry) else {
+        return Some(EntryFault::Undeclared);
+    };
+    let takes_a_page = match &field.ty {
+        Type::Fn(params, ret) => matches!(
+            (params.first(), params.get(1), &**ret),
+            (Some(Type::Named(page)), Some(Type::Html), Type::Html)
+                if **page == *record || decls.extends(record, page)
+        ),
+        _ => false,
+    };
+    (!takes_a_page).then_some(EntryFault::Misshaped(owner, field))
+}
+
+/// How the entry field of `record` is declared: `entry: (record, html): html`.
+fn entry_shape(record: &str, entry: &str) -> String {
+    format!("`{entry}: ({record}, html): html`")
+}
+
+/// The refusal of a page schema that declares no entry field.
+pub(crate) fn no_entry_field(record: &str, document: &str, entry: &str) -> String {
+    format!(
+        "`{record}` extends `{document}`, so it declares how a page renders: {}",
+        entry_shape(record, entry)
+    )
+}
+
+/// The refusal of an entry field that is not a layout of its record.
+pub(crate) fn misshaped_entry_field(record: &str, entry: &str) -> String {
+    format!(
+        "`{entry}` renders a `{record}`: declare it {}",
+        entry_shape(record, entry)
+    )
 }
 
 #[cfg(test)]

@@ -18,7 +18,10 @@ use crate::bytecode::{
     Declared, Document, Exported, Function, MarkKey, MarkPayload, Module, Op,
 };
 use crate::closure::{self, Closed, ReadClosure};
-use crate::compile::{Compiled, Diagnostic, Runs, index_u32, refused_at_load};
+use crate::compile::{
+    Compiled, Diagnostic, EntryFault, Runs, entry_fault, index_u32, misshaped_entry_field,
+    no_entry_field, refused_at_load,
+};
 use crate::decls::{DeclKind, Declaration, Decls, Shape, TypeFact};
 use crate::document::CodePayload;
 use crate::exports::ExportIndex;
@@ -490,6 +493,7 @@ pub fn link(units: &[Unit], index: &ExportIndex, host: &Host) -> Compiled<Module
                 .collect()
         })
         .collect();
+    diagnostics.extend(check_host_fields(units, index, host));
     // An unresolved import is always an error, so past this point every entry of
     // `resolved` is `Some`; a warning alone builds the module like a clean link does.
     if diagnostics.iter().any(Diagnostic::is_error) {
@@ -652,6 +656,83 @@ pub fn link(units: &[Unit], index: &ExportIndex, host: &Host) -> Compiled<Module
 
 fn add_u32(a: u32, b: u32) -> u32 {
     a.checked_add(b).expect("fewer than 2^32 items")
+}
+
+/// The two fields the host declaration names, against what the project declares
+/// (D43): the document type declares the url field as `url`, and the record of every
+/// page declares the entry field as a layout of it. Neither name is a fact of any unit,
+/// so a compile that changes only the declaration relinks every unit as it is, and
+/// only here — with the index and the host in hand on every link — is the new name
+/// seen. Reported where the compiler would report the same thing: at the type that
+/// lacks the field, or at the field declared with the wrong type.
+fn check_host_fields(units: &[Unit], index: &ExportIndex, host: &Host) -> Vec<Diagnostic> {
+    let mut diagnostics = Vec::new();
+    // A document type no file declares is the compiler's to report, at the first read
+    // of the value (D30).
+    let Some((document, declared)) = host
+        .document_type()
+        .and_then(|document| index.lookup_type(&document).map(|d| (document, d)))
+    else {
+        return diagnostics;
+    };
+    let file_of = |decl: &Declaration| {
+        index
+            .lookup_type(&decl.name)
+            .expect("a chain walks declared types")
+            .path
+            .clone()
+    };
+    if let Some(url) = host.url() {
+        match index.field_in(&document, url) {
+            None => diagnostics.push(Diagnostic::error(
+                &declared.path,
+                declared.decl.name_span,
+                format!(
+                    "`{document}` is the host's document type, so it declares where a \
+                     page goes: `{url}: url`"
+                ),
+            )),
+            Some((owner, field)) if field.ty != Type::Url => {
+                diagnostics.push(Diagnostic::error(
+                    file_of(owner),
+                    field.span,
+                    format!("`{url}` is where a page goes: declare it `{url}: url`"),
+                ));
+            }
+            Some(_) => {}
+        }
+    }
+    if let Some(entry) = host.entry() {
+        let mut records: Vec<&str> = Vec::new();
+        for unit in units {
+            let Some(record) = unit.record.as_deref().filter(|_| unit.page_shaped) else {
+                continue;
+            };
+            if records.contains(&record) {
+                continue;
+            }
+            records.push(record);
+            let Some(export) = index.lookup_type(record) else {
+                continue;
+            };
+            match entry_fault(index, record, entry) {
+                Some(EntryFault::Undeclared) => diagnostics.push(Diagnostic::error(
+                    &export.path,
+                    export.decl.name_span,
+                    no_entry_field(record, &document, entry),
+                )),
+                Some(EntryFault::Misshaped(owner, field)) => {
+                    diagnostics.push(Diagnostic::error(
+                        file_of(owner),
+                        field.span,
+                        misshaped_entry_field(&owner.name, entry),
+                    ));
+                }
+                None => {}
+            }
+        }
+    }
+    diagnostics
 }
 
 /// Where each unit's functions land in the module — what turns a unit's loader-run
@@ -1751,6 +1832,7 @@ mod tests {
             .bind("site", Ambient::bindings("site.lem"))
             .documents("page")
             .rendered_through("layout")
+            .addressed_by("url")
     }
 
     /// Every file compiled against `host` and linked: the module, or what stopped it.
@@ -1849,6 +1931,114 @@ mod tests {
             .expect("a page source for the document");
         assert_eq!(d.body.as_deref(), Some("<p>prose</p>\n"));
         assert_eq!(module.document("schema.lem"), None);
+    }
+
+    /// A page schema with a layout, and a document typed as it.
+    const POST: &str = "<lem-type Post extends Page>\n  title: string\n  \
+         layout: (Post, html): html\n</lem-type>";
+
+    /// `ambient` and `POST` with a document of `Post`, compiled as units against
+    /// `host` — what a relink under another declaration links again as they are.
+    fn post_units(host: &Host, ambient: &str) -> Vec<Unit> {
+        let files = [
+            SourceFile::new("ambient.lem", ambient),
+            SourceFile::new("site.lem", POST),
+            SourceFile::new("d.md", "---\ntitle: D\n---\nprose").with_record("Post"),
+        ];
+        let prepared: Vec<_> = files
+            .iter()
+            .map(|file| prepare(file, host).unwrap())
+            .collect();
+        let mut index = ExportIndex::new();
+        for p in &prepared {
+            index.offer(p.path(), p.exports());
+            index.offer_types(p.path(), p.types());
+        }
+        prepared
+            .iter()
+            .map(|p| compile_unit(p, &index, host).expect_output())
+            .collect()
+    }
+
+    /// The units of [`post_units`], compiled against `compiled_with` and linked
+    /// against `linked_with`, as strings.
+    fn relinked(compiled_with: &Host, linked_with: &Host, ambient: &str) -> Vec<String> {
+        let units = post_units(compiled_with, ambient);
+        shown_all(&link(&units, &ExportIndex::of(&units), linked_with).diagnostics)
+    }
+
+    #[test]
+    fn refuses_a_document_type_that_declares_no_url_field() {
+        const NO_URL: &str = "<lem-type Page>\n  draft: bool = false\n</lem-type>";
+        assert_eq!(
+            relinked(&shell_host(), &shell_host(), NO_URL),
+            [format!(
+                "ambient.lem:{}: `Page` is the host's document type, so it declares \
+                 where a page goes: `url: url`",
+                at(NO_URL, "Page")
+            )]
+        );
+    }
+
+    #[test]
+    fn refuses_a_url_field_that_is_no_url() {
+        const STRING_URL: &str = "<lem-type Page>\n  url: string\n</lem-type>";
+        assert_eq!(
+            relinked(&shell_host(), &shell_host(), STRING_URL),
+            [format!(
+                "ambient.lem:{}: `url` is where a page goes: declare it `url: url`",
+                at(STRING_URL, "«url»: string")
+            )]
+        );
+    }
+
+    #[test]
+    fn checks_no_url_field_for_a_host_that_names_none() {
+        // A host that places no pages has nothing to read a url from, so a document
+        // type without one is what it declares.
+        const NO_URL: &str = "<lem-type Page>\n  draft: bool = false\n</lem-type>";
+        let unplaced = Host::new()
+            .bind("page", Ambient::named("Page"))
+            .bind("site", Ambient::bindings("site.lem"))
+            .documents("page")
+            .rendered_through("layout");
+        assert_eq!(relinked(&unplaced, &unplaced, NO_URL), Vec::<String>::new());
+    }
+
+    #[test]
+    fn catches_a_renamed_field_on_a_relink_that_recompiled_nothing() {
+        // The units compiled clean against a host whose entry is `layout` and whose
+        // url field is `url`. The host now names `template` and `permalink`, and the
+        // compile installing that declaration relinks every unit as it is: neither
+        // name is a fact of any unit, so only the link step can see the change.
+        let renamed = shell_host()
+            .rendered_through("template")
+            .addressed_by("permalink");
+        assert_eq!(
+            relinked(&shell_host(), &renamed, PAGE),
+            [
+                format!(
+                    "ambient.lem:{}: `Page` is the host's document type, so it \
+                     declares where a page goes: `permalink: url`",
+                    at(PAGE, "Page")
+                ),
+                format!(
+                    "site.lem:{}: `Post` extends `Page`, so it declares how a page \
+                     renders: `template: (Post, html): html`",
+                    at(POST, "lem-type «Post»")
+                ),
+            ]
+        );
+        // An entry field the record has, of the wrong shape: refused where it is
+        // declared, in the compiler's words.
+        assert_eq!(
+            relinked(&shell_host(), &shell_host().rendered_through("title"), PAGE),
+            [format!(
+                "site.lem:{}: `title` renders a `Post`: declare it \
+                 `title: (Post, html): html`",
+                at(POST, "«title»: string")
+            )]
+        );
     }
 
     #[test]

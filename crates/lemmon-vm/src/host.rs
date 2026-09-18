@@ -88,6 +88,10 @@ pub struct Host {
     /// The field a page is rendered through — `layout` in the standard shell — required
     /// on every record that extends the document value's type.
     entry: Option<Rc<str>>,
+    /// The field a page's url is read from — `url` in the standard shell — which the
+    /// document value's type declares as `url` (D43). A host that names none has its
+    /// pages placed nowhere: no url is reported, and none checked against another's.
+    url: Option<Rc<str>>,
     /// What the document value is in the file this is a view of: that file's record, or
     /// the unknown type for a document the host matched to nothing. Never set in the
     /// declaration itself, which is why the type a page schema extends stays the
@@ -291,6 +295,13 @@ impl Host {
         self
     }
 
+    /// Names the field a page's url is read from.
+    #[must_use]
+    pub fn addressed_by(mut self, field: &str) -> Self {
+        self.url = Some(Rc::from(field));
+        self
+    }
+
     /// Declares the assets the host's build produced, as `(logical path, URL)` pairs.
     ///
     /// Replaces any already declared rather than adding to them: a manifest is one
@@ -420,6 +431,12 @@ impl Host {
         self.entry.as_deref()
     }
 
+    /// The field a page's url is read from, if the host places pages.
+    #[must_use]
+    pub fn url(&self) -> Option<&str> {
+        self.url.as_deref()
+    }
+
     /// Every name the host binds, in declaration order.
     pub fn names(&self) -> impl Iterator<Item = &str> {
         self.ambient.iter().map(|(name, _)| &**name)
@@ -513,6 +530,7 @@ mod tests {
             .bind("site", Ambient::bindings("site.lem"))
             .documents("page")
             .rendered_through("layout")
+            .addressed_by("url")
     }
 
     fn built() -> Host {
@@ -758,6 +776,18 @@ mod tests {
     #[test]
     fn takes_the_page_schemas_base_from_the_document_value() {
         assert_eq!(shell().document_type().as_deref(), Some("Page"));
+    }
+
+    #[test]
+    fn names_the_fields_a_page_renders_through_and_is_placed_by() {
+        assert_eq!(shell().entry(), Some("layout"));
+        assert_eq!(shell().url(), Some("url"));
+        let unplaced = Host::new().rendered_through("layout");
+        assert_eq!(unplaced.url(), None);
+        // A view of the host for one file keeps both names: they are the
+        // declaration's, whatever the file was compiled as.
+        let seen = shell().for_file(true, Some("Article"));
+        assert_eq!((seen.entry(), seen.url()), (Some("layout"), Some("url")));
     }
 
     #[test]

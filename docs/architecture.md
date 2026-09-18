@@ -148,7 +148,8 @@ not a break:
   VM; any other file — a template with no front matter, or a document or page template
   no collection matched and no `type:` named — renders its own output, reading the value
   the envelope carried, if it did, as sent (D37).
-  Not yet (∆Bhz): no page renders through its entry, and a page template loads no record.
+  Not yet (∆Bhz): the boundary's `render` still renders every file as its own output;
+  the core's `render_page` reaches it with the boundary work.
 - A `Diagnostic` is `{path, span: {start, end, range}, severity, message, labels}`. The
   span carries byte offsets (invariant 8) *and* `range`, the same two points as
   `{line, character}` LSP positions — zero-based, `character` in UTF-16 code units. The

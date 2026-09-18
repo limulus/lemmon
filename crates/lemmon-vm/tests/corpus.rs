@@ -30,8 +30,9 @@ use lemmon_corpus::Case;
 use lemmon_syntax::FrontMatter;
 use lemmon_vm::{
     Ambient, Claim, Data, Decls as _, Fulfilled, Host, HostSpan, LineIndex, Loaded, Map,
-    Mark, Module, Op, Payload, Rendered, Source, SourceFile, SourceKind, Span, Spans,
-    Value, collects, compile, field_path, is_document, load, render,
+    Mark, Module, Op, Payload, Rendered, RuntimeError, Source, SourceFile, SourceKind,
+    Span, Spans, Value, collects, compile, field_path, is_document, load, render,
+    render_page,
 };
 use saphyr::{LoadableYamlNode, MarkedYaml, Scalar, YamlData};
 
@@ -62,8 +63,8 @@ fn untyped_host() -> Host {
 }
 
 /// The declaration the `host/` group's environment files back: `page` a `Page`, `build`
-/// a `Build`, `site` the record of the bindings `site.lem` declares, and every page
-/// rendered through its `layout` field.
+/// a `Build`, `site` the record of the bindings `site.lem` declares, every page
+/// rendered through its `layout` field and placed by its `url`.
 fn declared_host() -> Host {
     Host::new()
         .bind("page", Ambient::named("Page"))
@@ -71,6 +72,7 @@ fn declared_host() -> Host {
         .bind("site", Ambient::bindings(SITE))
         .documents("page")
         .rendered_through("layout")
+        .addressed_by("url")
         // The harness plays esbuild: a real shell bundles, hashes, and hands the map
         // over at `compile` (D38). Two entries are enough to show a hit, a near miss,
         // and that the URL a page carries is the hashed one and not the path asked for.
@@ -184,10 +186,9 @@ fn page() -> Value {
 /// text does.
 fn rendered(
     module: &Module,
-    path: &str,
-    globals: &[(&str, Value)],
+    result: Result<Rendered, RuntimeError>,
 ) -> (String, Option<String>) {
-    match render(module, path, globals) {
+    match result {
         Ok(Rendered {
             html,
             marks,
@@ -322,7 +323,7 @@ fn html(case: &Case) -> String {
         .collect();
     let mut out = String::new();
     if let Some(module) = compiled.output {
-        let (html, error) = rendered(&module, &path, &globals());
+        let (html, error) = rendered(&module, render(&module, &path, &globals()));
         out = html;
         diagnostics.extend(error);
     }
@@ -336,7 +337,8 @@ fn html(case: &Case) -> String {
 /// it, with the values the shell derives (`url`, `inputPath`) added to its front matter;
 /// the shell's own `build`; and an untyped `page` for whatever is not a loaded page,
 /// which is what a page no collection matched renders with. A `.lem` is a page when it
-/// opens with front matter (D41), a `.md` always.
+/// opens with front matter (D41), a `.md` always. A loaded page renders through its
+/// record's `layout`, with its own output as the body; anything else as its own output.
 fn typed_html(case: &Case) -> String {
     let path = case.path();
     let host = declared_host();
@@ -368,7 +370,11 @@ fn typed_html(case: &Case) -> String {
         diagnostics.extend(loaded.diagnostics.iter().map(ToString::to_string));
         if let Some(store) = loaded.output {
             let globals = store.globals(&host, &path);
-            let (html, error) = rendered(&module, &path, &globals);
+            let result = match store.page(&path) {
+                Some(page) => render_page(&module, page, host.entry(), &globals),
+                None => render(&module, &path, &globals),
+            };
+            let (html, error) = rendered(&module, result);
             out = html;
             diagnostics.extend(error);
         }
