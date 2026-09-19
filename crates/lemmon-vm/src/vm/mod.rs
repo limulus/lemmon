@@ -13,6 +13,12 @@
 //! returned, then hands the value back to the builtin mid-instruction. An error inside
 //! the invoked function is placed there, at its own instruction, and passes through the
 //! builtin untouched as a [`Fault::Placed`].
+//!
+//! [`entry`] holds the three ways a caller starts one of these machines, and
+//! [`operators`] what an operator means for the pair of values [`Vm::step`] hands it.
+
+mod entry;
+mod operators;
 
 use std::collections::BTreeMap;
 use std::rc::Rc;
@@ -21,10 +27,13 @@ use lemmon_syntax::Span;
 
 use crate::builtins::{self, BUILTINS, Fault, Machine, ReceiverKind};
 use crate::bytecode::{Function, MarkKey, MarkPayload, Module, Op};
-use crate::load::LoadedPage;
 use crate::rendered::{Buffer, Fragment, Fragments, Mark, Marked, Payload, Rendered};
 use crate::value::{Closure, Map};
 use crate::{RuntimeError, Value};
+
+pub(crate) use entry::invoke;
+pub use entry::{render, render_page};
+use operators::{binary, index_into};
 
 /// Frames a render may nest before it is an error. Recursion is legal in the language,
 /// and a frame costs heap rather than stack, so this is generous: it is what stops a
@@ -46,127 +55,6 @@ const MAX_DEPTH: usize = 256;
 /// release and eight in a debug build, so sixty-four levels leaves the debug build —
 /// the expensive one, and the one the tests run — using half of it.
 const MAX_NATIVE_DEPTH: usize = 64;
-
-/// Renders the file at `path` from `module`, with `globals` bound to the ambient names
-/// (`page`, `site`, `build`) the templates may read, and returns the page with the
-/// fragments its collect blocks gathered.
-///
-/// # Errors
-///
-/// The first runtime error, pointing at the instruction's source.
-///
-/// # Panics
-///
-/// If the module has no file at `path`: which files a module holds is the caller's to
-/// know, so this is a caller bug rather than a template error.
-pub fn render(
-    module: &Module,
-    path: &str,
-    globals: &[(&str, Value)],
-) -> Result<Rendered, RuntimeError> {
-    let mut vm = Vm::new(module, globals);
-    vm.run_entry(entry_of(module, path))?;
-    Ok(vm.finish())
-}
-
-/// Renders the loaded page `page` from `module` through its record's entry field
-/// `entry` (D43), with `globals` as [`render`] takes them. The file's own output is
-/// captured as the body, and the function the field holds is called with the record
-/// and that body in the same run: `uniqueId` counts on from the body into the layout,
-/// the collect blocks of both land in one collection, and the marks of both stand in
-/// one page in print order. With no `entry` — a host that renders pages through no
-/// field — the page is its own output, as a file that is no page is.
-///
-/// # Errors
-///
-/// The first runtime error, pointing at the instruction's source. A failure with no
-/// instruction to blame — the record has no entry field, or what it holds cannot be
-/// called with the record and the body — points at where the page's record was named.
-///
-/// # Panics
-///
-/// If the module has no file at the page's path, as [`render`] does.
-pub fn render_page(
-    module: &Module,
-    page: &LoadedPage,
-    entry: Option<&str>,
-    globals: &[(&str, Value)],
-) -> Result<Rendered, RuntimeError> {
-    let path = page.path.as_str();
-    let at_record = |message: String| RuntimeError::new(path, page.record_span, message);
-    let mut vm = Vm::new(module, globals);
-    vm.out.push(Buffer::default());
-    vm.run_entry(entry_of(module, path))?;
-    let body = vm.out.pop().expect("the body's buffer").into_value();
-    let rendered = match entry {
-        None => body,
-        Some(entry) => {
-            let Value::Record(record) = &page.record else {
-                return Err(at_record(format!(
-                    "`{path}` was loaded as a {}, not a record",
-                    page.record.type_name()
-                )));
-            };
-            let Some(layout) = record.fields.get(entry).cloned() else {
-                return Err(at_record(format!(
-                    "`{}` has no `{entry}` to render `{path}` through",
-                    record.name
-                )));
-            };
-            vm.stack.push(page.record.clone());
-            vm.stack.push(body);
-            vm.call_value(layout, 2).map_err(at_record)?;
-            vm.run_until(0)?;
-            vm.pop()
-        }
-    };
-    let root = vm.out.last_mut().expect("the root output buffer");
-    rendered.emit(root).map_err(at_record)?;
-    Ok(vm.finish())
-}
-
-/// The entry function of the file at `path`.
-///
-/// # Panics
-///
-/// If the module has no file at `path`: which files a module holds is the caller's to
-/// know, so this is a caller bug rather than a template error.
-fn entry_of(module: &Module, path: &str) -> u32 {
-    module
-        .entry(path)
-        .unwrap_or_else(|| panic!("no file `{path}` in the module"))
-}
-
-/// Calls `functions[func]` of `module` with `args`, `globals` bound to the ambient
-/// names, and returns what it returned. How the loader runs a default or a computed
-/// binding (D37): a loader-run function is an ordinary function, and this is a
-/// render's machinery with a call in place of an entry.
-///
-/// # Errors
-///
-/// The first runtime error, pointing at the instruction's source.
-///
-/// # Panics
-///
-/// If `args` are not as many as the function's parameters — the compiler fixed both,
-/// so a mismatch is a bug in the caller rather than anything a template can provoke.
-pub(crate) fn invoke(
-    module: &Module,
-    func: u32,
-    args: Vec<Value>,
-    globals: &[(&str, Value)],
-) -> Result<Value, RuntimeError> {
-    let argc = u16::try_from(args.len()).expect("a function takes fewer than 65536");
-    let mut vm = Vm {
-        stack: args,
-        fragments: None,
-        ..Vm::new(module, globals)
-    };
-    vm.call(func, argc, &[])
-        .unwrap_or_else(|message| panic!("invoking `{func}` failed: {message}"));
-    vm.run_until(0)?;
-    Ok(vm.pop())
-}
 
 struct Frame {
     func: u32,
@@ -796,120 +684,6 @@ impl Machine for Vm<'_> {
     }
 }
 
-fn index_into(object: &Value, index: &Value) -> Result<Value, String> {
-    match (object, index) {
-        (Value::List(items), Value::Int(i)) => usize::try_from(*i)
-            .ok()
-            .and_then(|i| items.get(i))
-            .cloned()
-            .ok_or_else(|| {
-                format!("index {i} is out of range for a list of {}", items.len())
-            }),
-        (Value::Map(map), Value::Str(key)) => map
-            .get(key)
-            .cloned()
-            .ok_or_else(|| format!("no key \"{key}\"")),
-        (object, index) => Err(format!(
-            "cannot index a {} with a {}",
-            object.type_name(),
-            index.type_name()
-        )),
-    }
-}
-
-#[allow(
-    clippy::cast_precision_loss,
-    reason = "int/float promotion is the language rule"
-)]
-fn binary(op: Op, lhs: &Value, rhs: &Value) -> Result<Value, String> {
-    use Value::{Bool, Float, Int, List, Map, Str};
-    let mismatch = || {
-        format!(
-            "cannot apply `{}` to a {} and a {}",
-            symbol(op),
-            lhs.type_name(),
-            rhs.type_name()
-        )
-    };
-    Ok(match (op, lhs, rhs) {
-        (Op::Eq, _, _) => Bool(lhs.equals(rhs)?),
-        (Op::Ne, _, _) => Bool(!lhs.equals(rhs)?),
-        (Op::In, _, List(items)) => {
-            for item in items.iter() {
-                if item.equals(lhs)? {
-                    return Ok(Bool(true));
-                }
-            }
-            Bool(false)
-        }
-        (Op::In, Str(key), Map(map)) => Bool(map.get(key).is_some()),
-        (Op::In, _, _) => return Err(mismatch()),
-        (Op::Add, Str(a), Str(b)) => Value::str(format!("{a}{b}")),
-        // Ordering is `Value::order`'s and not this table's, so that `lt` and a sort
-        // cannot come to disagree about what has an order.
-        (Op::Lt | Op::Le | Op::Gt | Op::Ge, _, _) => match lhs.order(rhs)? {
-            Some(ordering) => Bool(ordered(op, ordering)),
-            None => return Err(mismatch()),
-        },
-        (_, Int(a), Int(b)) => int_arith(op, *a, *b)?,
-        (_, Int(a), Float(b)) => float_arith(op, *a as f64, *b)?,
-        (_, Float(a), Int(b)) => float_arith(op, *a, *b as f64)?,
-        (_, Float(a), Float(b)) => float_arith(op, *a, *b)?,
-        _ => return Err(mismatch()),
-    })
-}
-
-fn int_arith(op: Op, a: i64, b: i64) -> Result<Value, String> {
-    let checked = |r: Option<i64>| r.ok_or_else(|| "integer overflow".to_owned());
-    Ok(match op {
-        Op::Add => Value::Int(checked(a.checked_add(b))?),
-        Op::Sub => Value::Int(checked(a.checked_sub(b))?),
-        Op::Mul => Value::Int(checked(a.checked_mul(b))?),
-        Op::Div | Op::Rem if b == 0 => return Err("division by zero".to_owned()),
-        Op::Div => Value::Int(checked(a.checked_div(b))?),
-        Op::Rem => Value::Int(checked(a.checked_rem(b))?),
-        _ => unreachable!("{op:?} is not arithmetic"),
-    })
-}
-
-fn float_arith(op: Op, a: f64, b: f64) -> Result<Value, String> {
-    Ok(match op {
-        Op::Add => Value::Float(a + b),
-        Op::Sub => Value::Float(a - b),
-        Op::Mul => Value::Float(a * b),
-        Op::Div | Op::Rem if b == 0.0 => return Err("division by zero".to_owned()),
-        Op::Div => Value::Float(a / b),
-        Op::Rem => Value::Float(a % b),
-        _ => unreachable!("{op:?} is not arithmetic"),
-    })
-}
-
-fn ordered(op: Op, ordering: std::cmp::Ordering) -> bool {
-    match op {
-        Op::Lt => ordering.is_lt(),
-        Op::Le => ordering.is_le(),
-        Op::Gt => ordering.is_gt(),
-        Op::Ge => ordering.is_ge(),
-        _ => unreachable!("{op:?} is not an ordering"),
-    }
-}
-
-const fn symbol(op: Op) -> &'static str {
-    match op {
-        Op::Add => "+",
-        Op::Sub => "-",
-        Op::Mul => "*",
-        Op::Div => "/",
-        Op::Rem => "%",
-        Op::Lt => "lt",
-        Op::Le => "lte",
-        Op::Gt => "gt",
-        Op::Ge => "gte",
-        Op::In => "in",
-        _ => unreachable!(),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use lemmon_syntax::Span;
@@ -920,7 +694,12 @@ mod tests {
 
     /// A function whose every instruction is spanned `10*pc..10*pc+5`, so a test can
     /// tell which instruction an error blamed.
-    fn function(name: &str, params: &[&str], captures: &[u16], code: Vec<Op>) -> Function {
+    pub(super) fn function(
+        name: &str,
+        params: &[&str],
+        captures: &[u16],
+        code: Vec<Op>,
+    ) -> Function {
         let spans = (0..code.len())
             .map(|pc| {
                 let pc = u32::try_from(pc).unwrap();
@@ -949,7 +728,7 @@ mod tests {
         builtins::method_id(kind, name).expect("a method")
     }
 
-    fn module(constants: Vec<Value>, functions: Vec<Function>) -> Module {
+    pub(super) fn module(constants: Vec<Value>, functions: Vec<Function>) -> Module {
         Module {
             files: vec!["t.lem".to_owned()],
             entries: vec![0],
@@ -1633,32 +1412,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn refuses_to_collect_while_the_loader_runs_a_function() {
-        let collects = function(
-            "styled",
-            &[],
-            &[],
-            vec![
-                Op::Capture,
-                Op::EndCapture,
-                Op::Collect { name: 0 },
-                Op::Const { index: 0 },
-                Op::Return,
-            ],
-        );
-        let module = module(vec![Value::str("styles")], vec![collects]);
-        let error = invoke(&module, 0, Vec::new(), &[]).unwrap_err();
-        assert_eq!(
-            (error.span, error.message.as_str()),
-            (
-                Span::new(20, 25),
-                "only a page render collects fragments, and this block ran while the data \
-                 was loading"
-            )
-        );
-    }
-
     /// The cap is a stack budget, so the test that matters runs it on the stack it was
     /// budgeted against: the `.wasm`'s megabyte, pinned in `crates/lemmon-wasm/build.rs`,
     /// which is the smallest stack the core runs on and the one it cannot ask to grow.
@@ -2311,168 +2064,5 @@ mod tests {
         )
         .unwrap();
         assert_eq!(out, "keys");
-    }
-
-    #[test]
-    #[should_panic(expected = "no file `missing.lem` in the module")]
-    fn panics_on_a_file_the_module_does_not_have() {
-        let _ = render(
-            &module(vec![], vec![function("t.lem", &[], &[], vec![])]),
-            "missing.lem",
-            &[],
-        );
-    }
-
-    /// A page rendered through its layout: the loader's fixtures, with a layout that
-    /// numbers its heading, collects a style, and places a mark before the body.
-    mod pages {
-        use lemmon_syntax::spans::at;
-
-        use super::*;
-        use crate::load::tests::{build, object, shell};
-        use crate::load::{Data, Loaded, Source, Spans, Store, load};
-        use crate::{SourceFile, compile};
-
-        const AMBIENT: &str = "<lem-type Page>\n  url: url\n</lem-type>\n\
-             <lem-type Build>\n  generator: string\n</lem-type>";
-        const SITE: &str = "<lem-type Article extends Page>\n  title: string\n  \
-             layout: (Article, html): html = article\n</lem-type>\n\
-             <lem-fn article(a: Article, body: html)>\
-             <h1 id=\"<lem.uniqueId(\"h\")>\"><lem.a.title></h1>\
-             <lem-style>h1 {}</lem-style><lem.mark(\"head\")><lem.body></lem-fn>\n\
-             <lem-let posts: [Article] from \"pages/*.md\" />";
-        const FAULTY: &str = "<lem-type Article extends Page>\n  title: string\n  \
-             layout: (Article, html): html = article\n</lem-type>\n\
-             <lem-fn article(a: Article, body: html)>\
-             <lem-let z: int = 0 /><lem.1 / z></lem-fn>\n\
-             <lem-let posts: [Article] from \"pages/*.md\" />";
-        const HOME: &str = "---\ntype: Article\ntitle: Home\n---\n\
-             <p id=\"<lem.uniqueId(\"h\")>\">body</p>\
-             <lem-style>p {}</lem-style><lem.mark(\"styles\")>";
-
-        /// `home.lem`, a page template of `Article`, compiled with `site` and loaded.
-        fn loaded(site: &str) -> (Module, Store) {
-            let files = [
-                SourceFile::new("ambient.lem", AMBIENT),
-                SourceFile::new("site.lem", site),
-                SourceFile::new("home.lem", HOME)
-                    .with_record("Article")
-                    .named_at(at(HOME, "Article")),
-            ];
-            let module = compile(&files, &shell()).expect_output();
-            let data = Data {
-                ambient: vec![build()],
-                sources: vec![("posts".to_owned(), Source::Many(vec![]))],
-                pages: vec![Loaded {
-                    value: object(&[
-                        ("title", Value::str("Home")),
-                        ("url", Value::str("/")),
-                    ]),
-                    path: Some("home.lem".to_owned()),
-                    spans: Spans::new(),
-                }],
-            };
-            let store = load(&module, &shell(), data).unwrap().expect_output();
-            (module, store)
-        }
-
-        fn rendered(site: &str, entry: Option<&str>) -> Result<Rendered, RuntimeError> {
-            let (module, store) = loaded(site);
-            let page = store.page("home.lem").expect("a loaded page");
-            let host = shell();
-            let globals = store.globals(&host, "home.lem");
-            render_page(&module, page, entry, &globals)
-        }
-
-        fn texts(fragments: &Fragments, name: &str) -> Vec<String> {
-            fragments
-                .get(name)
-                .iter()
-                .map(|f| f.text.to_string())
-                .collect()
-        }
-
-        #[test]
-        fn passes_the_pages_output_to_its_layout_as_the_body() {
-            let html = rendered(SITE, Some("layout")).unwrap().html;
-            assert!(html.starts_with("<h1 "), "{html}");
-            assert!(html.ends_with("<p id=\"h-0\">body</p>"), "{html}");
-        }
-
-        #[test]
-        fn counts_ids_on_from_the_body_into_the_layout() {
-            // One run: the body's id is given out first, and the layout's heading
-            // takes the next, which a second machine would have started over.
-            let html = rendered(SITE, Some("layout")).unwrap().html;
-            assert_eq!(html, "<h1 id=\"h-1\">Home</h1><p id=\"h-0\">body</p>");
-        }
-
-        #[test]
-        fn collects_the_fragments_of_both_halves_into_one_collection() {
-            // What `invoke` could not do: its machine has nowhere to collect, so a
-            // `lem-style` in a layout run through it would fault.
-            let rendered = rendered(SITE, Some("layout")).unwrap();
-            assert_eq!(texts(&rendered.fragments, "styles"), ["p {}", "h1 {}"]);
-        }
-
-        #[test]
-        fn places_the_marks_of_both_halves_in_one_page_in_print_order() {
-            let Rendered { html, marks, .. } = rendered(SITE, Some("layout")).unwrap();
-            let names: Vec<&str> = marks.iter().map(|mark| &*mark.name).collect();
-            assert_eq!(names, ["head", "styles"]);
-            let body = u32::try_from(html.find("<p ").unwrap()).unwrap();
-            assert_eq!(marks[0].start, body);
-            assert_eq!(marks[1].start, u32::try_from(html.len()).unwrap());
-            assert!(marks[0].start <= marks[1].start);
-        }
-
-        #[test]
-        fn keeps_a_layouts_error_at_the_layouts_own_span() {
-            let error = rendered(FAULTY, Some("layout")).unwrap_err();
-            assert_eq!(
-                (error.path.as_str(), error.span, error.message.as_str()),
-                ("site.lem", at(FAULTY, "1 / z"), "division by zero")
-            );
-        }
-
-        #[test]
-        fn renders_a_page_as_its_own_output_under_a_host_with_no_entry() {
-            let rendered = rendered(SITE, None).unwrap();
-            assert_eq!(rendered.html, "<p id=\"h-0\">body</p>");
-            assert_eq!(texts(&rendered.fragments, "styles"), ["p {}"]);
-            assert_eq!(rendered.marks.len(), 1);
-        }
-
-        #[test]
-        fn points_a_failure_before_the_layout_runs_at_the_pages_record() {
-            // A field the record has not got has no instruction to blame — the
-            // link step keeps this from happening, and the render says where it
-            // would have been rather than trapping.
-            let error = rendered(SITE, Some("template")).unwrap_err();
-            assert_eq!(
-                (error.path.as_str(), error.span, error.message.as_str()),
-                (
-                    "home.lem",
-                    at(HOME, "Article"),
-                    "`Article` has no `template` to render `home.lem` through"
-                )
-            );
-            let (module, _) = loaded(SITE);
-            let unloaded = LoadedPage {
-                path: "home.lem".to_owned(),
-                record: Value::Null,
-                spans: Spans::new(),
-                record_span: Span::new(4, 11),
-            };
-            let error = render_page(&module, &unloaded, Some("layout"), &[]).unwrap_err();
-            assert_eq!(
-                (error.path.as_str(), error.span, error.message.as_str()),
-                (
-                    "home.lem",
-                    Span::new(4, 11),
-                    "`home.lem` was loaded as a null, not a record"
-                )
-            );
-        }
     }
 }
