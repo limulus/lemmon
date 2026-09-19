@@ -1,13 +1,13 @@
 /**
- * The ∆xWs proof (`npm run spike:the-rebound`): renders limulus.net's `the-rebound`
+ * The ∆xWs proof (`npm run test:fidelity`): renders limulus.net's `the-rebound`
  * post end to end through the WASM core — document mode for the post body, then a
  * base→page→article layout chain — and holds the result against the 11ty-built
- * reference in spike/the-rebound/fixtures/.
+ * reference in tests/fidelity/the-rebound/fixtures/.
  *
  * The two pages are compared as what a browser would render, not as bytes (D28,
  * ∆Ma4): parse5 trees, attributes by value, text after white-space processing. Every
  * remaining difference must be one of the forgiveness classes below (markdown-engine
- * and WebC deltas the spike accepts); anything else — or a page render time at or over
+ * and WebC deltas the harness accepts); anything else — or a page render time at or over
  * the 1 ms exit criterion — exits non-zero.
  */
 
@@ -32,7 +32,7 @@ import {
   type SourceFileInput,
 } from '../packages/core/src/index.ts'
 
-const SPIKE = 'spike/the-rebound'
+const FIXTURES = 'tests/fidelity/the-rebound'
 const PAGE_PATH = 'feed/the-rebound/index.md'
 const RENDER_RUNS = 200
 const BUDGET_MICROS = 1000
@@ -51,11 +51,11 @@ const LAYOUT_FILES = [
 function sourceFiles(): SourceFileInput[] {
   const post = {
     path: PAGE_PATH,
-    text: readFileSync(join(SPIKE, 'fixtures/index.md'), 'utf8'),
+    text: readFileSync(join(FIXTURES, 'fixtures/index.md'), 'utf8'),
   }
   const layouts = LAYOUT_FILES.map((name) => ({
     path: name,
-    text: readFileSync(join(SPIKE, 'site', name), 'utf8'),
+    text: readFileSync(join(FIXTURES, 'site', name), 'utf8'),
   }))
   return [post, ...layouts]
 }
@@ -73,7 +73,7 @@ type JsonRecord = Record<string, JsonValue>
  * intersection is vacuously true and would pass forever.
  */
 function ambientData(postText: string): JsonRecord {
-  const data = JSON.parse(readFileSync(join(SPIKE, 'fixtures/data.json'), 'utf8')) as {
+  const data = JSON.parse(readFileSync(join(FIXTURES, 'fixtures/data.json'), 'utf8')) as {
     site: JsonRecord
     page: JsonRecord
     build: JsonRecord
@@ -155,7 +155,7 @@ const SITE_DISPLAY: Record<string, Display> = {
 // --- Forgiveness classes ----------------------------------------------------------
 
 /**
- * Each class is D15's "allowlisted" in miniature: a difference the spike accepts,
+ * Each class is D15's "allowlisted" in miniature: a difference the harness accepts,
  * stated narrowly enough that it cannot absorb one it does not explain.
  *
  *  - heading-id: markdown-it-anchor percent-encodes heading ids and adds
@@ -247,14 +247,14 @@ const files = sourceFiles()
 const ambient = ambientData(files[0].text)
 const core = await loadCore()
 
-// The spike's host names the three ambient values and types none of them, which is
+// The harness's host names the three ambient values and types none of them, which is
 // what leaves its ad hoc fields unknown-typed and renders them unannotated (D30) —
 // and what lets `loadData` bind them as sent, validating nothing (D37).
 const host = { ambient: { site: null, page: null, build: null } }
 
 const compile = record(`compile (${files.length} files, 1 call)`)
 compile(() => {
-  expectClean(core.compile(files, host).diagnostics, 'compiling the spike')
+  expectClean(core.compile(files, host).diagnostics, 'compiling the fidelity fixtures')
 })
 
 const loadAmbient = record('loadData (full ambient)')
@@ -262,7 +262,7 @@ const loadContent = record('loadData (ambient + content)')
 const renderPost = record('render pass 1 (index.md)')
 const renderPage = record('render pass 2 (driver.lem)')
 
-// A render returns the page as bytes beside its marks (D42). The spike runs no
+// A render returns the page as bytes beside its marks (D42). The harness runs no
 // handlers, so each pass decodes outside the timed closure: what the budget is about is
 // the render, and a real shell decodes once, after splicing.
 const decoder = new TextDecoder()
@@ -304,7 +304,7 @@ const outDir = join(tmpdir(), 'lemmon-the-rebound')
 mkdirSync(outDir, { recursive: true })
 writeFileSync(join(outDir, 'lemmon.html'), pageHtml)
 
-const reference = readFileSync(join(SPIKE, 'fixtures/reference.html'), 'utf8')
+const reference = readFileSync(join(FIXTURES, 'fixtures/reference.html'), 'utf8')
 const comparison = compareRendered(
   renderedPage(pageHtml, { display: SITE_DISPLAY }),
   renderedPage(reference, { display: SITE_DISPLAY }),

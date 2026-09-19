@@ -90,8 +90,10 @@ crates/lemmon-wasm/     wasm-bindgen boundary: the resident Core (lemmon-core's 
 packages/core/          @limulus/lemmon-core — typed JS wrapper around the .wasm
 packages/shell/         @limulus/lemmon-shell — CLI, walker, plugin host, dev server (stub)
 tests/corpus/           golden inputs → expected trees + diagnostics; see its README
-scripts/                repo tooling run by npm scripts (wasm staging + check, the spike);
-                        scripts/lib/ is the logic they share, covered like a package
+tests/fidelity/         the-rebound's sources and its 11ty reference page; see its README
+scripts/                repo tooling run by npm scripts (wasm staging + check, the
+                        fidelity harness); scripts/lib/ is the logic they share, covered
+                        like a package
 docs/                   language.md, architecture.md, decisions/, journal/, plans/
 ```
 
@@ -160,13 +162,13 @@ npm run rust:cov       # Rust coverage ratchet — its own CI job (instrumentati
 npm run rust:wasm      # cross-compile the boundary + stage into artifacts/wasm/. Needs
                        # wasm-bindgen-cli at the exact version pinned in Cargo.toml.
                        # `verify:js` runs it first; run it by hand before `npx vitest`,
-                       # `wasm:check`, the spike, or the bench
+                       # `wasm:check`, the fidelity harness, or the bench
 npm run wasm:check     # compile the staged .wasm under this Node, assert exports/imports
 npm run rust:wasm:test # exercise the boundary across the real ABI (wasm-bindgen-test), on
                        # the .wasm's own stack — outside verify, so a boundary or depth-cap
                        # change is not green until this has run
 npm run wasm:bench     # marshalling numbers only; correctness is the corpus gate's job
-npm run spike:the-rebound  # the Phase 0 fidelity gate: the-rebound through the staged
+npm run test:fidelity  # the Phase 0 fidelity gate: the-rebound through the staged
                        # .wasm against its 11ty build, compared as rendered HTML (D28);
                        # non-zero on an unexpected diff or a blown render budget
 ```
@@ -179,7 +181,7 @@ mechanical check on invariant 1 — a host capability pulled in by a dependency 
 there as a new import; the file also holds the predicates that decide, so the spec beside
 it can feed them a violation.
 
-`spike:the-rebound` and `wasm:bench` run in no gate, so when a boundary shape changes
+`test:fidelity` and `wasm:bench` run in no gate, so when a boundary shape changes
 meaning, grep `scripts/` for its consumers — they were the last holders of a retired
 diagnostics contract once.
 

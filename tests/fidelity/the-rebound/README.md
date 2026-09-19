@@ -1,4 +1,4 @@
-# The `the-rebound` spike (∆xWs)
+# The `the-rebound` fidelity harness (∆xWs)
 
 The Phase 0 proof: limulus.net's `/feed/the-rebound/` post rendered end to end from the
 WASM core — document mode for the post body, then an explicit base→page→article layout
@@ -6,7 +6,7 @@ chain — held against the Eleventy-built page. Run it with:
 
 ```sh
 npm run rust:wasm          # stage the core, if not already staged
-npm run spike:the-rebound
+npm run test:fidelity
 ```
 
 The harness (`scripts/render-the-rebound.ts`) compiles everything in one call, renders
@@ -66,7 +66,7 @@ the `.webc` source, since a declaration the CSS does not back would hide a real 
 
 ## Forgiveness classes
 
-Each class is one difference the spike accepts, stated narrowly enough that it cannot
+Each class is one difference the harness accepts, stated narrowly enough that it cannot
 absorb one it does not explain — a class that forgave every `p` would also forgive a
 dropped paragraph beside the one it meant to excuse. The run reports how often each
 fired; the expected counts are 6, 6, and 1.
