@@ -25,11 +25,6 @@ refactor priority: reshaping is cheapest before more code is built on what it re
   each has since broken unseen: a retired diagnostics contract, then a corpus case ∆Bhz made
   a deliberate error. Give each a one-pass mode without timing loops, run from `verify:js`,
   which needs the staged artifact anyway. Notes in `docs/plans/∆W1D-gate-spike-and-bench.md`
-- ∆xWL Give `compile/mod.rs`'s load-time code a module — about 400 production lines that
-  ∆iCW, ∆HF0 and ∆eag added after ∆FQw (record defaults, `by` indexes, the recorder of
-  reads and calls behind `Unit::uses`) sit in the driver, whose `//!` claims only the entry
-  points and the `Compiler`. They are two responsibilities, so the cut is decided at plan
-  time. Planned in `docs/plans/∆xWL-compile-load-time-code.md`
 - ∆RJp Make `crates/lemmon-vm/src/vm.rs` a directory — its `//!` describes the stack
   machine, but the file also holds the three run entry points (`render`, `render_page`,
   `invoke`) and the operator table, 233 production lines with no `Vm` in them. ∆xBO and
