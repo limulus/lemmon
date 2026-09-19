@@ -25,11 +25,6 @@ refactor priority: reshaping is cheapest before more code is built on what it re
   each has since broken unseen: a retired diagnostics contract, then a corpus case ∆Bhz made
   a deliberate error. Give each a one-pass mode without timing loops, run from `verify:js`,
   which needs the staged artifact anyway. Notes in `docs/plans/∆W1D-gate-spike-and-bench.md`
-- ∆fBj Split `crates/lemmon-vm/src/unit.rs` into the unit data model and a `link/` directory
-  — its `//!` names two responsibilities, and all 978 production lines it has gained since
-  ∆FQw landed in the link half, which also causes the two-way imports with `exports` and
-  `closure`. ∆Qr2 serialises the data half and ∆99b grows the plans, so reshape first.
-  Planned in `docs/plans/∆fBj-split-unit-and-link.md`
 - ∆xWL Give `compile/mod.rs`'s load-time code a module — about 400 production lines that
   ∆iCW, ∆HF0 and ∆eag added after ∆FQw (record defaults, `by` indexes, the recorder of
   reads and calls behind `Unit::uses`) sit in the driver, whose `//!` claims only the entry
