@@ -3,8 +3,11 @@
 //! An entry whose first parameter *is* the value it works on is a method and belongs to
 //! that value's type; one that constructs from something else, or casts, is reached by
 //! its bare name and lives here (D34). That is the whole of the ambient value namespace
-//! the stdlib occupies — three names, each turning a string into something the checker
-//! then knows more about than a string.
+//! the stdlib occupies — `raw`, `datetime`, `url`, `asset`, `uniqueId` and `mark`.
+//!
+//! Four of the six run here. `asset` is folded to the URL the manifest gave it while
+//! compiling (D10) and `mark` lowers to an `Op::Mark` (D42), so their table entries
+//! exist to resolve the name and check the call, and the functions below refuse.
 //!
 //! `raw` is the one of them that vouches rather than constructs, and it stays a function
 //! precisely so the single `string` → `html` cast stays a grep target (invariant 7).

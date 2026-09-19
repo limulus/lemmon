@@ -15,7 +15,7 @@ use crate::Value;
 use crate::types::Type;
 use crate::value::Map;
 
-use super::{Expected, Fault, Machine, element_of, method_receiver};
+use super::{Expected, Fault, Machine, method_receiver};
 
 /// The receiver's elements, or the refusal for a value only an `any` call could have
 /// handed a list method.
@@ -23,6 +23,14 @@ fn items<'a>(name: &str, args: &'a [Value]) -> Result<&'a Rc<[Value]>, Fault> {
     match &args[0] {
         Value::List(items) => Ok(items),
         other => Err(method_receiver(name, "a list", other)),
+    }
+}
+
+/// The element type of the list a method was dispatched on.
+fn element_of(receiver: &Type) -> Type {
+    match receiver {
+        Type::List(element) => (**element).clone(),
+        other => unreachable!("a list method is dispatched on a list, not a `{other}`"),
     }
 }
 

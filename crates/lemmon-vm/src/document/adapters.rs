@@ -105,7 +105,7 @@ mod tests {
             prose
                 .chunks
                 .iter()
-                .map(|pieces| pieces.iter().map(super::super::Piece::text).collect())
+                .map(|pieces| pieces.iter().map(super::super::ProsePiece::text).collect())
                 .collect()
         })
     }

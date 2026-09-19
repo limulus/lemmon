@@ -93,12 +93,12 @@ pub(super) struct Block {
 
 /// A run of a document's rendered prose: text, or a code block to mark.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) enum Piece {
+pub(crate) enum ProsePiece {
     Text(String),
     Code(Code),
 }
 
-impl Piece {
+impl ProsePiece {
     /// What this piece puts in the page before any handler runs: the text, or the
     /// block's element as comrak wrote it.
     pub(crate) fn text(&self) -> &str {
@@ -173,12 +173,12 @@ const CLOSE: &str = "</code></pre>";
 
 /// `chunk` cut into its text and the code blocks its sentinels mark, the sentinels
 /// themselves dropped: what the chunk puts in the page is unchanged by the cutting.
-pub(super) fn pieces(chunk: &str, blocks: &[Block]) -> Vec<Piece> {
+pub(super) fn pieces(chunk: &str, blocks: &[Block]) -> Vec<ProsePiece> {
     let mut pieces = Vec::new();
     let mut rest = chunk;
     while let Some(at) = rest.find(OPEN) {
         if at > 0 {
-            pieces.push(Piece::Text(rest[..at].to_owned()));
+            pieces.push(ProsePiece::Text(rest[..at].to_owned()));
         }
         let numbered = &rest[at + OPEN.len()..];
         let digits = numbered
@@ -193,7 +193,7 @@ pub(super) fn pieces(chunk: &str, blocks: &[Block]) -> Vec<Piece> {
             .expect("comrak closes every block it gives the adapter")
             + CLOSE.len();
         let block = &blocks[index];
-        pieces.push(Piece::Code(Code {
+        pieces.push(ProsePiece::Code(Code {
             html: element[..end].to_owned(),
             key: block.payload.language.clone(),
             id: block.payload.id.clone(),
@@ -202,7 +202,7 @@ pub(super) fn pieces(chunk: &str, blocks: &[Block]) -> Vec<Piece> {
         rest = &element[end..];
     }
     if !rest.is_empty() {
-        pieces.push(Piece::Text(rest.to_owned()));
+        pieces.push(ProsePiece::Text(rest.to_owned()));
     }
     pieces
 }

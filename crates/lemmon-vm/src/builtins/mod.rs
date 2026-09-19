@@ -668,14 +668,6 @@ fn unshaped(_so_far: &[Type]) -> Option<Expected> {
     None
 }
 
-/// The element type of the list a method was dispatched on.
-fn element_of(receiver: &Type) -> Type {
-    match receiver {
-        Type::List(element) => (**element).clone(),
-        other => unreachable!("a list method is dispatched on a list, not a `{other}`"),
-    }
-}
-
 /// The runtime refusal of a method reached on the wrong receiver. Only an `any` receiver
 /// can get here — the checker matched every other one before the call was emitted — and
 /// the VM checks it again rather than trusting the value (`value.rs`, module docs).

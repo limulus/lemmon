@@ -21,7 +21,7 @@ use lemmon_syntax::{DocumentParse, FrontMatter, Parse, Span, parse_document};
 use crate::SourceFile;
 use crate::decls::{Declaration, FieldDecl, Shape};
 use crate::diagnostics::Diagnostic;
-use crate::document::{self, CodePayload, Piece};
+use crate::document::{self, CodePayload, ProsePiece};
 use crate::host::Host;
 use crate::types::Type;
 use crate::unit::{ExportedSignature, ImportRef, Param};
@@ -41,7 +41,7 @@ pub struct PreparedFile {
     pub(super) source: ParsedFile,
     /// A document's prose, rendered by comrak here so markdown never runs later: one
     /// run of text and code blocks per gap between its lem-blocks.
-    pub(super) chunks: Option<Vec<Vec<Piece>>>,
+    pub(super) chunks: Option<Vec<Vec<ProsePiece>>>,
     /// What that prose's code blocks hand their producers (D42).
     pub(super) payloads: Vec<CodePayload>,
     pub(super) exports: Vec<ExportedSignature>,

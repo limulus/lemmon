@@ -150,7 +150,7 @@ fn entry_of(module: &Module, path: &str) -> u32 {
 ///
 /// If `args` are not as many as the function's parameters — the compiler fixed both,
 /// so a mismatch is a bug in the caller rather than anything a template can provoke.
-pub fn invoke(
+pub(crate) fn invoke(
     module: &Module,
     func: u32,
     args: Vec<Value>,

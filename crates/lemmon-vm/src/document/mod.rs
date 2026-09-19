@@ -28,7 +28,7 @@ use crate::diagnostics::Diagnostic;
 use adapters::Headings;
 pub use code::CodePayload;
 use code::{Block, CodeFences};
-pub(crate) use code::{CODE, Code, Piece};
+pub(crate) use code::{CODE, Code, ProsePiece};
 
 /// comrak's configuration (D08): CommonMark plus footnotes, `{#id}` heading attributes,
 /// and raw HTML passed through — prose is the author's own. Heading ids are
@@ -52,7 +52,7 @@ pub(crate) struct Prose {
     /// The HTML of each gap between the document's lem-blocks, cut into text and the
     /// code blocks to mark: the chunk at `i` stands before lem-block `i`, the last one
     /// after every lem-block.
-    pub chunks: Vec<Vec<Piece>>,
+    pub chunks: Vec<Vec<ProsePiece>>,
     /// What the document's code blocks hand their producers, one per distinct block, in
     /// the order the document first writes each (D42).
     pub payloads: Vec<CodePayload>,
@@ -293,7 +293,7 @@ mod tests {
             prose
                 .chunks
                 .iter()
-                .map(|pieces| pieces.iter().map(Piece::text).collect())
+                .map(|pieces| pieces.iter().map(ProsePiece::text).collect())
                 .collect()
         })
     }
@@ -428,8 +428,8 @@ mod tests {
             .into_iter()
             .flatten()
             .filter_map(|piece| match piece {
-                Piece::Code(code) => Some(code),
-                Piece::Text(_) => None,
+                ProsePiece::Code(code) => Some(code),
+                ProsePiece::Text(_) => None,
             })
             .collect()
     }

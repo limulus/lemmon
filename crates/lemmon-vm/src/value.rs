@@ -394,7 +394,7 @@ fn maps_equal(a: &Map, b: &Map) -> Result<bool, String> {
 
 /// Appends `text` to `out` with `& < > " '` replaced by entities — safe in text content
 /// and in quoted attribute values alike.
-pub fn escape_html(text: &str, out: &mut impl fmt::Write) {
+fn escape_html(text: &str, out: &mut impl fmt::Write) {
     for c in text.chars() {
         let _ = match c {
             '&' => out.write_str("&amp;"),

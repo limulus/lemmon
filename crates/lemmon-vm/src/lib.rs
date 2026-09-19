@@ -56,7 +56,7 @@ pub use unit::{
     IndexDecl, Param, Root, Supplied, Unit, Uses, link,
 };
 pub use value::{Closure, Map, Value};
-pub use vm::{invoke, render, render_page};
+pub use vm::{render, render_page};
 
 /// Compiles every file of a site into one module: each file [`prepare`]d and compiled
 /// into its own [`Unit`] against the index of every file's signatures, then [`link`]ed.

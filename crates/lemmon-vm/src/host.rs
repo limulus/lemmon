@@ -1,12 +1,23 @@
-//! The ambient environment a host declares (D30, `docs/language.md` §Ambient types).
+//! Everything a host declares about the environment its programs compile in (D30,
+//! `docs/language.md` §Ambient types).
 //!
 //! The core knows no type or value by name. A host — the shell, the LSP, a playground —
 //! says which names every template may read and what each one's type is, and the types
 //! themselves are ordinary declarations in files it compiles with the program, so every
 //! field has a span and the rules that check the site's records check what the host
-//! sends. A [`Host`] is that declaration as the compiler reads it: names to bindings,
-//! plus the two names a host that renders documents adds — which ambient value a file's
-//! record retypes, and the field a page is rendered through.
+//! sends. A [`Host`] is that declaration as the compiler reads it, and it carries three
+//! things:
+//!
+//! - The ambient bindings: names to [`Ambient`]s, plus the three names a host that
+//!   renders documents adds — which ambient value a file's record retypes, the field a
+//!   page is rendered through, and the field its url is read from (D43).
+//! - The asset manifest (D38): every asset the host's build produced, with the URL it
+//!   shipped at. It is declared rather than sent with the data because `asset("…")` is
+//!   folded while compiling (D10), so the entry it was folded from is a compile-time
+//!   fact the link step compares (D25, invariant 11).
+//! - What the host's handlers claim, by mark name ([`Claim`], D42). Declared for the
+//!   manifest's reason: a mark's name and key are checked while the file that writes
+//!   them compiles, and the file records what the claims said.
 //!
 //! A host that names nothing compiles a program with no ambient values: `page` is then
 //! an undefined name like any other, not a reserved one.
@@ -109,7 +120,8 @@ pub struct Host {
     /// bytecode, and the entry it was folded from is a compile-time fact the link step
     /// compares (D25, invariant 11). Being a field of the declaration is also what
     /// makes a manifest change a *declaration* change to the derived `PartialEq`, which
-    /// is what the resident `Core` compares to decide whether a recompile is needed.
+    /// the resident `Core` compares at `loadData` to refuse an envelope built for a
+    /// declaration the program has not linked under.
     assets: Vec<(Rc<str>, Rc<str>)>,
     /// What the host's handlers claim (D42), by mark name; `None` for a host that
     /// declares no handlers at all — a playground, an editor — which is silent about
@@ -567,7 +579,8 @@ mod tests {
 
     #[test]
     fn makes_a_manifest_change_a_change_to_the_declaration() {
-        // What the resident `Core` compares to decide whether to recompile (D38).
+        // What the resident `Core` compares at `loadData`, to refuse an envelope built
+        // for a declaration the program has not linked under (D38).
         assert_ne!(
             built(),
             built().with_assets([("styles/site.css", "/x.css")])

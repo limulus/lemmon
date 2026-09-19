@@ -19,7 +19,7 @@ use crate::Value;
 use crate::bytecode::{MarkKey, MarkPayload, Op};
 use crate::decls::Decls;
 use crate::diagnostics::Diagnostic;
-use crate::document::{CODE, Code, Piece as ProsePiece};
+use crate::document::{CODE, Code, ProsePiece};
 use crate::plan::SourceKind;
 use crate::types::Type;
 use crate::unit::{BindingFn, Supplied};

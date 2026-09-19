@@ -42,7 +42,7 @@ use crate::Value;
 use crate::bytecode::{Function, Op};
 use crate::decls::{DeclKind, Decls, Shape};
 use crate::diagnostics::{Compiled, Diagnostic};
-use crate::document::Piece;
+use crate::document::ProsePiece;
 use crate::exports::{Export, ExportIndex};
 use crate::host::Host;
 use crate::types::Type;
@@ -102,7 +102,13 @@ pub fn compile_unit(
             // Code blocks included, as the page first holds them: `readingTime` counts
             // what a reader would be shown with no handler run.
             body: prepared.chunks.as_ref().map(|chunks| {
-                Rc::from(chunks.iter().flatten().map(Piece::text).collect::<String>())
+                Rc::from(
+                    chunks
+                        .iter()
+                        .flatten()
+                        .map(ProsePiece::text)
+                        .collect::<String>(),
+                )
             }),
             payloads: prepared.payloads.clone(),
         },
@@ -691,7 +697,7 @@ impl<'a> Compiler<'a> {
     fn compile_entry(
         &mut self,
         source: &ParsedFile,
-        chunks: Option<&[Vec<Piece>]>,
+        chunks: Option<&[Vec<ProsePiece>]>,
         fields_of: Option<Rc<str>>,
     ) {
         if let Some(value) = fields_of {

@@ -5,6 +5,10 @@
 //! one range over its default content, and printing that markup anywhere copies its
 //! marks in, shifted to where the text now stands. So a captured value places its mark
 //! as often as it is printed, and never if it is not.
+//!
+//! `Buffer`, how a render accumulates that text and those marks, is here too. It never
+//! leaves the crate: the VM keeps a stack of them, one more per capture, and
+//! `Value::emit` prints into the one on top.
 
 use std::collections::BTreeMap;
 use std::rc::Rc;
