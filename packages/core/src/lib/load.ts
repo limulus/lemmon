@@ -7,7 +7,7 @@ import { Core } from './core.ts'
 
 // The staged artifact set's names — the wasm-bindgen `--out-name` convention that
 // `scripts/stage-wasm.ts` produces. Spelled here rather than imported from
-// `scripts/wasm-artifact.ts` because package sources cannot reach outside their
+// `scripts/lib/wasm-artifact.ts` because package sources cannot reach outside their
 // package's `rootDir`.
 const GLUE_FILENAME = 'lemmon-core.js'
 const WASM_FILENAME = 'lemmon-core_bg.wasm'

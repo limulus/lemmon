@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { OUT_NAME, STAGED_WASM, STAGING_DIR } from './wasm-artifact.ts'
+import { OUT_NAME, STAGED_WASM, STAGING_DIR } from './lib/wasm-artifact.ts'
 
 const TARGET = 'wasm32-unknown-unknown'
 const PROFILE = 'release'

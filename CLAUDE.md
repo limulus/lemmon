@@ -174,9 +174,10 @@ npm run spike:the-rebound  # the Phase 0 fidelity gate: the-rebound through the 
 CI is build-once/consume-many: a `wasm` job stages and uploads the artifact, and the
 `wasm-check`/`verify` matrices download it, so every supported Node is tested against the
 exact bytes that would ship (accepting a `.wasm` depends on the Node major; building one
-does not). `wasm:check`'s import allowlist (`scripts/wasm-artifact.ts`) is the mechanical
-check on invariant 1 — a host capability pulled in by a dependency shows up there as a new
-import.
+does not). `wasm:check`'s import allowlist (`scripts/lib/wasm-artifact.ts`) is the
+mechanical check on invariant 1 — a host capability pulled in by a dependency shows up
+there as a new import; the file also holds the predicates that decide, so the spec beside
+it can feed them a violation.
 
 `spike:the-rebound` and `wasm:bench` run in no gate, so when a boundary shape changes
 meaning, grep `scripts/` for its consumers — they were the last holders of a retired
