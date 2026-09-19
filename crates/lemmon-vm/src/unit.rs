@@ -1396,54 +1396,11 @@ mod tests {
     use super::*;
     use crate::compile::{compile_unit, prepare};
     use crate::host::{Ambient, Claim};
-    use crate::testing::at;
+    use crate::testing::{
+        AMBIENT, POST, addressed_host, at, linked, shell_host, shown, unit_against,
+        unit_of, untyped_host,
+    };
     use crate::{SourceFile, Value, compile, render};
-
-    /// The host every test below compiles against unless it needs another: the three
-    /// names the standard shell binds, none of them typed.
-    fn untyped_host() -> Host {
-        Host::untyped(["site", "page", "build"])
-    }
-
-    /// Compiles the file at `path` into a unit against an index of every given file's
-    /// exports.
-    fn unit_of(path: &str, index_of: &[(&str, &str)]) -> Unit {
-        let prepared: Vec<_> = index_of
-            .iter()
-            .map(|(path, text)| {
-                prepare(&SourceFile::new(*path, *text), &untyped_host()).unwrap()
-            })
-            .collect();
-        let mut index = ExportIndex::new();
-        for p in &prepared {
-            index.offer(p.path(), p.exports());
-            index.offer_types(p.path(), p.types());
-        }
-        let this = prepared
-            .iter()
-            .find(|p| p.path() == path)
-            .expect("the file compiles against an index that includes it");
-        compile_unit(this, &index, &untyped_host()).expect_output()
-    }
-
-    /// Compiles the file at `path` against `host`, and against an index of every given
-    /// file's exports.
-    fn unit_against(host: &Host, path: &str, files: &[(&str, &str)]) -> Unit {
-        let prepared: Vec<_> = files
-            .iter()
-            .map(|(path, text)| prepare(&SourceFile::new(*path, *text), host).unwrap())
-            .collect();
-        let mut index = ExportIndex::new();
-        for p in &prepared {
-            index.offer(p.path(), p.exports());
-            index.offer_types(p.path(), p.types());
-        }
-        let this = prepared
-            .iter()
-            .find(|p| p.path() == path)
-            .expect("the file compiles against an index that includes it");
-        compile_unit(this, &index, host).expect_output()
-    }
 
     /// Links `units` against the index they make, asserting there is no module and
     /// returning what was reported.
@@ -1823,28 +1780,6 @@ mod tests {
         assert_eq!(&module.files[article.steps[0].file as usize], "types.lem");
     }
 
-    /// A host shaped like the standard shell's, reading `site` from `site.lem`.
-    /// The host's document type, as every test against `shell_host` declares it.
-    const PAGE: &str = "<lem-type Page>\n  url: url\n</lem-type>";
-
-    fn shell_host() -> Host {
-        Host::new()
-            .bind("page", Ambient::named("Page"))
-            .bind("site", Ambient::bindings("site.lem"))
-            .documents("page")
-            .rendered_through("layout")
-            .addressed_by("url")
-    }
-
-    /// Every file compiled against `host` and linked: the module, or what stopped it.
-    fn linked(host: &Host, files: &[(&str, &str)]) -> Compiled<Module> {
-        let units: Vec<Unit> = files
-            .iter()
-            .map(|(path, _)| unit_against(host, path, files))
-            .collect();
-        link(&units, &ExportIndex::of(&units), host)
-    }
-
     fn steps_of<'m>(module: &'m Module, record: &str) -> Vec<&'m str> {
         module
             .records
@@ -1871,7 +1806,7 @@ mod tests {
     fn page_template_of(record: &str) -> (String, Compiled<Module>) {
         let template = format!("---\ntype: {record}\n---\n<p>the body</p>");
         let files = [
-            SourceFile::new("ambient.lem", PAGE),
+            SourceFile::new("ambient.lem", AMBIENT),
             SourceFile::new("schema.lem", READS_BODY),
             SourceFile::new("t.lem", &template)
                 .with_record(record)
@@ -1879,7 +1814,7 @@ mod tests {
             SourceFile::new("d.md", format!("---\ntype: {record}\n---\nprose"))
                 .with_record(record),
         ];
-        (template, compile(&files, &shell_host()))
+        (template, compile(&files, &addressed_host()))
     }
 
     #[test]
@@ -1890,7 +1825,7 @@ mod tests {
         let (template, linked) = page_template_of("Post");
         assert!(linked.output.is_none());
         assert_eq!(
-            shown_all(&linked.diagnostics),
+            shown(&linked.diagnostics),
             [format!(
                 "t.lem:{}: `Post` cannot type a page template: its defaults read \
                  `body`, and a template has no body until it renders\n  \
@@ -1907,7 +1842,7 @@ mod tests {
         let (template, linked) = page_template_of("Tip");
         assert!(linked.output.is_none());
         assert_eq!(
-            shown_all(&linked.diagnostics),
+            shown(&linked.diagnostics),
             [format!(
                 "t.lem:{}: `Tip` cannot type a page template: its defaults read \
                  `body`, and a template has no body until it renders\n  \
@@ -1933,10 +1868,6 @@ mod tests {
         assert_eq!(d.body.as_deref(), Some("<p>prose</p>\n"));
         assert_eq!(module.document("schema.lem"), None);
     }
-
-    /// A page schema with a layout, and a document typed as it.
-    const POST: &str = "<lem-type Post extends Page>\n  title: string\n  \
-         layout: (Post, html): html\n</lem-type>";
 
     /// `ambient` and `POST` with a document of `Post`, compiled as units against
     /// `host` — what a relink under another declaration links again as they are.
@@ -1965,14 +1896,14 @@ mod tests {
     /// against `linked_with`, as strings.
     fn relinked(compiled_with: &Host, linked_with: &Host, ambient: &str) -> Vec<String> {
         let units = post_units(compiled_with, ambient);
-        shown_all(&link(&units, &ExportIndex::of(&units), linked_with).diagnostics)
+        shown(&link(&units, &ExportIndex::of(&units), linked_with).diagnostics)
     }
 
     #[test]
     fn refuses_a_document_type_that_declares_no_url_field() {
         const NO_URL: &str = "<lem-type Page>\n  draft: bool = false\n</lem-type>";
         assert_eq!(
-            relinked(&shell_host(), &shell_host(), NO_URL),
+            relinked(&addressed_host(), &addressed_host(), NO_URL),
             [format!(
                 "ambient.lem:{}: `Page` is the host's document type, so it declares \
                  where a page goes: `url: url`",
@@ -1985,7 +1916,7 @@ mod tests {
     fn refuses_a_url_field_that_is_no_url() {
         const STRING_URL: &str = "<lem-type Page>\n  url: string\n</lem-type>";
         assert_eq!(
-            relinked(&shell_host(), &shell_host(), STRING_URL),
+            relinked(&addressed_host(), &addressed_host(), STRING_URL),
             [format!(
                 "ambient.lem:{}: `url` is where a page goes: declare it `url: url`",
                 at(STRING_URL, "«url»: string")
@@ -2016,12 +1947,12 @@ mod tests {
             .rendered_through("template")
             .addressed_by("permalink");
         assert_eq!(
-            relinked(&shell_host(), &renamed, PAGE),
+            relinked(&addressed_host(), &renamed, AMBIENT),
             [
                 format!(
                     "ambient.lem:{}: `Page` is the host's document type, so it \
                      declares where a page goes: `permalink: url`",
-                    at(PAGE, "Page")
+                    at(AMBIENT, "Page")
                 ),
                 format!(
                     "site.lem:{}: `Post` extends `Page`, so it declares how a page \
@@ -2033,7 +1964,11 @@ mod tests {
         // An entry field the record has, of the wrong shape: refused where it is
         // declared, in the compiler's words.
         assert_eq!(
-            relinked(&shell_host(), &shell_host().rendered_through("title"), PAGE),
+            relinked(
+                &addressed_host(),
+                &addressed_host().rendered_through("title"),
+                AMBIENT,
+            ),
             [format!(
                 "site.lem:{}: `title` renders a `Post`: declare it \
                  `title: (Post, html): html`",
@@ -2061,7 +1996,7 @@ mod tests {
         // `LinkPost` redeclares `title` to change its default (D32): its plan runs its
         // own `title` and `Page`'s `draft`; `Article`'s runs its own `title`.
         let module = linked(
-            &shell_host(),
+            &addressed_host(),
             &[
                 (
                     "ambient.lem",
@@ -2093,7 +2028,7 @@ mod tests {
         // A redeclaration changes the default (D32); one that gives none changes
         // nothing, so `Page`'s step still runs for a `Note`.
         let module = linked(
-            &shell_host(),
+            &addressed_host(),
             &[
                 (
                     "ambient.lem",
@@ -2122,7 +2057,7 @@ mod tests {
         let linked = linked(&untyped_host(), &[("types.lem", CYCLE)]);
         assert!(linked.output.is_none());
         assert_eq!(
-            shown_all(&linked.diagnostics),
+            shown(&linked.diagnostics),
             [
                 format!(
                     "types.lem:{}: `a` depends on itself: `a` reads `b`, `b` reads `a`",
@@ -2134,10 +2069,6 @@ mod tests {
                 ),
             ]
         );
-    }
-
-    fn shown_all(diagnostics: &[Diagnostic]) -> Vec<String> {
-        diagnostics.iter().map(ToString::to_string).collect()
     }
 
     fn binding_names(module: &Module) -> Vec<&str> {
@@ -2152,7 +2083,7 @@ mod tests {
     #[test]
     fn plans_computed_bindings_after_the_siblings_they_read() {
         let module = linked(
-            &shell_host(),
+            &addressed_host(),
             &[(
                 "site.lem",
                 "<lem-let tagline: string = \"Notes from \" + name />\n\
@@ -2179,9 +2110,9 @@ mod tests {
         // `Article.hero` names `site.photos`: `posts` waits for `photos`, declared
         // after it, on the strength of the pair alone (∆eag).
         let module = linked(
-            &shell_host(),
+            &addressed_host(),
             &[
-                ("ambient.lem", PAGE),
+                ("ambient.lem", AMBIENT),
                 (
                     "site.lem",
                     "<lem-let posts: [Article] from \"feed/*.md\" />\n\
@@ -2217,16 +2148,16 @@ mod tests {
                               related: Article? by site.posts\n  \
                               layout: (Article, html): html\n</lem-type>";
         let linked = linked(
-            &shell_host(),
+            &addressed_host(),
             &[
-                ("ambient.lem", PAGE),
+                ("ambient.lem", AMBIENT),
                 ("site.lem", SITE),
                 ("schema.lem", SCHEMA),
             ],
         );
         assert!(linked.output.is_none());
         assert_eq!(
-            shown_all(&linked.diagnostics),
+            shown(&linked.diagnostics),
             [format!(
                 "site.lem:{}: `posts` cannot be loaded before itself: `posts` needs \
                  `posts`, which `Article.related` looks up while `posts` loads\n  \
@@ -2242,9 +2173,9 @@ mod tests {
         // `LinkPost` redeclares `hero` to give it a default and says nothing of the
         // index: the default is its own, the index is `Article`'s.
         let module = linked(
-            &shell_host(),
+            &addressed_host(),
             &[
-                ("ambient.lem", PAGE),
+                ("ambient.lem", AMBIENT),
                 (
                     "site.lem",
                     "<lem-let photos: {string: Photo} from \"photos.json\" />\n\
@@ -2284,7 +2215,7 @@ mod tests {
         let module = linked(&untyped_host(), &[("a.lem", "x")]).expect_output();
         assert!(module.bindings.is_empty());
         // The host reads `site.lem`, which has not been compiled.
-        let module = linked(&shell_host(), &[("a.lem", "x")]).expect_output();
+        let module = linked(&addressed_host(), &[("a.lem", "x")]).expect_output();
         assert!(module.bindings.is_empty());
     }
 
@@ -2762,7 +2693,7 @@ mod tests {
         const TEMPLATE: &str = "<lem.page.url>";
         // page.lem read `page.url` as a `Page`'s field; a host that now calls `page`
         // something else checked that read against a declaration this unit never saw.
-        let files = [("ambient.lem", PAGE), ("page.lem", TEMPLATE)];
+        let files = [("ambient.lem", AMBIENT), ("page.lem", TEMPLATE)];
         let host = Host::new().bind("page", Ambient::named("Page"));
         let unit = unit_against(&host, "page.lem", &files);
         let ambient = unit_against(&host, "ambient.lem", &files);
@@ -2803,7 +2734,7 @@ mod tests {
         // declares for it is not what this unit was compiled against — and comparing
         // the two would call every document stale.
         let files = [
-            ("ambient.lem", PAGE),
+            ("ambient.lem", AMBIENT),
             (
                 "schema.lem",
                 "<lem-type Post extends Page>\n  title: string\n  \
@@ -2931,7 +2862,7 @@ mod tests {
         let linked = linked(&untyped_host(), &[("types.lem", CYCLE)]);
         assert!(linked.output.is_none());
         assert_eq!(
-            shown_all(&linked.diagnostics),
+            shown(&linked.diagnostics),
             [format!(
                 "types.lem:{}: `a` depends on itself: `a` reads `b` through `f`, `b` \
                  reads `a`",
@@ -2943,9 +2874,9 @@ mod tests {
     #[test]
     fn orders_a_computed_binding_after_the_siblings_a_called_function_reads() {
         let module = linked(
-            &shell_host(),
+            &addressed_host(),
             &[
-                ("ambient.lem", PAGE),
+                ("ambient.lem", AMBIENT),
                 (
                     "site.lem",
                     "<lem-fn all(): [string] = site.posts />\n\
@@ -2962,10 +2893,13 @@ mod tests {
     fn refuses_a_binding_that_needs_itself_through_a_call_and_names_the_call() {
         const SITE: &str = "<lem-fn all(): [string] = site.articles />\n\
                             <lem-let articles: [string] = all() />";
-        let linked = linked(&shell_host(), &[("ambient.lem", PAGE), ("site.lem", SITE)]);
+        let linked = linked(
+            &addressed_host(),
+            &[("ambient.lem", AMBIENT), ("site.lem", SITE)],
+        );
         assert!(linked.output.is_none());
         assert_eq!(
-            shown_all(&linked.diagnostics),
+            shown(&linked.diagnostics),
             [format!(
                 "site.lem:{}: `articles` cannot be loaded before itself: `articles` \
                  needs `articles` through `all`",
@@ -2983,9 +2917,9 @@ mod tests {
                               layout: (Article, html): html\n</lem-type>\n\
                               <lem-fn caption(): string = site.captions[\"x\"] />";
         let linked = linked(
-            &shell_host(),
+            &addressed_host(),
             &[
-                ("ambient.lem", PAGE),
+                ("ambient.lem", AMBIENT),
                 (
                     "site.lem",
                     "<lem-let posts: [Article] from \"feed/*.md\" />\n\
@@ -2996,7 +2930,7 @@ mod tests {
         );
         assert!(linked.output.is_none());
         assert_eq!(
-            shown_all(&linked.diagnostics),
+            shown(&linked.diagnostics),
             [format!(
                 "schema.lem:{}: `caption` reaches `site` through `caption`, but `site` \
                  is out of scope in a default: a default reads only the record it \
@@ -3017,7 +2951,9 @@ mod tests {
                               </lem-type>\n\
                               <lem-fn brand(): string = site.name />\n\
                               <lem-fn year(): string = build.generator />";
-        let host = shell_host().bind("build", Ambient::named("Build"));
+        let host = shell_host()
+            .addressed_by("url")
+            .bind("build", Ambient::named("Build"));
         let linked = linked(
             &host,
             &[
@@ -3040,7 +2976,7 @@ mod tests {
             )
         };
         assert_eq!(
-            shown_all(&linked.diagnostics),
+            shown(&linked.diagnostics),
             [refused("site", "brand"), refused("build", "year")]
         );
     }
@@ -3056,9 +2992,9 @@ mod tests {
         const FNS: &str = "<lem-fn where(): url = page.url />\n\
                            <lem-fn here(): Page = page />";
         let linked = linked(
-            &shell_host(),
+            &addressed_host(),
             &[
-                ("ambient.lem", PAGE),
+                ("ambient.lem", AMBIENT),
                 ("schema.lem", SCHEMA),
                 ("fns.lem", FNS),
             ],
@@ -3073,7 +3009,7 @@ mod tests {
             )
         };
         assert_eq!(
-            shown_all(&linked.diagnostics),
+            shown(&linked.diagnostics),
             [refused("at", "where"), refused("origin", "here")]
         );
     }
@@ -3082,16 +3018,16 @@ mod tests {
     fn refuses_a_computed_binding_that_reaches_the_document_value_through_a_call() {
         const SITE: &str = "<lem-let home: url = where() />";
         let linked = linked(
-            &shell_host(),
+            &addressed_host(),
             &[
-                ("ambient.lem", PAGE),
+                ("ambient.lem", AMBIENT),
                 ("site.lem", SITE),
                 ("fns.lem", "<lem-fn where(): url = page.url />"),
             ],
         );
         assert!(linked.output.is_none());
         assert_eq!(
-            shown_all(&linked.diagnostics),
+            shown(&linked.diagnostics),
             [format!(
                 "site.lem:{}: `home` reaches `page` through `where`, but `page` is bound \
                  per page, and a binding here is computed once, at load",
@@ -3111,9 +3047,9 @@ mod tests {
                               <lem.page.url><lem.site.posts[0].title><lem.p.title>\
                               <lem.body></lem-fn>";
         let module = linked(
-            &shell_host(),
+            &addressed_host(),
             &[
-                ("ambient.lem", PAGE),
+                ("ambient.lem", AMBIENT),
                 ("site.lem", "<lem-let posts: [Post] from \"feed/*.md\" />"),
                 ("schema.lem", SCHEMA),
             ],

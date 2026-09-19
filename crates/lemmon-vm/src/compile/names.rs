@@ -564,6 +564,7 @@ mod tests {
 
     use super::*;
     use crate::compile::index_u32;
+    use crate::testing::{shown, untyped_host};
     use crate::unit::ExportedSignature;
 
     /// An index in which `lib.lem` defines `names`.
@@ -590,21 +591,11 @@ mod tests {
         Span::new(start, start + 1)
     }
 
-    /// A host shaped like the standard shell's, with nothing typed — the three names
-    /// every test below expects to be reserved.
-    fn untyped_host() -> Host {
-        Host::untyped(["site", "page", "build"])
-    }
-
     /// Names for `t.lem` with one frame open, resolving against `index` and `host`.
     fn in_frame<'a>(host: &'a Host, index: Option<&'a ExportIndex>) -> Names<'a> {
         let mut names = Names::new("t.lem", index, host);
         names.push_frame();
         names
-    }
-
-    fn shown(diagnostics: &[Diagnostic]) -> Vec<String> {
-        diagnostics.iter().map(ToString::to_string).collect()
     }
 
     /// A frame's captures as `(slot in the enclosing frame, slot here)` pairs.

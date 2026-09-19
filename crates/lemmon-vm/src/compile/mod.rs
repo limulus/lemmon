@@ -919,9 +919,9 @@ mod tests {
     use lemmon_syntax::Severity;
 
     use super::*;
-    use crate::host::{Ambient, Claim};
+    use crate::host::Claim;
     use crate::rendered::Payload;
-    use crate::testing::at;
+    use crate::testing::{AMBIENT, at, shell_host, shown};
     use crate::unit::Param;
     use crate::{SourceFile, compile, render};
 
@@ -967,10 +967,6 @@ mod tests {
             .map_err(|e| e.to_string())
     }
 
-    fn shown(diagnostics: &[Diagnostic]) -> Vec<String> {
-        diagnostics.iter().map(ToString::to_string).collect()
-    }
-
     /// Compiles `files`, asserting there is no module and returning what was reported.
     fn compile_errors(files: &[SourceFile]) -> Vec<Diagnostic> {
         let compiled = compile(files, &untyped_host());
@@ -983,18 +979,6 @@ mod tests {
     }
 
     // --- Defaults and `by` indexes, compiled for the loader (∆iCW) ----------------
-
-    /// A host shaped like the standard shell's, so a record extending `Page` is
-    /// page-backed.
-    fn shell_host() -> Host {
-        Host::new()
-            .bind("page", Ambient::named("Page"))
-            .bind("site", Ambient::bindings("site.lem"))
-            .documents("page")
-            .rendered_through("layout")
-    }
-
-    const PAGE: &str = "<lem-type Page>\n  url: url\n</lem-type>";
 
     fn shown_with(host: &Host, files: &[SourceFile]) -> Vec<String> {
         shown(&compile(files, host).diagnostics)
@@ -1244,7 +1228,7 @@ mod tests {
         const FNS: &str = "<lem-fn where(): url = page.url />\n\
                            <lem-fn here(): Page = page />";
         let files = [
-            SourceFile::new("ambient.lem", PAGE),
+            SourceFile::new("ambient.lem", AMBIENT),
             SourceFile::new("fns.lem", FNS),
         ];
         assert_eq!(shown_with(&shell_host(), &files), Vec::<String>::new());
@@ -1273,7 +1257,7 @@ mod tests {
              ids: [int] = [1].map(|body| body)\n  \
              layout: (Post, html): html\n</lem-type>";
         let files = [
-            SourceFile::new("ambient.lem", PAGE),
+            SourceFile::new("ambient.lem", AMBIENT),
             SourceFile::new("schema.lem", SCHEMA),
         ];
         assert_eq!(shown_with(&shell_host(), &files), Vec::<String>::new());
@@ -1301,7 +1285,7 @@ mod tests {
             "<lem-type Post extends Page>\n  slug: string = path\n  \
              excerpt: html = body\n  layout: (Post, html): html\n</lem-type>",
         );
-        let files = [SourceFile::new("ambient.lem", PAGE), post];
+        let files = [SourceFile::new("ambient.lem", AMBIENT), post];
         assert_eq!(shown_with(&shell_host(), &files), Vec::<String>::new());
         let unit = unit_with(&shell_host(), "schema.lem", &files);
         let slug = &unit.functions[unit.defaults[0].func as usize];
@@ -1319,7 +1303,7 @@ mod tests {
         assert_eq!(
             shown_with(
                 &shell_host(),
-                &[SourceFile::new("ambient.lem", PAGE), author]
+                &[SourceFile::new("ambient.lem", AMBIENT), author]
             ),
             [format!(
                 "author.lem:{}: undefined name `body`",
@@ -1362,7 +1346,7 @@ mod tests {
                  <lem-fn show(p: Page): url = p.url />"
             );
             let files = [
-                SourceFile::new("ambient.lem", PAGE),
+                SourceFile::new("ambient.lem", AMBIENT),
                 SourceFile::new("site.lem", "<lem-let name: string = \"n\" />"),
                 SourceFile::new("schema.lem", schema.clone()),
             ];
@@ -1521,7 +1505,7 @@ mod tests {
                               layout: (Post, html): html = other\n</lem-type>\n\
                               <lem-fn other(s: string): html><lem.s></lem-fn>";
         let files = [
-            SourceFile::new("ambient.lem", PAGE),
+            SourceFile::new("ambient.lem", AMBIENT),
             SourceFile::new(
                 "schema.lem",
                 "<lem-type Post extends Page>\n  layout: (Post, html): html = post\n\
@@ -1530,7 +1514,7 @@ mod tests {
         ];
         assert_eq!(shown_with(&shell_host(), &files), Vec::<String>::new());
         let files = [
-            SourceFile::new("ambient.lem", PAGE),
+            SourceFile::new("ambient.lem", AMBIENT),
             SourceFile::new("schema.lem", SCHEMA),
         ];
         assert_eq!(

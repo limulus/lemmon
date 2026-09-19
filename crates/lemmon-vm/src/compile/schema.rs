@@ -439,28 +439,8 @@ impl Compiler<'_> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::host::Ambient;
-    use crate::testing::at;
+    use crate::testing::{AMBIENT, at, shell_host, shown};
     use crate::{Host, SourceFile, compile};
-
-    fn shown(diagnostics: &[Diagnostic]) -> Vec<String> {
-        diagnostics.iter().map(ToString::to_string).collect()
-    }
-
-    /// A host shaped like the standard shell's: `page` a declared `Page`, `site` the
-    /// record of `site.lem`'s own bindings, every page rendered through `layout`.
-    fn shell_host() -> Host {
-        Host::new()
-            .bind("page", Ambient::named("Page"))
-            .bind("site", Ambient::bindings("site.lem"))
-            .documents("page")
-            .rendered_through("layout")
-    }
-
-    /// The declaration the tests below compile against, as a host really passes it: an
-    /// ordinary file, compiled with the program.
-    const AMBIENT: &str = "<lem-type Page>\n  url: url\n</lem-type>";
 
     /// Compiles `files` against `host` and shows every diagnostic.
     fn diagnostics_with(host: &Host, files: &[SourceFile]) -> Vec<String> {

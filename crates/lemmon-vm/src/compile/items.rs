@@ -689,27 +689,12 @@ mod tests {
     use crate::exports::ExportIndex;
     use crate::host::{Ambient, Host};
     use crate::plan::SourceKind;
-    use crate::testing::{all_of, at};
+    use crate::testing::{AMBIENT, all_of, at, shell_host, shown};
     use crate::unit::{Access, Call, Supplied};
     use crate::{SourceFile, Unit, Value, compile, render};
 
-    /// A host shaped like the standard shell's, reading `site` from `site.lem`.
-    fn shell_host() -> Host {
-        Host::new()
-            .bind("page", Ambient::named("Page"))
-            .bind("site", Ambient::bindings("site.lem"))
-            .documents("page")
-            .rendered_through("layout")
-    }
-
-    const PAGE: &str = "<lem-type Page>\n  url: url\n</lem-type>";
-
-    fn shown(host: &Host, files: &[SourceFile]) -> Vec<String> {
-        compile(files, host)
-            .diagnostics
-            .iter()
-            .map(ToString::to_string)
-            .collect()
+    fn shown_with(host: &Host, files: &[SourceFile]) -> Vec<String> {
+        shown(&compile(files, host).diagnostics)
     }
 
     /// The unit of `path`, compiled against `host` and an index of every file given.
@@ -790,7 +775,7 @@ mod tests {
             ("env()", literal("env")),
         ] {
             let text = format!("<lem-let x: [string] from {source} />");
-            let reported = shown(&shell_host(), &[SourceFile::new("site.lem", &text)]);
+            let reported = shown_with(&shell_host(), &[SourceFile::new("site.lem", &text)]);
             assert_eq!(reported.len(), 1, "{source}: {reported:?}");
             assert!(reported[0].ends_with(&message), "{source}: {reported:?}");
         }
@@ -801,7 +786,7 @@ mod tests {
         const SRC: &str = "<lem-let posts: [string] from \"f/*.md\" />";
         let file = SourceFile::new("other.lem", SRC);
         assert_eq!(
-            shown(&shell_host(), std::slice::from_ref(&file)),
+            shown_with(&shell_host(), std::slice::from_ref(&file)),
             [format!(
                 "other.lem:{}: a `from` binding belongs at the top level of `site.lem`, \
                  the file the host reads bindings from",
@@ -809,7 +794,7 @@ mod tests {
             )]
         );
         assert_eq!(
-            shown(&Host::untyped(["site"]), &[file]),
+            shown_with(&Host::untyped(["site"]), &[file]),
             [format!(
                 "other.lem:{}: a `from` binding needs a host that reads bindings from a \
                  file, and this one reads none",
@@ -892,7 +877,7 @@ mod tests {
             "<lem-let sub: string? = null />\n\
              <lem-let shown><lem-if sub><lem.sub></lem-if></lem-let>",
         )];
-        assert!(shown(&shell_host(), &files).is_empty());
+        assert!(shown_with(&shell_host(), &files).is_empty());
     }
 
     #[test]
@@ -901,7 +886,7 @@ mod tests {
         const SRC: &str = "<lem-let name: string = \"x\" />\n\
                            <lem-fn f(): string = name />";
         assert_eq!(
-            shown(&shell_host(), &[SourceFile::new("site.lem", SRC)]),
+            shown_with(&shell_host(), &[SourceFile::new("site.lem", SRC)]),
             [format!(
                 "site.lem:{}: undefined name `name`",
                 at(SRC, "= «name» />")
@@ -915,7 +900,7 @@ mod tests {
         // diagnostic.
         const SRC: &str = "<lem-let a: int = 1 />\n<lem-let a: string = \"x\" />";
         assert_eq!(
-            shown(&shell_host(), &[SourceFile::new("site.lem", SRC)]),
+            shown_with(&shell_host(), &[SourceFile::new("site.lem", SRC)]),
             [format!(
                 "site.lem:{}: `a` is already bound here\n  site.lem:{}: first bound here",
                 at(SRC, "«a»: string"),
@@ -928,7 +913,7 @@ mod tests {
     fn refuses_a_top_level_binding_that_takes_a_host_value_s_name() {
         const SRC: &str = "<lem-let page: int = 1 />";
         assert_eq!(
-            shown(&shell_host(), &[SourceFile::new("site.lem", SRC)]),
+            shown_with(&shell_host(), &[SourceFile::new("site.lem", SRC)]),
             [format!(
                 "site.lem:{}: `page` is bound by the host and cannot be redefined",
                 at(SRC, "page")
@@ -940,7 +925,7 @@ mod tests {
     fn warns_when_a_top_level_binding_shadows_the_stdlib() {
         const SRC: &str = "<lem-let raw: string = \"x\" />";
         assert_eq!(
-            shown(&shell_host(), &[SourceFile::new("site.lem", SRC)]),
+            shown_with(&shell_host(), &[SourceFile::new("site.lem", SRC)]),
             [format!(
                 "site.lem:{}: warning: `raw` shadows the stdlib function of the same \
                  name",
@@ -955,7 +940,7 @@ mod tests {
         // declared type.
         const SRC: &str = "<lem-let n: int = \"x\" />";
         assert_eq!(
-            shown(&shell_host(), &[SourceFile::new("site.lem", SRC)]),
+            shown_with(&shell_host(), &[SourceFile::new("site.lem", SRC)]),
             [format!(
                 "site.lem:{}: expected `int`, got `string`",
                 at(SRC, "\"x\"")
@@ -967,7 +952,7 @@ mod tests {
     fn refuses_a_from_binding_nested_in_the_bindings_file() {
         const SRC: &str = "<lem-let all><lem-let x: [string] from \"f/*.md\" /></lem-let>";
         assert_eq!(
-            shown(&shell_host(), &[SourceFile::new("site.lem", SRC)]),
+            shown_with(&shell_host(), &[SourceFile::new("site.lem", SRC)]),
             [format!(
                 "site.lem:{}: a `from` binding belongs at the top level of `site.lem`, \
                  the file the host reads bindings from",
@@ -983,7 +968,7 @@ mod tests {
             .bind("data", Ambient::bindings("data.lem"));
         const SRC: &str = "<lem-let x: [string] from \"f/*.md\" />";
         assert_eq!(
-            shown(&host, &[SourceFile::new("other.lem", SRC)]),
+            shown_with(&host, &[SourceFile::new("other.lem", SRC)]),
             [format!(
                 "other.lem:{}: a `from` binding belongs at the top level of `site.lem` \
                  or `data.lem`, the files the host reads bindings from",
@@ -996,11 +981,11 @@ mod tests {
     fn refuses_the_document_value_in_a_computed_binding() {
         const HOME: &str = "<lem-let home: url = page.url />";
         let files = [
-            SourceFile::new("ambient.lem", PAGE),
+            SourceFile::new("ambient.lem", AMBIENT),
             SourceFile::new("site.lem", HOME),
         ];
         assert_eq!(
-            shown(&shell_host(), &files),
+            shown_with(&shell_host(), &files),
             [format!(
                 "site.lem:{}: `page` is bound per page, and a binding here is computed \
                  once, at load",
@@ -1021,7 +1006,7 @@ mod tests {
 
     /// What a file that is no page is warned at, if anything, under the shell host.
     fn warned_at(src: &str) -> Vec<String> {
-        shown(&shell_host(), &[SourceFile::new("card.lem", src)])
+        shown_with(&shell_host(), &[SourceFile::new("card.lem", src)])
     }
 
     const NO_PAGE: &str = "warning: this file has no front matter, so it is no page \
@@ -1073,7 +1058,7 @@ mod tests {
                              <lem-fn card()>x</lem-fn>\n";
         assert_eq!(warned_at(QUIET), Vec::<String>::new());
         let site = [SourceFile::new("site.lem", "<lem-let x: int = 1 />\n")];
-        assert_eq!(shown(&shell_host(), &site), Vec::<String>::new());
+        assert_eq!(shown_with(&shell_host(), &site), Vec::<String>::new());
     }
 
     #[test]
@@ -1083,7 +1068,7 @@ mod tests {
         assert_eq!(warned_at("---\n---\n<p>the body</p>"), Vec::<String>::new());
         let untyped = Host::untyped(["page"]).documents("page");
         assert_eq!(
-            shown(&untyped, &[SourceFile::new("card.lem", "<p>rendered</p>")]),
+            shown_with(&untyped, &[SourceFile::new("card.lem", "<p>rendered</p>")]),
             Vec::<String>::new()
         );
     }
@@ -1094,7 +1079,7 @@ mod tests {
             "site.lem",
             "<lem-let name = \"x\" />\n<lem-let tagline: string = name />",
         )];
-        let reported = shown(&shell_host(), &files);
+        let reported = shown_with(&shell_host(), &files);
         assert_eq!(reported.len(), 1, "{reported:?}");
         assert!(reported[0].contains("declares its type"), "{reported:?}");
     }
