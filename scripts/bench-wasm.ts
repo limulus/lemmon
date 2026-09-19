@@ -1,9 +1,14 @@
 /**
- * Measures the cost of crossing the WASM boundary (`npm run wasm:bench`), against the
- * staged artifact — run `npm run rust:wasm` first. Numbers only: correctness of the
- * corpus fixtures is the Rust corpus gate's job and byte-parity is ∆xWs's, so this
- * harness never diffs output — but it does exit non-zero on any unexpected diagnostic
- * or throw, so it cannot silently benchmark garbage.
+ * Drives every scenario the WASM boundary is measured on, against the staged artifact —
+ * run `npm run rust:wasm` first. It never diffs output: correctness of the corpus
+ * expectations is the Rust corpus gate's job and rendered parity is the fidelity
+ * harness's. What it does check is that every call it makes returns no error diagnostic
+ * and that every scenario collected samples, so it cannot silently benchmark garbage.
+ *
+ * Two modes. `npm run test:fixtures` makes one pass of each scenario and is a leg of
+ * `verify:js`: what it gates is that the checked-in fixtures still compile and render
+ * clean through the boundary. `npm run wasm:bench` passes `--time`, which repeats the
+ * repeatable scenarios and prints the marshalling table.
  *
  * Scenarios:
  *  - corpus compile / render — every corpus fixture whose blessed expectation shows no
@@ -35,10 +40,24 @@ import {
 
 const CORPUS = 'tests/corpus'
 const SITE_PAGES = 100
-const INCREMENTAL_RUNS = 50
-const RENDER_RUNS = 200
-const LOAD_DATA_RUNS = 200
-const TYPED_LOAD_RUNS = 50
+
+// `--time` is the only argument. An unrecognized one fails instead of being ignored: a
+// typo like `--timing` would otherwise record one pass of each scenario as a benchmark.
+const args = process.argv.slice(2)
+const timing = args.includes('--time')
+const unknown = args.filter((arg) => arg !== '--time')
+if (unknown.length > 0) {
+  console.error(`unknown argument: ${unknown.join(' ')}`)
+  console.error('usage: node scripts/bench-wasm.ts [--time]')
+  process.exit(2)
+}
+
+// One pass of a repeated scenario proves the call still works, which is what the gate
+// needs; `--time` collects enough samples for a percentile.
+const INCREMENTAL_RUNS = timing ? 50 : 1
+const RENDER_RUNS = timing ? 200 : 1
+const LOAD_DATA_RUNS = timing ? 200 : 1
+const TYPED_LOAD_RUNS = timing ? 50 : 1
 
 // The corpus render globals (crates/lemmon-vm/tests/corpus.rs), so document fixtures
 // that read `page`/`site` resolve.
@@ -215,7 +234,7 @@ async function corpusScenarios(): Promise<void> {
       return { in: [input], out: diagnostics }
     })
     expectClean(diagnostics, `compiling ${input.path}`)
-    core.loadData({ ambient: AMBIENT })
+    expectClean(core.loadData({ ambient: AMBIENT }), `loading data for ${input.path}`)
     renderOne(() => {
       const result = core.render({ path: input.path })
       expectClean(result.diagnostics, `rendering ${input.path}`)
@@ -259,7 +278,7 @@ async function siteScenarios(): Promise<void> {
     })
   }
 
-  bigCore.loadData({ ambient: AMBIENT })
+  expectClean(bigCore.loadData({ ambient: AMBIENT }), "loading the site's data")
   const renders = record('site render (1 page/call, repeated)')
   for (let i = 0; i < RENDER_RUNS; i += 1) {
     const path = `page-${i % SITE_PAGES}.lem`
@@ -272,10 +291,13 @@ async function siteScenarios(): Promise<void> {
 
   const floor = record('loadData floor (near-empty payload)')
   for (let i = 0; i < LOAD_DATA_RUNS; i += 1) {
+    let diagnostics: Diagnostic[] = []
     floor(() => {
       const input = { ambient: {} }
-      return { in: input, out: bigCore.loadData(input) }
+      diagnostics = bigCore.loadData(input)
+      return { in: input, out: diagnostics }
     })
+    expectClean(diagnostics, 'loading a near-empty payload')
   }
 }
 
@@ -303,9 +325,12 @@ function percentile(sorted: number[], p: number): number {
   return sorted[Math.max(0, at)]
 }
 
-function report(): void {
-  // An empty scenario means the fixtures went missing, not that the boundary is fast:
-  // say so rather than dying in the arithmetic below.
+/**
+ * An empty scenario means the fixtures went missing, not that the boundary is fast: say
+ * so rather than reporting a pass or dying in the table's arithmetic. It runs in both
+ * modes, because it is the guard against the fixture walk finding nothing.
+ */
+function expectSamples(): void {
   const empty = scenarios.filter(({ samples }) => samples.length === 0)
   if (empty.length > 0) {
     throw new Error(
@@ -313,6 +338,9 @@ function report(): void {
         `are the corpus fixtures still under ${CORPUS}?`
     )
   }
+}
+
+function report(): void {
   const header = ['scenario', 'calls', 'in B/call', 'out B/call', 'mean µs', 'p50', 'p99']
   const rows = scenarios.map(({ name, samples }) => {
     const sorted = samples.map((s) => s.micros).sort((a, b) => a - b)
@@ -343,4 +371,10 @@ function report(): void {
 await corpusScenarios()
 await siteScenarios()
 await typedLoadScenarios()
-report()
+expectSamples()
+if (timing) {
+  report()
+} else {
+  const calls = scenarios.reduce((total, { samples }) => total + samples.length, 0)
+  console.log(`PASS: ${scenarios.length} scenarios, ${calls} boundary calls, all clean`)
+}

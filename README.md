@@ -26,7 +26,8 @@ enough; `rust-toolchain.toml` pins the exact version and installs the components
 
 ```sh
 npm install
-npm run verify     # lint + test (100% coverage) + typecheck + cargo fmt/clippy/test
+npm run verify     # lint + test (100% coverage) + typecheck + the two wasm harnesses in
+                   # one pass + cargo fmt/clippy/test
 npm run build      # emit packages/*/dist
 npm run rust:wasm  # cross-compile the boundary crate and stage the .wasm
 npm run wasm:check # compile the staged .wasm under this Node and check its boundary

@@ -1,14 +1,18 @@
 /**
- * The ∆xWs proof (`npm run test:fidelity`): renders limulus.net's `the-rebound`
- * post end to end through the WASM core — document mode for the post body, then a
- * base→page→article layout chain — and holds the result against the 11ty-built
- * reference in tests/fidelity/the-rebound/fixtures/.
+ * The ∆xWs proof: renders limulus.net's `the-rebound` post end to end through the WASM
+ * core — document mode for the post body, then a base→page→article layout chain — and
+ * holds the result against the 11ty-built reference in tests/fidelity/the-rebound/.
  *
  * The two pages are compared as what a browser would render, not as bytes (D28,
  * ∆Ma4): parse5 trees, attributes by value, text after white-space processing. Every
  * remaining difference must be one of the forgiveness classes below (markdown-engine
- * and WebC deltas the harness accepts); anything else — or a page render time at or over
- * the 1 ms exit criterion — exits non-zero.
+ * and WebC deltas the harness accepts), and each must fire exactly as often as
+ * `EXPECTED_FORGIVEN` says; anything else exits non-zero.
+ *
+ * Two modes. `npm run test:fidelity` renders once and compares, and is a leg of
+ * `verify:js`. `npm run test:fidelity -- --time` adds the timing loop, the table, and
+ * the render time held against the 1 ms exit criterion — a verdict about the machine it
+ * runs on, which is why the gate does not apply it.
  */
 
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
@@ -34,8 +38,22 @@ import {
 
 const FIXTURES = 'tests/fidelity/the-rebound'
 const PAGE_PATH = 'feed/the-rebound/index.md'
-const RENDER_RUNS = 200
 const BUDGET_MICROS = 1000
+
+// `--time` is the only argument. An unrecognized one fails instead of being ignored: a
+// typo like `--timing` would otherwise record one render as a timing run.
+const args = process.argv.slice(2)
+const timing = args.includes('--time')
+const unknown = args.filter((arg) => arg !== '--time')
+if (unknown.length > 0) {
+  console.error(`unknown argument: ${unknown.join(' ')}`)
+  console.error('usage: node scripts/render-the-rebound.ts [--time]')
+  process.exit(2)
+}
+
+// The comparison reads the last iteration's output, so one pass compares as faithfully
+// as two hundred; the rest of the loop is there to collect samples.
+const RENDER_RUNS = timing ? 200 : 1
 
 // --- Fixtures ---------------------------------------------------------------------
 
@@ -233,6 +251,20 @@ const FORGIVENESS: Forgiveness[] = [
   },
 ]
 
+/**
+ * How often each class is expected to fire, checked in both modes. A class that forgives
+ * fewer differences than this already fails, because the one it stopped absorbing
+ * becomes unexpected; a class that starts absorbing more than it explains is silent
+ * without these numbers, which is the half ∆xWs's retrospective says nothing made it
+ * look at. A name on one side only is a mismatch too: a new class that forgave
+ * something, or one of these that forgave nothing.
+ */
+const EXPECTED_FORGIVEN: Record<string, number> = {
+  'heading-id': 6,
+  'md-photo-wrap': 6,
+  'attr-escaping': 1,
+}
+
 // --- Main -------------------------------------------------------------------------
 
 const files = sourceFiles()
@@ -322,39 +354,54 @@ for (const { path, ours, theirs } of unexpected) {
   console.log(`+${ours ?? '(nothing)'}`)
 }
 
-console.log()
-const header = ['scenario', 'calls', 'mean µs', 'p50', 'p99']
-const rows = scenarios.map(({ name, micros }) => [
-  name,
-  String(micros.length),
-  mean(micros).toFixed(1),
-  percentile(micros, 50).toFixed(1),
-  percentile(micros, 99).toFixed(1),
-])
-const widths = header.map((h, i) => Math.max(h.length, ...rows.map((row) => row[i].length)))
-const line = (row: string[]): string =>
-  row.map((cell, i) => cell.padStart(widths[i]).padEnd(widths[i])).join('  ')
-console.log(line(header))
-console.log(widths.map((w) => '-'.repeat(w)).join('  '))
-for (const row of rows) console.log(line(row))
+const miscounted = [
+  ...new Set([...Object.keys(EXPECTED_FORGIVEN), ...comparison.forgiven.keys()]),
+]
+  .map((name) => ({
+    name,
+    forgave: comparison.forgiven.get(name) ?? 0,
+    expected: EXPECTED_FORGIVEN[name] ?? 0,
+  }))
+  .filter(({ forgave, expected }) => forgave !== expected)
 
-const pageMicros =
-  mean(scenarios.find((s) => s.name.startsWith('render pass 1'))?.micros ?? [NaN]) +
-  mean(scenarios.find((s) => s.name.startsWith('render pass 2'))?.micros ?? [NaN])
-const loadMicros = scenarios
-  .filter((s) => s.name.startsWith('loadData'))
-  .reduce((total, s) => total + mean(s.micros), 0)
-const pct = ((100 * pageMicros) / BUDGET_MICROS).toFixed(1)
-const timeOk = pageMicros < BUDGET_MICROS
-console.log()
-console.log(
-  `page render (pass 1 + pass 2 mean, marshalling included): ${pageMicros.toFixed(1)} µs ` +
-    `(${pct}% of the 1 ms budget) — ${timeOk ? 'PASS' : 'FAIL'}`
-)
-console.log(
-  `  excludes ${loadMicros.toFixed(1)} µs of loadData per page: the criterion gates render ` +
-    `time, and\n  a real build loads ambient data once per site, not once per page`
-)
+let timeOk = true
+if (timing) {
+  console.log()
+  const header = ['scenario', 'calls', 'mean µs', 'p50', 'p99']
+  const rows = scenarios.map(({ name, micros }) => [
+    name,
+    String(micros.length),
+    mean(micros).toFixed(1),
+    percentile(micros, 50).toFixed(1),
+    percentile(micros, 99).toFixed(1),
+  ])
+  const widths = header.map((h, i) =>
+    Math.max(h.length, ...rows.map((row) => row[i].length))
+  )
+  const line = (row: string[]): string =>
+    row.map((cell, i) => cell.padStart(widths[i]).padEnd(widths[i])).join('  ')
+  console.log(line(header))
+  console.log(widths.map((w) => '-'.repeat(w)).join('  '))
+  for (const row of rows) console.log(line(row))
+
+  const pageMicros =
+    mean(scenarios.find((s) => s.name.startsWith('render pass 1'))?.micros ?? [NaN]) +
+    mean(scenarios.find((s) => s.name.startsWith('render pass 2'))?.micros ?? [NaN])
+  const loadMicros = scenarios
+    .filter((s) => s.name.startsWith('loadData'))
+    .reduce((total, s) => total + mean(s.micros), 0)
+  const pct = ((100 * pageMicros) / BUDGET_MICROS).toFixed(1)
+  timeOk = pageMicros < BUDGET_MICROS
+  console.log()
+  console.log(
+    `page render (pass 1 + pass 2 mean, marshalling included): ${pageMicros.toFixed(1)} µs ` +
+      `(${pct}% of the 1 ms budget) — ${timeOk ? 'PASS' : 'FAIL'}`
+  )
+  console.log(
+    `  excludes ${loadMicros.toFixed(1)} µs of loadData per page: the criterion gates render ` +
+      `time, and\n  a real build loads ambient data once per site, not once per page`
+  )
+}
 
 let failed = false
 if (unexpected.length > 0) {
@@ -363,8 +410,19 @@ if (unexpected.length > 0) {
     `FAIL: ${unexpected.length} unexpected rendered difference(s), listed above`
   )
 }
+if (miscounted.length > 0) {
+  failed = true
+  console.error('FAIL: the forgiveness classes did not fire as often as expected:')
+  for (const { name, forgave, expected } of miscounted) {
+    console.error(`  ${name}: forgave ${forgave}, expected ${expected}`)
+  }
+}
 if (!timeOk) {
   failed = true
   console.error('FAIL: page render time is at or over the 1 ms/page exit criterion')
+}
+if (!failed) {
+  console.log()
+  console.log(`PASS: ${comparison.matched} nodes matched, nothing unexpected`)
 }
 process.exitCode = failed ? 1 : 0

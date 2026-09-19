@@ -128,14 +128,14 @@ message. Do not publish anything, or re-enable publishing, without Eric.
 ## Commands
 
 ```bash
-# The gate — exactly what pre-push runs: eslint, vitest with coverage, tscc, plus the
-# Rust leg. Needs a Rust toolchain and wasm-bindgen-cli on PATH, since `verify:js`
-# restages the wasm artifact before its legs. CI runs the halves as separate jobs, so
-# `verify` must stay defined as exactly `verify:js` + `rust` — extend those, or CI stops
-# matching pre-push.
+# The gate — exactly what pre-push runs: eslint, vitest with coverage, tscc, the two
+# wasm harnesses in one-pass mode, plus the Rust leg. Needs a Rust toolchain and
+# wasm-bindgen-cli on PATH, since `verify:js` restages the wasm artifact before its legs.
+# CI runs the halves as separate jobs, so `verify` must stay defined as exactly
+# `verify:js` + `rust` — extend those, or CI stops matching pre-push.
 npm run verify
-npm run verify:js      # the npm half: `rust:wasm` (skipped under CI), then lint + test +
-                       # tscc
+npm run verify:js      # the npm half: `rust:wasm` (skipped under CI), then lint, test,
+                       # tscc, test:fidelity and test:fixtures in parallel
 npm run rust           # the Rust half: fmt --check, clippy -D warnings, cargo test. Not
                        # rustdoc: after moving code between modules, run `cargo doc
                        # --workspace --no-deps` by hand for the links the move broke
@@ -167,10 +167,17 @@ npm run wasm:check     # compile the staged .wasm under this Node, assert export
 npm run rust:wasm:test # exercise the boundary across the real ABI (wasm-bindgen-test), on
                        # the .wasm's own stack — outside verify, so a boundary or depth-cap
                        # change is not green until this has run
-npm run wasm:bench     # marshalling numbers only; correctness is the corpus gate's job
-npm run test:fidelity  # the Phase 0 fidelity gate: the-rebound through the staged
-                       # .wasm against its 11ty build, compared as rendered HTML (D28);
-                       # non-zero on an unexpected diff or a blown render budget
+npm run test:fidelity  # the Phase 0 fidelity gate and a leg of verify:js: the-rebound
+                       # through the staged .wasm against its 11ty build, compared as
+                       # rendered HTML (D28); non-zero on an unexpected difference or a
+                       # forgiveness class that fired the wrong number of times. Add
+                       # `-- --time` for per-call timings and the 1 ms/page verdict
+npm run test:fixtures  # the other leg of verify:js: every corpus fixture whose
+                       # blessed expectation is clean, plus a synthetic site, compiled
+                       # and rendered once through the staged .wasm; non-zero on any
+                       # error diagnostic. It diffs no output
+npm run wasm:bench     # test:fixtures' scenarios repeated, with the marshalling table —
+                       # numbers only; correctness is the corpus gate's job
 ```
 
 CI is build-once/consume-many: a `wasm` job stages and uploads the artifact, and the
@@ -181,9 +188,12 @@ mechanical check on invariant 1 — a host capability pulled in by a dependency 
 there as a new import; the file also holds the predicates that decide, so the spec beside
 it can feed them a violation.
 
-`test:fidelity` and `wasm:bench` run in no gate, so when a boundary shape changes
-meaning, grep `scripts/` for its consumers — they were the last holders of a retired
-diagnostics contract once.
+The one-pass modes of `test:fidelity` and `test:fixtures` are legs of `verify:js`, so a
+boundary shape change that breaks a consumer fails at push time and in CI — these scripts
+were the last holders of a retired diagnostics contract once, and nothing ran them. The
+timing modes are not in the pre-push gate: CI's `verify` job runs `wasm:bench` after
+`verify:js`, as the marshalling record, and `test:fidelity -- --time` — the only thing
+that checks the 1 ms/page criterion — runs only by hand.
 
 Still aspirational; keep them true as they come to exist:
 
@@ -361,8 +371,8 @@ reshaped the backlog hands off through `docs/plans/` rather than building.
 Do not run `git commit` unless Eric has explicitly asked — he reviews diffs before they go
 in, and landing work unasked denies him that step. Finishing a task means a working tree
 clean of unintended changes and `npm run verify` passing — read `git diff` before saying
-so, and name which gates ran, since `verify` covers neither the ABI suite nor the spike;
-committing is separate and user-initiated.
+so, and name which gates ran, since `verify` covers the fidelity comparison but not the
+ABI suite or either timing mode; committing is separate and user-initiated.
 
 commitlint enforces `@commitlint/config-conventional` on every commit. Nothing is released
 from this repo yet, but the history must stay release-grade so release tooling can derive
