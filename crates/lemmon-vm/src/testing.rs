@@ -1,10 +1,9 @@
 //! Fixtures shared by this crate's unit tests: the hosts these tests compile against,
 //! the declarations those hosts read, the calls that compile one file into a [`Unit`]
-//! or compile and link a whole set of them, and [`shown`], which prints diagnostics for
-//! comparison. A diagnostic's expected span comes from `lemmon_syntax::spans` instead,
+//! or compile and link a whole set of them, and [`shown`] and [`shown_with`], which
+//! print diagnostics for comparison. A diagnostic's expected span comes from `lemmon_syntax::spans` instead,
 //! which every stage's tests share.
 
-use crate::SourceFile;
 use crate::bytecode::Module;
 use crate::compile::{compile_unit, prepare};
 use crate::diagnostics::{Compiled, Diagnostic};
@@ -12,6 +11,7 @@ use crate::exports::ExportIndex;
 use crate::host::{Ambient, Host};
 use crate::link::link;
 use crate::unit::Unit;
+use crate::{SourceFile, compile};
 
 /// The host a test compiles against unless it needs another: the three names the
 /// standard shell binds, none of them typed.
@@ -47,30 +47,24 @@ pub(crate) const POST: &str = "<lem-type Post extends Page>\n  title: string\n  
 /// Compiles the file at `path` into a unit against an index of every given file's
 /// exports.
 pub(crate) fn unit_of(path: &str, index_of: &[(&str, &str)]) -> Unit {
-    let prepared: Vec<_> = index_of
-        .iter()
-        .map(|(path, text)| {
-            prepare(&SourceFile::new(*path, *text), &untyped_host()).unwrap()
-        })
-        .collect();
-    let mut index = ExportIndex::new();
-    for p in &prepared {
-        index.offer(p.path(), p.exports());
-        index.offer_types(p.path(), p.types());
-    }
-    let this = prepared
-        .iter()
-        .find(|p| p.path() == path)
-        .expect("the file compiles against an index that includes it");
-    compile_unit(this, &index, &untyped_host()).expect_output()
+    unit_against(&untyped_host(), path, index_of)
 }
 
 /// Compiles the file at `path` against `host`, and against an index of every given
 /// file's exports.
 pub(crate) fn unit_against(host: &Host, path: &str, files: &[(&str, &str)]) -> Unit {
+    let files: Vec<SourceFile> = files
+        .iter()
+        .map(|(path, text)| SourceFile::new(*path, *text))
+        .collect();
+    unit_with(host, path, &files)
+}
+
+/// As [`unit_against`], for files already built.
+pub(crate) fn unit_with(host: &Host, path: &str, files: &[SourceFile]) -> Unit {
     let prepared: Vec<_> = files
         .iter()
-        .map(|(path, text)| prepare(&SourceFile::new(*path, *text), host).unwrap())
+        .map(|file| prepare(file, host).expect("the fixture parses"))
         .collect();
     let mut index = ExportIndex::new();
     for p in &prepared {
@@ -96,4 +90,10 @@ pub(crate) fn linked(host: &Host, files: &[(&str, &str)]) -> Compiled<Module> {
 /// Every diagnostic as the author is shown it.
 pub(crate) fn shown(diagnostics: &[Diagnostic]) -> Vec<String> {
     diagnostics.iter().map(ToString::to_string).collect()
+}
+
+/// Every file compiled against `host`, with its diagnostics as the author is shown them.
+/// No link step runs.
+pub(crate) fn shown_with(host: &Host, files: &[SourceFile]) -> Vec<String> {
+    shown(&compile(files, host).diagnostics)
 }

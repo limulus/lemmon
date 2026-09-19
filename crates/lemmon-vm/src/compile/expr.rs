@@ -27,7 +27,7 @@ use lemmon_syntax::{Span, SyntaxKind, SyntaxToken};
 use super::names::{BindingKind, Resolved};
 use super::narrowing::Path;
 use super::rules::{self, LambdaShape, Rule};
-use super::{Compiler, TokenSpan, required};
+use super::{Compiler, TokenSpan, refused_at_load, required};
 use crate::Value;
 use crate::bytecode::Op;
 use crate::decls::DeclKind;
@@ -239,48 +239,7 @@ impl Compiler<'_> {
         let runs = self.uses.as_ref()?.runs?;
         refused_at_load(runs, self.host.document(), name)
     }
-}
 
-/// The function the loader runs a read stands in: a field's default, of a record that
-/// extends the host's document type or not, or a computed binding of the bindings
-/// file. What decides which ambient values the function may read.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Runs {
-    Default { page_backed: bool },
-    Binding,
-}
-
-/// Why the ambient value `name` is not there for a function the loader runs as
-/// `runs`, if it is not — `document` being the host's document value: a default reads
-/// only the record it builds, since a record's plan depends on its own declarations
-/// alone (∆eag), and the document value is bound per page, so a computed binding,
-/// which runs before any page is, may not read that one (∆iCW). One rule and one
-/// sentence, said by the compiler where the read stands and by the link step when a
-/// call reaches it (∆HF0).
-pub(crate) fn refused_at_load(
-    runs: Runs,
-    document: Option<&str>,
-    name: &str,
-) -> Option<String> {
-    match runs {
-        Runs::Default { page_backed } => Some(format!(
-            "`{name}` is out of scope in a default: a default reads only the record it \
-             builds — `self`{}",
-            if page_backed {
-                ", and `path` and `body` on a page"
-            } else {
-                ""
-            }
-        )),
-        Runs::Binding => (document == Some(name)).then(|| {
-            format!(
-                "`{name}` is bound per page, and a binding here is computed once, at load"
-            )
-        }),
-    }
-}
-
-impl Compiler<'_> {
     /// Why a name resolves to nothing: a name the project declares as a type is not a
     /// value, and saying so beats "undefined name" for the author who wrote `Placement`
     /// where its variant belonged.
