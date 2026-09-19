@@ -23,8 +23,43 @@ refactor priority: reshaping is cheapest before more code is built on what it re
 - ∆W1D Gate the spike and the benchmark's fixtures — `spike:the-rebound` and `wasm:bench`
   consume the boundary and the corpus layout yet run in no gate (∆xWs kept them out), and
   each has since broken unseen: a retired diagnostics contract, then a corpus case ∆Bhz made
-  a deliberate error. Give each a mode without timing loops — one pass, its diagnostics and
-  rendered-HTML checks — run from `verify:js`, which already needs the staged artifact.
+  a deliberate error. Give each a one-pass mode without timing loops, run from `verify:js`,
+  which needs the staged artifact anyway. Notes in `docs/plans/∆W1D-gate-spike-and-bench.md`
+- ∆rKx Land the small moves the 2026-09-19 organization survey verified — about twenty
+  one-commit changes no other item owns: `compile/diagnostics.rs` to the crate root (its
+  `//!` says it is not the compiler's), `entry_fault` to `decls.rs`, `is_boundary` derived
+  from `ast::Item` so a new tag cannot vanish from `.tags`, stale `//!` sentences, over-wide
+  visibility, two colliding names. Planned in `docs/plans/∆rKx-small-moves.md`
+- ∆fBj Split `crates/lemmon-vm/src/unit.rs` into the unit data model and a `link/` directory
+  — its `//!` names two responsibilities, and all 978 production lines it has gained since
+  ∆FQw landed in the link half, which also causes the two-way imports with `exports` and
+  `closure`. ∆Qr2 serialises the data half and ∆99b grows the plans, so reshape first.
+  Planned in `docs/plans/∆fBj-split-unit-and-link.md`
+- ∆xWL Give `compile/mod.rs`'s load-time code a module — about 400 production lines that
+  ∆iCW, ∆HF0 and ∆eag added after ∆FQw (record defaults, `by` indexes, the recorder of
+  reads and calls behind `Unit::uses`) sit in the driver, whose `//!` claims only the entry
+  points and the `Compiler`. They are two responsibilities, so the cut is decided at plan
+  time. Planned in `docs/plans/∆xWL-compile-load-time-code.md`
+- ∆RJp Make `crates/lemmon-vm/src/vm.rs` a directory — its `//!` describes the stack
+  machine, but the file also holds the three run entry points (`render`, `render_page`,
+  `invoke`) and the operator table, 233 production lines with no `Vm` in them. ∆xBO and
+  ∆99b both land in the entry points. Planned in
+  `docs/plans/∆RJp-vm-entry-points-and-operators.md`
+- ∆KIl Lift the page table out of `crates/lemmon-vm/src/load/mod.rs` into `load/pages.rs` —
+  `LoadedPage`, `PlannedPage`, `Store::page`/`plan`, the url checks and `Loader::page`. The
+  file's `//!` still states one responsibility; the reason is ∆99b, which adds generator
+  expansion and neighbours to exactly this code, so drop this item if ∆99b has landed.
+  Planned in `docs/plans/∆KIl-load-page-table.md`
+- ∆8jR Move the span-by-text test helper (`at`, `all_of`) from `lemmon-vm`'s `testing.rs` to
+  `lemmon-corpus`, the promotion ∆SSw named — `lemmon-syntax` cannot reach it, so about 53
+  of its span assertions and four in `crates/lemmon-vm/tests/corpus.rs` are hand-counted
+  offsets, which CLAUDE.md forbids. Convert them, and share `lemmon-syntax`'s thrice-copied
+  `messages` test helper. Planned in `docs/plans/∆8jR-span-helper-to-corpus.md`
+- ∆omv Negative-test the wasm import allowlist — `wasm:check` is the mechanical check on
+  invariant 1, yet its decision lives in the uncovered `scripts/check-wasm.ts` and no test
+  has fed it a forbidden import. Move `scripts/wasm-artifact.ts` into `scripts/lib/` with
+  `unexpectedImports` and `missingExports` predicates and a spec that feeds them a
+  violation. Planned in `docs/plans/∆omv-negative-test-the-wasm-check.md`
 
 ## Phase 1 — Language complete, tooling from day one
 
@@ -173,6 +208,11 @@ reproduced cold.
   test asserts `a &gt; b` is three). Decide whether code counts at all or by an estimate
   from line length; ∆hyz allowlists what then differs. (The `syn-` span breaks D40 added
   go with ∆7wK: a block's default content carries none.)
+- ∆RuS A builtin's arity mistake is worded twice — the compiler says `.slugify` takes 0
+  arguments (`builtin` in `compile/rules.rs`; `render/errors/method-errors.html`) and the VM
+  says `.slugify()` (`call_dynamic` in `vm.rs`; `render/errors/runtime-method-arity.html`),
+  so the text depends on whether the receiver is typed or `any`. Pick one wording and state
+  it once on `Builtin`; a `lem-fn`'s arity sentence is written twice the same way
 
 ## Someday/Maybe
 
