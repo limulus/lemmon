@@ -55,9 +55,13 @@ as comrak writes it (D42), so `document/fences/` holds the cases about code bloc
 are marked, what key and payload each carries, and where a language no producer covers
 warns.
 
-There is no `ok/` versus `broken/` split. Whether a case parses clean is _data_: its
-diagnostics section is empty. That keeps a case in the directory that says what it tests
-even after a language change turns it from clean to broken, or back.
+There is no `ok/` versus `broken/` split. Whether a case is clean is _data_: it is what
+its `--- diagnostics` trailer says and nothing else, and a case that only warns is clean.
+Some directories are named `errors/` or `warnings/` because the diagnostic is what those
+cases are about, but the name decides nothing — `host/pages/` holds error cases too. That
+keeps a case in the directory that says what it tests even after a language change turns
+it from clean to broken, or back. The boundary harness needs only the clean cases, so it
+reads the trailer: `scripts/lib/corpus-fixtures.ts`.
 
 ## Expectations
 

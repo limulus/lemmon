@@ -6,8 +6,8 @@
  * or throw, so it cannot silently benchmark garbage.
  *
  * Scenarios:
- *  - corpus compile / render — every non-`errors` corpus fixture as its own one-file
- *    program: the per-call floor on real content.
+ *  - corpus compile / render — every corpus fixture whose blessed expectation shows no
+ *    error, as its own one-file program: the per-call floor on real content.
  *  - site big call vs site call-per-file — the same synthetic N-page site compiled in
  *    one `compile` call and in N+1 single-file calls: the few-large-calls validation.
  *  - incremental recompile — one page of the resident site recompiled repeatedly:
@@ -20,6 +20,8 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
 
+import { cleanFixtures, type CorpusFixture } from './lib/corpus-fixtures.ts'
+import { expectClean } from './lib/diagnostics.ts'
 import {
   loadCore,
   type DataInput,
@@ -84,14 +86,6 @@ function bytesOf(payload: unknown): number {
     : Buffer.byteLength(JSON.stringify(payload))
 }
 
-function expectClean(diagnostics: Diagnostic[], doing: string): void {
-  // Warnings do not fail a compile, and they are not this harness's concern.
-  const errors = diagnostics.filter((d) => d.severity === 'error')
-  if (errors.length > 0) {
-    throw new Error(`unexpected diagnostics ${doing}: ${JSON.stringify(errors)}`)
-  }
-}
-
 // --- Fixtures ---------------------------------------------------------------------
 
 function* walk(dir: string): Generator<string> {
@@ -102,19 +96,23 @@ function* walk(dir: string): Generator<string> {
   }
 }
 
-/** Every render/document corpus input except the deliberate-error cases. */
+/**
+ * Every render/document corpus input a harness may compile clean — which its blessed
+ * expectation decides, not the directory it sits in (`scripts/lib/corpus-fixtures.ts`).
+ */
 function fixtures(): SourceFileInput[] {
-  const files: SourceFileInput[] = []
+  const files: CorpusFixture[] = []
   for (const group of ['render', 'document']) {
     for (const path of walk(join(CORPUS, group))) {
-      if (!/\.(lem|md)$/.test(path) || path.includes('/errors/')) continue
+      if (!/\.(lem|md)$/.test(path)) continue
       files.push({
         path: relative(CORPUS, path),
         text: readFileSync(path, 'utf8'),
+        expectation: readFileSync(path.replace(/\.(lem|md)$/, '.html'), 'utf8'),
       })
     }
   }
-  return files
+  return cleanFixtures(files)
 }
 
 /** A synthetic site: one shared lib and N pages that call it. */
@@ -224,7 +222,9 @@ async function corpusScenarios(): Promise<void> {
       return { in: { path: input.path }, out: result.html }
     })
   }
-  console.log(`corpus: ${inputs.length} fixtures (error cases excluded)`)
+  console.log(
+    `corpus: ${inputs.length} fixtures (cases whose expectation shows an error are excluded)`
+  )
 }
 
 async function siteScenarios(): Promise<void> {

@@ -16,6 +16,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parse } from 'yaml'
 
+import { expectClean } from './lib/diagnostics.ts'
 import {
   compareRendered,
   renderedPage,
@@ -26,7 +27,6 @@ import {
 } from './lib/rendered-html.ts'
 import {
   loadCore,
-  type Diagnostic,
   type JsonValue,
   type RenderResult,
   type SourceFileInput,
@@ -128,14 +128,6 @@ function percentile(samples: number[], p: number): number {
   const sorted = [...samples].sort((a, b) => a - b)
   const at = Math.min(sorted.length - 1, Math.ceil((p / 100) * sorted.length) - 1)
   return sorted[Math.max(0, at)]
-}
-
-function expectClean(diagnostics: Diagnostic[], doing: string): void {
-  // Warnings do not fail a compile, and they are not this harness's concern.
-  const errors = diagnostics.filter((d) => d.severity === 'error')
-  if (errors.length > 0) {
-    throw new Error(`unexpected diagnostics ${doing}: ${JSON.stringify(errors)}`)
-  }
 }
 
 // --- What the site's CSS does to whitespace -----------------------------------------
