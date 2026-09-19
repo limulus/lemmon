@@ -25,11 +25,6 @@ refactor priority: reshaping is cheapest before more code is built on what it re
   each has since broken unseen: a retired diagnostics contract, then a corpus case ∆Bhz made
   a deliberate error. Give each a one-pass mode without timing loops, run from `verify:js`,
   which needs the staged artifact anyway. Notes in `docs/plans/∆W1D-gate-spike-and-bench.md`
-- ∆rKx Land the small moves the 2026-09-19 organization survey verified — about twenty
-  one-commit changes no other item owns: `compile/diagnostics.rs` to the crate root (its
-  `//!` says it is not the compiler's), `entry_fault` to `decls.rs`, `is_boundary` derived
-  from `ast::Item` so a new tag cannot vanish from `.tags`, stale `//!` sentences, over-wide
-  visibility, two colliding names. Planned in `docs/plans/∆rKx-small-moves.md`
 - ∆fBj Split `crates/lemmon-vm/src/unit.rs` into the unit data model and a `link/` directory
   — its `//!` names two responsibilities, and all 978 production lines it has gained since
   ∆FQw landed in the link half, which also causes the two-way imports with `exports` and
