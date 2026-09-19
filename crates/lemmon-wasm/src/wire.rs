@@ -13,6 +13,10 @@
 //!
 //! Nothing here is `#[wasm_bindgen]`. These are plain Rust types, which is what lets the
 //! boundary's tests exercise them without a `JsError` in sight.
+//!
+//! `packages/core/src/lib/types.ts` declares the same shapes for the JS wrapper's
+//! callers. Nothing generates either side from the other, so a field added or renamed
+//! here is added or renamed there in the same change.
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -130,19 +134,19 @@ fn each_once<V, E: de::Error>(entries: &[(String, V)]) -> Result<(), E> {
 /// `assets` is the manifest the host's build produced, logical path to the URL it
 /// shipped at. It rides here rather than on `loadData` because `asset("…")` is answered
 /// while compiling (D10, D38), and being part of the declaration is what makes a
-/// rebuild that re-hashes an asset a change to the declaration — which is what the
-/// resident `Core` compares. `marks` rides here for the same reason (D42): a mark's name
-/// and a code block's language are checked while compiling.
+/// rebuild that re-hashes an asset a change to the declaration — which the resident
+/// `Core` compares at `loadData`. `marks` rides here for the same reason (D42): a mark's
+/// name and a code block's language are checked while compiling.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct HostInput {
     /// In declaration order: the order the host's values load in (D37).
     #[serde(deserialize_with = "ordered")]
-    pub(crate) ambient: Vec<(String, Option<AmbientBinding>)>,
+    ambient: Vec<(String, Option<AmbientBinding>)>,
     #[serde(default)]
     document: Option<String>,
     #[serde(default)]
-    pub(crate) entry: Option<String>,
+    entry: Option<String>,
     /// The field a page's url is read from (D43), which the document value's type
     /// declares as `url`. A host that names none has no page placed: `plan()` reports
     /// no url, and none is checked against another's.
@@ -151,7 +155,7 @@ pub(crate) struct HostInput {
     /// In declaration order, like `ambient`: what a did-you-mean lists a near miss
     /// from, and the order a diagnostic shows.
     #[serde(default, deserialize_with = "ordered")]
-    pub(crate) assets: Vec<(String, String)>,
+    assets: Vec<(String, String)>,
     /// What the host's mark handlers claim (D42). Omitting the field declares no
     /// handlers at all, which is silence about every name rather than a warning at
     /// each — what a playground or an editor wants.
@@ -205,7 +209,7 @@ impl ClaimInput {
 /// inside.
 #[derive(Deserialize)]
 #[serde(untagged)]
-pub(crate) enum AmbientBinding {
+enum AmbientBinding {
     Named(String),
     Bindings {
         #[serde(rename = "bindingsOf")]
@@ -448,9 +452,9 @@ pub(crate) struct PageRef {
 /// the field it is read from.
 #[derive(Serialize)]
 pub(crate) struct PlannedOut {
-    pub(crate) path: String,
+    path: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) url: Option<String>,
+    url: Option<String>,
 }
 
 impl From<PlannedPage> for PlannedOut {
@@ -466,8 +470,8 @@ impl From<PlannedPage> for PlannedOut {
 /// consumes one yet.
 #[derive(Serialize)]
 pub(crate) struct Diagnostic {
-    pub(crate) path: String,
-    pub(crate) span: SpanWire,
+    path: String,
+    span: SpanWire,
     severity: SeverityOut,
     message: String,
     labels: Vec<LabelOut>,
@@ -491,8 +495,8 @@ impl From<Severity> for SeverityOut {
 
 #[derive(Serialize)]
 struct LabelOut {
-    pub(crate) path: String,
-    pub(crate) span: SpanWire,
+    path: String,
+    span: SpanWire,
     message: String,
 }
 
@@ -502,7 +506,7 @@ struct LabelOut {
 /// core never indexed (D37).
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct SpanWire {
+struct SpanWire {
     start: u32,
     end: u32,
     range: RangeWire,
@@ -684,9 +688,9 @@ impl Diagnostic {
 /// there are no page bytes — an empty page is an empty section, not a missing one.
 #[derive(Serialize)]
 pub(crate) struct RenderMeta {
-    pub(crate) marks: Option<Vec<MarkOut>>,
-    pub(crate) fragments: Option<BTreeMap<String, Vec<FragmentOut>>>,
-    pub(crate) diagnostics: Vec<Diagnostic>,
+    marks: Option<Vec<MarkOut>>,
+    fragments: Option<BTreeMap<String, Vec<FragmentOut>>>,
+    diagnostics: Vec<Diagnostic>,
 }
 
 /// One mark: the name to dispatch on, the key a producer is chosen by, what the
@@ -697,7 +701,7 @@ pub(crate) struct RenderMeta {
 /// say is absent rather than null.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct MarkOut {
+struct MarkOut {
     name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     key: Option<String>,
@@ -713,7 +717,7 @@ pub(crate) struct MarkOut {
 
 /// One collected fragment: its text, and the block that first gave it.
 #[derive(Serialize)]
-pub(crate) struct FragmentOut {
+struct FragmentOut {
     text: String,
     path: String,
     span: SpanWire,
@@ -816,10 +820,6 @@ pub(crate) fn encode_render(
     Ok(out)
 }
 
-/// A JSON value as the VM's: integral numbers become `Int` and the rest `Float`;
-/// objects become insertion-ordered `Map`s in the key order the shell sent (which is
-/// what a `lem-for` over a map walks). Every string arrives untrusted (`Str`) —
-/// `raw()` is the only way to `html` (invariant 7).
 /// A payload as the host's handler receives it (D42): what JSON has a form for as that
 /// form; markup, a URL, an asset and a datetime (RFC 3339, in the offset it was written
 /// in) as strings; a duration as its whole seconds; a record as the object of its
@@ -857,35 +857,10 @@ fn json_from_value(value: &Value) -> serde_json::Value {
     }
 }
 
-/// What `compile` returns (D42): the diagnostics about the files it was given, and what
-/// their code blocks hand the host's producers — each payload once, whichever of the
-/// files wrote it. ∆Qr2 adds each unit's compile-time facts beside them.
-#[derive(Serialize)]
-pub(crate) struct CompileOut {
-    pub(crate) diagnostics: Vec<Diagnostic>,
-    pub(crate) payloads: Vec<PayloadOut>,
-}
-
-/// One code block's payload, named by the id a render's `code` mark carries.
-#[derive(Serialize)]
-pub(crate) struct PayloadOut {
-    id: String,
-    language: Option<String>,
-    info: String,
-    code: String,
-}
-
-impl From<&CodePayload> for PayloadOut {
-    fn from(payload: &CodePayload) -> Self {
-        Self {
-            id: payload.id.to_string(),
-            language: payload.language.as_deref().map(str::to_owned),
-            info: payload.info.to_string(),
-            code: payload.code.to_string(),
-        }
-    }
-}
-
+/// A JSON value as the VM's: integral numbers become `Int` and the rest `Float`;
+/// objects become insertion-ordered `Map`s in the key order the shell sent (which is
+/// what a `lem-for` over a map walks). Every string arrives untrusted (`Str`) —
+/// `raw()` is the only way to `html` (invariant 7).
 fn value_from_json(json: &serde_json::Value) -> Value {
     match json {
         serde_json::Value::Null => Value::Null,
@@ -904,6 +879,35 @@ fn value_from_json(json: &serde_json::Value) -> Value {
             Value::map(Map::from_unique(entries.iter().map(|(key, value)| {
                 (Rc::from(key.as_str()), value_from_json(value))
             })))
+        }
+    }
+}
+
+/// What `compile` returns (D42): the diagnostics about the files it was given, and what
+/// their code blocks hand the host's producers — each payload once, whichever of the
+/// files wrote it. ∆Qr2 adds each unit's compile-time facts beside them.
+#[derive(Serialize)]
+pub(crate) struct CompileOut {
+    pub(crate) diagnostics: Vec<Diagnostic>,
+    pub(crate) payloads: Vec<CodePayloadOut>,
+}
+
+/// One code block's payload, named by the id a render's `code` mark carries.
+#[derive(Serialize)]
+pub(crate) struct CodePayloadOut {
+    id: String,
+    language: Option<String>,
+    info: String,
+    code: String,
+}
+
+impl From<&CodePayload> for CodePayloadOut {
+    fn from(payload: &CodePayload) -> Self {
+        Self {
+            id: payload.id.to_string(),
+            language: payload.language.as_deref().map(str::to_owned),
+            info: payload.info.to_string(),
+            code: payload.code.to_string(),
         }
     }
 }

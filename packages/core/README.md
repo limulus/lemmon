@@ -1,9 +1,10 @@
 # @limulus/lemmon-core
 
 Typed JS wrapper around the Lemmon Rust core compiled to WebAssembly (see
-`docs/architecture.md` §WASM API). What exists today is the ∆TNT subset — `compile`,
-`loadData`, `render` on a resident `Core` — with `plan` and the LSP-facing
-`analyze`/`format` arriving with their backlog items.
+`docs/architecture.md` §WASM API). A resident `Core` carries `compile`, `loadData`,
+`plan`, `render` and `free`; `resolveMarks` fills a rendered page's marks from the
+host's handlers (D42). The LSP-facing `analyze`/`format` arrive with their backlog
+items.
 
 ```ts
 import { loadCore } from '@limulus/lemmon-core'

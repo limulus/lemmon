@@ -31,8 +31,8 @@ use wasm_bindgen::prelude::wasm_bindgen;
 mod wire;
 
 use wire::{
-    CompileOut, DataInput, Diagnostic, FileInput, HostInput, LineIndexes, PageRef,
-    PayloadOut, PlannedOut, RenderMeta, encode_render,
+    CodePayloadOut, CompileOut, DataInput, Diagnostic, FileInput, HostInput, LineIndexes,
+    PageRef, PlannedOut, RenderMeta, encode_render,
 };
 
 /// The version of the core this `.wasm` was built from.
@@ -255,7 +255,7 @@ impl Core {
         // Every unit that goes resident reports its payloads now, whether or not the
         // program relinks: a unit is not recompiled once resident, so a later call that
         // fixes another file would never report them (D42).
-        let mut payloads: Vec<PayloadOut> = Vec::new();
+        let mut payloads: Vec<CodePayloadOut> = Vec::new();
         let mut reported: HashSet<Rc<str>> = HashSet::new();
         let mut prepared = Vec::new();
         for file in &files {
@@ -286,7 +286,7 @@ impl Core {
             if let Some(unit) = compiled.output {
                 for payload in &unit.payloads {
                     if reported.insert(payload.id.clone()) {
-                        payloads.push(PayloadOut::from(payload));
+                        payloads.push(CodePayloadOut::from(payload));
                     }
                 }
                 // In lockstep: the index kept for a unit is the one over the text that

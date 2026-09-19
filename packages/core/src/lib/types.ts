@@ -1,3 +1,16 @@
+/**
+ * The shapes that cross the WASM boundary, declared for the JS side: what a {@link Core}
+ * method sends and what it gets back. They mirror `crates/lemmon-wasm/src/wire.rs`,
+ * written out by hand — nothing generates either side from the other.
+ *
+ * The two directions fail differently. An inbound field the core does not know is
+ * refused by `deny_unknown_fields`, so a name misspelled here throws on the next call —
+ * in every inbound shape but an ambient binding's `{bindingsOf}` form, an untagged
+ * variant that accepts an unknown field in silence. An outbound field renamed in Rust is
+ * not refused at all: `core.ts` casts each parsed reply to the type it declares without
+ * checking it, so a rename shows up only where a spec reads that field.
+ */
+
 /** A JSON-serialisable value — what crosses the boundary as data. */
 export type JsonValue =
   null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue }
