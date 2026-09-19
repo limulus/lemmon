@@ -24,8 +24,7 @@ refactor priority: reshaping is cheapest before more code is built on what it re
   consume the boundary and the corpus layout yet run in no gate (∆xWs kept them out), and
   each has since broken unseen: a retired diagnostics contract, then a corpus case ∆Bhz made
   a deliberate error. Give each a one-pass mode without timing loops, run from `verify:js`,
-  which needs the staged artifact anyway. Notes in `docs/plans/∆W1D-gate-spike-and-bench.md`
-
+  which needs the staged artifact anyway. Planned in `docs/plans/∆W1D-plan.md`
 
 ## Phase 1 — Language complete, tooling from day one
 
