@@ -15,7 +15,8 @@ use crate::compile::{compile_unit, prepare};
 use crate::diagnostics::{Compiled, Diagnostic};
 use crate::exports::ExportIndex;
 use crate::host::{Ambient, Host};
-use crate::unit::{Unit, link};
+use crate::link::link;
+use crate::unit::Unit;
 
 /// The span of `needle` in `source`.
 ///

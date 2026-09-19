@@ -3,7 +3,7 @@
 //!
 //! One index serves every stage that needs to know what a name means across files —
 //! [`compile_unit`](crate::compile_unit) resolving calls and annotations,
-//! [`link`](crate::link) resolving imports — so the answer cannot differ between them.
+//! [`link`](crate::link()) resolving imports — so the answer cannot differ between them.
 //! It is built by offering each file's exports in turn, and that order is the whole
 //! duplicate rule: a name another file already owns stays that file's, and the file
 //! offering it is the one blamed. A resident core withdraws the files it is handed,

@@ -21,13 +21,13 @@ use crate::unit::{Access, Root, Unit, Uses};
 /// One read a step makes once its calls are followed, with the call it arrived
 /// through, if any — what a cycle or a refusal names.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct Closed {
+pub(super) struct Closed {
     pub access: Access,
     pub via: Option<Rc<str>>,
 }
 
 /// Every project function's reads, closed through its calls.
-pub(crate) struct ReadClosure {
+pub(super) struct ReadClosure {
     /// By project-flat name. Never an [`Access::Own`]: a `lem-fn` has no `self`.
     functions: BTreeMap<Rc<str>, Vec<Access>>,
 }
@@ -40,7 +40,7 @@ impl ReadClosure {
     /// Runs after the link step has refused an unresolved import and a stale
     /// signature: every call a unit recorded names a function the index has, with as
     /// many arguments as that function has parameters.
-    pub(crate) fn new(
+    pub(super) fn new(
         units: &[Unit],
         index: &ExportIndex,
         positions: &BTreeMap<&str, usize>,
@@ -84,7 +84,7 @@ impl ReadClosure {
     /// What one step reads once its calls are followed: its own reads first, then
     /// each callee's translated through what it was handed, each read kept with the
     /// first way it arrived.
-    pub(crate) fn step(&self, uses: &Uses) -> Vec<Closed> {
+    pub(super) fn step(&self, uses: &Uses) -> Vec<Closed> {
         let mut closed: Vec<Closed> = uses
             .reads
             .iter()
@@ -138,7 +138,7 @@ fn through<'a>(
 /// ambient value, a field of one or the whole, is no part of a default's scope
 /// (∆eag) — the link step has refused it — and a step has no parameter to have read
 /// off.
-pub(crate) fn own_reads(closed: &[Closed]) -> Vec<Rc<str>> {
+pub(super) fn own_reads(closed: &[Closed]) -> Vec<Rc<str>> {
     closed
         .iter()
         .filter_map(|closed| match &closed.access {
@@ -155,7 +155,7 @@ pub(crate) fn own_reads(closed: &[Closed]) -> Vec<Rc<str>> {
 /// reads, a field of them or whole, each once — what the loader must have loaded
 /// before it runs the binding. A binding has no `self` and no parameter to have read
 /// off.
-pub(crate) fn ambient_values(closed: &[Closed]) -> Vec<Rc<str>> {
+pub(super) fn ambient_values(closed: &[Closed]) -> Vec<Rc<str>> {
     let mut values: Vec<Rc<str>> = Vec::new();
     for closed in closed {
         let value = match &closed.access {
@@ -173,7 +173,7 @@ pub(crate) fn ambient_values(closed: &[Closed]) -> Vec<Rc<str>> {
 
 /// The call the first read `matches` arrived through, if it arrived through one —
 /// what a cycle names, and what a refusal of a read no function may make names.
-pub(crate) fn via(
+pub(super) fn via(
     closed: &[Closed],
     matches: impl Fn(&Access) -> bool,
 ) -> Option<&Rc<str>> {

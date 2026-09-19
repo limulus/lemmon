@@ -7,7 +7,7 @@
 //! for it, tags every record with its declared type so `is` and `lem-match` reach loaded
 //! data (D35), and runs the module's plans: a record's `by` lookups and then its
 //! defaults as it is built, the bindings file's computed bindings as the ambient value
-//! is assembled. The plans are already in dependency order — [`link`](crate::link)
+//! is assembled. The plans are already in dependency order — [`link`](crate::link())
 //! refused a cycle — so the loader walks each front to back and reasons about nothing.
 //!
 //! Two kinds of problem come out. A load diagnostic is about the data — a field of the

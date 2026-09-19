@@ -4,7 +4,7 @@
 //! A schema's computed defaults and the bindings file's computed bindings are
 //! expressions the *loader* evaluates rather than a render — a default sees the record
 //! being built, a binding sees the site so far. The compiler lowers each into a
-//! function of its own unit and records what it reads; [`link`](crate::link) joins
+//! function of its own unit and records what it reads; [`link`](crate::link()) joins
 //! those into the tables here, in the order the reads dictate, and refuses a cycle as
 //! it refuses an unresolved import. A field's `by` index is no function: it names one
 //! field of one ambient value, and the loader indexes that map as loaded (∆eag). The

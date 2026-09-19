@@ -10,7 +10,6 @@
 
 mod builtins;
 mod bytecode;
-mod closure;
 mod compile;
 mod datetime;
 mod decls;
@@ -18,6 +17,7 @@ mod diagnostics;
 mod document;
 mod exports;
 mod host;
+mod link;
 mod load;
 mod plan;
 mod rendered;
@@ -44,6 +44,7 @@ pub use diagnostics::{Compiled, Diagnostic, Label};
 pub use document::CodePayload;
 pub use exports::{Export, ExportIndex, TypeExport};
 pub use host::{Ambient, Claim, ClaimAnswer, Host};
+pub use link::link;
 pub use load::{
     Data, HostSpan, Loaded, LoadedPage, PlannedPage, Source, Spans, Store, collects,
     field_path, load,
@@ -53,13 +54,14 @@ pub use rendered::{Fragment, Fragments, Mark, Marked, Payload, Rendered};
 pub use types::Type;
 pub use unit::{
     Access, BindingFn, Call, DefaultFn, ExportedSignature, ImportRef, ImportedSignature,
-    IndexDecl, Param, Root, Supplied, Unit, Uses, link,
+    IndexDecl, Param, Root, Supplied, Unit, Uses,
 };
 pub use value::{Closure, Map, Value};
 pub use vm::{render, render_page};
 
 /// Compiles every file of a site into one module: each file [`prepare`]d and compiled
-/// into its own [`Unit`] against the index of every file's signatures, then [`link`]ed.
+/// into its own [`Unit`] against the index of every file's signatures, then
+/// [`link`](link())ed.
 ///
 /// A file that does not parse clean yields no unit — nothing is lowered from a tree the
 /// parser had to recover — but the other files still compile, and every problem found
