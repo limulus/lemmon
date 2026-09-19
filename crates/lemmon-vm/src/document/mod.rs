@@ -24,7 +24,7 @@ use comrak::nodes::{NodeValue, Sourcepos};
 use comrak::{Arena, Options, format_html_with_plugins, options::Plugins, parse_document};
 use lemmon_syntax::{DocumentParse, Span};
 
-use crate::compile::Diagnostic;
+use crate::diagnostics::Diagnostic;
 use adapters::Headings;
 pub use code::CodePayload;
 use code::{Block, CodeFences};

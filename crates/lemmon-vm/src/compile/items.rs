@@ -14,10 +14,11 @@ use lemmon_syntax::{Span, SyntaxToken};
 use super::expr::{decode_string, unparen};
 use super::names::{BindingKind, already_bound};
 use super::whitespace::{self, Arm, Body, BodyKind, Case, Piece};
-use super::{Compiler, Diagnostic, Implicit, Runs, TokenSpan, required, rules};
+use super::{Compiler, Implicit, Runs, TokenSpan, required, rules};
 use crate::Value;
 use crate::bytecode::{MarkKey, MarkPayload, Op};
 use crate::decls::Decls;
+use crate::diagnostics::Diagnostic;
 use crate::document::{CODE, Code, Piece as ProsePiece};
 use crate::plan::SourceKind;
 use crate::types::Type;
@@ -684,13 +685,13 @@ impl Compiler<'_> {
 mod tests {
     use std::rc::Rc;
 
-    use crate::compile::{compile, compile_unit, prepare};
+    use crate::compile::{compile_unit, prepare};
     use crate::exports::ExportIndex;
     use crate::host::{Ambient, Host};
     use crate::plan::SourceKind;
     use crate::testing::{all_of, at};
     use crate::unit::{Access, Call, Supplied};
-    use crate::{SourceFile, Unit, Value, render};
+    use crate::{SourceFile, Unit, Value, compile, render};
 
     /// A host shaped like the standard shell's, reading `site` from `site.lem`.
     fn shell_host() -> Host {

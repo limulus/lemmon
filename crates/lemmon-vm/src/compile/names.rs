@@ -19,9 +19,9 @@ use std::rc::Rc;
 
 use lemmon_syntax::Span;
 
-use super::Diagnostic;
 use crate::builtins;
 use crate::decls::Decls;
+use crate::diagnostics::Diagnostic;
 use crate::exports::ExportIndex;
 use crate::host::Host;
 use crate::types::Type;

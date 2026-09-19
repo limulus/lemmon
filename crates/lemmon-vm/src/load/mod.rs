@@ -25,10 +25,11 @@ use std::rc::Rc;
 use lemmon_syntax::Span;
 
 use crate::bytecode::Module;
-use crate::compile::{Compiled, Diagnostic, repeated_path};
 use crate::decls::Decls;
+use crate::diagnostics::{Compiled, Diagnostic};
 use crate::host::{Ambient, Host};
 use crate::plan::{Fulfilled, SourceKind};
+use crate::repeated_path;
 use crate::types::Type;
 use crate::value::{Map, Value};
 use crate::vm::invoke;

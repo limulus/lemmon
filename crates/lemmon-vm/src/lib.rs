@@ -14,6 +14,7 @@ mod closure;
 mod compile;
 mod datetime;
 mod decls;
+mod diagnostics;
 mod document;
 mod exports;
 mod host;
@@ -28,6 +29,7 @@ mod url;
 mod value;
 mod vm;
 
+use std::collections::HashSet;
 use std::fmt;
 
 /// Re-exported so consumers of the VM — including the WASM boundary — get spans and
@@ -35,12 +37,10 @@ use std::fmt;
 pub use lemmon_syntax::{LineIndex, Position, Range, Severity, Span};
 
 pub use bytecode::{Declared, Document, Exported, Function, Module, Op};
-pub use compile::{
-    Compiled, Diagnostic, Label, PreparedFile, compile, compile_unit, prepare,
-    repeated_path,
-};
+pub use compile::{PreparedFile, compile_unit, prepare};
 pub use datetime::Datetime;
 pub use decls::{DeclKind, Declaration, Decls, FieldDecl, Shape, ShapeFact, TypeFact};
+pub use diagnostics::{Compiled, Diagnostic, Label};
 pub use document::CodePayload;
 pub use exports::{Export, ExportIndex, TypeExport};
 pub use host::{Ambient, Claim, ClaimAnswer, Host};
@@ -57,6 +57,74 @@ pub use unit::{
 };
 pub use value::{Closure, Map, Value};
 pub use vm::{invoke, render, render_page};
+
+/// Compiles every file of a site into one module: each file [`prepare`]d and compiled
+/// into its own [`Unit`] against the index of every file's signatures, then [`link`]ed.
+///
+/// A file that does not parse clean yields no unit — nothing is lowered from a tree the
+/// parser had to recover — but the other files still compile, and every problem found
+/// in every file is reported, not just the first. A module is still produced when the
+/// only diagnostics are warnings.
+///
+/// # Panics
+///
+/// If two of `files` share a path — a caller bug with no source span to point at
+/// ([`repeated_path`]).
+pub fn compile(files: &[SourceFile], host: &Host) -> Compiled<Module> {
+    if let Some(path) = repeated_path(files.iter().map(|file| file.path.as_str())) {
+        panic!("`compile` was given `{path}` twice");
+    }
+    let mut diagnostics = Vec::new();
+    let mut prepared = Vec::new();
+    for file in files {
+        match prepare(file, host) {
+            Ok(p) => prepared.push(p),
+            Err(errs) => diagnostics.extend(errs),
+        }
+    }
+    // Offered in file order, so the first definition of a name is the one the project
+    // keeps and every later one is reported where its own file compiles.
+    let mut index = ExportIndex::new();
+    for p in &prepared {
+        index.offer(p.path(), p.exports());
+        index.offer_types(p.path(), p.types());
+    }
+    let mut units = Vec::new();
+    for p in &prepared {
+        let compiled = compile_unit(p, &index, host);
+        diagnostics.extend(compiled.diagnostics);
+        units.extend(compiled.output);
+    }
+    let output = if diagnostics.iter().any(Diagnostic::is_error) {
+        None
+    } else {
+        // Every unit was compiled against this same index, so nothing can be
+        // unresolved at link time.
+        let linked = link(&units, &index, host);
+        diagnostics.extend(linked.diagnostics);
+        linked.output
+    };
+    // In source order, like the parser's diagnostics — the order the passes above happen
+    // to find things in is an implementation detail nobody reading a file wants to see.
+    let order = |diagnostic: &Diagnostic| {
+        let file = files.iter().position(|f| f.path == diagnostic.path);
+        (file, diagnostic.span.start, diagnostic.span.end)
+    };
+    diagnostics.sort_by_key(order);
+    Compiled::new(output, diagnostics)
+}
+
+/// The first path `paths` names twice, if any.
+///
+/// One call may not name a file twice: what that file exports is then two answers, and
+/// the [`ExportIndex`] holds one — offering the second withdraws the first, leaving the
+/// first entry's own names gone from under it. Both entry points reject such a call
+/// rather than compile something confused out of it, and neither has a span to report
+/// it against (invariant 8), so each treats it as the caller bug it is.
+pub fn repeated_path<'a>(paths: impl IntoIterator<Item = &'a str>) -> Option<&'a str> {
+    let mut seen: HashSet<&str> = HashSet::new();
+    paths.into_iter().find(|path| !seen.insert(path))
+}
 
 /// Whether the file at `path` holds a document rather than a template: `.md` is a
 /// document, anything else a template. The rule a site runs on, read from the path
@@ -171,5 +239,26 @@ mod tests {
         let file = SourceFile::new("a.lem", String::from("x"));
         assert_eq!(file.path, "a.lem");
         assert_eq!(file.text, "x");
+    }
+
+    #[test]
+    #[should_panic(expected = "`compile` was given `a.lem` twice")]
+    fn refuses_a_call_that_names_one_file_twice() {
+        // Two texts for one path have no single answer for what `a.lem` exports: the
+        // second offer withdraws the first's names, and the first file then compiles
+        // against an index that has lost them.
+        compile(
+            &[
+                SourceFile::new("a.lem", "<lem-fn f(): int = 1 />"),
+                SourceFile::new("a.lem", "<lem-fn g(): int = 2 />"),
+            ],
+            &Host::new(),
+        );
+    }
+
+    #[test]
+    fn reads_a_path_repeated_anywhere_in_a_call() {
+        assert_eq!(repeated_path(["a.lem", "b.lem"]), None);
+        assert_eq!(repeated_path(["a.lem", "b.lem", "a.lem"]), Some("a.lem"));
     }
 }

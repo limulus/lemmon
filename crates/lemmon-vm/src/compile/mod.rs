@@ -7,10 +7,9 @@
 //! rules are applied where the lowering they guard happens (`docs/language.md`
 //! §Checking). What is typed `any` is checked by the VM at run time instead.
 //!
-//! What is left in this module is the two entry points and the machine they drive:
-//! [`compile`] over a whole site, [`compile_unit`] over one prepared file, and the
-//! [`Compiler`] itself — its frames, its emission, and its delegation to the resolver.
-//! Everything else has a module:
+//! What is left in this module is the entry point and the machine it drives:
+//! [`compile_unit`] over one prepared file, and the [`Compiler`] itself — its frames,
+//! its emission, and its delegation to the resolver. Everything else has a module:
 //!
 //! - [`surfaces`] reads what a file offers other files, from its heads alone, before any
 //!   of this runs; [`schema`] asks the questions about those surfaces that need the
@@ -21,11 +20,9 @@
 //! - [`rules`] holds the typing rules the walk asks — pure functions from types to a type
 //!   or a message — [`annotations`] reads types as written, and [`names`] owns every rule
 //!   about names, in one stated order.
-//! - [`diagnostics`] holds what any of them has to say and what a step hands back.
 
 mod annotations;
 mod calls;
-mod diagnostics;
 mod expr;
 mod items;
 mod names;
@@ -35,101 +32,31 @@ mod schema;
 mod surfaces;
 mod whitespace;
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap};
 use std::rc::Rc;
 
 use lemmon_syntax::ast::{Expr, Item, Spanned};
 use lemmon_syntax::{Parse, Span, SyntaxToken};
 
-use crate::bytecode::{Function, Module, Op};
+use crate::Value;
+use crate::bytecode::{Function, Op};
 use crate::decls::{DeclKind, Decls, Shape};
+use crate::diagnostics::{Compiled, Diagnostic};
 use crate::document::Piece;
 use crate::exports::{Export, ExportIndex};
 use crate::host::Host;
 use crate::types::Type;
 use crate::unit::{
     Access, Call, DefaultFn, ImportRef, ImportedSignature, IndexDecl, Root, Unit, Uses,
-    link,
 };
-use crate::{SourceFile, Value};
 
-pub use diagnostics::{Compiled, Diagnostic, Label};
 pub(crate) use expr::{Runs, refused_at_load};
 pub(crate) use names::duplicate_named;
 use names::{BindingKind, Frame, Names, Resolved};
 pub(crate) use rules::omittable;
-pub(crate) use schema::{EntryFault, entry_fault, misshaped_entry_field, no_entry_field};
 use surfaces::ParsedFile;
 pub use surfaces::{PreparedFile, prepare};
 use whitespace::BodyKind;
-
-/// Compiles every file of a site into one module: each file [`prepare`]d and compiled
-/// into its own [`Unit`] against the index of every file's signatures, then [`link`]ed.
-///
-/// A file that does not parse clean yields no unit — nothing is lowered from a tree the
-/// parser had to recover — but the other files still compile, and every problem found
-/// in every file is reported, not just the first. A module is still produced when the
-/// only diagnostics are warnings.
-///
-/// # Panics
-///
-/// If two of `files` share a path — a caller bug with no source span to point at
-/// ([`repeated_path`]).
-pub fn compile(files: &[SourceFile], host: &Host) -> Compiled<Module> {
-    if let Some(path) = repeated_path(files.iter().map(|file| file.path.as_str())) {
-        panic!("`compile` was given `{path}` twice");
-    }
-    let mut diagnostics = Vec::new();
-    let mut prepared = Vec::new();
-    for file in files {
-        match prepare(file, host) {
-            Ok(p) => prepared.push(p),
-            Err(errs) => diagnostics.extend(errs),
-        }
-    }
-    // Offered in file order, so the first definition of a name is the one the project
-    // keeps and every later one is reported where its own file compiles.
-    let mut index = ExportIndex::new();
-    for p in &prepared {
-        index.offer(&p.path, &p.exports);
-        index.offer_types(&p.path, &p.types);
-    }
-    let mut units = Vec::new();
-    for p in &prepared {
-        let compiled = compile_unit(p, &index, host);
-        diagnostics.extend(compiled.diagnostics);
-        units.extend(compiled.output);
-    }
-    let output = if diagnostics.iter().any(Diagnostic::is_error) {
-        None
-    } else {
-        // Every unit was compiled against this same index, so nothing can be
-        // unresolved at link time.
-        let linked = link(&units, &index, host);
-        diagnostics.extend(linked.diagnostics);
-        linked.output
-    };
-    // In source order, like the parser's diagnostics — the order the passes above happen
-    // to find things in is an implementation detail nobody reading a file wants to see.
-    let order = |diagnostic: &Diagnostic| {
-        let file = files.iter().position(|f| f.path == diagnostic.path);
-        (file, diagnostic.span.start, diagnostic.span.end)
-    };
-    diagnostics.sort_by_key(order);
-    Compiled::new(output, diagnostics)
-}
-
-/// The first path `paths` names twice, if any.
-///
-/// One call may not name a file twice: what that file exports is then two answers, and
-/// the [`ExportIndex`] holds one — offering the second withdraws the first, leaving the
-/// first entry's own names gone from under it. Both entry points reject such a call
-/// rather than compile something confused out of it, and neither has a span to report
-/// it against (invariant 8), so each treats it as the caller bug it is.
-pub fn repeated_path<'a>(paths: impl IntoIterator<Item = &'a str>) -> Option<&'a str> {
-    let mut seen: HashSet<&str> = HashSet::new();
-    paths.into_iter().find(|path| !seen.insert(path))
-}
 
 /// Compiles one prepared file into its [`Unit`], resolving names against `index`. A
 /// call to a function another file defines stays a symbolic import, and the signature
@@ -241,7 +168,7 @@ pub fn compile_unit(
 }
 
 /// Unwraps an accessor that only returns `None` on a tree the parser recovered — which
-/// [`compile`] refuses before lowering starts.
+/// [`prepare`] refuses before lowering starts.
 fn required<T>(value: Option<T>) -> T {
     value.expect("a parse without diagnostics has every required node")
 }
@@ -987,10 +914,10 @@ mod tests {
 
     use super::*;
     use crate::host::{Ambient, Claim};
-    use crate::render;
     use crate::rendered::Payload;
     use crate::testing::at;
     use crate::unit::Param;
+    use crate::{SourceFile, compile, render};
 
     /// A `lem-fn` taking the name of a stdlib function, which two tests below compile
     /// as one file and as two.
@@ -2300,27 +2227,6 @@ mod tests {
             shown[1],
             format!("b.lem:{}: undefined name `missing`", at(B, "missing"))
         );
-    }
-
-    #[test]
-    #[should_panic(expected = "`compile` was given `a.lem` twice")]
-    fn refuses_a_call_that_names_one_file_twice() {
-        // Two texts for one path have no single answer for what `a.lem` exports: the
-        // second offer withdraws the first's names, and the first file then compiles
-        // against an index that has lost them.
-        compile(
-            &[
-                SourceFile::new("a.lem", "<lem-fn f(): int = 1 />"),
-                SourceFile::new("a.lem", "<lem-fn g(): int = 2 />"),
-            ],
-            &untyped_host(),
-        );
-    }
-
-    #[test]
-    fn reads_a_path_repeated_anywhere_in_a_call() {
-        assert_eq!(repeated_path(["a.lem", "b.lem"]), None);
-        assert_eq!(repeated_path(["a.lem", "b.lem", "a.lem"]), Some("a.lem"));
     }
 
     #[test]

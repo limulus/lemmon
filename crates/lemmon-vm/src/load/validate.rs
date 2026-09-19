@@ -10,9 +10,10 @@
 
 use std::rc::Rc;
 
-use crate::compile::{Diagnostic, omittable};
+use crate::compile::omittable;
 use crate::datetime::Datetime;
 use crate::decls::{DeclKind, Decls, no_field};
+use crate::diagnostics::Diagnostic;
 use crate::host::no_asset;
 use crate::plan::{Index, Step};
 use crate::types::{Type, assignable};

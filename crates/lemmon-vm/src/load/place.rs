@@ -12,7 +12,7 @@ use std::collections::BTreeMap;
 
 use lemmon_syntax::{Range, Span};
 
-use crate::compile::Diagnostic;
+use crate::diagnostics::Diagnostic;
 
 /// A span in a file the host holds, placed by the host: the byte offsets the core
 /// works in and the same two points as positions, since no resident index can place

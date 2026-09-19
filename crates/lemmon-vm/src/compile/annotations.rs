@@ -13,7 +13,8 @@ use std::rc::Rc;
 
 use lemmon_syntax::ast::{Spanned, TypeExpr};
 
-use super::{Diagnostic, TokenSpan, required};
+use super::{TokenSpan, required};
+use crate::diagnostics::Diagnostic;
 use crate::types::Type;
 use crate::unit::ImportRef;
 

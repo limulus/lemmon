@@ -1,4 +1,4 @@
-//! What a compile has to say about a file, and what it hands back.
+//! What a stage has to say about a file, and what it hands back.
 //!
 //! A [`Diagnostic`] is one problem pointed at the bytes it is about (invariant 8), with
 //! [`Label`]s for the secondary spans worth reading beside it — path-qualified, because a
@@ -6,15 +6,15 @@
 //! a step produces: its output when nothing was an error, and every diagnostic it raised,
 //! warnings included, which is why it is not a `Result`.
 //!
-//! These are the crate's vocabulary rather than the compiler's: the linker, document
-//! mode, and the WASM boundary all speak them, and `lemmon-vm` re-exports all three.
+//! They are the crate's vocabulary: the compiler, the linker, document mode, and the
+//! WASM boundary all speak them, and `lemmon-vm` re-exports all three.
 
 use std::fmt;
 
 use lemmon_syntax::{Range, Severity, Span};
 
-/// Something a compile has to say about a file, pointed at precisely: an error the file
-/// cannot compile past, or a warning it compiles with.
+/// Something a stage has to say about a file, pointed at precisely: an error, which
+/// costs the stage its output, or a warning, which does not.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Diagnostic {
     /// The file the problem is in.
@@ -116,7 +116,7 @@ impl Diagnostic {
     }
 
     /// The parser's diagnostic about the file at `path`, whose labels are in the same file.
-    pub(super) fn from_syntax(path: &str, diagnostic: &lemmon_syntax::Diagnostic) -> Self {
+    pub(crate) fn from_syntax(path: &str, diagnostic: &lemmon_syntax::Diagnostic) -> Self {
         Self {
             path: path.to_owned(),
             span: diagnostic.span,

@@ -94,7 +94,7 @@ impl HeadingAdapter for Headings {
 
 #[cfg(test)]
 mod tests {
-    use crate::compile::Diagnostic;
+    use crate::diagnostics::Diagnostic;
 
     /// Headings are checked through the whole prose stage, since that is what wires
     /// the adapter to comrak — an adapter tested apart from `Plugins` would prove

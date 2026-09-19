@@ -9,9 +9,11 @@
 //! name alone and everything about it — whether it is a record or an enum, what fields
 //! it has, what it extends — comes from here.
 //!
-//! [`no_field`] is a message rather than a fact, and here for the same reason: refusing
-//! a field name means knowing every field the record has, so the one refusal all three
-//! sites share is built where that knowledge already lives.
+//! [`no_field`], [`no_entry_field`] and [`misshaped_entry_field`] are messages rather
+//! than facts, and [`entry_fault`] is the judgement the last two report. They are here
+//! for the same reason: refusing a field name, or judging the field a page renders
+//! through, means knowing every field the record has, so the refusals their several
+//! sites share are built where that knowledge already lives.
 
 use std::rc::Rc;
 
@@ -243,6 +245,60 @@ pub(crate) fn no_field(record: &str, key: &str, decls: &dyn Decls) -> String {
         Some(near) => format!("`{record}` has no field `{key}`; did you mean `{near}`?"),
         None => format!("`{record}` has no field `{key}`"),
     }
+}
+
+/// What keeps `record` from rendering through the field `entry` (D30): it declares
+/// none, or the one it has is not a layout of it.
+pub(crate) enum EntryFault<'a> {
+    Undeclared,
+    /// The field as declared, with the declaration in the chain that made it.
+    Misshaped(&'a Declaration, &'a FieldDecl),
+}
+
+/// Whether `record` can render through `entry`, and what is wrong if not. The page the
+/// field's function takes is the record or one it extends: a layout free to take the
+/// base and narrow inside is what makes one layout serve a family of schemas. One
+/// predicate for the compiler, which asks it of every schema it declares, and for the
+/// link step, which asks it of every page's record on a relink the declaration alone
+/// changed.
+pub(crate) fn entry_fault<'a>(
+    decls: &'a dyn Decls,
+    record: &str,
+    entry: &str,
+) -> Option<EntryFault<'a>> {
+    let Some((owner, field)) = decls.field_in(record, entry) else {
+        return Some(EntryFault::Undeclared);
+    };
+    let takes_a_page = match &field.ty {
+        Type::Fn(params, ret) => matches!(
+            (params.first(), params.get(1), &**ret),
+            (Some(Type::Named(page)), Some(Type::Html), Type::Html)
+                if **page == *record || decls.extends(record, page)
+        ),
+        _ => false,
+    };
+    (!takes_a_page).then_some(EntryFault::Misshaped(owner, field))
+}
+
+/// How the entry field of `record` is declared: `entry: (record, html): html`.
+fn entry_shape(record: &str, entry: &str) -> String {
+    format!("`{entry}: ({record}, html): html`")
+}
+
+/// The refusal of a page schema that declares no entry field.
+pub(crate) fn no_entry_field(record: &str, document: &str, entry: &str) -> String {
+    format!(
+        "`{record}` extends `{document}`, so it declares how a page renders: {}",
+        entry_shape(record, entry)
+    )
+}
+
+/// The refusal of an entry field that is not a layout of its record.
+pub(crate) fn misshaped_entry_field(record: &str, entry: &str) -> String {
+    format!(
+        "`{entry}` renders a `{record}`: declare it {}",
+        entry_shape(record, entry)
+    )
 }
 
 /// A table with nothing in it — what the rules are tested against.

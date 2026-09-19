@@ -20,6 +20,7 @@ use lemmon_syntax::{DocumentParse, FrontMatter, Parse, Span, parse_document};
 
 use crate::SourceFile;
 use crate::decls::{Declaration, FieldDecl, Shape};
+use crate::diagnostics::Diagnostic;
 use crate::document::{self, CodePayload, Piece};
 use crate::host::Host;
 use crate::types::Type;
@@ -27,7 +28,7 @@ use crate::unit::{ExportedSignature, ImportRef, Param};
 
 use super::annotations::Reserved;
 use super::names::Names;
-use super::{Diagnostic, TokenSpan, annotations, duplicate_named, index_u32, required};
+use super::{TokenSpan, annotations, duplicate_named, index_u32, required};
 
 /// A file parsed, its prose rendered, and its exports and declarations collected —
 /// everything [`compile_unit`](super::compile_unit) needs that comes from this file alone.

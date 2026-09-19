@@ -18,11 +18,12 @@ use crate::bytecode::{
     Declared, Document, Exported, Function, MarkKey, MarkPayload, Module, Op,
 };
 use crate::closure::{self, Closed, ReadClosure};
-use crate::compile::{
-    Compiled, Diagnostic, EntryFault, Runs, entry_fault, index_u32, misshaped_entry_field,
-    no_entry_field, refused_at_load,
+use crate::compile::{Runs, index_u32, refused_at_load};
+use crate::decls::{
+    DeclKind, Declaration, Decls, EntryFault, Shape, TypeFact, entry_fault,
+    misshaped_entry_field, no_entry_field,
 };
-use crate::decls::{DeclKind, Declaration, Decls, Shape, TypeFact};
+use crate::diagnostics::{Compiled, Diagnostic};
 use crate::document::CodePayload;
 use crate::exports::ExportIndex;
 use crate::host::{ClaimAnswer, Host};
