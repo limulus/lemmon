@@ -27,7 +27,7 @@
     "test": "vitest run --coverage",
     "tscc": "node node_modules/typescript-7/bin/tsc --build tsconfig.json packages/*/tsconfig.json",
     "verify": "concurrently -c cyan,magenta,blue,yellow npm:verify:js npm:rust",
-    "verify:js": "concurrently -c cyan,magenta,blue npm:lint npm:test npm:tscc",
+    "verify:js": "(is-ci || npm run rust:wasm) && concurrently -c cyan,magenta,blue npm:lint npm:test npm:tscc",
     "wasm:bench": "node scripts/bench-wasm.ts",
     "wasm:check": "node scripts/check-wasm.ts"
   },

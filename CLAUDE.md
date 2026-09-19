@@ -19,7 +19,7 @@ schemas (D30, D36, D37); each file compiles to its own `Unit`, and a link step j
 units into the `Module` the VM runs (D25, invariant 11); `compile` returns its warnings
 beside the module and keeps none on a unit. `crates/lemmon-wasm` exposes the resident
 `Core` (`compile`/`loadData`/`plan`/`render`), and `@limulus/lemmon-core` wraps the staged
-artifact — so `npm run rust:wasm` must have run before `npm run verify`.
+artifact, which `npm run verify:js` restages from this checkout's crates before its tests.
 
 ## Canonical references
 
@@ -127,12 +127,13 @@ message. Do not publish anything, or re-enable publishing, without Eric.
 
 ```bash
 # The gate — exactly what pre-push runs: eslint, vitest with coverage, tscc, plus the
-# Rust leg. Needs a Rust toolchain on PATH and a staged wasm artifact: run
-# `npm run rust:wasm` first, and again after changing anything the boundary compiles in.
-# CI runs the halves as separate jobs, so `verify` must stay defined as exactly
-# `verify:js` + `rust` — extend those, or CI stops matching pre-push.
+# Rust leg. Needs a Rust toolchain and wasm-bindgen-cli on PATH, since `verify:js`
+# restages the wasm artifact before its legs. CI runs the halves as separate jobs, so
+# `verify` must stay defined as exactly `verify:js` + `rust` — extend those, or CI stops
+# matching pre-push.
 npm run verify
-npm run verify:js      # the npm half: lint + test + tscc
+npm run verify:js      # the npm half: `rust:wasm` (skipped under CI), then lint + test +
+                       # tscc
 npm run rust           # the Rust half: fmt --check, clippy -D warnings, cargo test. Not
                        # rustdoc: after moving code between modules, run `cargo doc
                        # --workspace --no-deps` by hand for the links the move broke
@@ -158,8 +159,8 @@ npm run rust:cov       # Rust coverage ratchet — its own CI job (instrumentati
                        # reason wants `<target>/llvm-cov-target` deleted and a rerun
 npm run rust:wasm      # cross-compile the boundary + stage into artifacts/wasm/. Needs
                        # wasm-bindgen-cli at the exact version pinned in Cargo.toml.
-                       # Deliberately outside verify (second target tree), but verify's
-                       # vitest leg consumes what it stages
+                       # `verify:js` runs it first; run it by hand before `npx vitest`,
+                       # `wasm:check`, the spike, or the bench
 npm run wasm:check     # compile the staged .wasm under this Node, assert exports/imports
 npm run rust:wasm:test # exercise the boundary across the real ABI (wasm-bindgen-test), on
                        # the .wasm's own stack — outside verify, so a boundary or depth-cap

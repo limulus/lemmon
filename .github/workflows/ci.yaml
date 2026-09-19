@@ -49,9 +49,9 @@ jobs:
       - run: npm run rust:cov
 
   # Cross-compiles the boundary crate, runs wasm-bindgen over it, exercises the real ABI
-  # with wasm-bindgen-test, and publishes the artifact set for the jobs below. Kept out
-  # of `npm run verify` because populating a second target tree is not worth paying on
-  # every inner-loop run.
+  # with wasm-bindgen-test, and publishes the artifact set for the jobs below.
+  # `rust:wasm:test` is kept out of `npm run verify`: a wasm32 test build is not worth
+  # paying on every inner-loop run.
   wasm:
     runs-on: ubuntu-latest
     name: build wasm32 artifact
@@ -81,8 +81,8 @@ jobs:
 
   # `needs: wasm` because @limulus/lemmon-core's vitest specs load the staged artifact —
   # the tests consume the exact bytes that would ship, the same trade wasm-check makes.
-  # The price is that TypeScript-only feedback waits on the (cached) cargo build; locally
-  # the same dependency reads `npm run rust:wasm` before `npm run verify`.
+  # The price is that TypeScript-only feedback waits on the (cached) cargo build.
+  # `is-ci` skips `verify:js`'s own restage here.
   verify:
     runs-on: ubuntu-latest
     needs: wasm
