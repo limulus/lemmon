@@ -9,7 +9,13 @@
 //! The one dependency is `lemmon-syntax`, for the [`LineIndex`] behind that display and
 //! the [`DIAGNOSTICS_TRAILER`] line that marks where a trailer starts.
 //! `lemmon-syntax` takes this crate back as a *dev*-dependency, which Cargo allows: its
-//! library is built before this one, and only its test target links this one.
+//! library is built before this one, and only its test target links this one. That is
+//! also why the span-by-text helper is `lemmon_syntax::spans` rather than a fourth
+//! responsibility here: the `lemmon-syntax` this crate links is not the one
+//! `lemmon-syntax`'s own unit tests compile, so a [`Span`] handed back from here is a
+//! different type there and the test does not compile.
+//!
+//! [`Span`]: lemmon_syntax::Span
 
 use std::fmt::Write as _;
 use std::fs;

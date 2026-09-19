@@ -589,12 +589,14 @@ fn signature(name: &str, params: &[Param], ret: &Type) -> String {
 
 #[cfg(test)]
 mod tests {
+    use lemmon_syntax::spans::at;
+
     use super::*;
     use crate::compile::{compile_unit, prepare};
     use crate::host::{Ambient, Claim};
     use crate::testing::{
-        AMBIENT, POST, addressed_host, at, linked, shell_host, shown, unit_against,
-        unit_of, untyped_host,
+        AMBIENT, POST, addressed_host, linked, shell_host, shown, unit_against, unit_of,
+        untyped_host,
     };
     use crate::{SourceFile, Value, render};
 

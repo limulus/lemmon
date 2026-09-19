@@ -698,11 +698,11 @@ impl Loader<'_> {
 
 #[cfg(test)]
 pub(crate) mod tests {
+    use lemmon_syntax::spans::{all_of, at};
     use lemmon_syntax::{LineIndex, Span};
 
     use super::*;
     use crate::rendered::{Mark, Marked};
-    use crate::testing::{all_of, at};
     use crate::{SourceFile, compile};
 
     /// The standard shell's declaration: `page` a `Page`, `build` a `Build`, `site`

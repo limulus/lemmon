@@ -85,6 +85,7 @@ mod tests {
     use rowan::Language as _;
 
     use super::*;
+    use crate::spans::{all_of, at};
     use crate::syntax_kind::Lemmon;
 
     #[test]
@@ -95,44 +96,45 @@ mod tests {
 
     #[test]
     fn finds_a_closed_block_with_the_yaml_between_its_lines() {
+        let src = "---\na: 1\n---\nbody";
         assert_eq!(
-            front_matter("---\na: 1\n---\nbody"),
+            front_matter(src),
             FrontMatter::Closed {
-                block: Span::new(0, 13),
-                inner: Span::new(4, 9),
+                block: at(src, "---\na: 1\n---\n"),
+                inner: at(src, "a: 1\n"),
             }
         );
     }
 
     #[test]
     fn accepts_a_carriage_return_before_each_lines_newline() {
+        let src = "---\r\na: 1\r\n---\r\nx";
         assert_eq!(
-            front_matter("---\r\na: 1\r\n---\r\nx"),
+            front_matter(src),
             FrontMatter::Closed {
-                block: Span::new(0, 16),
-                inner: Span::new(5, 11),
+                block: at(src, "---\r\na: 1\r\n---\r\n"),
+                inner: at(src, "a: 1\r\n"),
             }
         );
     }
 
     #[test]
     fn closes_at_the_very_next_rule_line_even_when_nothing_stands_between() {
+        let src = "---\n---\n";
         assert_eq!(
-            front_matter("---\n---\n"),
+            front_matter(src),
             FrontMatter::Closed {
-                block: Span::new(0, 8),
-                inner: Span::new(4, 4),
+                block: all_of(src),
+                inner: at(src, "---\n«»---\n"),
             }
         );
     }
 
     #[test]
     fn reports_an_opening_line_no_later_line_closes() {
-        assert_eq!(
-            front_matter("---\na: 1\n"),
-            FrontMatter::Unclosed(Span::new(0, 3))
-        );
-        assert_eq!(front_matter("---"), FrontMatter::Unclosed(Span::new(0, 3)));
+        let src = "---\na: 1\n";
+        assert_eq!(front_matter(src), FrontMatter::Unclosed(at(src, "---")));
+        assert_eq!(front_matter("---"), FrontMatter::Unclosed(all_of("---")));
     }
 
     #[test]
@@ -140,20 +142,23 @@ mod tests {
         assert_eq!(front_matter("--- \na: 1\n---\n"), FrontMatter::None);
         assert_eq!(front_matter("\n---\na: 1\n---\n"), FrontMatter::None);
         assert_eq!(front_matter("----\na: 1\n---\n"), FrontMatter::None);
+        let trailing_space = "---\na: 1\n--- \n";
         assert_eq!(
-            front_matter("---\na: 1\n--- \n"),
-            FrontMatter::Unclosed(Span::new(0, 3))
+            front_matter(trailing_space),
+            FrontMatter::Unclosed(at(trailing_space, "«---»\n"))
         );
     }
 
     #[test]
     fn gives_a_parser_the_closed_block_or_the_diagnostic_for_an_unclosed_one() {
         assert_eq!(leading("a\n"), (None, None));
-        assert_eq!(leading("---\n---\nx"), (Some(Span::new(0, 8)), None));
-        let (block, diagnostic) = leading("---\na: 1\n");
+        let closed = "---\n---\nx";
+        assert_eq!(leading(closed), (Some(at(closed, "---\n---\n")), None));
+        let unclosed = "---\na: 1\n";
+        let (block, diagnostic) = leading(unclosed);
         assert_eq!(block, None);
         let diagnostic = diagnostic.expect("an unclosed block is reported");
-        assert_eq!(diagnostic.span, Span::new(0, 3));
+        assert_eq!(diagnostic.span, at(unclosed, "---"));
         assert_eq!(
             diagnostic.message,
             "front matter opened here has no closing `---` line"

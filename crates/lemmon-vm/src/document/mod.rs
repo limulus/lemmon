@@ -282,8 +282,9 @@ fn index_u32(index: usize) -> u32 {
 
 #[cfg(test)]
 mod tests {
+    use lemmon_syntax::spans::at;
+
     use super::*;
-    use crate::testing::at;
 
     /// Each chunk as the page first holds it: its text and its code blocks' elements,
     /// the sentinels gone.

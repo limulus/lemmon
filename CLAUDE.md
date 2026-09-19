@@ -242,7 +242,8 @@ Diagnostics raised only during declaration emit surface in `npm run build`, not 
   tokens, though: a rule that counts tokens or positions owes the case where a scanner
   error sits in the counted slot — the recovery paths are where the bugs have been
 - A diagnostic's span is asserted by the source text it covers, never by a counted
-  offset: `at(source, needle)` in `crates/lemmon-vm/src/testing.rs` finds it,
+  offset: `at(source, needle)` in `crates/lemmon-syntax/src/spans.rs` finds it (another
+  crate's tests reach it through `features = ["testing"]` on a dev-dependency),
   `all_of(source)` covers the whole text, and bracketing part of the needle with `«…»`
   picks one of several identical names (`at(src, "f(«a»: int")`). It places a host's
   positions too, so the span a fixture sends and the span a test asserts are written

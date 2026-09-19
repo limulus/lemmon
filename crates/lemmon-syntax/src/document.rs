@@ -191,6 +191,7 @@ impl Fence {
 mod tests {
     use super::*;
     use crate::ast::{AstNode, Item, Root, Spanned};
+    use crate::spans::{all_of, at};
 
     fn items(doc: &DocumentParse) -> Vec<String> {
         Root::cast(doc.parse.syntax())
@@ -208,18 +209,20 @@ mod tests {
 
     #[test]
     fn keeps_a_file_without_blocks_as_one_prose_run() {
-        let doc = parse_document("Just *prose*.\n");
+        let src = "Just *prose*.\n";
+        let doc = parse_document(src);
         assert_eq!(doc.blocks, vec![]);
-        assert_eq!(doc.prose, vec![Span::new(0, 14)]);
+        assert_eq!(doc.prose, vec![all_of(src)]);
         assert_eq!(items(&doc), vec!["Text@0..14"]);
         assert!(doc.parse.diagnostics.is_empty());
     }
 
     #[test]
     fn finds_a_void_tag_on_its_own_line() {
-        let doc = parse_document("a\n<lem.x>\nb\n");
-        assert_eq!(doc.blocks, vec![Span::new(2, 9)]);
-        assert_eq!(doc.prose, vec![Span::new(0, 2), Span::new(9, 12)]);
+        let src = "a\n<lem.x>\nb\n";
+        let doc = parse_document(src);
+        assert_eq!(doc.blocks, vec![at(src, "<lem.x>")]);
+        assert_eq!(doc.prose, vec![at(src, "a\n"), at(src, "\nb\n")]);
         assert_eq!(items(&doc), vec!["Text@0..2", "Tag@2..9", "Text@9..12"]);
     }
 
@@ -232,33 +235,44 @@ mod tests {
 
     #[test]
     fn extends_a_block_to_its_close_many_lines_later() {
-        let doc = parse_document("<lem-if x>\none\n\ntwo\n</lem-if>\n");
-        assert_eq!(doc.blocks, vec![Span::new(0, 29)]);
-        assert_eq!(doc.prose, vec![Span::new(0, 0), Span::new(29, 30)]);
+        let src = "<lem-if x>\none\n\ntwo\n</lem-if>\n";
+        let doc = parse_document(src);
+        assert_eq!(
+            doc.blocks,
+            vec![at(src, "<lem-if x>\none\n\ntwo\n</lem-if>")]
+        );
+        assert_eq!(
+            doc.prose,
+            vec![at(src, "«»<lem-if"), at(src, "</lem-if>«\n»")]
+        );
     }
 
     #[test]
     fn leaves_tags_inside_a_fence_as_prose() {
-        let doc = parse_document("```lem\n<lem.x>\n```\n<lem.y>\n");
-        assert_eq!(doc.blocks, vec![Span::new(19, 26)]);
+        let src = "```lem\n<lem.x>\n```\n<lem.y>\n";
+        let doc = parse_document(src);
+        assert_eq!(doc.blocks, vec![at(src, "<lem.y>")]);
     }
 
     #[test]
     fn closes_a_fence_only_with_a_long_enough_marker_of_its_kind() {
-        let doc = parse_document("````\n```\n<lem.x>\n~~~~\n<lem.y>\n````\n<lem.z>\n");
-        assert_eq!(doc.blocks, vec![Span::new(35, 42)]);
+        let src = "````\n```\n<lem.x>\n~~~~\n<lem.y>\n````\n<lem.z>\n";
+        let doc = parse_document(src);
+        assert_eq!(doc.blocks, vec![at(src, "<lem.z>")]);
     }
 
     #[test]
     fn does_not_close_a_fence_from_four_columns_of_indent() {
-        let doc = parse_document("```\ncode\n    ```\n<lem.x>\n```\n<lem.y>\n");
-        assert_eq!(doc.blocks, vec![Span::new(29, 36)]);
+        let src = "```\ncode\n    ```\n<lem.x>\n```\n<lem.y>\n";
+        let doc = parse_document(src);
+        assert_eq!(doc.blocks, vec![at(src, "<lem.y>")]);
     }
 
     #[test]
     fn counts_a_tab_to_the_next_four_column_stop() {
-        let doc = parse_document("```\n\t```\n<lem.x>\n```\n<lem.y>\n");
-        assert_eq!(doc.blocks, vec![Span::new(21, 28)]);
+        let src = "```\n\t```\n<lem.x>\n```\n<lem.y>\n";
+        let doc = parse_document(src);
+        assert_eq!(doc.blocks, vec![at(src, "<lem.y>")]);
     }
 
     #[test]
@@ -269,16 +283,18 @@ mod tests {
 
     #[test]
     fn starts_a_block_under_any_indent_so_that_markdown_can_reject_it() {
-        let doc = parse_document("    <lem.x>\n");
-        assert_eq!(doc.blocks, vec![Span::new(4, 11)]);
-        assert_eq!(doc.prose[0], Span::new(0, 4));
+        let src = "    <lem.x>\n";
+        let doc = parse_document(src);
+        assert_eq!(doc.blocks, vec![at(src, "<lem.x>")]);
+        assert_eq!(doc.prose[0], at(src, "«    »<lem.x>"));
     }
 
     #[test]
     fn keeps_front_matter_as_a_token_in_front_of_the_prose() {
-        let doc = parse_document("---\na: 1\n---\nbody\n");
-        assert_eq!(doc.front_matter, Some(Span::new(0, 13)));
-        assert_eq!(doc.prose, vec![Span::new(13, 18)]);
+        let src = "---\na: 1\n---\nbody\n";
+        let doc = parse_document(src);
+        assert_eq!(doc.front_matter, Some(at(src, "---\na: 1\n---\n")));
+        assert_eq!(doc.prose, vec![at(src, "body\n")]);
         // The token is no item: the typed view starts at the prose.
         assert_eq!(items(&doc), vec!["Text@13..18"]);
         let first = doc.parse.syntax().first_child_or_token().expect("a child");
@@ -289,26 +305,29 @@ mod tests {
 
     #[test]
     fn refuses_front_matter_that_never_closes_at_its_opening_line() {
-        let doc = parse_document("---\na: 1\n");
+        let src = "---\na: 1\n";
+        let doc = parse_document(src);
         assert_eq!(doc.front_matter, None);
-        assert_eq!(doc.prose, vec![Span::new(0, 9)]);
+        assert_eq!(doc.prose, vec![all_of(src)]);
         assert_eq!(items(&doc), vec!["Text@0..9"]);
         let spans: Vec<Span> = doc.parse.diagnostics.iter().map(|d| d.span).collect();
-        assert_eq!(spans, vec![Span::new(0, 3)]);
+        assert_eq!(spans, vec![at(src, "---")]);
         assert!(doc.parse.diagnostics[0].message.contains("no closing"));
     }
 
     #[test]
     fn accepts_crlf_front_matter_lines() {
-        let doc = parse_document("---\r\na: 1\r\n---\r\nx");
-        assert_eq!(doc.front_matter, Some(Span::new(0, 16)));
+        let src = "---\r\na: 1\r\n---\r\nx";
+        let doc = parse_document(src);
+        assert_eq!(doc.front_matter, Some(at(src, "---\r\na: 1\r\n---\r\n")));
     }
 
     #[test]
     fn shifts_a_block_diagnostic_to_file_coordinates() {
-        let doc = parse_document("p\n<lem-if x>\nbody\n");
+        let src = "p\n<lem-if x>\nbody\n";
+        let doc = parse_document(src);
         assert_eq!(doc.parse.diagnostics.len(), 1);
-        assert_eq!(doc.parse.diagnostics[0].span, Span::new(2, 9));
+        assert_eq!(doc.parse.diagnostics[0].span, at(src, "<lem-if"));
     }
 
     #[test]
@@ -321,10 +340,11 @@ mod tests {
 
     #[test]
     fn reports_text_after_a_block_on_its_line() {
-        let doc = parse_document("<lem.x> tail \nmore\n");
-        assert_eq!(doc.blocks, vec![Span::new(0, 7)]);
+        let src = "<lem.x> tail \nmore\n";
+        let doc = parse_document(src);
+        assert_eq!(doc.blocks, vec![at(src, "<lem.x>")]);
         assert_eq!(doc.parse.diagnostics.len(), 1);
-        assert_eq!(doc.parse.diagnostics[0].span, Span::new(8, 13));
+        assert_eq!(doc.parse.diagnostics[0].span, at(src, "«tail »\n"));
         assert!(
             doc.parse.diagnostics[0]
                 .message
@@ -334,22 +354,25 @@ mod tests {
 
     #[test]
     fn allows_trailing_whitespace_after_a_block() {
-        let doc = parse_document("<lem.x>  \r\nmore");
+        let src = "<lem.x>  \r\nmore";
+        let doc = parse_document(src);
         assert!(doc.parse.diagnostics.is_empty());
-        assert_eq!(doc.prose[1], Span::new(7, 15));
+        assert_eq!(doc.prose[1], at(src, "  \r\nmore"));
     }
 
     #[test]
     fn takes_a_stray_close_as_the_parsers_error() {
-        let doc = parse_document("</lem-if>\n");
-        assert_eq!(doc.blocks, vec![Span::new(0, 9)]);
+        let src = "</lem-if>\n";
+        let doc = parse_document(src);
+        assert_eq!(doc.blocks, vec![at(src, "</lem-if>")]);
         assert!(doc.parse.diagnostics[0].message.contains("stray"));
     }
 
     #[test]
     fn ends_a_block_at_the_end_of_input() {
-        let doc = parse_document("<lem.x>");
-        assert_eq!(doc.blocks, vec![Span::new(0, 7)]);
-        assert_eq!(doc.prose, vec![Span::new(0, 0), Span::new(7, 7)]);
+        let src = "<lem.x>";
+        let doc = parse_document(src);
+        assert_eq!(doc.blocks, vec![at(src, "<lem.x>")]);
+        assert_eq!(doc.prose, vec![at(src, "«»<lem.x>"), at(src, "<lem.x>«»")]);
     }
 }

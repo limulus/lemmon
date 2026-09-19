@@ -27,6 +27,7 @@ use std::sync::OnceLock;
 
 use glob::Pattern;
 use lemmon_corpus::Case;
+use lemmon_syntax::spans::at;
 use lemmon_syntax::{DIAGNOSTICS_TRAILER, FrontMatter};
 use lemmon_vm::{
     Ambient, Claim, Data, Decls as _, Fulfilled, Host, HostSpan, LineIndex, Loaded, Map,
@@ -710,10 +711,11 @@ fn renders_every_case_against_the_declared_host_as_expected() {
 fn places_front_matter_in_bytes_past_a_wide_character() {
     // saphyr counts characters and the core counts bytes: an `é` before a key costs
     // one of the former and two of the latter.
-    let parsed = front_matter("---\ntitle: café\ntopic: x\n---\nbody").unwrap();
+    let src = "---\ntitle: café\ntopic: x\n---\nbody";
+    let parsed = front_matter(src).unwrap();
     let topic = parsed.spans["topic"];
-    assert_eq!(topic.span, Span::new(17, 25));
-    assert_eq!(parsed.spans["title"].span, Span::new(4, 16));
+    assert_eq!(topic.span, at(src, "topic: x"));
+    assert_eq!(parsed.spans["title"].span, at(src, "title: café"));
     // The range is placed in the file, as the span is: `topic:` is the file's third
     // line, not the front matter's second.
     assert_eq!(
@@ -725,18 +727,20 @@ fn places_front_matter_in_bytes_past_a_wide_character() {
 
 #[test]
 fn reads_the_record_from_the_type_keys_value_however_it_is_quoted() {
-    let parsed = front_matter("---\ntype: \"Article\"\ntitle: x\n---\n").unwrap();
+    let src = "---\ntype: \"Article\"\ntitle: x\n---\n";
+    let parsed = front_matter(src).unwrap();
     assert_eq!(
         parsed.record,
-        Some(("Article".to_owned(), Span::new(10, 19)))
+        Some(("Article".to_owned(), at(src, "\"Article\"")))
     );
     assert!(!parsed.spans.contains_key("type"));
     let Value::Map(front) = &parsed.value else {
         panic!("a mapping");
     };
     assert!(front.get("type").is_none());
-    let bare = front_matter("---\ntype: Til\n---\n").unwrap();
-    assert_eq!(bare.record, Some(("Til".to_owned(), Span::new(10, 13))));
+    let bare_src = "---\ntype: Til\n---\n";
+    let bare = front_matter(bare_src).unwrap();
+    assert_eq!(bare.record, Some(("Til".to_owned(), at(bare_src, "Til"))));
 }
 
 /// Every op some case compiles to. Read from the modules rather than from a trace so

@@ -477,6 +477,7 @@ fn listed(names: &[String]) -> String {
 #[cfg(test)]
 mod tests {
     use lemmon_syntax::Span;
+    use lemmon_syntax::spans::at;
 
     use super::super::tests::{
         AMBIENT, build, document, errors, module, object, shell, spans,
@@ -484,7 +485,6 @@ mod tests {
     use super::super::{Data, Loaded, Source, Spans, load};
     use super::*;
     use crate::host::{Ambient, Host};
-    use crate::testing::at;
     use crate::{Module, SourceFile, compile};
 
     const SITE: &str = "<lem-enum Placement = hero | left />\n\

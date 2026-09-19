@@ -300,14 +300,7 @@ fn lambda(p: &mut Parser<'_>) -> CompletedMarker {
 #[cfg(test)]
 mod tests {
     use crate::parse;
-
-    fn messages(src: &str) -> Vec<String> {
-        parse(src)
-            .diagnostics
-            .into_iter()
-            .map(|d| d.message)
-            .collect()
-    }
+    use crate::testing::messages;
 
     /// The head's expression tree as nested kind names, tokens omitted.
     fn shape(src: &str) -> String {

@@ -717,6 +717,7 @@ mod tests {
     use super::*;
     use crate::ast::LiteralKind;
     use crate::parse;
+    use crate::spans::{all_of, at};
 
     fn first_item(src: &str) -> Item {
         parse(src).root().items().next().expect("an item")
@@ -789,45 +790,48 @@ mod tests {
         assert_eq!(arms.len(), 3);
         assert_eq!(condition_text(&arms[0]), Some("a".into()));
         assert_eq!(item_texts(&arms[0].items), vec!["1"]);
-        assert_eq!(arms[0].span, Span::new(0, 11));
+        assert_eq!(arms[0].span, at(src, "<lem-if a>1"));
         assert_eq!(condition_text(&arms[1]), Some("b".into()));
         assert_eq!(item_texts(&arms[1].items), vec!["2"]);
-        assert_eq!(arms[1].span, Span::new(11, 29));
+        assert_eq!(arms[1].span, at(src, "<lem-else-if b />2"));
         assert_eq!(arms[2].condition, None);
         assert_eq!(item_texts(&arms[2].items), vec!["3"]);
-        assert_eq!(arms[2].span, Span::new(29, 42));
+        assert_eq!(arms[2].span, at(src, "<lem-else />3"));
     }
 
     #[test]
     fn gives_an_if_without_separators_one_arm_spanning_its_head() {
-        let Item::If(tag) = first_item("<lem-if a></lem-if>") else {
+        let src = "<lem-if a></lem-if>";
+        let Item::If(tag) = first_item(src) else {
             panic!("expected an if");
         };
         let arms = tag.arms();
         assert_eq!(arms.len(), 1);
         assert!(arms[0].items.is_empty());
-        assert_eq!(arms[0].span, Span::new(0, 10));
+        assert_eq!(arms[0].span, at(src, "<lem-if a>"));
         assert_eq!(tag.block().expect("a block").items().count(), 0);
     }
 
     #[test]
     fn keeps_an_empty_else_arm_at_its_separator() {
-        let Item::If(tag) = first_item("<lem-if a>x<lem-else /></lem-if>") else {
+        let src = "<lem-if a>x<lem-else /></lem-if>";
+        let Item::If(tag) = first_item(src) else {
             panic!("expected an if");
         };
         let arms = tag.arms();
-        assert_eq!(arms[1].span, Span::new(11, 23));
+        assert_eq!(arms[1].span, at(src, "<lem-else />"));
     }
 
     #[test]
     fn gives_an_if_with_a_cut_head_one_empty_arm() {
-        let Item::If(tag) = first_item("<lem-if a") else {
+        let src = "<lem-if a";
+        let Item::If(tag) = first_item(src) else {
             panic!("expected an if");
         };
         let arms = tag.arms();
         assert_eq!(arms.len(), 1);
         assert!(arms[0].items.is_empty());
-        assert_eq!(arms[0].span, Span::new(0, 9));
+        assert_eq!(arms[0].span, all_of(src));
     }
 
     #[test]

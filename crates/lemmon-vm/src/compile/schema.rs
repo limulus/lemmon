@@ -439,7 +439,9 @@ impl Compiler<'_> {
 
 #[cfg(test)]
 mod tests {
-    use crate::testing::{AMBIENT, at, shell_host, shown};
+    use lemmon_syntax::spans::at;
+
+    use crate::testing::{AMBIENT, shell_host, shown};
     use crate::{Host, SourceFile, compile};
 
     /// Compiles `files` against `host` and shows every diagnostic.

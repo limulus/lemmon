@@ -14,8 +14,12 @@ mod front_matter;
 mod line_index;
 mod parser;
 mod scanner;
+#[cfg(any(test, feature = "testing"))]
+pub mod spans;
 mod suggest;
 mod syntax_kind;
+#[cfg(test)]
+mod testing;
 mod token;
 
 pub use ast::AstNode;

@@ -17,5 +17,6 @@ percent-encoding = { workspace = true }
 
 [dev-dependencies]
 lemmon-corpus = { workspace = true }
+lemmon-syntax = { path = "../lemmon-syntax", features = ["testing"] }
 saphyr = { workspace = true }
 glob = { workspace = true }

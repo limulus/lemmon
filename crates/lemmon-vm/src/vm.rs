@@ -2326,10 +2326,11 @@ mod tests {
     /// A page rendered through its layout: the loader's fixtures, with a layout that
     /// numbers its heading, collects a style, and places a mark before the body.
     mod pages {
+        use lemmon_syntax::spans::at;
+
         use super::*;
         use crate::load::tests::{build, object, shell};
         use crate::load::{Data, Loaded, Source, Spans, Store, load};
-        use crate::testing::at;
         use crate::{SourceFile, compile};
 
         const AMBIENT: &str = "<lem-type Page>\n  url: url\n</lem-type>\n\

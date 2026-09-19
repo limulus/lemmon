@@ -685,11 +685,13 @@ impl Compiler<'_> {
 mod tests {
     use std::rc::Rc;
 
+    use lemmon_syntax::spans::{all_of, at};
+
     use crate::compile::{compile_unit, prepare};
     use crate::exports::ExportIndex;
     use crate::host::{Ambient, Host};
     use crate::plan::SourceKind;
-    use crate::testing::{AMBIENT, all_of, at, shell_host, shown};
+    use crate::testing::{AMBIENT, shell_host, shown};
     use crate::unit::{Access, Call, Supplied};
     use crate::{SourceFile, Unit, Value, compile, render};
 

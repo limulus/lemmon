@@ -917,11 +917,12 @@ pub(crate) fn index_u32(index: usize) -> u32 {
 #[cfg(test)]
 mod tests {
     use lemmon_syntax::Severity;
+    use lemmon_syntax::spans::at;
 
     use super::*;
     use crate::host::Claim;
     use crate::rendered::Payload;
-    use crate::testing::{AMBIENT, at, shell_host, shown};
+    use crate::testing::{AMBIENT, shell_host, shown};
     use crate::unit::Param;
     use crate::{SourceFile, compile, render};
 

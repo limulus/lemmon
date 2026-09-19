@@ -639,13 +639,15 @@ fn cycle_from(deps: &[Vec<usize>], placed: &[bool], start: usize) -> Vec<usize> 
 
 #[cfg(test)]
 mod tests {
+    use lemmon_syntax::spans::at;
+
     use super::*;
     use crate::bytecode::Module;
     use crate::diagnostics::Compiled;
     use crate::host::Ambient;
     use crate::link::link;
     use crate::testing::{
-        AMBIENT, addressed_host, at, linked, shell_host, shown, unit_of, untyped_host,
+        AMBIENT, addressed_host, linked, shell_host, shown, unit_of, untyped_host,
     };
     use crate::{SourceFile, compile};
 

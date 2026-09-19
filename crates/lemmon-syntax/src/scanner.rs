@@ -319,6 +319,7 @@ pub fn scan(src: &str) -> ScanResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::spans::{all_of, at};
     use TokenKind::*;
 
     fn lex(src: &str) -> Vec<(TokenKind, &str)> {
@@ -593,11 +594,11 @@ mod tests {
             vec![
                 Diagnostic::new(
                     "unterminated tag: expected `>` before `<`",
-                    Span::new(0, 20)
+                    at(src, "<lem-let t = \"Hello\n")
                 ),
                 Diagnostic::new(
                     "unterminated string literal: expected `\"`",
-                    Span::new(13, 19)
+                    at(src, "\"Hello")
                 ),
             ]
         );
@@ -645,11 +646,11 @@ mod tests {
             vec![
                 Diagnostic::new(
                     "unterminated tag: expected `>` before end of input",
-                    Span::new(0, 12)
+                    all_of(src)
                 ),
                 Diagnostic::new(
                     "unterminated string literal: expected `\"`",
-                    Span::new(7, 12)
+                    at(src, "\"abc>")
                 ),
             ]
         );
@@ -787,8 +788,9 @@ mod tests {
 
     #[test]
     fn reports_an_unexpected_character_and_carries_on() {
+        let src = "<lem.(a @ b)>";
         assert_eq!(
-            lex("<lem.(a @ b)>")
+            lex(src)
                 .into_iter()
                 .filter(|(kind, _)| *kind != Trivia)
                 .collect::<Vec<_>>(),
@@ -803,11 +805,8 @@ mod tests {
             ]
         );
         assert_eq!(
-            diagnostics("<lem.(a @ b)>"),
-            vec![Diagnostic::new(
-                "unexpected character in tag",
-                Span::new(8, 9)
-            )]
+            diagnostics(src),
+            vec![Diagnostic::new("unexpected character in tag", at(src, "@"))]
         );
     }
 
@@ -818,8 +817,9 @@ mod tests {
 
     #[test]
     fn ends_a_head_at_a_nested_open_and_rescans_it() {
+        let src = "<lem.<lem.x>";
         assert_eq!(
-            lex("<lem.<lem.x>"),
+            lex(src),
             vec![
                 (OpenAccess, "<lem."),
                 (OpenAccess, "<lem."),
@@ -828,10 +828,10 @@ mod tests {
             ]
         );
         assert_eq!(
-            diagnostics("<lem.<lem.x>"),
+            diagnostics(src),
             vec![Diagnostic::new(
                 "unterminated tag: expected `>` before `<`",
-                Span::new(0, 5)
+                at(src, "«<lem.»<lem.x>")
             )]
         );
     }
@@ -855,15 +855,16 @@ mod tests {
             diagnostics(src),
             vec![Diagnostic::new(
                 "unterminated tag: expected `>` before `<`",
-                Span::new(0, 12)
+                at(src, "<lem-if a.b\n")
             )]
         );
     }
 
     #[test]
     fn reports_a_head_left_open_at_end_of_input() {
+        let src = "text <lem-if a.b";
         assert_eq!(
-            lex("text <lem-if a.b"),
+            lex(src),
             vec![
                 (Text, "text "),
                 (OpenTag, "<lem-if"),
@@ -874,10 +875,10 @@ mod tests {
             ]
         );
         assert_eq!(
-            diagnostics("text <lem-if a.b"),
+            diagnostics(src),
             vec![Diagnostic::new(
                 "unterminated tag: expected `>` before end of input",
-                Span::new(5, 16)
+                at(src, "<lem-if a.b")
             )]
         );
     }
@@ -1110,12 +1111,10 @@ mod tests {
 
     #[test]
     fn reports_scanner_errors_inside_a_type_body() {
+        let src = "<lem-type A>\n  a: @\n</lem-type>";
         assert_eq!(
-            diagnostics("<lem-type A>\n  a: @\n</lem-type>"),
-            vec![Diagnostic::new(
-                "unexpected character in tag",
-                Span::new(18, 19)
-            )]
+            diagnostics(src),
+            vec![Diagnostic::new("unexpected character in tag", at(src, "@"))]
         );
     }
 

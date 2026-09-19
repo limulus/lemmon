@@ -581,6 +581,7 @@ impl Sink<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testing::messages;
 
     /// The kinds and byte ranges of a root's children, tokens included.
     fn top_level(parse: &Parse) -> Vec<(SyntaxKind, u32, u32)> {
@@ -682,14 +683,6 @@ mod tests {
         sorted.sort_unstable();
         assert_eq!(starts, sorted);
         assert_eq!(parse.diagnostics.len(), 2);
-    }
-
-    fn messages(src: &str) -> Vec<String> {
-        parse(src)
-            .diagnostics
-            .into_iter()
-            .map(|d| d.message)
-            .collect()
     }
 
     #[test]

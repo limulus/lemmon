@@ -976,6 +976,7 @@ mod tests {
 
 #[cfg(test)]
 mod parse_tests {
+    use crate::spans::at;
     use crate::{Span, parse};
 
     fn diagnostics(src: &str) -> Vec<(Span, String)> {
@@ -1018,10 +1019,11 @@ mod parse_tests {
 
     #[test]
     fn requires_a_type_on_a_from_binding() {
+        let src = "<lem-let posts from \"feed/*/index.md\" />";
         assert_eq!(
-            diagnostics("<lem-let posts from \"feed/*/index.md\" />"),
+            diagnostics(src),
             vec![(
-                Span::new(15, 19),
+                at(src, "from"),
                 "a `from` binding needs `: Type`: the type decides what the host loads"
                     .into()
             )]
@@ -1078,9 +1080,10 @@ mod parse_tests {
 
     #[test]
     fn refuses_from_as_the_type_of_a_from_binding() {
+        let src = "<lem-let posts: from \"feed/*.md\" />";
         assert_eq!(
-            diagnostics("<lem-let posts: from \"feed/*.md\" />"),
-            vec![(Span::new(16, 20), "expected a type, found `from`".into())]
+            diagnostics(src),
+            vec![(at(src, "from"), "expected a type, found `from`".into())]
         );
     }
 
@@ -1094,10 +1097,11 @@ mod parse_tests {
 
     #[test]
     fn rejects_a_slashed_access_tag() {
+        let src = "<lem.x />";
         assert_eq!(
-            diagnostics("<lem.x />"),
+            diagnostics(src),
             vec![(
-                Span::new(7, 9),
+                at(src, "/>"),
                 "access tags are never slashed: expected `>`".into()
             )]
         );
@@ -1121,9 +1125,10 @@ mod parse_tests {
 
     #[test]
     fn rejects_a_head_on_a_collect_block() {
+        let src = "<lem-style class=\"x\">a</lem-style>";
         assert_eq!(
-            diagnostics("<lem-style class=\"x\">a</lem-style>"),
-            vec![(Span::new(11, 20), "`lem-style` takes no head".into())]
+            diagnostics(src),
+            vec![(at(src, "class=\"x\""), "`lem-style` takes no head".into())]
         );
         assert_eq!(
             messages("<lem-head x>a</lem-head>"),
@@ -1454,15 +1459,7 @@ mod parse_tests {
 
 #[cfg(test)]
 mod declaration_tests {
-    use crate::parse;
-
-    fn messages(src: &str) -> Vec<String> {
-        parse(src)
-            .diagnostics
-            .into_iter()
-            .map(|d| d.message)
-            .collect()
-    }
+    use crate::testing::messages;
 
     fn clean(src: &str) {
         assert_eq!(messages(src), Vec::<String>::new(), "{src}");

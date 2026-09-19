@@ -127,10 +127,10 @@ pub(super) fn resolve(
 #[cfg(test)]
 mod tests {
     use lemmon_syntax::ast::Item;
+    use lemmon_syntax::spans::at;
 
     use super::*;
     use crate::builtins::ReceiverKind;
-    use crate::testing::at;
     use crate::{Datetime, Value};
 
     /// `src` as a parameter's annotation, which is the text every span below is into.

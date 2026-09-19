@@ -12,6 +12,14 @@ logos = { workspace = true }
 rowan = { workspace = true }
 strsim = { workspace = true }
 
+[features]
+# Compiles `spans`, the span-by-text helper that tests assert with. This crate's own unit
+# tests get it from `cfg(test)`; a dependent's tests turn this on in their dev-dependency.
+# `cargo test --workspace` resolves with it on, so production code that named the module
+# would pass `npm run rust`; `npm run rust:wasm` builds without dev-dependencies and
+# fails on it.
+testing = []
+
 [dev-dependencies]
 lemmon-corpus = { workspace = true }
 proptest = { workspace = true }
