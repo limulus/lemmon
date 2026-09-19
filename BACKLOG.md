@@ -20,12 +20,6 @@ mechanism: `delto surface` trusts these edges to decide what is eligible to work
 Standing epic for reshaping working code. It comes first so that document order gives a
 refactor priority: reshaping is cheapest before more code is built on what it reshapes.
 
-- ∆W1D Gate the spike and the benchmark's fixtures — `spike:the-rebound` and `wasm:bench`
-  consume the boundary and the corpus layout yet run in no gate (∆xWs kept them out), and
-  each has since broken unseen: a retired diagnostics contract, then a corpus case ∆Bhz made
-  a deliberate error. Give each a one-pass mode without timing loops, run from `verify:js`,
-  which needs the staged artifact anyway. Planned in `docs/plans/∆W1D-plan.md`
-
 ## Phase 1 — Language complete, tooling from day one
 
 Seed items for the next phase (architecture doc 3, phase 1); expect these to be split
