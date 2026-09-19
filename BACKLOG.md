@@ -25,11 +25,7 @@ refactor priority: reshaping is cheapest before more code is built on what it re
   each has since broken unseen: a retired diagnostics contract, then a corpus case ∆Bhz made
   a deliberate error. Give each a one-pass mode without timing loops, run from `verify:js`,
   which needs the staged artifact anyway. Notes in `docs/plans/∆W1D-gate-spike-and-bench.md`
-- ∆omv Negative-test the wasm import allowlist — `wasm:check` is the mechanical check on
-  invariant 1, yet its decision lives in the uncovered `scripts/check-wasm.ts` and no test
-  has fed it a forbidden import. Move `scripts/wasm-artifact.ts` into `scripts/lib/` with
-  `unexpectedImports` and `missingExports` predicates and a spec that feeds them a
-  violation. Planned in `docs/plans/∆omv-negative-test-the-wasm-check.md`
+
 
 ## Phase 1 — Language complete, tooling from day one
 
