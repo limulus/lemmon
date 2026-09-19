@@ -21,7 +21,7 @@ mod types;
 pub use expr::{
     ArgList, BinaryExpr, BinaryOp, CallExpr, Expr, IndexExpr, Lambda, LambdaParams,
     ListLit, Literal, LiteralKind, MapEntry, MapLit, MemberExpr, NameRef, NamedArg,
-    ParenExpr, TernaryExpr, TypeTest, UnaryExpr, UnaryOp,
+    ParenExpr, TernaryExpr, TypeTest, UnaryExpr, UnaryOp, VariantRef,
 };
 pub use rowan::ast::AstNode;
 pub use tags::{

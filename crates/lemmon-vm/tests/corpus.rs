@@ -27,7 +27,7 @@ use std::sync::OnceLock;
 
 use glob::Pattern;
 use lemmon_corpus::Case;
-use lemmon_syntax::FrontMatter;
+use lemmon_syntax::{DIAGNOSTICS_TRAILER, FrontMatter};
 use lemmon_vm::{
     Ambient, Claim, Data, Decls as _, Fulfilled, Host, HostSpan, LineIndex, Loaded, Map,
     Mark, Module, Op, Payload, Rendered, RuntimeError, Source, SourceFile, SourceKind,
@@ -304,7 +304,7 @@ fn shown_value(value: &Value) -> String {
 /// the shape `.cst` uses for the parser's.
 fn shown(out: &str, diagnostics: &[String]) -> String {
     let mut shown = out.to_owned();
-    let _ = writeln!(shown, "\n--- diagnostics");
+    let _ = writeln!(shown, "\n{DIAGNOSTICS_TRAILER}");
     for line in diagnostics {
         let _ = writeln!(shown, "{line}");
     }

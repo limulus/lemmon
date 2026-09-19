@@ -237,6 +237,12 @@ impl<'src> Parser<'src> {
         self.tokens.get(self.pos).map_or("", |t| t.text(self.src))
     }
 
+    /// The name the current token opens or closes a tag with — the part after `<lem-`
+    /// or `</lem-`. `None` for every other kind and at the end of input.
+    fn current_tag_name(&self) -> Option<&'src str> {
+        self.tokens.get(self.pos)?.tag_name(self.src)
+    }
+
     /// The span of the current token, or a zero-width span at the end of input.
     fn current_span(&self) -> Span {
         self.tokens.get(self.pos).map_or_else(

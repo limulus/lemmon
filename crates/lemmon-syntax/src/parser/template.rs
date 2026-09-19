@@ -196,16 +196,15 @@ fn item<'src>(p: &mut Parser<'src>, stack: &mut Vec<Open<'src>>) -> Option<BodyE
             access_tag(p);
         }
         Some(TokenKind::OpenTag) => {
-            let name = &p.current_text()["<lem-".len()..];
             let own_part = matches!(stack.last().map(|o| o.body), Some(Body::Match { .. }))
-                && matches!(name, "case" | "default");
+                && matches!(p.current_tag_name(), Some("case" | "default"));
             if !own_part {
                 refuse_in_body(p, stack);
             }
             open_tag(p, stack);
         }
         Some(TokenKind::CloseTag) => {
-            let name = &p.current_text()["</lem-".len()..];
+            let name = p.current_tag_name().expect("a close tag names a tag");
             if stack.last().is_some_and(|top| top.name == name) {
                 return Some(BodyEnd::Matched);
             }
@@ -331,7 +330,7 @@ fn at_from(p: &Parser<'_>) -> bool {
 }
 
 fn open_tag<'src>(p: &mut Parser<'src>, stack: &mut Vec<Open<'src>>) {
-    let name = &p.current_text()["<lem-".len()..];
+    let name = p.current_tag_name().expect("an open tag names a tag");
     let span = p.current_span();
     let m = p.start();
     p.bump();
@@ -698,8 +697,7 @@ fn type_block<'src>(
         name,
         body: Body::Fields,
     });
-    let at_own_close =
-        p.at(TokenKind::CloseTag) && &p.current_text()["</lem-".len()..] == name;
+    let at_own_close = p.at(TokenKind::CloseTag) && p.current_tag_name() == Some(name);
     let end = if at_own_close || p.current().is_none() {
         items(p, stack)
     } else {

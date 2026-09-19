@@ -1,3 +1,10 @@
+//! The token vocabulary, which doubles as the tag-mode lexer.
+//!
+//! [`TokenKind`] names every run of source bytes the scanner can produce, in one flat
+//! enumeration over both of its modes, and carries the logos patterns the scanner runs
+//! inside a head. A [`Token`] is a kind and the bytes it covers, with the accessors
+//! that slice a lexeme back out of the source.
+
 use logos::Logos;
 
 use crate::Span;

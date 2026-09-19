@@ -11,7 +11,7 @@
 
 use std::fmt;
 
-use lemmon_syntax::{Range, Severity, Span};
+use lemmon_syntax::{Range, Severity, Span, WARNING_PREFIX};
 
 /// Something a stage has to say about a file, pointed at precisely: an error, which
 /// costs the stage its output, or a warning, which does not.
@@ -147,7 +147,7 @@ impl fmt::Display for Diagnostic {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let severity = match self.severity {
             Severity::Error => "",
-            Severity::Warning => "warning: ",
+            Severity::Warning => WARNING_PREFIX,
         };
         write!(f, "{}:{}: {severity}{}", self.path, self.span, self.message)?;
         for label in &self.labels {

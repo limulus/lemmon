@@ -6,7 +6,8 @@
 //! extension to [`EXPECTATIONS`] and one [`check`] call, never a second walker with its
 //! own blessing protocol.
 //!
-//! The one dependency is `lemmon-syntax`, for the [`LineIndex`] behind that display.
+//! The one dependency is `lemmon-syntax`, for the [`LineIndex`] behind that display and
+//! the [`DIAGNOSTICS_TRAILER`] line that marks where a trailer starts.
 //! `lemmon-syntax` takes this crate back as a *dev*-dependency, which Cargo allows: its
 //! library is built before this one, and only its test target links this one.
 
@@ -15,7 +16,7 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use lemmon_syntax::{LineIndex, Position};
+use lemmon_syntax::{DIAGNOSTICS_TRAILER, LineIndex, Position};
 use similar::TextDiff;
 
 /// Every extension a stage may check a case against, one per stage artifact.
@@ -193,9 +194,6 @@ pub fn check(group: &str, ext: &str, produce: impl Fn(&Case) -> String) {
     );
 }
 
-/// The line that opens a diagnostics trailer in every stage's expectation format.
-const TRAILER: &str = "--- diagnostics";
-
 /// Rewrites the byte spans of a diagnostics trailer as one-based `line:col..line:col`
 /// against the case's own source.
 ///
@@ -225,7 +223,8 @@ fn with_positions(case: &Case, produced: &str) -> String {
     out
 }
 
-/// The byte offset just past the last [`TRAILER`] line, or `None` if there is none.
+/// The byte offset just past the last [`DIAGNOSTICS_TRAILER`] line, or `None` if there
+/// is none.
 ///
 /// The *last*, because a rendered page is free to contain the marker as ordinary output;
 /// the trailer a stage appends is always the final one.
@@ -233,7 +232,7 @@ fn trailer_start(produced: &str) -> Option<usize> {
     let mut found = None;
     let mut offset = 0;
     for line in produced.split_inclusive('\n') {
-        if line.strip_suffix('\n').unwrap_or(line) == TRAILER {
+        if line.strip_suffix('\n').unwrap_or(line) == DIAGNOSTICS_TRAILER {
             found = Some(offset + line.len());
         }
         offset += line.len();
@@ -520,19 +519,19 @@ mod tests {
 
     #[test]
     fn renders_a_bare_span_as_one_based_line_and_column() {
-        let produced = format!("{TRAILER}\n5..7: unexpected\n");
+        let produced = format!("{DIAGNOSTICS_TRAILER}\n5..7: unexpected\n");
         assert_eq!(
             with_positions(&case_of("ab\ncdef"), &produced),
-            format!("{TRAILER}\n2:3..2:5: unexpected\n")
+            format!("{DIAGNOSTICS_TRAILER}\n2:3..2:5: unexpected\n")
         );
     }
 
     #[test]
     fn renders_a_span_qualified_by_this_case_s_own_path() {
-        let produced = format!("{TRAILER}\nsyntax/x.lem:0..2: not callable\n");
+        let produced = format!("{DIAGNOSTICS_TRAILER}\nsyntax/x.lem:0..2: not callable\n");
         assert_eq!(
             with_positions(&case_of("ab\ncd"), &produced),
-            format!("{TRAILER}\nsyntax/x.lem:1:1..1:3: not callable\n")
+            format!("{DIAGNOSTICS_TRAILER}\nsyntax/x.lem:1:1..1:3: not callable\n")
         );
     }
 
@@ -541,16 +540,18 @@ mod tests {
     /// nowhere.
     #[test]
     fn leaves_a_span_in_another_file_in_bytes() {
-        let produced = format!("{TRAILER}\nsyntax/other.lem:0..2: defined here\n");
+        let produced =
+            format!("{DIAGNOSTICS_TRAILER}\nsyntax/other.lem:0..2: defined here\n");
         assert_eq!(with_positions(&case_of("ab\ncd"), &produced), produced);
     }
 
     #[test]
     fn keeps_the_indent_of_a_label() {
-        let produced = format!("{TRAILER}\n5..7: redefined\n  0..1: first here\n");
+        let produced =
+            format!("{DIAGNOSTICS_TRAILER}\n5..7: redefined\n  0..1: first here\n");
         assert_eq!(
             with_positions(&case_of("ab\ncdef"), &produced),
-            format!("{TRAILER}\n2:3..2:5: redefined\n  1:1..1:2: first here\n")
+            format!("{DIAGNOSTICS_TRAILER}\n2:3..2:5: redefined\n  1:1..1:2: first here\n")
         );
     }
 
@@ -558,8 +559,9 @@ mod tests {
     /// agreement target.
     #[test]
     fn leaves_the_tree_above_the_marker_untouched() {
-        let produced =
-            format!("Root@0..7\n  Text@0..7 \"ab\\ncdef\"\n\n{TRAILER}\n5..7: x\n");
+        let produced = format!(
+            "Root@0..7\n  Text@0..7 \"ab\\ncdef\"\n\n{DIAGNOSTICS_TRAILER}\n5..7: x\n"
+        );
         let placed = with_positions(&case_of("ab\ncdef"), &produced);
         assert!(
             placed.starts_with("Root@0..7\n  Text@0..7 \"ab\\ncdef\"\n\n"),
@@ -577,7 +579,7 @@ mod tests {
 
     #[test]
     fn leaves_an_empty_trailer_alone() {
-        let produced = format!("Root@0..2\n\n{TRAILER}\n");
+        let produced = format!("Root@0..2\n\n{DIAGNOSTICS_TRAILER}\n");
         assert_eq!(with_positions(&case_of("ab"), &produced), produced);
     }
 
@@ -585,10 +587,16 @@ mod tests {
     /// appends is always the last one.
     #[test]
     fn takes_the_last_marker_as_the_one_that_opens_the_trailer() {
-        let produced = format!("{TRAILER}\nnot a diagnostic at all\n{TRAILER}\n0..2: x\n");
+        let produced = format!(
+            "{DIAGNOSTICS_TRAILER}\nnot a diagnostic at all\n\
+             {DIAGNOSTICS_TRAILER}\n0..2: x\n"
+        );
         assert_eq!(
             with_positions(&case_of("ab"), &produced),
-            format!("{TRAILER}\nnot a diagnostic at all\n{TRAILER}\n1:1..1:3: x\n")
+            format!(
+                "{DIAGNOSTICS_TRAILER}\nnot a diagnostic at all\n\
+                 {DIAGNOSTICS_TRAILER}\n1:1..1:3: x\n"
+            )
         );
     }
 
@@ -596,10 +604,10 @@ mod tests {
     /// its own is not mistaken for it.
     #[test]
     fn reads_the_span_from_the_front_of_the_line() {
-        let produced = format!("{TRAILER}\n0..2: expected 4..9 here\n");
+        let produced = format!("{DIAGNOSTICS_TRAILER}\n0..2: expected 4..9 here\n");
         assert_eq!(
             with_positions(&case_of("ab"), &produced),
-            format!("{TRAILER}\n1:1..1:3: expected 4..9 here\n")
+            format!("{DIAGNOSTICS_TRAILER}\n1:1..1:3: expected 4..9 here\n")
         );
     }
 
@@ -608,14 +616,14 @@ mod tests {
         expected = "syntax/x: this trailer line carries no span: something went wrong"
     )]
     fn refuses_a_trailer_line_that_carries_no_span() {
-        let produced = format!("{TRAILER}\nsomething went wrong\n");
+        let produced = format!("{DIAGNOSTICS_TRAILER}\nsomething went wrong\n");
         let _ = with_positions(&case_of("ab"), &produced);
     }
 
     #[test]
     #[should_panic(expected = "syntax/x: this trailer line carries no span: 0..zz: bad")]
     fn refuses_a_trailer_line_whose_span_is_not_a_byte_range() {
-        let produced = format!("{TRAILER}\n0..zz: bad\n");
+        let produced = format!("{DIAGNOSTICS_TRAILER}\n0..zz: bad\n");
         let _ = with_positions(&case_of("ab"), &produced);
     }
 

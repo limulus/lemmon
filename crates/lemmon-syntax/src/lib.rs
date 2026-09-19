@@ -14,17 +14,19 @@ mod front_matter;
 mod line_index;
 mod parser;
 mod scanner;
+mod suggest;
 mod syntax_kind;
 mod token;
 
 pub use ast::AstNode;
-pub use diagnostic::{Diagnostic, Label, Severity, nearest};
+pub use diagnostic::{DIAGNOSTICS_TRAILER, Diagnostic, Label, Severity, WARNING_PREFIX};
 pub use document::{DocumentParse, parse_document};
 pub use front_matter::{FrontMatter, front_matter};
 pub use line_index::{LineIndex, Position, Range};
 pub use parser::{Parse, dump, parse, tag_dump};
 pub use scanner::{ScanResult, scan};
-pub use syntax_kind::{Lemmon, SyntaxElement, SyntaxKind, SyntaxNode, SyntaxToken};
+pub use suggest::nearest;
+pub use syntax_kind::{Lemmon, SyntaxKind, SyntaxNode, SyntaxToken};
 pub use token::{Token, TokenKind};
 
 /// A byte range into a source file.

@@ -1,3 +1,11 @@
+//! The one flat kind enumeration rowan stores, and the language marker over it.
+//!
+//! [`SyntaxKind`] lists every token kind in [`TokenKind`] order, so that a scanner token
+//! can be written into the tree unchanged, then the one token the parsers make without
+//! the scanner, then every node kind. [`Lemmon`] is the [`Language`](rowan::Language)
+//! impl that converts a kind to and from the bare `u16` rowan stores, and [`SyntaxNode`]
+//! and [`SyntaxToken`] are the tree types over it.
+
 use crate::TokenKind;
 
 /// Defines [`SyntaxKind`] and, from the same list, the table that maps a raw `u16` back
@@ -291,8 +299,6 @@ impl rowan::Language for Lemmon {
 pub type SyntaxNode = rowan::SyntaxNode<Lemmon>;
 /// A token of the red tree.
 pub type SyntaxToken = rowan::SyntaxToken<Lemmon>;
-/// Either a node or a token of the red tree.
-pub type SyntaxElement = rowan::SyntaxElement<Lemmon>;
 
 #[cfg(test)]
 mod tests {

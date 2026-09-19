@@ -11,7 +11,8 @@
 //! nothing in the parser reads it.
 
 use super::Parse;
-use crate::{Severity, Span, SyntaxKind, SyntaxNode};
+use crate::ast::{AstNode, Item};
+use crate::{DIAGNOSTICS_TRAILER, Severity, Span, SyntaxKind, SyntaxNode, WARNING_PREFIX};
 
 /// Renders a tree and its diagnostics in the bake-off's dump format.
 ///
@@ -52,12 +53,12 @@ pub fn dump(parse: &Parse) -> String {
         out.push('\n');
         depth += 1;
     }
-    out.push_str("\n--- diagnostics\n");
+    out.push_str(&format!("\n{DIAGNOSTICS_TRAILER}\n"));
     for diagnostic in &parse.diagnostics {
         let Span { start, end } = diagnostic.span;
         let severity = match diagnostic.severity {
             Severity::Error => "",
-            Severity::Warning => "warning: ",
+            Severity::Warning => WARNING_PREFIX,
         };
         out.push_str(&format!(
             "{start}..{end}: {severity}{}\n",
@@ -98,38 +99,30 @@ pub fn tag_dump(parse: &Parse) -> String {
 /// Whether an element of `kind` is a tag boundary rather than tag interior — the
 /// elements [`tag_dump`] keeps.
 ///
+/// Every [`Item`] is a boundary, taken from [`Item::can_cast`] rather than listed a
+/// second time here: a tag added to `Item` and forgotten in a hand-kept list would be
+/// absent from every `.tags` file, with its children lifted a level, and blessing would
+/// write that absence into the expectations with no test objecting. The kinds named
+/// below are the ones that are no item — the file and its front matter, the separators
+/// and parts that only stand inside another tag, and a block's close.
+///
 /// `in_items` says whether the element stands where items run, directly under a `Root`
 /// or a `Block`. That is the only place an `Error` is a boundary, and it is why this
 /// takes more than a kind: the same `Error`, node or token, is tag interior inside a
 /// head. No other boundary is position-dependent.
 fn is_boundary(kind: SyntaxKind, in_items: bool) -> bool {
-    matches!(
-        kind,
-        SyntaxKind::Root
-            | SyntaxKind::FrontMatter
-            | SyntaxKind::TextRun
-            | SyntaxKind::AccessTag
-            | SyntaxKind::IfTag
-            | SyntaxKind::ElseIfTag
-            | SyntaxKind::ElseTag
-            | SyntaxKind::ForTag
-            | SyntaxKind::LetVoid
-            | SyntaxKind::LetBlock
-            | SyntaxKind::LetFrom
-            | SyntaxKind::FnBlock
-            | SyntaxKind::FnVoid
-            | SyntaxKind::TypeDecl
-            | SyntaxKind::EnumDecl
-            | SyntaxKind::MatchTag
-            | SyntaxKind::CaseTag
-            | SyntaxKind::DefaultTag
-            | SyntaxKind::StyleBlock
-            | SyntaxKind::HeadBlock
-            | SyntaxKind::ScriptVoid
-            | SyntaxKind::UnsupportedTag
-            | SyntaxKind::UnknownTag
-            | SyntaxKind::CloseTag
-    ) || (in_items && kind == SyntaxKind::Error)
+    Item::can_cast(kind)
+        || matches!(
+            kind,
+            SyntaxKind::Root
+                | SyntaxKind::FrontMatter
+                | SyntaxKind::ElseIfTag
+                | SyntaxKind::ElseTag
+                | SyntaxKind::CaseTag
+                | SyntaxKind::DefaultTag
+                | SyntaxKind::CloseTag
+        )
+        || (in_items && kind == SyntaxKind::Error)
 }
 
 fn project(node: &SyntaxNode, depth: usize, in_items: bool, out: &mut String) {
