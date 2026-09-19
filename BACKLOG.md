@@ -40,11 +40,6 @@ refactor priority: reshaping is cheapest before more code is built on what it re
   file's `//!` still states one responsibility; the reason is ∆99b, which adds generator
   expansion and neighbours to exactly this code, so drop this item if ∆99b has landed.
   Planned in `docs/plans/∆KIl-load-page-table.md`
-- ∆8jR Move the span-by-text test helper (`at`, `all_of`) from `lemmon-vm`'s `testing.rs` to
-  `lemmon-corpus`, the promotion ∆SSw named — `lemmon-syntax` cannot reach it, so about 53
-  of its span assertions and four in `crates/lemmon-vm/tests/corpus.rs` are hand-counted
-  offsets, which CLAUDE.md forbids. Convert them, and share `lemmon-syntax`'s thrice-copied
-  `messages` test helper. Planned in `docs/plans/∆8jR-span-helper-to-corpus.md`
 - ∆omv Negative-test the wasm import allowlist — `wasm:check` is the mechanical check on
   invariant 1, yet its decision lives in the uncovered `scripts/check-wasm.ts` and no test
   has fed it a forbidden import. Move `scripts/wasm-artifact.ts` into `scripts/lib/` with
