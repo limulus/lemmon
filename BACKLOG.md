@@ -25,16 +25,6 @@ refactor priority: reshaping is cheapest before more code is built on what it re
   each has since broken unseen: a retired diagnostics contract, then a corpus case ∆Bhz made
   a deliberate error. Give each a one-pass mode without timing loops, run from `verify:js`,
   which needs the staged artifact anyway. Notes in `docs/plans/∆W1D-gate-spike-and-bench.md`
-- ∆RJp Make `crates/lemmon-vm/src/vm.rs` a directory — its `//!` describes the stack
-  machine, but the file also holds the three run entry points (`render`, `render_page`,
-  `invoke`) and the operator table, 233 production lines with no `Vm` in them. ∆xBO and
-  ∆99b both land in the entry points. Planned in
-  `docs/plans/∆RJp-vm-entry-points-and-operators.md`
-- ∆KIl Lift the page table out of `crates/lemmon-vm/src/load/mod.rs` into `load/pages.rs` —
-  `LoadedPage`, `PlannedPage`, `Store::page`/`plan`, the url checks and `Loader::page`. The
-  file's `//!` still states one responsibility; the reason is ∆99b, which adds generator
-  expansion and neighbours to exactly this code, so drop this item if ∆99b has landed.
-  Planned in `docs/plans/∆KIl-load-page-table.md`
 - ∆omv Negative-test the wasm import allowlist — `wasm:check` is the mechanical check on
   invariant 1, yet its decision lives in the uncovered `scripts/check-wasm.ts` and no test
   has fed it a forbidden import. Move `scripts/wasm-artifact.ts` into `scripts/lib/` with
@@ -190,9 +180,11 @@ reproduced cold.
   go with ∆7wK: a block's default content carries none.)
 - ∆RuS A builtin's arity mistake is worded twice — the compiler says `.slugify` takes 0
   arguments (`builtin` in `compile/rules.rs`; `render/errors/method-errors.html`) and the VM
-  says `.slugify()` (`call_dynamic` in `vm.rs`; `render/errors/runtime-method-arity.html`),
-  so the text depends on whether the receiver is typed or `any`. Pick one wording and state
-  it once on `Builtin`; a `lem-fn`'s arity sentence is written twice the same way
+  says `.slugify()` (`call_dynamic` in `vm/mod.rs`; `…/runtime-method-arity.html`), so the
+  text depends on whether the receiver is typed or `any`. Pick one wording and state it once
+  on `Builtin`; a `lem-fn`'s arity sentence is written twice the same way
+
+
 
 ## Someday/Maybe
 
