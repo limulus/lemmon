@@ -172,6 +172,11 @@ reproduced cold.
   says `.slugify()` (`call_dynamic` in `vm/mod.rs`; `…/runtime-method-arity.html`), so the
   text depends on whether the receiver is typed or `any`. Pick one wording and state it once
   on `Builtin`; a `lem-fn`'s arity sentence is written twice the same way
+- ∆1gY An ambient binding accepts a misspelled field — `AmbientBinding` in
+  `crates/lemmon-wasm/src/wire.rs` is an untagged serde enum, the one inbound shape without
+  `deny_unknown_fields`, so `{"bindingsOf": "site.lem", "typo": 1}` is taken with no error
+  (invariant 10). Refuse it, naming the field, which serde's untagged error does not, and
+  drop the exception `packages/core`'s `types.ts` header records (found in ∆rKx)
 
 
 
