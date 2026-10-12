@@ -8,7 +8,7 @@ backlog item, scaffolded by `delto complete` (see `delto complete --help`).
 - **Filename**: `∆xxx-slug.md` — `∆xxx` is the immutable deltoid from `BACKLOG.md`,
   `slug` a short kebab-case title.
 - **Frontmatter**: `id` (the deltoid, `∆` included) and `completed`
-  (`YYYY-MM-DD HH:MM:SS ±HH:MM`), per the delto spec v1.0.
+  (`YYYY-MM-DD HH:MM:SS ±HH:MM`), per the delto spec.
 - **Sort order**: filenames are not chronological by design. The `completed`
   frontmatter is the source of truth; `git log docs/journal/` gives chronological
   history when needed.

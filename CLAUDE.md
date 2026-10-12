@@ -314,13 +314,16 @@ Diagnostics raised only during declaration emit surface in `npm run build`, not 
 
 ## Backlog & journal (delto)
 
-`BACKLOG.md` is delto-managed: items start with a `∆xxx` deltoid; `; needs:` edges are hard
-prerequisites only. Use `npx @limulus/delto@1 surface` to find eligible work, `claim` before
+`BACKLOG.md` is delto-managed: an item is a `∆xxx` deltoid and a title, with at most a
+two-line description; a `needs:` sub-bullet lists hard prerequisites only. The context an
+item cannot hold is its brief in `docs/briefs/`, named by its deltoid; read it before
+planning. Use `npx @limulus/delto@1 surface` to find eligible work, `claim` before
 starting, `complete` (then remove the item) when Eric accepts. Completed work gets a journal
 entry in `docs/journal/`. Mint new deltoids with
 `npx @limulus/delto@1 mint --journal-dir docs/journal` — never invent them. An item
 planned by an earlier session names its plan in `docs/plans/`; start from that plan, and
-fold it into the journal entry's Planning section and delete it when the item completes.
+fold it and the item's brief into the journal entry's Planning section, deleting both, when
+the item completes.
 
 An item's _why_ is reliable and its _how_ is not: items are written at the end of other
 work, from memory of the code. Verify its technical claims before planning around them,
