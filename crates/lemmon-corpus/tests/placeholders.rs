@@ -107,7 +107,7 @@ fn fault(placeholder: &Placeholder, backlog: &str, journal: &Path) -> Option<Str
                 entry.display()
             ));
         }
-        if !backlog.contains(&format!("- {id} ")) {
+        if !backlog.contains(&format!("- `{id}` ")) {
             return Some(format!("{at}: {id} is not an item in BACKLOG.md"));
         }
     }
@@ -195,7 +195,7 @@ fn flags_a_placeholder_that_names_no_item() {
         text: "not here yet".into(),
     };
     assert_eq!(
-        fault(&p, "- ∆abc x\n", journal.path()),
+        fault(&p, "- `∆abc` x\n", journal.path()),
         Some("a.rs:7: names no backlog item: not here yet".into())
     );
 }
@@ -211,7 +211,7 @@ fn flags_an_item_that_has_shipped() {
         text: "not here yet (∆abc)".into(),
     };
     assert_eq!(
-        fault(&p, "- ∆abc x\n", journal.path()),
+        fault(&p, "- `∆abc` x\n", journal.path()),
         Some(format!(
             "a.rs:7: ∆abc has shipped ({}); sweep the placeholder",
             entry.display()
@@ -228,7 +228,7 @@ fn flags_an_item_the_backlog_does_not_hold() {
         text: "_Not yet (∆zzz)_".into(),
     };
     assert_eq!(
-        fault(&p, "- ∆abc x\n", journal.path()),
+        fault(&p, "- `∆abc` x\n", journal.path()),
         Some("docs/x.md:1: ∆zzz is not an item in BACKLOG.md".into())
     );
 }
@@ -241,5 +241,5 @@ fn passes_a_placeholder_naming_a_pending_item() {
         line: 7,
         text: "not here yet (∆abc)".into(),
     };
-    assert_eq!(fault(&p, "- ∆abc x\n", journal.path()), None);
+    assert_eq!(fault(&p, "- `∆abc` x\n", journal.path()), None);
 }
