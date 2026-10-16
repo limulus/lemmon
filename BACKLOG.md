@@ -13,111 +13,202 @@ Standing initiative for reshaping working code. It comes first so that document 
 gives a refactor priority: reshaping is cheapest before more code is built on what it
 reshapes.
 
-## Phase 1 — Language complete, tooling from day one
+## limulus.net on Lemmon
 
-Seed items for the next phase (architecture doc 3, phase 1); expect these to be split
-further at claim time.
+Exit criterion (architecture doc 3, D15): `lem build` over a Lemmon-ported limulus-dot-net
+produces a `dist/` that the parity harness reports as zero unexpected diffs against the 11ty
+build, and limulus.net cuts over with its CloudFront config untouched (D13). The work is cut
+into slices, each an epic that ends in software Eric runs: the last sentence of its
+description is the acceptance test, and nothing from the next slice starts before it is
+true. The shell is built here (`@limulus/lemmon-shell`, docs/architecture.md §Build
+pipeline, §Shell plugin API); the port lives in limulus-dot-net on a branch while 11ty stays
+green on main, and that branch is where every slice is accepted. A language or core feature
+lands inside the slice that needs it.
+
+### 1. A page from `lem build`
+
+The walking skeleton: the thinnest path from the branch's files to pages on disk, and the
+comparator that accepts every later slice. Eric runs `lem build` in the limulus-dot-net port
+branch, opens the eight `feed/` posts from `dist/` in a browser, and `npm run parity` there
+reports them against the 11ty `dist/` with every difference in a named forgiveness class.
+
+- `∆pXO` Lemmon authoring skill
+  - A checked-in agent skill for writing `.lem`, distilled from docs/language.md, not a copy
+    of it: porting limulus.net's layouts means writing a lot of Lemmon by agent
+- `∆x8D` Shell skeleton: walk, front matter, config
+  - `@limulus/lemmon-shell` with a `lem` bin: walk the input, classify files, parse front
+    matter with YAML positions into spans, and read a minimal `lemmon.config.ts`
+- `∆muD` `lem build` writes the-rebound to `dist/`
+  - Declare the host, compile, load, plan, render, write HTML and passthrough; reproduces
+    what `test:fidelity` renders from a directory of files. The first usable `lem`
+  - needs: `∆x8D`
+- `∆foi` Port: `site.lem`, three layouts, the posts' components
+  - `Page` and `Post`, the base, page and article layouts and the components the eight feed
+    posts use, written as an author would, on the limulus-dot-net port branch
+- `∆Zo7` `npm run parity` for the eight posts
+  - The comparator from `scripts/lib/rendered-html.ts` run per page against the 11ty
+    `dist/`, with an allowlist of forgiveness classes and their counts
+  - needs: `∆muD`, `∆foi`
+
+### 2. Styled and formatted
+
+Marks resolved in the shell, CSS as per-page bundles, output formatted. Eric opens the eight
+posts and sees them identical to the live site, with their CSS as per-page hashed bundles
+under `/assets/immutable/`, and `npm run parity` reports zero unexpected differences for
+them.
+
+- `∆F4y` Mark resolution and the default plugin
+  - Producers and decorators resolve marks in the shell (D42), and the default plugin's
+    `styles` producer writes per-page hashed CSS bundles under `/assets/immutable/`
+  - needs: `∆muD`
+- `∆D3R` `lem-style` in the ported layouts
+  - The three CSS files and the components' scoped styles become `lem-style` blocks in the
+    port, replacing the interim `<link>` to passthrough-copied CSS
+  - needs: `∆F4y`, `∆foi`
+- `∆Oyi` dprint output transform
+  - The dprint-markup `transformOutput` (lineWidth 92) from `11ty/dprint.ts`, the first
+    output transform; the comparator, not dprint, stays the judge of parity
+  - needs: `∆F4y`
+
+### 3. The daily loop
+
+The authoring loop Eleventy provides today, without incrementality: a change rebuilds
+everything, and the rebuild time recorded here decides whether the Incrementality epic
+opens. Eric runs `lem dev` in the branch, edits a post or a layout and sees the change in
+the browser, sees `lem check` report a deliberate error with its span, and sees a draft
+under `--drafts` that `lem build` omits.
+
+- `∆Vhi` `lem dev`
+  - Dev server with COOP/COEP headers and live reload; a change rebuilds everything, and the
+    full rebuild time is recorded for the Incrementality epic. Replaces `eleventy --serve`
+  - needs: `∆muD`
+- `∆1rD` `lem check` and `--drafts`
+  - `lem check` prints spanned diagnostics without writing; the `draft` field on `Page` and
+    the `--drafts` flag (D19) show a draft in `lem dev` that `lem build` omits
+  - needs: `∆muD`, `∆Vhi`
+
+### 4. Every document page
+
+The plugin host in full, and the plugins and types the remaining sections need. Eric builds
+the branch and all 26 documents, code blocks highlighted and client JavaScript bundled to
+hashed URLs, compare clean.
+
+- `∆c4j` Plugin host
+  - The `Plugin` hooks in full (data, transformDocument, assets, transformOutput, emit,
+    commands, watch), plugin `.lem` via `lem-import` in `site.lem` (D23, D06), a content API
+  - needs: `∆F4y`
+- `∆d1N` esbuild asset pipeline
+  - Bundle `**/index.ts` + `**/worker.ts` (D09), resolve the `XXXXXXXX` placeholder (D10),
+    and hand the manifest to the host declaration at `compile` as compile-time facts
+  - needs: `∆muD`, `∆Q6L`
+- `∆tAw` Remaining schemas and the video layout
+  - `site.lem` types for links, TILs, photos, vod and authors, the video layout, and the
+    components the first slice did not need, so every document page has its types
+  - needs: `∆foi`
+- `∆ITg` Computed defaults and the link-post appender
+  - Typed front matter for links, penumbra and TILs, computed defaults replacing
+    `eleventyComputed.js`, the link-post appender, markdown-it's extras in comrak
+  - needs: `∆c4j`, `∆tAw`
+- `∆Nxd` Default highlighter plugin
+  - highlight.js as a `code` producer shipped with the shell, so a new site highlights out
+    of the box and limulus.net's `<pre><code class="hljs">` markup is reproduced exactly
+  - needs: `∆c4j`, `∆7wK`
+- `∆shS` Revisions plugin
+  - `revisions.json` as data feeding `lastModified`, plus the `update-revisions` command
+    reimplemented on the content API instead of spinning up Eleventy
+  - needs: `∆c4j`
+- `∆IvY` svg-sprite plugin
+  - Inline sprite from `assets/svg/{common,photos}` as an `emit`/data hook replacing
+    `eleventy-plugin-svg-sprite`, run after the side-channel splice
+  - needs: `∆c4j`
+- `∆yOJ` Link and asset integrity check
+  - The link and asset integrity check over `dist/`: links resolve to written pages or
+    passthrough files, and `asset()` URLs to manifest entries, CloudFront untouched
+  - needs: `∆d1N`, `∆muD`
+
+### 5. Index and generated pages
+
+Generators land in the core here, needed by exactly two pages; the seven collection-reading
+pages are page templates. Eric opens `dist/` from `/` and reaches every page of the site,
+each comparing clean.
 
 - `∆99b` Generators and neighbours
   - A page template whose `for:` key names a field and an `<ambient value>.<field>` list
     becomes one page per item at load, its url from its type's default (D43)
   - needs: `∆Bhz`
-- `∆xBO` Render-reported deps
-  - `render` reports which units and records a page read, so `lem dev` (`∆Vhi`) re-renders
-    only a change's dependents
-- `∆5MM` tree-sitter-lemmon + LSP skeleton
-  - Embedded-template grammar, corpus agreement test wired into CI, `@limulus/lemmon-lsp`
-    serving diagnostics and schema completions; editor tooling is a day-one commitment (D16)
-- `∆pXO` Lemmon authoring skill
-  - A checked-in agent skill for writing `.lem`, distilled from docs/language.md, not a copy
-    of it: porting limulus.net's layouts means writing a lot of Lemmon by agent
-- `∆Qr2` Facts and modules across the boundary
-  - `compile` reports each unit's compile-time facts so `∆4tG` keys its unit cache on
-    `hash(text) + hash(facts)` and a content edit never recompiles its layouts (D25, D42)
-- `∆MlD` Reconcile the architecture artifacts
-  - Apply every entry in `docs/artifact-changes.md` to the three Claude Artifacts Eric owns
-    and clear the ledger; applied once, at the end of Phase 1, so this is deliberately last
-  - needs: `∆Q6L`, `∆BfR`, `∆1Hp`, `∆7wK`, `∆Bhz`, `∆99b`, `∆Qr2`, `∆xBO`, `∆5MM`, `∆pXO`
-
-## Phase 2 — The static site generator: limulus.net from a Lemmon port
-
-Exit criterion (architecture doc 3, D15): `lem build` over a Lemmon-ported limulus-dot-net
-produces a `dist/` that the parity harness reports as zero unexpected diffs against the 11ty
-build, and limulus.net cuts over with its CloudFront config untouched (D13). The shell is
-built here (`@limulus/lemmon-shell`, docs/architecture.md §Build pipeline, §Shell plugin
-API); the port itself lives in limulus-dot-net on a branch while 11ty stays green on main.
-
-### Shell: `lem build`
-
-- `∆4tG` Build pipeline + CLI
-  - `lem build` walks the input, loads `lemmon.config.ts`, and drives the core across a
-    worker pool; `lem check` prints spanned diagnostics. The shell's backbone
-  - needs: `∆Bhz`
-- `∆7Xs` Output writer
-  - HTML to disk with marks resolved, the `styles` producer writing per-page hashed CSS
-    bundles, passthrough copy by glob, and a link/asset integrity check
-  - needs: `∆4tG`, `∆1Hp`
-- `∆d1N` esbuild asset pipeline
-  - Bundle `**/index.ts` + `**/worker.ts` (D09), resolve the `XXXXXXXX` placeholder (D10),
-    and hand the manifest to the host declaration at `compile` as compile-time facts
-  - needs: `∆4tG`, `∆Q6L`
-- `∆PgF` Plugin host
-  - The `Plugin` hooks (D42), plugin `.lem` bound via `lem-import` in `site.lem` (D23, D06),
-    and a content API for out-of-build tools. Gates the port (D12)
-  - needs: `∆4tG`
-- `∆Vhi` `lem dev`
-  - Dev server with COOP/COEP headers, incremental rebuilds from render-reported deps.
-    Replaces `eleventy --serve --incremental`, the daily authoring loop
-  - needs: `∆4tG`, `∆xBO`
-- `∆V7i` `lem init`
-  - Scaffold a working blog as plain site code. The core has no content conventions (D30),
-    so this is where a new site gets them — readable and editable, never built in
-  - needs: `∆4tG`
-- `∆Nxd` Default highlighter plugin
-  - highlight.js as a `code` producer shipped with the shell, so a new site highlights out
-    of the box and limulus.net's `<pre><code class="hljs">` markup is reproduced exactly
-  - needs: `∆PgF`, `∆7wK`
-
-### limulus.net plugins (D12)
-
-- `∆F9l` svg-sprite + dprint plugins
-  - Inline sprite replacing `eleventy-plugin-svg-sprite`, and the dprint-markup
-    `transformOutput`, so formatted HTML diffs cleanly in the parity harness
-  - needs: `∆PgF`
+- `∆LsH` Index pages as page templates
+  - Home, the five section indexes, the author page and `404` as `.lem` page templates with
+    front matter (D41) reading their collections through glob bindings
+  - needs: `∆tAw`
 - `∆pP5` Photos plugin
   - `photos.json` as typed data with alias resolution, and `lem photos add` wrapping
     `bin/process-photos.js`. A photo's URL is its stored `alias`, never `title.slugify()`
-  - needs: `∆PgF`
-- `∆shS` Revisions plugin
-  - `revisions.json` as data feeding `lastModified`, plus the `update-revisions` command
-    reimplemented on the content API instead of spinning up Eleventy
-  - needs: `∆PgF`
+  - needs: `∆c4j`
+- `∆hvm` Photo and TIL topic pages as generators
+  - `photos/photo` and `tils/topics`, the two paginated pages, as generator templates whose
+    `for:` key names a list (D43), with `prev` and `next` filled by the loader
+  - needs: `∆99b`, `∆pP5`, `∆tAw`
 
-### The port (limulus-dot-net, on a branch)
+### 6. Feeds, sitemap, cutover
 
-- `∆rT5` Schemas, layouts, components
-  - `site.lem` types and ~20 WebC components rewritten as `.lem` functions (D20). First real
-    exercise of the language at scale; expect it to feed fixes back into Phase 1 items
-  - needs: `∆Q6L`, `∆1Hp`, `∆eag`
-- `∆o24` Content + markdown parity
-  - Typed front matter for every `.md` (globs replace `tags`), computed defaults replacing
-    `eleventyComputed.js`, the link-post appender as `transformDocument`
-  - needs: `∆rT5`, `∆Nxd`, `∆PgF`
-- `∆ePP` Page templates, generated and non-HTML pages
-  - The index pages and 404 as page templates (D41), photo and TIL topic pages as generators
-    (D43), three feeds, `sitemap.xml`: the last pages on WebC and 11ty plugins
-  - needs: `∆rT5`, `∆99b`
+The pages that read other pages' finished output, the whole-site parity run, and the switch.
+Eric sees `npm run parity` report zero unexpected differences over the whole `dist/`, and
+limulus.net builds and deploys with `lem` with its CloudFront config untouched.
 
-### Parity and cutover (D15)
-
-- `∆hyz` Parity harness
-  - Build old (11ty) and new (`lem`) dists, diff with an allowlist, report per-page. The
-    acceptance bar for the whole initiative, so it lands before the port is "done"
-  - needs: `∆7Xs`, `∆d1N`, `∆F9l`, `∆pP5`, `∆shS`, `∆o24`, `∆ePP`
+- `∆zu0` Feeds and sitemap in a second phase
+  - The three feeds (rss, two atom, `/feed.xsl`) and `sitemap.xml` with video entries as
+    templates rendered after every other page, reading finished output as a string source
+  - needs: `∆LsH`, `∆hvm`
+- `∆Zg9` Whole-site parity
+  - `npm run parity` over the whole `dist/` against the 11ty build, every difference in a
+    forgiveness class with its count, at zero unexpected differences; the acceptance bar
+  - needs: `∆zu0`, `∆Zo7`
 - `∆oAl` Cutover
   - At zero unexpected diffs, replace Eleventy with `lem` in limulus-dot-net, single switch,
     no dual-serving, CloudFront config unchanged
-  - needs: `∆hyz`, `∆Vhi`
+  - needs: `∆Zg9`, `∆Vhi`
+
+## After the cutover
+
+Work the port does not need, in priority order. Each epic holds one or two items today.
+
+### A second site
+
+`lem init`'s scaffold is the second site, which keeps the shell honest about limulus.net's
+specifics (D17).
+
+- `∆V7i` `lem init`
+  - Scaffold a working blog as plain site code. The core has no content conventions (D30),
+    so this is where a new site gets them — readable and editable, never built in
+  - needs: `∆muD`
+
+### Editor tooling
+
+Independent of every slice and usable on its own, so it may run in a parallel session at any
+point; this is only its default place.
+
+- `∆5MM` tree-sitter-lemmon + LSP skeleton
+  - Embedded-template grammar, corpus agreement test wired into CI, `@limulus/lemmon-lsp`
+    serving diagnostics and schema completions; editor tooling is a day-one commitment (D16)
+
+### Incrementality
+
+Opens only if the full rebuild time recorded in the daily-loop slice exceeds one second;
+until then, rebuilding the whole site is the incremental build.
+
+- `∆xBO` Render-reported deps
+  - `render` reports which units and records a page read, so `lem dev` (`∆Vhi`) re-renders
+    only a change's dependents
+- `∆Qr2` Compile-time facts across the boundary
+  - `compile` reports each unit's compile-time facts so `∆muD` keys its unit cache on
+    `hash(text) + hash(facts)` and a content edit never recompiles its layouts (D25, D42)
+
+### Reconcile the architecture artifacts
+
+- `∆MlD` Reconcile the architecture artifacts
+  - Apply every entry in `docs/artifact-changes.md` to the three Claude Artifacts Eric owns
+    and clear the ledger; applied once, after the cutover, so this is deliberately last
+  - needs: `∆oAl`, `∆V7i`, `∆5MM`, `∆xBO`, `∆Qr2`
 
 ## Defects
 
@@ -152,7 +243,7 @@ initiative before starting it.
 - `∆SDN` Pure wasm plugin values
   - Revisit D06 ("plugins cannot inject logic") for a plugin-shipped wasm module with no
     imports, for what a template must compute on and a mark cannot carry (D42)
-  - needs: `∆PgF`, `∆7wK`
+  - needs: `∆c4j`, `∆7wK`
 - `∆5pk` `lem` code blocks highlighted by the core's scanner
   - A `code` producer for `lem` built from `lemmon-syntax`'s real scanner, so no
     `.sublime-syntax` Lemmon grammar drifts from the parser and tree-sitter-lemmon
@@ -161,3 +252,6 @@ initiative before starting it.
   - A `lem-let x: string` block whose body is scanned as text to its close tag, so a
     template can hand a multi-line source to a `code` or diagram producer as a fence does
   - needs: `∆7wK`
+- `∆v6d` Serialize the linked program
+  - `exportModule`/`importModule` serialize the linked program (D14 headroom), deferred from
+    `∆TNT` because a fact nothing consumes is a comment

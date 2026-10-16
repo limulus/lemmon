@@ -94,7 +94,7 @@ const decorates = (handler: MarkHandler, mark: Mark): boolean =>
  * produce one name without keys — if a producer returns a number of replacements other
  * than one per mark it answers, or if the marks do not stand in order: each a caller
  * bug rather than anything a template can provoke. (The plugin-load error naming both
- * plugins that claim a key is the shell's, ∆PgF.)
+ * plugins that claim a key is the shell's, ∆F4y.)
  */
 export function resolveMarks(
   result: RenderResult,

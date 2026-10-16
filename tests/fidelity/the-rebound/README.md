@@ -50,8 +50,7 @@ below say the new numbers.
 Page-specific, hardcoded ports of the WebC layouts and components — including WebC's
 scoped-class hashes and per-page svg desc counters — parameterized only where
 `data.json` feeds them. They are a rendering-fidelity fixture, not the start of the real
-limulus.net port (that arrives with the Phase 1 language features: schemas, stdlib,
-channels).
+limulus.net port (that begins with `∆foi`, on the limulus-dot-net port branch).
 
 They are written the way an author would write them: a definition on its own lines with
 an indented body, one statement per line, a blank line between definitions. D26 takes the

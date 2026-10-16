@@ -139,7 +139,7 @@ pub struct Host {
 /// disjoint keys — so this is the merge of what they said: keys are unioned, while the
 /// payload and the key field are the name's own, and two claims naming different ones
 /// are refused by [`Host::with_claims`]. Two producers on one key are the shell's to
-/// refuse, naming both plugins (D42; ∆PgF): the core unions them.
+/// refuse, naming both plugins (D42; ∆F4y): the core unions them.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Claim {
     /// The keys the name's producers cover, sorted — what a did-you-mean at a key is

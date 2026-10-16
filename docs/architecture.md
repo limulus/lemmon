@@ -219,7 +219,7 @@ not a break:
    `/assets/immutable/…`, passthrough.
 9. **Post-process** (shell) — optional transforms (dprint), link/asset integrity check.
 10. **Second phase** (shell) — pages that read other pages' finished output (feeds,
-    ∆ePP) render after steps 6–9 have finished every other page, with those outputs
+    ∆zu0) render after steps 6–9 have finished every other page, with those outputs
     loaded back as a string source (D42).
 
 Dev incrementality comes from two reported sets. Render-reported deps: template edit →

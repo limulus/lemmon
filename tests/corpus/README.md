@@ -35,7 +35,7 @@ with `page`, `build`, and `site` typed from them. The group's directory is the s
 content root: a page under it — a `.md`, or a `.lem` that opens with front matter (D41)
 — is compiled as the record its own `type:` key names — the one raw key a shell reads
 before a page has a type — or else as the element type of the collection whose glob
-matched it, and it is loaded the way the shell will load it (∆4tG): its front matter
+matched it, and it is loaded the way the shell will load it (∆x8D): its front matter
 parsed with positions and handed to the loader as the one member of that collection, or
 on its own in `pages` when its key typed it and no glob holds it, beside fixed fixtures
 for the environment's other sources. So `host/pages/` and `host/tils/` hold documents of

@@ -527,3 +527,11 @@ moved it. Newest last. An entry is removed when its change has been applied.
   escaped as any string is; code blocks are `code` marks a highlight.js producer fills,
   reproducing `<pre><code class="hljs">` with `hljs-*` spans exactly, so the parity
   harness forgives nothing there (D42).
+
+- **Phases and the migration plan** — where the text sequences the work after Phase 0 as
+  Phase 1 (language complete) and Phase 2 (the shell, then the plugins, then the port, then
+  parity, then cutover): it is cut instead into six slices, each ending in software Eric
+  runs and accepts in the limulus-dot-net port branch, from `lem build` over the feed posts
+  to the cutover, with the parity comparator in use from the first slice. The exit criterion
+  and the single cutover (D15) are unchanged; a language feature lands in the slice that
+  needs it, and incremental rebuilds wait for a measured rebuild time that asks for them.

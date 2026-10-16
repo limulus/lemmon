@@ -83,7 +83,7 @@ impl Builtin {
             | Self::Script => {
                 unreachable!("parsed builtins are dispatched by name")
             }
-            Self::Import => "is not supported yet (∆PgF)",
+            Self::Import => "is not supported yet (∆c4j)",
         }
     }
 }
@@ -970,7 +970,7 @@ mod tests {
 
     #[test]
     fn names_the_item_each_opaque_builtin_waits_on() {
-        assert!(Builtin::Import.unsupported().ends_with("(∆PgF)"));
+        assert!(Builtin::Import.unsupported().ends_with("(∆c4j)"));
     }
 }
 

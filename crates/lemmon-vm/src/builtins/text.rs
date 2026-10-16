@@ -24,7 +24,7 @@ const WORDS_PER_MINUTE: u64 = 200;
 ///
 /// The Eleventy build counts words in the markdown *source* instead, where a link is
 /// its URL and a fenced block is its code. A page near a rounding boundary can
-/// therefore differ by a minute, which is a parity-harness question (∆hyz) and not a
+/// therefore differ by a minute, which is a parity-harness question (∆Zo7) and not a
 /// bug here: counting what a reader sees is the better answer.
 pub(super) fn reading_time(_vm: &mut dyn Machine, args: &[Value]) -> Result<Value, Fault> {
     // A mark's default content is text a reader sees, so it counts like any other.

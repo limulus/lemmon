@@ -9,8 +9,9 @@ Its first production site is limulus.net, which it will take over from Eleventy 
 a parity harness shows zero unexpected output diffs.
 
 **Status:** early implementation, sequenced in `BACKLOG.md`; Phase 0 (the spike — one real
-page rendering end-to-end from the WASM core) is done and Phase 1 is under way. The
-language runs end to end — scanner → parser → typed AST → compiler → VM, with `.md`
+page rendering end-to-end from the WASM core) is done, and the rest is cut into slices that
+each end in software Eric runs, the first being `lem build` over limulus.net's feed posts.
+The language runs end to end — scanner → parser → typed AST → compiler → VM, with `.md`
 through document mode — and what each stage settled is the decision index
 (`docs/decisions/README.md`, D01–D43), which is the status. The shape to hold in mind:
 the checker is the compiler's own walk (D31); a host declares the ambient environment a
@@ -328,8 +329,10 @@ the item completes.
 An item's _why_ is reliable and its _how_ is not: items are written at the end of other
 work, from memory of the code. Verify its technical claims before planning around them,
 and check the plan against the item's stated reason, not only its instruction. An item
-that plans as several is split at plan time, each part minted; a session that has
-reshaped the backlog hands off through `docs/plans/` rather than building.
+that plans as several is split inside its epic, each part minted; an epic's acceptance
+sentence is the gate between slices, and nothing from the next slice starts before it is
+true. A session that has reshaped the backlog hands off through `docs/plans/` rather than
+building.
 
 ## Working agreements
 
@@ -365,7 +368,7 @@ reshaped the backlog hands off through `docs/plans/` rather than building.
   plus a record for any decision from D25 on) in the same pass, and records what the
   owning artifact must say in `docs/artifact-changes.md` — amending an earlier entry the
   change contradicts rather than appending — since the artifacts are reconciled once, at
-  the end of Phase 1 (∆MlD). When a design point moves, or is decided against, grep for
+  the cutover (∆MlD). When a design point moves, or is decided against, grep for
   its nouns and sweep the prose the change just falsified, and write the diff's own doc
   sentences last: no gate ever reads the docs.
 

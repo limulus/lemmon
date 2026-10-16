@@ -10,7 +10,7 @@
 //! that the ambient names can be exercised without a declaration. The `host/` group is
 //! where a declaration is the subject: its cases compile against the environment files
 //! in `host/environment/`, as a site compiles against the shell's (D30), and a document
-//! there is loaded the way the shell will load it (∆4tG) — its front matter parsed with
+//! there is loaded the way the shell will load it (∆x8D) — its front matter parsed with
 //! positions, its `type:` key read, and the document handed to the loader as the one
 //! member of the collection whose glob matched it (D37). The harness plays the shell:
 //! it owns YAML and globs, and the core sees values and spans.
