@@ -130,8 +130,9 @@ judge (∆Zo7), not these examples'.
   (below) — and keep string-returning functions to strings.
 - **Regular expressions and URL parsing.** `replace(from, to)` replaces every literal
   occurrence, and `split`, `startsWith`, `endsWith` and `contains` are the rest. A domain is
-  `u.text().split("/")[2]`; a numeric-path-segment test (`/^\d+$/`) has none — give the page
-  the value as data.
+  `u.text().split("/")[2]`; a numeric-segment test (`/^\d+$/`) is a `lem-fn` that `replace`s
+  each of the ten digits with nothing and checks what is left is empty, as the port's
+  `numeric()` does. Anything past that, give the page as data.
 - **Time zones and UTC.** A datetime prints and formats in the offset it was written in
   (D38): `toLocaleDateString(…, {timeZone: 'America/Phoenix'})` is `format("%B %-d, %Y")`
   only because the posts are written in `-07:00`; `toISOString()` and `toUTCString()` have
@@ -143,7 +144,8 @@ judge (∆Zo7), not these examples'.
   `{string: any}` loads anything and checks nothing.
 - **Combining collections.** There is no list concatenation, so `collections.article` across
   `feed/`, `links/` and `tils/` needs one `from` glob that matches them all, with `type:`
-  keys naming the subtypes. Which glob syntax the shell accepts is ∆muD's.
+  keys naming the subtypes. The shell matches a glob as passthrough's are matched:
+  picomatch, from the input directory, dotfiles included, case-insensitive.
 - **Throwing.** `throw new Error('Missing alt text…')` becomes a type: `alt: string` on
   `Vod` is required, so its absence is a load error at the front matter.
 
