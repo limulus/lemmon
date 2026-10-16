@@ -85,6 +85,30 @@ matter in `input`, even an empty one: without it no glob matches anything.
   (∆yOJ), no dev server (∆Vhi), and no worker pool or incremental rebuild: every build
   compiles and renders everything in one core.
 
+## Comparing rendered HTML
+
+`renderedPage(html, {display})` parses a page with parse5 and reduces it to what a browser
+renders: attributes by value, comments dropped, and text after the UA stylesheet's
+white-space processing, so indentation and blank lines between blocks are invisible while
+a space between two inline runs, or anything in a `pre`, still counts (D28). It knows no
+site CSS; `display` declares the custom elements a site's stylesheet makes `block` or
+`flex`. `compareRendered(ours, theirs, classes)` walks two such pages and returns every
+difference with its path, how many nodes matched, and how often each forgiveness class
+fired, comparing the doctype and the document mode it sets as well. Within one parent it
+stops at the first child it cannot pair or whose text differs, since everything after it
+would misalign; a pair whose attributes differ is reported and its siblings still compared.
+
+A forgiveness class names one kind of accepted difference, through any of five hooks.
+Four are consulted only where the walk would otherwise report a difference: `attr` for one
+differing attribute of a matched element (so several classes may each explain part of one
+element), `text` for a differing text run, and `theirsOnly` and `oursOnly` for an element
+one side lacks. The fifth, `subtree`, is offered every matched pair and may take its
+children over, comparing pairs inside it with more classes in effect; it returns how many
+differences it forgave, 0 for none, and a hook that has compared or reported anything may
+not then decline. Each hook sees the matched pairs enclosing the
+difference. This repo's fidelity harness for the-rebound (`scripts/render-the-rebound.ts`)
+and limulus.net's `npm run parity` use it, each holding every class to an expected count.
+
 ## Running from a checkout
 
 The `lem` bin is `bin/lem.ts`, which Node runs directly, under the `source` export

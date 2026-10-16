@@ -22,19 +22,18 @@ import { parse } from 'yaml'
 
 import { expectClean } from './lib/diagnostics.ts'
 import {
-  compareRendered,
-  renderedPage,
-  sameAttrs,
-  type Display,
-  type Forgiveness,
-  type RenderedElement,
-} from './lib/rendered-html.ts'
-import {
   loadCore,
   type JsonValue,
   type RenderResult,
   type SourceFileInput,
 } from '../packages/core/src/index.ts'
+import {
+  compareRendered,
+  renderedPage,
+  type Display,
+  type Forgiveness,
+  type RenderedElement,
+} from '../packages/shell/src/index.ts'
 
 const FIXTURES = 'tests/fidelity/the-rebound'
 const PAGE_PATH = 'feed/the-rebound/index.md'
@@ -183,33 +182,40 @@ const SITE_DISPLAY: Record<string, Display> = {
  *    cut at the first quote and every junk name is a token of what was cut off.
  */
 
-/** `attrs` without the named keys. */
-function without(attrs: Map<string, string>, names: string[]): Map<string, string> {
-  return new Map([...attrs].filter(([name]) => !names.includes(name)))
-}
-
 function contains(element: RenderedElement, tag: string): boolean {
   return element.children.some(
     (child) => child.kind === 'element' && (child.tag === tag || contains(child, tag))
   )
 }
 
+/** The attribute ours wrote with a `"` in it that the reference has cut at the quote. */
+function cutAt(
+  ours: RenderedElement,
+  theirs: RenderedElement
+): [string, string] | undefined {
+  return [...ours.attrs].find(
+    ([name, value]) =>
+      value.includes('"') && theirs.attrs.get(name) === value.slice(0, value.indexOf('"'))
+  )
+}
+
 const FORGIVENESS: Forgiveness[] = [
   {
     name: 'heading-id',
-    attrs: (ours, theirs) =>
-      ours.tag === 'h2' &&
-      ours.attrs.has('id') &&
-      theirs.attrs.get('tabindex') === '-1' &&
-      sameAttrs(without(ours.attrs, ['id']), without(theirs.attrs, ['id', 'tabindex'])),
+    attr: (name, ours, theirs, at) =>
+      at.ours.tag === 'h2' &&
+      at.ours.attrs.has('id') &&
+      at.theirs.attrs.get('tabindex') === '-1' &&
+      ((name === 'id' && theirs !== undefined) ||
+        (name === 'tabindex' && ours === undefined)),
   },
   {
     name: 'md-photo-wrap',
-    extra: (theirs, parent) => {
+    theirsOnly: (theirs, at) => {
       if (
-        parent.tag !== 'figure' ||
+        at.theirs.tag !== 'figure' ||
         theirs.tag !== 'p' ||
-        !contains(parent, 'pho-picture')
+        !contains(at.theirs, 'pho-picture')
       ) {
         return false
       }
@@ -225,28 +231,19 @@ const FORGIVENESS: Forgiveness[] = [
   },
   {
     name: 'attr-escaping',
-    attrs: (ours, theirs) => {
-      const cut = [...ours.attrs].find(([, value]) => value.includes('"'))
-      if (!cut) return false
-      const [name, value] = cut
-      const quote = value.indexOf('"')
-      if (theirs.attrs.get(name) !== value.slice(0, quote)) return false
+    attr: (name, ours, theirs, at) => {
+      const cut = cutAt(at.ours, at.theirs)
+      if (cut === undefined) return false
+      // The attribute that was cut, or one of the junk names the rest of it became.
+      const [cutName, value] = cut
+      if (name === cutName) return true
+      if (ours !== undefined || theirs !== '') return false
       // Attribute names come back lowercased, so match the tokens the same way.
       const tokens = value
-        .slice(quote + 1)
+        .slice(value.indexOf('"') + 1)
         .toLowerCase()
         .split(/\s+/)
-      const junk = [...theirs.attrs].filter(([junkName]) => !ours.attrs.has(junkName))
-      const junkExplained = junk.every(
-        ([junkName, junkValue]) =>
-          junkValue === '' &&
-          (tokens.includes(junkName) || tokens.includes(junkName.replace(/"$/, '')))
-      )
-      const junkNames = junk.map(([junkName]) => junkName)
-      return (
-        junkExplained &&
-        sameAttrs(without(ours.attrs, [name]), without(theirs.attrs, [name, ...junkNames]))
-      )
+      return tokens.includes(name) || tokens.includes(name.replace(/"$/, ''))
     },
   },
 ]

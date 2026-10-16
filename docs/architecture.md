@@ -456,7 +456,12 @@ tools like the revisions updater.
 - cargo-fuzz on parser and VM (the LSP feeds them half-typed garbage).
 - wasm-bindgen-test through Node for the real boundary.
 - The limulus.net parity harness (architecture doc 3) is the end-to-end acceptance bar.
-  It compares *rendered* HTML, never bytes (D28): `scripts/lib/rendered-html.ts` models
+  It compares *rendered* HTML, never bytes (D28): the shell's `renderedPage` models
   the UA stylesheet's white-space processing so that everything D26 and D28 move is
   invisible to the comparison by construction, while a changed space inside `pre` or
-  between two inline runs still fails (∆Ma4).
+  between two inline runs still fails (∆Ma4). `compareRendered` walks two such pages and
+  consults a caller's forgiveness classes where it would report a difference — an
+  attribute, a text run, an element one side lacks — and offers each matched pair to a
+  class that may take its subtree over, counting what each forgives; `npm run parity` in
+  the port branch holds every class to its expected count per page, as the fidelity
+  harness does for the-rebound (∆Zo7).

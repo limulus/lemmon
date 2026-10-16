@@ -46,8 +46,8 @@ is why a fidelity gate compares rendered HTML rather than raw bytes (D15's "norm
 
 - The gate asks what a browser would render, not what bytes were written: everything D26
   and D28 move must be invisible to the comparison by construction, never by allowlist.
-  `scripts/lib/rendered-html.ts` models the UA stylesheet's white-space processing, not a
-  blind collapse, and knows nothing of the site's CSS.
+  `rendered-html.ts` (now in `packages/shell/src/lib/`) models the UA stylesheet's
+  white-space processing, not a blind collapse, and knows nothing of the site's CSS.
 - The old harness's guard — indentation deltas on content lines must fail — moved rather
   than vanished: a changed space between two inline runs, or inside `pre`, still fails.
 - dprint leaves the harness: formatting both sides is a byte-level normalization the tree

@@ -3,6 +3,7 @@ export { ConfigError, loadConfig, type Config, type LoadedConfig } from './lib/c
 export * from './lib/front-matter.ts'
 export type { Environment } from './lib/load.ts'
 export { SiteError } from './lib/program.ts'
+export * from './lib/rendered-html.ts'
 export * from './lib/site.ts'
 export * from './lib/walk.ts'
 export { WriteError } from './lib/write.ts'

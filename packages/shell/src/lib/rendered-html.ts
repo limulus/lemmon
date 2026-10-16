@@ -29,6 +29,11 @@ export type RenderedNode = RenderedElement | RenderedText
 
 export interface RenderedPage {
   doctype: string | null
+  /**
+   * parse5's document mode, which the doctype decides: a doctype named `html` can still
+   * put a page in quirks mode, so the name alone does not say how it renders.
+   */
+  mode: `${Tree.Document['mode']}`
   root: RenderedElement
 }
 
@@ -321,22 +326,83 @@ export function renderedPage(html: string, options: RenderOptions = {}): Rendere
   collectLine(root, 'collapse', false, display, items)
   trimLineEdges(items)
   pruneEmptyText(root)
-  return { doctype: doctype?.name ?? null, root }
+  return { doctype: doctype?.name ?? null, mode: document.mode, root }
 }
 
 // --- Comparison -------------------------------------------------------------------
+
+/** Two elements the comparison has matched: ours, and the reference's. */
+export interface MatchedPair {
+  ours: RenderedElement
+  theirs: RenderedElement
+}
+
+/**
+ * Where a difference sits: the matched pair it is in — the element whose attribute
+ * differs, the parent of a text run or of a child only one side has, or the pair a
+ * subtree is offered — and the matched pairs enclosing that one, root first.
+ */
+export interface Scope extends MatchedPair {
+  ancestors: readonly MatchedPair[]
+}
+
+/** What a class that has taken over a pair's subtree can do inside it. */
+export interface Subtree {
+  /**
+   * Compares two elements inside the subtree as the comparison compares any pair, with
+   * `more` classes in effect beside its own, and adds what it finds to the comparison;
+   * `label` follows the subtree's path in any difference found there.
+   */
+  compare(
+    ours: RenderedElement,
+    theirs: RenderedElement,
+    label: string,
+    more?: readonly Forgiveness[]
+  ): void
+  /** Reports the subtree as a difference the class does not explain, saying why. */
+  differ(note: string): void
+}
 
 /**
  * A known, accepted difference. Each class names precisely what it forgives so it
  * cannot absorb a difference it does not explain: a normalization that erased every
  * `p` would hide a dropped paragraph beside the one it meant to excuse.
+ *
+ * `attr`, `text`, `theirsOnly` and `oursOnly` are consulted only where the comparison
+ * would otherwise report a difference; `subtree` is offered every matched pair. Classes
+ * are asked in the order given, and the first to explain a difference is counted: once
+ * per element for all the attributes it explains there, once per text run, once per
+ * element only one side has, and as many times as its subtree hook says.
  */
 export interface Forgiveness {
   name: string
-  /** A reference-side element ours lacks, in `parent`, that this class accounts for. */
-  extra?: (theirs: RenderedElement, parent: RenderedElement) => boolean
-  /** An element pair whose attribute difference this class accounts for. */
-  attrs?: (ours: RenderedElement, theirs: RenderedElement) => boolean
+  /**
+   * One attribute whose values differ on a matched pair, `undefined` on the side that
+   * lacks it; `at` is that pair. Every differing attribute is offered on its own, so
+   * several classes may each explain part of one element, and an attribute none
+   * explains makes the element a difference.
+   */
+  attr?: (
+    name: string,
+    ours: string | undefined,
+    theirs: string | undefined,
+    at: Scope
+  ) => boolean
+  /** Two paired text runs that differ; `at` is their parents. */
+  text?: (ours: string, theirs: string, at: Scope) => boolean
+  /** An element only the reference has, among the children of `at`. */
+  theirsOnly?: (theirs: RenderedElement, at: Scope) => boolean
+  /** An element only ours has, among the children of `at`. */
+  oursOnly?: (ours: RenderedElement, at: Scope) => boolean
+  /**
+   * Offered every matched pair whose attributes agree or are explained, before its
+   * children are compared. `null` leaves the pair to the comparison, and only a hook
+   * that has not used `sub` may return it: the comparison would compare the children
+   * again, so it throws instead. A number takes the children over — compared through
+   * `sub`, if at all — and is how many differences the class forgave there, 0 when it
+   * forgave none: anything more is counted as forgiven.
+   */
+  subtree?: (at: Scope, sub: Subtree) => number | null
 }
 
 export interface Difference {
@@ -344,6 +410,8 @@ export interface Difference {
   path: string
   ours: string | null
   theirs: string | null
+  /** What is left unexplained there, where the nodes alone do not say. */
+  note?: string
 }
 
 export interface Comparison {
@@ -352,15 +420,6 @@ export interface Comparison {
   forgiven: Map<string, number>
   /** Elements and text runs that matched. */
   matched: number
-}
-
-/** Whether two attribute maps hold the same names with the same values. */
-export function sameAttrs(ours: Map<string, string>, theirs: Map<string, string>): boolean {
-  if (ours.size !== theirs.size) return false
-  for (const [name, value] of ours) {
-    if (theirs.get(name) !== value) return false
-  }
-  return true
 }
 
 const SHOW_LIMIT = 160
@@ -378,47 +437,92 @@ class Comparator {
   readonly differences: Difference[] = []
   readonly forgiven = new Map<string, number>()
   matched = 0
-  private readonly classes: Forgiveness[]
 
-  constructor(classes: Forgiveness[]) {
-    this.classes = classes
-  }
-
-  private forgive(name: string): void {
-    this.forgiven.set(name, (this.forgiven.get(name) ?? 0) + 1)
+  private forgive(name: string, times: number): void {
+    if (times > 0) this.forgiven.set(name, (this.forgiven.get(name) ?? 0) + times)
   }
 
   private differ(
     path: string,
     ours: RenderedNode | null,
-    theirs: RenderedNode | null
+    theirs: RenderedNode | null,
+    note?: string
   ): void {
-    this.differences.push({
+    const difference: Difference = {
       path,
       ours: ours && show(ours),
       theirs: theirs && show(theirs),
-    })
+    }
+    if (note !== undefined) difference.note = note
+    this.differences.push(difference)
   }
 
-  private forgivesExtra(theirs: RenderedNode, parent: RenderedElement): boolean {
-    if (theirs.kind !== 'element') return false
-    const found = this.classes.find((cls) => cls.extra?.(theirs, parent))
-    if (found) this.forgive(found.name)
+  /** Whether a class explains a difference through `hook`, counting the first that does. */
+  private explains(
+    classes: readonly Forgiveness[],
+    hook: (cls: Forgiveness) => boolean | undefined
+  ): boolean {
+    const found = classes.find((cls) => hook(cls) === true)
+    if (found) this.forgive(found.name, 1)
     return found !== undefined
   }
 
-  private forgivesAttrs(ours: RenderedElement, theirs: RenderedElement): boolean {
-    const found = this.classes.find((cls) => cls.attrs?.(ours, theirs))
-    if (found) this.forgive(found.name)
-    return found !== undefined
-  }
-
-  element(ours: RenderedElement, theirs: RenderedElement, path: string): void {
-    if (!sameAttrs(ours.attrs, theirs.attrs) && !this.forgivesAttrs(ours, theirs)) {
-      this.differ(path, ours, theirs)
+  element(at: Scope, path: string, classes: readonly Forgiveness[]): void {
+    const { ours, theirs } = at
+    const explainedBy = new Set<string>()
+    const unexplained: string[] = []
+    for (const name of new Set([...ours.attrs.keys(), ...theirs.attrs.keys()])) {
+      const o = ours.attrs.get(name)
+      const t = theirs.attrs.get(name)
+      if (o === t) continue
+      const found = classes.find((cls) => cls.attr?.(name, o, t, at) === true)
+      if (found) explainedBy.add(found.name)
+      else unexplained.push(name)
+    }
+    if (unexplained.length > 0) {
+      this.differ(path, ours, theirs, `attributes differ: ${unexplained.join(', ')}`)
       return
     }
+    for (const name of explainedBy) this.forgive(name, 1)
     this.matched += 1
+    if (!this.subtree(at, path, classes)) this.children(at, path, classes)
+  }
+
+  /** Offers the pair to each class's subtree hook; whether one took it over. */
+  private subtree(at: Scope, path: string, classes: readonly Forgiveness[]): boolean {
+    const ancestors = [...at.ancestors, { ours: at.ours, theirs: at.theirs }]
+    for (const cls of classes) {
+      let used = false
+      const sub: Subtree = {
+        compare: (ours, theirs, label, more = []) => {
+          used = true
+          this.element({ ours, theirs, ancestors }, `${path} > ${label}`, [
+            ...classes,
+            ...more,
+          ])
+        },
+        differ: (note) => {
+          used = true
+          this.differ(path, at.ours, at.theirs, note)
+        },
+      }
+      const forgave = cls.subtree?.(at, sub) ?? null
+      if (forgave !== null) {
+        this.forgive(cls.name, forgave)
+        return true
+      }
+      if (used) {
+        throw new Error(
+          `${cls.name} used the subtree at ${path}, then left it to the comparison`
+        )
+      }
+    }
+    return false
+  }
+
+  private children(at: Scope, path: string, classes: readonly Forgiveness[]): void {
+    const { ours, theirs } = at
+    const ancestors = [...at.ancestors, { ours, theirs }]
     const counts = new Map<string, number>()
     let i = 0
     let j = 0
@@ -427,23 +531,39 @@ class Comparator {
       const t = theirs.children.at(j) ?? null
       const pair = pairOf(o, t)
       if (pair === null) {
-        if (t !== null && this.forgivesExtra(t, theirs)) {
+        if (
+          t?.kind === 'element' &&
+          this.explains(classes, (cls) => cls.theirsOnly?.(t, at))
+        ) {
           j += 1
+          continue
+        }
+        if (
+          o?.kind === 'element' &&
+          this.explains(classes, (cls) => cls.oursOnly?.(o, at))
+        ) {
+          i += 1
           continue
         }
         this.differ(`${path} > child ${i}`, o, t)
         return
       }
       if (pair.kind === 'text') {
-        if (pair.ours.text !== pair.theirs.text) {
+        const { ours: ot, theirs: tt } = pair
+        if (ot.text === tt.text) {
+          this.matched += 1
+        } else if (!this.explains(classes, (cls) => cls.text?.(ot.text, tt.text, at))) {
           this.differ(`${path} > child ${i}`, o, t)
           return
         }
-        this.matched += 1
       } else {
         const n = counts.get(pair.ours.tag) ?? 0
         counts.set(pair.ours.tag, n + 1)
-        this.element(pair.ours, pair.theirs, `${path} > ${pair.ours.tag}[${n}]`)
+        this.element(
+          { ours: pair.ours, theirs: pair.theirs, ancestors },
+          `${path} > ${pair.ours.tag}[${n}]`,
+          classes
+        )
       }
       i += 1
       j += 1
@@ -467,15 +587,17 @@ function pairOf(o: RenderedNode | null, t: RenderedNode | null): Pair | null {
 
 /**
  * Compares two rendered pages; `ours` is the page under test and `theirs` the
- * reference. Within a parent, comparison stops at the first difference — one extra
- * child would otherwise misalign every sibling after it and report each as a change.
+ * reference. Within a parent, comparison stops at the first child it cannot pair, or
+ * whose text differs — one extra child would otherwise misalign every sibling after it
+ * and report each as a change — while a pair whose attributes differ is reported and
+ * its siblings are still compared.
  */
 export function compareRendered(
   ours: RenderedPage,
   theirs: RenderedPage,
-  classes: Forgiveness[] = []
+  classes: readonly Forgiveness[] = []
 ): Comparison {
-  const comparator = new Comparator(classes)
+  const comparator = new Comparator()
   if (ours.doctype !== theirs.doctype) {
     comparator.differences.push({
       path: 'doctype',
@@ -483,7 +605,18 @@ export function compareRendered(
       theirs: theirs.doctype,
     })
   }
-  comparator.element(ours.root, theirs.root, ours.root.tag)
+  if (ours.mode !== theirs.mode) {
+    comparator.differences.push({
+      path: 'document mode',
+      ours: ours.mode,
+      theirs: theirs.mode,
+    })
+  }
+  comparator.element(
+    { ours: ours.root, theirs: theirs.root, ancestors: [] },
+    ours.root.tag,
+    classes
+  )
   return {
     differences: comparator.differences,
     forgiven: comparator.forgiven,
