@@ -31,10 +31,9 @@ The walking skeleton: the thinnest path from the branch's files to pages on disk
 comparator that accepts every later slice. Eric runs `lem build` in the limulus-dot-net port
 branch, opens the seven `feed/` posts from `dist/` in a browser, and `npm run parity` there
 reports them against the 11ty `dist/` with every difference in a named forgiveness class.
+Built on 2026-10-15 (journal entries for its five items); the run above is Eric's to make
+before slice 2 starts.
 
-- `∆Zo7` `npm run parity` for the seven posts
-  - The comparator from `scripts/lib/rendered-html.ts` run per page against the 11ty
-    `dist/`, with an allowlist of forgiveness classes and their counts
 
 ### 2. Styled and formatted
 
