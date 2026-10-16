@@ -20,10 +20,10 @@ and code by the highlight.js producer (`∆Nxd`)
 ## Scope and constraints
 
 - Slice 1's acceptance, which this item serves: Eric runs `lem build` in the limulus-dot-net
-  port branch, opens the eight `feed/` posts from `dist/` in a browser, and `npm run parity`
+  port branch, opens the seven `feed/` posts from `dist/` in a browser, and `npm run parity`
   there reports them against the 11ty `dist/` with every difference in a named forgiveness
   class.
-- Only what the eight `feed/` posts need: `Page` and `Post` in `site.lem`, the base, page
+- Only what the seven `feed/` posts need: `Page` and `Post` in `site.lem`, the base, page
   and article layouts, the components those posts use, and typed front matter for them. The
   remaining types, the video layout and the other components are `∆tAw`; the computed
   defaults and the appender are `∆ITg`.

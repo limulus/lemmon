@@ -29,23 +29,23 @@ lands inside the slice that needs it.
 
 The walking skeleton: the thinnest path from the branch's files to pages on disk, and the
 comparator that accepts every later slice. Eric runs `lem build` in the limulus-dot-net port
-branch, opens the eight `feed/` posts from `dist/` in a browser, and `npm run parity` there
+branch, opens the seven `feed/` posts from `dist/` in a browser, and `npm run parity` there
 reports them against the 11ty `dist/` with every difference in a named forgiveness class.
 
 - `∆muD` `lem build` writes the-rebound to `dist/`
   - Declare the host, compile, load, plan, render, write HTML and passthrough; reproduces
     what `test:fidelity` renders from a directory of files. The first usable `lem`
 - `∆foi` Port: `site.lem`, three layouts, the posts' components
-  - `Page` and `Post`, the base, page and article layouts and the components the eight feed
+  - `Page` and `Post`, the base, page and article layouts and the components the seven feed
     posts use, written as an author would, on the limulus-dot-net port branch
-- `∆Zo7` `npm run parity` for the eight posts
+- `∆Zo7` `npm run parity` for the seven posts
   - The comparator from `scripts/lib/rendered-html.ts` run per page against the 11ty
     `dist/`, with an allowlist of forgiveness classes and their counts
   - needs: `∆muD`, `∆foi`
 
 ### 2. Styled and formatted
 
-Marks resolved in the shell, CSS as per-page bundles, output formatted. Eric opens the eight
+Marks resolved in the shell, CSS as per-page bundles, output formatted. Eric opens the seven
 posts and sees them identical to the live site, with their CSS as per-page hashed bundles
 under `/assets/immutable/`, and `npm run parity` reports zero unexpected differences for
 them.
@@ -83,7 +83,7 @@ under `--drafts` that `lem build` omits.
 ### 4. Every document page
 
 The plugin host in full, and the plugins and types the remaining sections need. Eric builds
-the branch and all 26 documents, code blocks highlighted and client JavaScript bundled to
+the branch and all 25 documents, code blocks highlighted and client JavaScript bundled to
 hashed URLs, compare clean.
 
 - `∆c4j` Plugin host
@@ -94,9 +94,9 @@ hashed URLs, compare clean.
   - Bundle `**/index.ts` + `**/worker.ts` (D09), resolve the `XXXXXXXX` placeholder (D10),
     and hand the manifest to the host declaration at `compile` as compile-time facts
   - needs: `∆muD`, `∆Q6L`
-- `∆tAw` Remaining schemas and the video layout
-  - `site.lem` types for links, TILs, photos, vod and authors, the video layout, and the
-    components the first slice did not need, so every document page has its types
+- `∆tAw` Remaining schemas and components
+  - `site.lem` types for link posts, TILs and photo pages, and the components the first
+    slice did not need, so every document page has its types
   - needs: `∆foi`
 - `∆ITg` Computed defaults and the link-post appender
   - Typed front matter for links, penumbra and TILs, computed defaults replacing
@@ -248,6 +248,9 @@ initiative before starting it.
   - A `lem-let x: string` block whose body is scanned as text to its close tag, so a
     template can hand a multi-line source to a `code` or diagram producer as a fence does
   - needs: `∆7wK`
+- `∆8Kj` A comment form for `.lem`
+  - There is no compile-time comment, so the port could not say why a sort key is negated
+    or a capture keeps a `pre` on one line; HTML comments ship to the output
 - `∆v6d` Serialize the linked program
   - `exportModule`/`importModule` serialize the linked program (D14 headroom), deferred from
     `∆TNT` because a fact nothing consumes is a comment

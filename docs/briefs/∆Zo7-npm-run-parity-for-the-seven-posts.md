@@ -1,4 +1,4 @@
-# `npm run parity` for the eight posts
+# `npm run parity` for the seven posts
 
 ## Background
 
@@ -12,7 +12,7 @@ the whole initiative, so it lands before the port is "done", not after
 ## Scope and constraints
 
 - Slice 1's acceptance, which this item serves: Eric runs `lem build` in the limulus-dot-net
-  port branch, opens the eight `feed/` posts from `dist/` in a browser, and `npm run parity`
+  port branch, opens the seven `feed/` posts from `dist/` in a browser, and `npm run parity`
   there reports them against the 11ty `dist/` with every difference in a named forgiveness
   class.
 - Per page, in the limulus-dot-net branch, not in CI (from the original item: diffs are

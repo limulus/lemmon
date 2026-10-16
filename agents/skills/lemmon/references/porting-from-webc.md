@@ -288,6 +288,10 @@ minutes rounding rule, a lookup in `$data.authors`. Each is a function or a capt
 prints the list. Its body is one line, and a function body loses the newline at each edge
 (D26), so the attribute gets exactly `url 1280w, url 640w`.
 
+A photo without the wanted rendition is a render error at `jpeg[0]`, as the WebC original
+threw; `.first()` behind a `lem-if` would render an empty picture and exit clean, which is a
+guess (invariant 10).
+
 ```lem components.lem
 <lem-fn srcset(renditions: [Rendition])>
   <lem-for r, i in renditions><lem-if i gt 0>, </lem-if><lem.r.url> <lem.r.width>w</lem-for>
@@ -299,22 +303,20 @@ prints the list. Its body is one line, and a function body loses the newline at 
     .sortBy(|r| r.width)
     .reverse() />
   <lem-let jpeg = wanted.filter(|r| r.format == "jpeg") />
-  <lem-let largest = jpeg.first() />
-  <lem-if largest>
-    <pho-picture>
-      <blur-hash blurhash="<lem.photo.blurhash>"
-        width="<lem.largest.width>" height="<lem.largest.height>">
-        <picture>
-          <source type="image/avif"
-            srcset="<lem.srcset(wanted.filter(|r| r.format == "avif"))>">
-          <source type="image/jpeg" srcset="<lem.srcset(jpeg)>">
-          <img loading="lazy" decoding="async" src="<lem.largest.url>"
-            srcset="<lem.srcset(jpeg)>" alt="<lem.photo.description>"
-            width="<lem.largest.width>" height="<lem.largest.height>">
-        </picture>
-      </blur-hash>
-    </pho-picture>
-  </lem-if>
+  <lem-let largest = jpeg[0] />
+  <pho-picture>
+    <blur-hash blurhash="<lem.photo.blurhash>"
+      width="<lem.largest.width>" height="<lem.largest.height>">
+      <picture>
+        <source type="image/avif"
+          srcset="<lem.srcset(wanted.filter(|r| r.format == "avif"))>">
+        <source type="image/jpeg" srcset="<lem.srcset(jpeg)>">
+        <img loading="lazy" decoding="async" src="<lem.largest.url>"
+          srcset="<lem.srcset(jpeg)>" alt="<lem.photo.description>"
+          width="<lem.largest.width>" height="<lem.largest.height>">
+      </picture>
+    </blur-hash>
+  </pho-picture>
 </lem-fn>
 ```
 

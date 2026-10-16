@@ -21,7 +21,7 @@ link/asset integrity check, CloudFront untouched
 ## Scope and constraints
 
 - Slice 1's acceptance, which this item serves: Eric runs `lem build` in the limulus-dot-net
-  port branch, opens the eight `feed/` posts from `dist/` in a browser, and `npm run parity`
+  port branch, opens the seven `feed/` posts from `dist/` in a browser, and `npm run parity`
   there reports them against the 11ty `dist/` with every difference in a named forgiveness
   class.
 - The first milestone inside slice 1: `lem build` over a directory holding the-rebound and

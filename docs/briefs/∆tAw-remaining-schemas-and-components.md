@@ -1,4 +1,4 @@
-# Remaining schemas and the video layout
+# Remaining schemas and components
 
 ## Background
 
@@ -11,7 +11,8 @@ expect it to feed fixes back into Phase 1 items
 
 ## Scope and constraints
 
-- Slice 4's acceptance, which this item serves: Eric builds the branch and all 26 documents,
+- Slice 4's acceptance, which this item serves: Eric builds the branch and all 25 documents,
   code blocks highlighted and client JavaScript bundled to hashed URLs, compare clean.
-- What `∆foi` left: the types beyond `Page` and `Post`, the video layout (two pages use it),
-  and the remaining WebC components as `.lem` functions.
+- What `∆foi` left: the types beyond those the feed posts needed (`∆foi` landed `Post`,
+  `VideoPost`, `Photo`, `Author`, `Vod` and the revisions types, and the video layout, since
+  one feed post uses it), and the remaining WebC components as `.lem` functions.
