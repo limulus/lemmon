@@ -4,8 +4,9 @@
 //! in the parser, "not here yet" in the compiler — and described in the docs with a
 //! "not yet" note. Each names the backlog item it waits on, and this test fails the build
 //! once that item has a journal entry, so landing a stage cannot leave a stale refusal or
-//! note behind for an author to read. The rule spans every crate and the docs, which is
-//! why it lives beside the corpus's orphan check rather than in one stage's crate.
+//! note behind for an author to read. The rule spans every crate, the docs, and the
+//! authoring skill under `agents/`, which is why it lives beside the corpus's orphan
+//! check rather than in one stage's crate.
 //!
 //! The phrase and the deltoid must share a line: the gate reads text, not values, so a
 //! site that picks its item from a table carries the phrase in the table's rows. This
@@ -137,6 +138,7 @@ fn every_placeholder_names_a_backlog_item_that_has_not_shipped() {
     sources.retain(|path| !path.ends_with(file!()));
     let mut docs = Vec::new();
     files(&repo.join("docs"), "md", &["journal"], &mut docs);
+    files(&repo.join("agents"), "md", &[], &mut docs);
 
     let mut found = Vec::new();
     for (paths, phrases) in [(sources, CODE_PHRASES), (docs, DOC_PHRASES)] {

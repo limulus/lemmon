@@ -32,9 +32,6 @@ comparator that accepts every later slice. Eric runs `lem build` in the limulus-
 branch, opens the eight `feed/` posts from `dist/` in a browser, and `npm run parity` there
 reports them against the 11ty `dist/` with every difference in a named forgiveness class.
 
-- `∆pXO` Lemmon authoring skill
-  - A checked-in agent skill for writing `.lem`, distilled from docs/language.md, not a copy
-    of it: porting limulus.net's layouts means writing a lot of Lemmon by agent
 - `∆x8D` Shell skeleton: walk, front matter, config
   - `@limulus/lemmon-shell` with a `lem` bin: walk the input, classify files, parse front
     matter with YAML positions into spans, and read a minimal `lemmon.config.ts`
@@ -233,6 +230,9 @@ so it can be reproduced cold.
 - `∆1gY` An ambient binding accepts a misspelled field
   - `AmbientBinding` in `crates/lemmon-wasm/src/wire.rs` is the one inbound shape without
     `deny_unknown_fields`, so `{"bindingsOf": "site.lem", "typo": 1}` is taken with no error
+- `∆bah` `docs/language.md` describes three forms the compiler lacks
+  - String interpolation, `lem-import` and `concat` read as working there, with no "not yet"
+    note; the canonical example writes `[md]` and `size: small`, which do not compile
 
 ## Someday/Maybe
 

@@ -29,6 +29,9 @@ Repo docs are the working distillation; read them before writing code:
 - `docs/language.md` — the language: scanner, tags, expressions, types, namespaces, document
   mode. Keep open while working on the core.
 - `docs/architecture.md` — core/shell split, WASM API, pipeline, VM, crate choices.
+- `agents/skills/lemmon/SKILL.md` — the author's reference for writing `.lem`, distilled
+  from `docs/language.md`, with a WebC-to-Lemmon porting guide beside it. Read it before
+  writing Lemmon; it also loads as the `lemmon` skill through `.claude/skills/`.
 - `docs/decisions/` — the settled decisions: `README.md` is the index (one row per ID)
   and the deliberately deferred questions; every decision from D25 on also has a record,
   `Dnn-slug.md`, with its context, alternatives, and consequences. Do not re-litigate
@@ -96,6 +99,7 @@ scripts/                repo tooling run by npm scripts (wasm staging + check, t
                         fidelity harness); scripts/lib/ is the logic they share, covered
                         like a package
 docs/                   language.md, architecture.md, decisions/, journal/, plans/
+agents/skills/lemmon/   the Lemmon authoring skill (SKILL.md + references/)
 ```
 
 One npm workspace (`packages/*`) plus one Cargo workspace (`crates/*`), with a single shared
@@ -360,10 +364,11 @@ building.
   mutate the tree gets its own worktree: one ran `git checkout --` on a file it probed.
 - A placeholder names the deltoid it waits on, on the same line as the phrase the gate
   reads — in `crates/`, "not here yet", "not supported yet", or "not yet supported"; in
-  `docs/`, "not yet" — and `crates/lemmon-corpus/tests/placeholders.rs` fails the build
-  once that item has a journal entry. The gate reads only those trees and that phrasing:
-  a promise in `packages/`, or a planned mechanism written in the present tense, rots
-  unseen. Landing a stage therefore includes sweeping the placeholders that name it.
+  `docs/` and `agents/`, "not yet" — and `crates/lemmon-corpus/tests/placeholders.rs`
+  fails the build once that item has a journal entry. The gate reads only those trees and
+  that phrasing: a promise in `packages/`, or a planned mechanism written in the present
+  tense, rots unseen. Landing a stage therefore includes sweeping the placeholders that
+  name it.
 - A syntax or semantics change updates `docs/language.md` and `docs/decisions/` (the row,
   plus a record for any decision from D25 on) in the same pass, and records what the
   owning artifact must say in `docs/artifact-changes.md` — amending an earlier entry the
