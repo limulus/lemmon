@@ -32,13 +32,9 @@ comparator that accepts every later slice. Eric runs `lem build` in the limulus-
 branch, opens the seven `feed/` posts from `dist/` in a browser, and `npm run parity` there
 reports them against the 11ty `dist/` with every difference in a named forgiveness class.
 
-- `∆foi` Port: `site.lem`, three layouts, the posts' components
-  - `Page` and `Post`, the base, page and article layouts and the components the seven feed
-    posts use, written as an author would, on the limulus-dot-net port branch
 - `∆Zo7` `npm run parity` for the seven posts
   - The comparator from `scripts/lib/rendered-html.ts` run per page against the 11ty
     `dist/`, with an allowlist of forgiveness classes and their counts
-  - needs: `∆foi`
 
 ### 2. Styled and formatted
 
@@ -247,6 +243,9 @@ initiative before starting it.
 - `∆8Kj` A comment form for `.lem`
   - There is no compile-time comment, so the port could not say why a sort key is negated
     or a capture keeps a `pre` on one line; HTML comments ship to the output
+- `∆qLe` Refusing a render on purpose
+  - A layout only a subtype can use cannot refuse the base record: D32 forbids
+    `layout: (VideoPost, html)`, and a `lem-default` arm has no way to fail the render
 - `∆v6d` Serialize the linked program
   - `exportModule`/`importModule` serialize the linked program (D14 headroom), deferred from
     `∆TNT` because a fact nothing consumes is a comment
