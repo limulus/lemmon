@@ -35,10 +35,11 @@ with `page`, `build`, and `site` typed from them. The group's directory is the s
 content root: a page under it — a `.md`, or a `.lem` that opens with front matter (D41)
 — is compiled as the record its own `type:` key names — the one raw key a shell reads
 before a page has a type — or else as the element type of the collection whose glob
-matched it, and it is loaded the way the shell will load it (∆x8D): its front matter
-parsed with positions and handed to the loader as the one member of that collection, or
-on its own in `pages` when its key typed it and no glob holds it, beside fixed fixtures
-for the environment's other sources. So `host/pages/` and `host/tils/` hold documents of
+matched it, and it is loaded as the shell loads it (`readPage` in
+`@limulus/lemmon-shell`): its front matter parsed with positions and handed to the loader
+as the one member of that collection, or on its own in `pages` when its key typed it and
+no glob holds it, beside fixed fixtures for the environment's other sources. So
+`host/pages/` and `host/tils/` hold documents of
 two collections, `host/sections/` the page templates of a third, `host/standalone/` the
 pages no glob holds, `host/unmatched/` a document and a template no glob matches, and
 a load error is a trailer line at the front-matter entry it is about. A page that loads

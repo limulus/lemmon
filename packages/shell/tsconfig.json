@@ -6,5 +6,5 @@
     "noEmit": true,
     "tsBuildInfoFile": "./tsconfig.tsbuildinfo"
   },
-  "include": ["src/**/*", "types/**/*"]
+  "include": ["bin/**/*", "src/**/*", "types/**/*"]
 }

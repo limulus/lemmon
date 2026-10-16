@@ -181,8 +181,9 @@ not a break:
 
 ## Build pipeline
 
-1. **Discover** (shell) — walk input, classify (document/template/data/passthrough), parse
-   front matter with positions, load `lemmon.config.ts`.
+1. **Discover** (shell) — walk input, classify (document/template/passthrough/ignored),
+   parse front matter with positions, load `lemmon.config.ts`. A data file is read when a
+   `from` binding names it.
 2. **Providers** (shell) — plugin data hooks, document transforms (e.g. link-post reference
    appender), asset pipeline: esbuild → manifest, which is handed to `compile` on the
    host declaration because `asset()` is answered there (D10, D38) — its values the URLs

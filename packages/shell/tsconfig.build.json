@@ -13,5 +13,9 @@
     "tsBuildInfoFile": "./tsconfig.build.tsbuildinfo"
   },
   "include": ["src/**/*"],
-  "exclude": ["src/**/*.spec.ts", "src/mocks/**/*"]
+  "exclude": ["src/**/*.spec.ts", "src/mocks/**/*"],
+  // Under the `source` condition core resolves to its `src/`; the reference makes the
+  // build read core's emitted declarations for it instead of compiling it into this
+  // package's output.
+  "references": [{ "path": "../core/tsconfig.build.json" }]
 }

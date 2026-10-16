@@ -1,5 +1,8 @@
 {
   "compilerOptions": {
+    // A workspace package resolves to its `src/` under this condition, so a sibling
+    // package typechecks against the source rather than a `dist/` that may not exist.
+    "customConditions": ["source"],
     "erasableSyntaxOnly": true,
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,

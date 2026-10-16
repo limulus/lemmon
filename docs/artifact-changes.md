@@ -510,6 +510,13 @@ moved it. Newest last. An entry is removed when its change has been applied.
   page's record, so no record holds another, and `render` takes the page table beside the
   globals (D43).
 
+- **Build pipeline, step 1; the standard shell's `Page`** — where the text describes
+  discovery, the walk classifies each file as a document, a template, passthrough, or
+  ignored; there is no `data` kind, since a data file is read when a `from` binding names
+  it. And where `Page` is declared, `inputPath` is the source file's path from the
+  directory holding `lemmon.config.ts`, `www/feed/the-rebound/index.md`, while the core's
+  own path for the file starts at the input directory (∆x8D).
+
 ## From Eleventy to Lemmon
 
 - **Template mapping and the photo page port** — the `---js pagination` row maps to a

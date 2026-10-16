@@ -32,13 +32,9 @@ comparator that accepts every later slice. Eric runs `lem build` in the limulus-
 branch, opens the eight `feed/` posts from `dist/` in a browser, and `npm run parity` there
 reports them against the 11ty `dist/` with every difference in a named forgiveness class.
 
-- `∆x8D` Shell skeleton: walk, front matter, config
-  - `@limulus/lemmon-shell` with a `lem` bin: walk the input, classify files, parse front
-    matter with YAML positions into spans, and read a minimal `lemmon.config.ts`
 - `∆muD` `lem build` writes the-rebound to `dist/`
   - Declare the host, compile, load, plan, render, write HTML and passthrough; reproduces
     what `test:fidelity` renders from a directory of files. The first usable `lem`
-  - needs: `∆x8D`
 - `∆foi` Port: `site.lem`, three layouts, the posts' components
   - `Page` and `Post`, the base, page and article layouts and the components the eight feed
     posts use, written as an author would, on the limulus-dot-net port branch
