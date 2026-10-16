@@ -24,9 +24,9 @@ use std::marker::PhantomData;
 use std::rc::Rc;
 
 use lemmon_vm::{
-    Ambient, Claim, CodePayload, Data, Host, HostSpan, LineIndex, Loaded, Map, Payload,
-    PlannedPage, Position, Range, Rendered, RuntimeError, Severity, Source, Span, Spans,
-    Value, repeated_path,
+    Ambient, Claim, CodePayload, Data, FromBinding, Host, HostSpan, LineIndex, Loaded, Map,
+    Payload, PlannedPage, Position, Range, Rendered, RuntimeError, Severity, Source,
+    SourceKind, Span, Spans, Value, repeated_path,
 };
 use serde::de::value::{MapAccessDeserializer, SeqAccessDeserializer};
 use serde::de::{self, Deserializer, MapAccess, SeqAccess, Visitor};
@@ -883,13 +883,62 @@ fn value_from_json(json: &serde_json::Value) -> Value {
     }
 }
 
-/// What `compile` returns (D42): the diagnostics about the files it was given, and what
+/// What `compile` returns (D42): the diagnostics about the files it was given, what
 /// their code blocks hand the host's producers — each payload once, whichever of the
-/// files wrote it. ∆Qr2 adds each unit's compile-time facts beside them.
+/// files wrote it — and, from a compile that installed a program, every `from` binding
+/// the host fulfils for it (∆muD). ∆Qr2 adds each unit's compile-time facts beside them.
 #[derive(Serialize)]
 pub(crate) struct CompileOut {
     pub(crate) diagnostics: Vec<Diagnostic>,
     pub(crate) payloads: Vec<CodePayloadOut>,
+    pub(crate) sources: Vec<FromBindingOut>,
+}
+
+/// One `from` binding of the program's bindings files, as the host fulfils it in
+/// `loadData`'s `sources`: by `name`, from the source `kind` and `literal` name — a
+/// glob or a data file's path, a plugin's name, an environment variable's — with every
+/// page a collecting glob matches compiled and loaded as the record `collects` names,
+/// absent where the binding is one value. `path` and `span` place the binding's name in
+/// its file, which is where a host reports a source it cannot fulfil.
+#[derive(Serialize)]
+pub(crate) struct FromBindingOut {
+    name: String,
+    kind: SourceKindOut,
+    literal: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    collects: Option<String>,
+    path: String,
+    span: SpanWire,
+}
+
+/// The form after `from`: a string literal names a `file`, `plugin("…")` a plugin's
+/// data hook, `env("…")` an environment value.
+#[derive(Serialize)]
+#[serde(rename_all = "lowercase")]
+enum SourceKindOut {
+    File,
+    Plugin,
+    Env,
+}
+
+impl FromBindingOut {
+    /// The binding, its span placed by the index over the text its bindings file's
+    /// unit was compiled from — which `indexes`, the linked program's, holds.
+    pub(crate) fn placed(binding: FromBinding, indexes: &LineIndexes) -> Self {
+        let (kind, literal) = match binding.kind {
+            SourceKind::File(literal) => (SourceKindOut::File, literal),
+            SourceKind::Plugin(literal) => (SourceKindOut::Plugin, literal),
+            SourceKind::Env(literal) => (SourceKindOut::Env, literal),
+        };
+        Self {
+            span: SpanWire::placed(binding.span, index_for(&binding.path, None, indexes)),
+            name: binding.name.to_string(),
+            kind,
+            literal: literal.to_string(),
+            collects: binding.collects.as_deref().map(str::to_owned),
+            path: binding.path,
+        }
+    }
 }
 
 /// One code block's payload, named by the id a render's `code` mark carries.

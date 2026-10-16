@@ -1,0 +1,7 @@
+<lem-type Photo>
+  caption: string
+</lem-type>
+
+<lem-let photos: {string: Photo} from "_data/photos.json" />
+<lem-let everything: [Page] from "**/*.md" />
+<lem-let title: string = "limulus.net" />

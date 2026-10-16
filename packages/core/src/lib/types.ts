@@ -140,13 +140,55 @@ export interface CodePayload {
 }
 
 /**
- * What {@link Core.compile} returns: the diagnostics about the files it was given, and
- * the payload of every code block they write, each once. `facts` (∆Qr2) is an additive
- * field that arrives with that item.
+ * One `from` binding of the program's bindings files, as {@link Core.compile} reports
+ * it: what the host fulfils in {@link DataInput.sources}, under {@link name}.
+ *
+ * A `file` binding that {@link collects} a record is a glob: every document and page
+ * template it matches is compiled with that record and loaded, as a list, in its
+ * binding. Any other `file` binding is a data file, and `plugin` and `env` bindings
+ * are host sources; each of the three is fulfilled by one value. Which is which is
+ * decided by the binding's type, so the core answers it and the host does not repeat
+ * the rule.
+ */
+export interface FromBinding {
+  /** The binding's name: the key {@link DataInput.sources} fulfils it under. */
+  name: string
+  /**
+   * The form after `from`: a string literal names a `file` — a glob or a data file — and
+   * `plugin("…")` or `env("…")` a plugin's data hook or an environment value.
+   */
+  kind: 'file' | 'plugin' | 'env'
+  /**
+   * The string the form holds: the glob or the data file's path, relative to the input
+   * directory; the plugin's name; the environment variable's name.
+   */
+  literal: string
+  /**
+   * The record each page the glob matches is — the element type of the binding's list,
+   * which extends the host's document type. Absent for a data file, a plugin, or an
+   * environment value.
+   */
+  collects?: string
+  /** The bindings file the binding stands in. */
+  path: string
+  /**
+   * The binding's name in that file: where a host reports a source it cannot fulfil —
+   * an environment variable that is not set, a data file that is not there.
+   */
+  span: Span
+}
+
+/**
+ * What {@link Core.compile} returns: the diagnostics about the files it was given, the
+ * payload of every code block they write, each once, and every `from` binding of the
+ * program the call installed, in the order its bindings file declares them — none
+ * where the call installed no program, or the program has no bindings file. `facts`
+ * (∆Qr2) is an additive field that arrives with that item.
  */
 export interface CompileResult {
   diagnostics: Diagnostic[]
   payloads: CodePayload[]
+  sources: FromBinding[]
 }
 
 /**

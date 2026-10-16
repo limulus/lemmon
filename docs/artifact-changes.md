@@ -261,6 +261,11 @@ moved it. Newest last. An entry is removed when its change has been applied.
   lines were taken, so a `lem-style` closing a component's body leaves no newline behind
   (D26, D27, ∆1Hp).
 
+- **Ambient types, collections** — where the text says a `from` glob's element type must
+  extend `Page`, say a list of `Page` itself collects nothing and is an error at the
+  binding's type, and that a page belongs to one collection, so two globs that match one
+  page are an error at the page (∆muD).
+
 ## Shell & Core
 
 - **WASM API, `compile` and `loadData`** — a file may carry `recordSpan`, the byte
@@ -440,11 +445,12 @@ moved it. Newest last. An entry is removed when its change has been applied.
   marks — while a decorator runs on the keys it lists, or on every mark of its name; a
   mark nothing answers is reported by name and key (D42, ∆7wK).
 
-- **WASM API, `compile`** — `compile` returns `{diagnostics, payloads}` rather than the
-  diagnostics alone: every code block's `{id, language, info, code}`, each once,
-  reported by the call that compiled the file whether or not the program relinked,
-  since a resident unit is not compiled again. The host keeps them by id, which is what
-  a render's `code` mark names (D42, ∆7wK).
+- **WASM API, `compile`** — `compile` returns `{diagnostics, payloads, sources}` rather
+  than the diagnostics alone. `payloads` is every code block's `{id, language, info,
+  code}`, each once, reported by the call that compiled the file whether or not the
+  program relinked, since a resident unit is not compiled again. The host keeps them by
+  id, which is what a render's `code` mark names (D42, ∆7wK). `sources` is the entry
+  below (∆muD).
 
 - **Crates, Markdown row** — drop syntect and `two-face` from the row and every "comrak +
   syntect adds ~1 MB" sentence: the core embeds no highlighter. comrak's code-block
@@ -516,6 +522,18 @@ moved it. Newest last. An entry is removed when its change has been applied.
   it. And where `Page` is declared, `inputPath` is the source file's path from the
   directory holding `lemmon.config.ts`, `www/feed/the-rebound/index.md`, while the core's
   own path for the file starts at the input directory (∆x8D).
+
+- **WASM API, `compile`; Build pipeline, step 3** — `compile`'s `sources` is every
+  `from` binding of the program the call installed, `{name, kind, literal, collects?,
+  path, span}` in the order the bindings file declares them, empty from a call that
+  installed none. `collects` names the record a glob's pages are, present exactly when
+  the binding's type is a list of a type strictly extending the document type, so the
+  core tells a glob from a data file and no host repeats the rule; `path` and `span`
+  place the binding, where a host reports a source it cannot fulfil. Where step 3 says
+  the shell matches documents against the globs `site.lem` reports, say this is how it
+  learns them: the first compile — of `ambient.lem` and every template, page templates
+  without their records — returns them, and the second compiles the pages as their
+  records, so a document's definitions are out of every template's sight (∆muD).
 
 ## From Eleventy to Lemmon
 

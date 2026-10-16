@@ -46,7 +46,10 @@ a load error is a trailer line at the front-matter entry it is about. A page tha
 renders through its record's `layout` with its own output as the body, so its
 expectation opens with what the layout prints around it, and a page whose load fails
 renders nothing. A `.lem` under a typed host that has no front matter is a component or
-layout file, and `host/warnings/` shows what output at its top level earns. The two environment files are cases
+layout file, and `host/warnings/` shows what output at its top level earns. A case in
+`host/bindings/` is a bindings file of its own: the declaration reads `site` from it in
+place of the environment's `site.lem`, which its compile leaves out, since a `from`
+binding stands nowhere else. The two environment files are cases
 themselves, so nothing about them is hidden. `render/` and `document/` deliberately keep
 an untyped host, which names the same three values and types none: that is a host a
 site really has (the Phase 0 spike's), and what any page no collection matched sees.

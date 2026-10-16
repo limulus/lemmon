@@ -127,10 +127,11 @@ deferred), so write `1.0 / 3.0`.
 
 ## Records, enums and `site.lem`
 
-The standard shell (`@limulus/lemmon-shell`; `lem build` is not yet here, ∆muD) compiles
+The standard shell (`@limulus/lemmon-shell`, whose `lem build` writes the site) compiles
 every file with its `ambient.lem`, which declares `Page` (`url: url`, `inputPath: string`,
 `draft: bool = false`), `Build` (`time`, `generator`) and `Code`. It binds `page` (the page
-being rendered), `build`, and `site`, the record of `site.lem`'s top-level bindings.
+being rendered), `build`, and `site`, the record of `site.lem`'s top-level bindings; a site
+needs a `site.lem` in its input directory, even an empty one.
 
 ```lem site.lem
 <lem-enum Placement = hero | left | right />
@@ -187,8 +188,10 @@ being rendered), `build`, and `site`, the record of `site.lem`'s top-level bindi
   string `hero` in front matter. A bare `hero` in an expression is a name. In a ternary keep
   the space, `c ? .hero : .left`: `?.` is one token.
 - **`from` sources** stand only at the top level of `site.lem`, with `: T` and a literal: a
-  glob, whose list type extends `Page`, collecting the documents and page templates it
-  matches; a data-file path; `env("NAME")`; or `plugin("name")`, not yet supported (∆c4j).
+  glob, whose list type extends `Page` (`[Page]` itself is an error), collecting the
+  documents and page templates it matches; a data-file path, inside the input directory;
+  `env("NAME")`; or `plugin("name")`, not yet supported (∆c4j). A page belongs to one
+  collection, and two globs matching one page is an error at the page.
 - **Computed bindings** (`name: T = expr`) run at load in dependency order, read siblings by
   bare name and `build`, never `page`. Lists do not concatenate (no `+`, no `concat`), so
   one collection is one glob.
@@ -351,9 +354,8 @@ Prose inside an element: a blank line on each side lets the markdown run.
 
 ## Checking your work
 
-`lem check` is not yet built (∆1rD). `references/checking.md` has a short Node script that
-compiles files through the staged core with the standard shell's host declaration and prints
-each diagnostic as `path:line:col`; `lem build` is not yet here (∆muD) and will supersede
-it. When the compiler objects, its message says what to write instead, and
-`references/mistakes.md` lists the diagnostics authors hit most, each with a source that
-earns it.
+Run `lem build` (`references/checking.md` says how): it compiles, loads and renders the
+whole site, prints each diagnostic as `path:line:col`, and writes nothing on an error.
+`lem check`, the same report without the writing, is not yet built (∆1rD). When the compiler
+objects, its message says what to write instead, and `references/mistakes.md` lists the
+diagnostics authors hit most, each with a source that earns it.

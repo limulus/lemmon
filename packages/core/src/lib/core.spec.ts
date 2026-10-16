@@ -228,6 +228,40 @@ describe('Core', () => {
       expect(wrong.message).toBe('`Post` has no field `byline`')
     })
 
+    it('should report the `from` bindings a host fulfils, and what each glob collects', async () => {
+      const core = await loadCore()
+      const { diagnostics, sources } = core.compile(site, typedSite)
+      expect(diagnostics).toEqual([])
+      // `posts` is a glob: its documents compile as `Post` and load as a list. The
+      // other two are one value each, so they collect nothing.
+      expect(
+        sources.map(({ name, kind, literal, collects }) => [name, kind, literal, collects])
+      ).toEqual([
+        ['posts', 'file', 'posts/*.md', 'Post'],
+        ['photos', 'file', '_data/photos.json', undefined],
+        ['motto', 'env', 'MOTTO', undefined],
+      ])
+      const motto = sources[2]
+      expect(motto).not.toHaveProperty('collects')
+      expect(motto.path).toBe('site.lem')
+      const siteText = site[1].text
+      expect(
+        Buffer.from(siteText).subarray(motto.span.start, motto.span.end).toString()
+      ).toBe('motto')
+      expect(motto.span.range.start).toEqual({ line: 11, character: 9 })
+    })
+
+    it('should report no sources from a compile that installs no program', async () => {
+      const core = await loadCore()
+      expect(core.compile(site, typedSite).sources).toHaveLength(3)
+      const failed = core.compile(
+        [{ path: 'posts/a.md', text: '<lem-if x>', record: 'Post' }],
+        typedSite
+      )
+      expect(failed.diagnostics[0].severity).toBe('error')
+      expect(failed.sources).toEqual([])
+    })
+
     it('should resolve an asset against the manifest the declaration carries', async () => {
       const core = await loadCore()
       const page = { path: 'page.lem', text: '<lem.asset("styles/site.css")>' }

@@ -23,9 +23,15 @@ const decoder = new TextDecoder()
  */
 export class Core {
   readonly #core: BoundaryCore
+  /**
+   * The version of the core the `.wasm` was built from — what a build names itself
+   * with, since the same source can render differently under another core.
+   */
+  readonly version: string
 
-  constructor(core: BoundaryCore) {
+  constructor(core: BoundaryCore, version: string) {
     this.#core = core
+    this.version = version
   }
 
   /**
@@ -43,6 +49,13 @@ export class Core {
    * once (D42) — including a file that compiled beside one that did not, since it will
    * not be compiled again. A caller keeps them by id, which is what a render's `code`
    * mark names, and a producer's output is cached on that id.
+   *
+   * The sources are every `from` binding of the program this call installed — the
+   * globs a host matches its documents and page templates against, with the record
+   * each compiles as, and the data files, plugins and environment values it loads —
+   * reported by every call that relinks cleanly, and by no other: a call that installs
+   * no program reports none, since the program it would describe is not the one a load
+   * runs against.
    *
    * `host` is the ambient declaration (D30), and is resident like the units: a call
    * that changes nothing about the environment omits it, and one that carries it

@@ -46,8 +46,8 @@ pub use exports::{Export, ExportIndex, TypeExport};
 pub use host::{Ambient, Claim, ClaimAnswer, Host};
 pub use link::link;
 pub use load::{
-    Data, HostSpan, Loaded, LoadedPage, PlannedPage, Source, Spans, Store, collects,
-    field_path, load,
+    Data, FromBinding, HostSpan, Loaded, LoadedPage, PlannedPage, Source, Spans, Store,
+    field_path, from_bindings, load,
 };
 pub use plan::{BindingStep, Bindings, Fulfilled, Index, RecordPlan, SourceKind, Step};
 pub use rendered::{Fragment, Fragments, Mark, Marked, Payload, Rendered};

@@ -16,6 +16,7 @@
     "lem": "./bin/lem.ts"
   },
   "files": [
+    "ambient.lem",
     "bin",
     "dist",
     "src"

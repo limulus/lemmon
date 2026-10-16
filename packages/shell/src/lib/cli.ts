@@ -1,23 +1,31 @@
 import type { Diagnostic, Span } from '@limulus/lemmon-core'
-import { join, relative, resolve } from 'node:path'
+import { relative, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 
-import { ConfigError, contains, loadConfig } from './config.ts'
-import { discover, type Site } from './site.ts'
-import type { EntryKind } from './walk.ts'
+import { build, type BuildResult } from './build.ts'
+import { ConfigError, contains, loadConfig, type LoadedConfig } from './config.ts'
+import type { Environment } from './load.ts'
+import { SiteError } from './program.ts'
 
-/** Where the CLI writes, and what it resolves paths against — `process`, from the bin. */
+/**
+ * Where the CLI writes, what it resolves paths against, and what a build reads from its
+ * surroundings — `process`, from the bin.
+ */
 export interface Io {
   stdout: { write(text: string): unknown }
   stderr: { write(text: string): unknown }
   cwd(): string
+  /** The environment variables a site's `env("…")` bindings read. */
+  env: Environment
+  /** The clock `build.time` is read from; the system's when omitted. */
+  now?(): Date
 }
 
 export const USAGE = `usage: lem <command> [options]
 
 commands:
-  build             discover the site: walk the input, read every page's front matter,
-                    and report what was found
+  build             compile the site, render every page into the output directory, and
+                    copy the passthrough files
 
 options:
   --config <path>   the config file (default: lemmon.config.ts)
@@ -45,7 +53,7 @@ export async function run(args: readonly string[], io: Io): Promise<number> {
   if (command === undefined) return usage(io, 'no command given')
   if (command !== 'build') return usage(io, `unknown command '${command}'`)
   if (extra.length > 0) return usage(io, `unexpected argument '${extra[0]}'`)
-  return await build(resolve(io.cwd(), values.config ?? 'lemmon.config.ts'), io)
+  return await buildCommand(resolve(io.cwd(), values.config ?? 'lemmon.config.ts'), io)
 }
 
 function parse(args: readonly string[]) {
@@ -64,65 +72,52 @@ function usage(io: Io, problem: string): number {
   return 2
 }
 
-async function build(configPath: string, io: Io): Promise<number> {
-  let site: Site
+async function buildCommand(configPath: string, io: Io): Promise<number> {
+  let config: LoadedConfig
+  let result: BuildResult
   try {
-    site = await discover(await loadConfig(configPath))
+    config = await loadConfig(configPath)
+    result = await build(config, { now: io.now?.() ?? new Date(), env: io.env })
   } catch (error) {
-    if (!(error instanceof ConfigError)) throw error
+    if (!(error instanceof ConfigError || error instanceof SiteError)) throw error
     io.stderr.write(`lem: ${error.message}\n`)
     return 1
   }
-  io.stdout.write(summary(site, io.cwd()))
-  for (const diagnostic of site.diagnostics) {
-    io.stderr.write(`${located(diagnostic, site, io.cwd())}\n`)
+  for (const diagnostic of result.diagnostics) {
+    io.stderr.write(`${located(diagnostic, config, io.cwd())}\n`)
   }
-  return site.diagnostics.some((d) => d.severity === 'error') ? 1 : 0
+  const errors = result.diagnostics.filter((d) => d.severity === 'error').length
+  if (errors > 0) {
+    io.stderr.write(`lem: ${plural(errors, 'error')}, so nothing was written\n`)
+    return 1
+  }
+  if (result.failure !== undefined) {
+    const { file, cause } = result.failure
+    io.stderr.write(
+      `lem: could not write ${display(io.cwd(), file)}: ${(cause as Error).message}\n` +
+        'lem: every page rendered, and the output may hold what was written before it\n'
+    )
+    return 1
+  }
+  io.stdout.write(
+    `wrote ${plural(result.pages.length, 'page')}, ` +
+      `copied ${plural(result.copied.length, 'file')}\n`
+  )
+  return 0
 }
 
-/** What discovery found: the files by kind, then each page with its url. */
-function summary(site: Site, cwd: string): string {
-  const counts: Record<EntryKind, number> = {
-    document: 0,
-    template: 0,
-    passthrough: 0,
-    ignored: 0,
-  }
-  let pageTemplates = 0
-  for (const entry of site.entries) {
-    counts[entry.kind]++
-    if (entry.kind === 'template' && entry.page) pageTemplates++
-  }
-  const plural = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`
-  const lines = [
-    `${display(cwd, site.config.input)}: ${plural(counts.document, 'document')}, ` +
-      `${plural(counts.template, 'template')} (${pageTemplates} with front matter), ` +
-      `${counts.passthrough} passthrough, ${counts.ignored} ignored`,
-  ]
-  const urls = [...site.pages].map(([path, page]) => {
-    const url = page.loaded.value.url
-    if (url === undefined) return [path, '(generator)']
-    return [path, typeof url === 'string' ? url : JSON.stringify(url)]
-  })
-  if (urls.length > 0) {
-    const width = Math.max(...urls.map(([, url]) => url.length))
-    lines.push(
-      '',
-      'pages:',
-      ...urls.map(([path, url]) => `  ${url.padEnd(width)}  ${path}`)
-    )
-  }
-  return `${lines.join('\n')}\n`
-}
+const plural = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`
 
 /**
  * A diagnostic as `path:line:col: severity: message`, counting lines and columns from 1
- * as an editor shows them, with each label on an indented line of its own.
+ * as an editor shows them, with each label on an indented line of its own. A path is
+ * the core's — relative to the input directory — or absolute, as the shell's own
+ * `ambient.lem` is.
  */
-function located(diagnostic: Diagnostic, site: Site, cwd: string): string {
+function located(diagnostic: Diagnostic, config: LoadedConfig, cwd: string): string {
   const place = (path: string, span: Span) => {
     const { line, character } = span.range.start
-    return `${display(cwd, join(site.config.input, path))}:${line + 1}:${character + 1}`
+    return `${display(cwd, resolve(config.input, path))}:${line + 1}:${character + 1}`
   }
   const { path, span, severity, message, labels } = diagnostic
   return [
@@ -133,5 +128,5 @@ function located(diagnostic: Diagnostic, site: Site, cwd: string): string {
 
 /** `path` as a terminal shows it: relative to `cwd` when it is under it. */
 function display(cwd: string, path: string): string {
-  return contains(cwd, path) ? relative(cwd, path) || '.' : path
+  return contains(cwd, path) ? relative(cwd, path) : path
 }

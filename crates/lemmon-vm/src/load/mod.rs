@@ -16,12 +16,14 @@
 //! (invariant 8). A caller bug — a source no binding asked for, a page the program
 //! never compiled — is an `Err`, since it has no data to point at.
 //!
-//! Three parts have a module: [`validate`] checks a value against its declared type,
-//! [`place`] says where a diagnostic about it points, and [`pages`] is the page table —
-//! each loaded page, where it stands, and the urls two pages may not share.
+//! Four parts have a module: [`validate`] checks a value against its declared type,
+//! [`place`] says where a diagnostic about it points, [`pages`] is the page table —
+//! each loaded page, where it stands, and the urls two pages may not share — and
+//! [`sources`] says what a host loads for each `from` binding.
 
 mod pages;
 mod place;
+mod sources;
 mod validate;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -31,7 +33,7 @@ use crate::bytecode::Module;
 use crate::decls::Decls;
 use crate::diagnostics::{Compiled, Diagnostic};
 use crate::host::{Ambient, Host};
-use crate::plan::{Fulfilled, SourceKind};
+use crate::plan::Fulfilled;
 use crate::repeated_path;
 use crate::types::Type;
 use crate::value::{Map, Value};
@@ -41,6 +43,8 @@ use pages::url_diagnostics;
 pub use pages::{LoadedPage, PlannedPage};
 use place::{At, Place};
 pub use place::{HostSpan, Spans, field_path};
+use sources::collects;
+pub use sources::{FromBinding, from_bindings};
 
 /// One value the host loaded: what it parsed, the file it came from when there is
 /// one, and the positions in that file (D37).
@@ -303,31 +307,6 @@ fn check_page<'a>(
         return Err(format!("`{path}` is loaded twice"));
     }
     Ok(())
-}
-
-/// The record a `from` binding collects, when its source `kind` and type `ty` make it
-/// a glob: a file source whose type is a list of the host's document type or of a
-/// record extending it. Any other file source is a data file — the rule a host tells
-/// the two apart by (`docs/language.md` §Ambient types), so it lives here for every
-/// host to ask rather than to repeat.
-#[must_use]
-pub fn collects(
-    module: &Module,
-    host: &Host,
-    kind: &SourceKind,
-    ty: &Type,
-) -> Option<Rc<str>> {
-    let SourceKind::File(_) = kind else {
-        return None;
-    };
-    let Type::List(element) = ty else {
-        return None;
-    };
-    let Type::Named(record) = &**element else {
-        return None;
-    };
-    let document = host.document_type()?;
-    module.is_a(record, &document).then(|| record.clone())
 }
 
 /// The module's file table by path.

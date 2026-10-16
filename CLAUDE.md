@@ -92,7 +92,8 @@ crates/lemmon-vm/       types + checker-while-lowering + codegen + VM, document 
 crates/lemmon-wasm/     wasm-bindgen boundary: the resident Core (lemmon-core's .wasm);
                         build.rs pins the .wasm's stack
 packages/core/          @limulus/lemmon-core — typed JS wrapper around the .wasm
-packages/shell/         @limulus/lemmon-shell — CLI, walker, plugin host, dev server (stub)
+packages/shell/         @limulus/lemmon-shell — the `lem` CLI: config, walk, front matter,
+                        the two-phase compile, load, render and write (`lem build`)
 tests/corpus/           golden inputs → expected trees + diagnostics; see its README
 tests/fidelity/         the-rebound's sources and its 11ty reference page; see its README
 scripts/                repo tooling run by npm scripts (wasm staging + check, the
@@ -200,10 +201,16 @@ timing modes are not in the pre-push gate: CI's `verify` job runs `wasm:bench` a
 `verify:js`, as the marshalling record, and `test:fidelity -- --time` — the only thing
 that checks the 1 ms/page criterion — runs only by hand.
 
+`lem build` is real: in a directory with a `lemmon.config.ts` (`packages/shell/README.md`
+describes it), the bin at `packages/shell/bin/lem.ts` compiles the site in two calls,
+loads it, renders every page into memory and then writes HTML and passthrough files. It
+runs from source under the `source` export condition, so the limulus-dot-net port branch
+depends on this checkout with `file:` and sees every edit without a build.
+
 Still aspirational; keep them true as they come to exist:
 
 - `cargo fuzz run parser` — parser/VM fuzzing (never commit a panic repro as expected)
-- `lem build | dev | check | fmt` — the CLI, once `@limulus/lemmon-shell` exists
+- `lem dev | check | fmt` — the rest of the CLI; `lem build` exists (below)
 
 ## TypeScript setup
 

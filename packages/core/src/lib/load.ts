@@ -44,7 +44,7 @@ export function createCore(
   wasm: BufferSource | WebAssembly.Module
 ): Core {
   glue.initSync({ module: wasm })
-  return new Core(new glue.Core())
+  return new Core(new glue.Core(), glue.version())
 }
 
 /**

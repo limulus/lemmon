@@ -66,9 +66,17 @@ fn names_a_code_blocks_payload_by_the_id_compile_sent() {
     );
 }
 
-/// What `compile` sends for files that compiled clean and write no code block:
-/// `{diagnostics, payloads}` with both empty (D42).
-const CLEAN: &str = r#"{"diagnostics":[],"payloads":[]}"#;
+/// What `compile` sends for files that compiled clean, write no code block, and have
+/// no bindings file: `{diagnostics, payloads, sources}` with all three empty (D42,
+/// ∆muD).
+const CLEAN: &str = r#"{"diagnostics":[],"payloads":[],"sources":[]}"#;
+
+/// The diagnostics of a `compile` reply, for a program whose bindings file reports
+/// sources beside them.
+fn diagnostics_of(reply: &str) -> serde_json::Value {
+    let reply: serde_json::Value = serde_json::from_str(reply).expect("JSON");
+    reply["diagnostics"].clone()
+}
 
 #[wasm_bindgen_test]
 fn compiles_loads_and_renders_through_the_abi() {
@@ -195,10 +203,28 @@ fn plans_and_renders_loaded_pages_through_the_abi() {
     ])
     .to_string();
     let host = r#"{"ambient": {"page": "Page", "site": {"bindingsOf": "site.lem"}}, "document": "page", "entry": "layout", "url": "url"}"#;
-    let diagnostics = core
+    let reply = core
         .compile(&files, Some(host.to_owned()))
         .expect("a well-formed compile payload");
-    assert_eq!(diagnostics, CLEAN);
+    assert_eq!(diagnostics_of(&reply), serde_json::json!([]));
+    // The glob the host matches documents against, and the record it compiles them as.
+    let reply: serde_json::Value = serde_json::from_str(&reply).expect("JSON");
+    let posts = &reply["sources"][0];
+    assert_eq!(
+        (
+            &posts["name"],
+            &posts["kind"],
+            &posts["literal"],
+            &posts["collects"]
+        ),
+        (
+            &serde_json::json!("posts"),
+            &serde_json::json!("file"),
+            &serde_json::json!("posts/*.md"),
+            &serde_json::json!("Post")
+        )
+    );
+    assert_eq!(posts["span"]["range"]["start"]["line"], 5);
     assert!(
         core.plan().is_err(),
         "a plan before any load is a caller bug"
@@ -237,10 +263,10 @@ fn loads_data_against_the_program_through_the_abi() {
     ])
     .to_string();
     let host = r#"{"ambient": {"page": "Page", "site": {"bindingsOf": "site.lem"}}, "document": "page", "entry": "layout"}"#;
-    let diagnostics = core
+    let reply = core
         .compile(&files, Some(host.to_owned()))
         .expect("a well-formed compile payload");
-    assert_eq!(diagnostics, CLEAN);
+    assert_eq!(diagnostics_of(&reply), serde_json::json!([]));
     let reported = core
         .load_data(
             r#"{"ambient": {}, "sources": {"photos": {

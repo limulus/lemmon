@@ -75,4 +75,13 @@ describe('createCore()', () => {
     second.free()
     first.free()
   })
+
+  it('should carry the version the glue reports for the core it was built from', async () => {
+    const glue = (await import(new URL('lemmon-core.js', stagingDir).href)) as WasmBoundary
+    const bytes = await readFile(new URL('lemmon-core_bg.wasm', stagingDir))
+    const core = createCore(glue, bytes)
+    expect(core.version).toBe(glue.version())
+    expect(core.version).toMatch(/^\d+\.\d+\.\d+/)
+    core.free()
+  })
 })

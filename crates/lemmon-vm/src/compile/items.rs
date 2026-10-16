@@ -612,6 +612,24 @@ impl Compiler<'_> {
         let Some(kind) = self.source_kind(&required(tag.source())) else {
             return;
         };
+        // A glob collects a type that extends the document type, never the type
+        // itself: the entry field is declared where a record's base *is* the document
+        // type (D43), so the type itself has no layout to render a page through, and
+        // the loader takes no list of it as pages (`collects` is strict).
+        if let (SourceKind::File(_), Some(document)) = (&kind, self.host.document_type())
+            && self.exported_type(name.text()) == Type::list(Type::Named(document.clone()))
+        {
+            let annotation = required(required(tag.type_annotation()).ty());
+            self.error(
+                annotation.span(),
+                format!(
+                    "a collection's element type must extend `{document}`, the host's \
+                     document type, rather than be it: collect a list of a type that \
+                     extends `{document}`"
+                ),
+            );
+            return;
+        }
         if admitted {
             self.unit.bindings.push(BindingFn {
                 name: Rc::from(name.text()),
@@ -723,6 +741,45 @@ mod tests {
             "site.lem",
             &[SourceFile::new("site.lem", text)],
         )
+    }
+
+    #[test]
+    fn refuses_a_collection_of_the_document_type_itself_at_its_type() {
+        let site = "<lem-let pages: [Page] from \"pages/*.md\" />";
+        assert_eq!(
+            shown_with(
+                &shell_host(),
+                &[
+                    SourceFile::new("ambient.lem", AMBIENT),
+                    SourceFile::new("site.lem", site),
+                ]
+            ),
+            [format!(
+                "site.lem:{}: a collection's element type must extend `Page`, the host's \
+                 document type, rather than be it: collect a list of a type that extends \
+                 `Page`",
+                at(site, "[Page]")
+            )]
+        );
+    }
+
+    #[test]
+    fn takes_a_collection_of_a_type_extending_the_document_type_and_other_sources() {
+        // The neighbours of the refusal: a subtype's list is a collection, and a list
+        // of the document type from a host source is no glob, so neither is refused.
+        let site = "<lem-let posts: [Post] from \"posts/*.md\" />\n\
+                    <lem-let pages: [Page] from env(\"PAGES\") />";
+        assert_eq!(
+            shown_with(
+                &shell_host(),
+                &[
+                    SourceFile::new("ambient.lem", AMBIENT),
+                    SourceFile::new("schema.lem", crate::testing::POST),
+                    SourceFile::new("site.lem", site),
+                ]
+            ),
+            Vec::<String>::new()
+        );
     }
 
     #[test]

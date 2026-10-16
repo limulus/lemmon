@@ -24,10 +24,12 @@ later, unchanged — a Lambda (`ContentSource` seam, D14).
 
 ```ts
 class Core {
-  compile(files: {path, text, record?}[], host?: HostDecl): {diagnostics, payloads}
+  compile(files: {path, text, record?}[], host?: HostDecl):
+      {diagnostics, payloads, sources}
       // changed files only; per-file units, cached (D25). `record` names a document's
       // schema; `host` names the ambient values and their types (D30); `payloads` are
-      // the code blocks' `{id, language, info, code}`, each once (D42)
+      // the code blocks' `{id, language, info, code}`, each once (D42); `sources` the
+      // program's `from` bindings, `{name, kind, literal, collects?, path, span}`
   loadData(input: DataInput): Diagnostic[]            // records, data files, build info
   upsertRecord(collection, record) / removeRecord(id) // dev server + future on-demand
   plan(): {path, index?, url?}[]                      // every loaded page (D43)
@@ -91,14 +93,24 @@ a warning at the word.
 settled the spike shapes the sketch left open — each chosen so the full form is additive,
 not a break:
 
-- `compile` returns `{diagnostics, payloads}`: the diagnostics about the files passed
-  and any resident unit the relink found stale, and the payload of every code block the
-  files that compiled write, `{id, language, info, code}`, each once (D42). A file that
-  compiles beside one that does not goes resident without the program relinking and is
-  not compiled again once the other is fixed, so its payloads are reported by the call
-  that compiled it, relink or no; the host keeps them by id. ∆Qr2 adds `facts` beside
-  them. A declaration whose claims cannot be merged — two naming different payloads or
-  key fields for one name, or a key field with no payload — is a thrown caller bug.
+- `compile` returns `{diagnostics, payloads, sources}`: the diagnostics about the files
+  passed and any resident unit the relink found stale, and the payload of every code
+  block the files that compiled write, `{id, language, info, code}`, each once (D42). A
+  file that compiles beside one that does not goes resident without the program
+  relinking and is not compiled again once the other is fixed, so its payloads are
+  reported by the call that compiled it, relink or no; the host keeps them by id.
+  `sources` is every `from` binding of the program a clean relink installed, in the
+  order its bindings file declares them, and empty from a call that installed none:
+  `{name, kind, literal, collects?, path, span}`, where `kind` is `file`, `plugin` or
+  `env`, `literal` the string the source names, and `collects` the record a glob's
+  pages are — present exactly when the binding's type is a list of a record extending
+  the document type, strictly, since a list of the document type itself is a compile
+  error at the binding's type — so the core, which knows the types, tells a glob from a
+  data file and the host does not repeat the rule. `path` and `span` place the
+  binding's name, where a host reports a source it cannot fulfil (∆muD). ∆Qr2 adds
+  `facts` beside them. A declaration whose claims cannot be merged — two naming
+  different payloads or key fields for one name, or a key field with no payload — is a
+  thrown caller bug.
 - `DataInput` is `{ambient, sources?}` (D37, ∆iCW): `ambient` is bare JSON by any name
   the host bound — an untyped host's values pass through as sent — and `sources` fulfils
   each `from` binding by name: a list of `{path, value, spans}` for a glob, one such for
@@ -198,7 +210,8 @@ not a break:
    with one yields no unit.
    Templates without front matter compile first, `site.lem` among them: the shell matches
    documents and page templates — `.lem` files with front matter (D41) — against the
-   `from` globs that `site.lem` reports, then compiles each with its `record` (D30).
+   `from` globs that `site.lem` reports, which are the `sources` that first `compile`
+   returns with the record each collects, then compiles each with its `record` (D30).
 4. **Load** (core) — validate records against schemas, run the defaults and computed
    bindings, resolve reference fields (D37) and `[asset]` fields, the latter against the
    manifest the declaration carried into step 3; then load the pages no glob holds,
@@ -222,6 +235,29 @@ not a break:
 10. **Second phase** (shell) — pages that read other pages' finished output (feeds,
     ∆zu0) render after steps 6–9 have finished every other page, with those outputs
     loaded back as a string source (D42).
+
+What `lem build` (∆muD) runs is steps 1 and 3–6, and step 8's HTML and passthrough, in one
+core on one thread. Step 3's first call compiles every `.lem` — page templates too,
+without their records, so a layout sees what they define — and its second the pages as
+their records; a document compiles only in the second, so no template sees what a
+document defines. Every page is rendered and its output file checked against every
+other — the same file, the same but for case or Unicode form, or a file where another
+needs a directory — before the first is written, so any error stops the build before it
+writes; a write the file system then refuses is reported, and the output may hold what
+was written before it. A page no glob matched and no `type:` named renders with `page`
+its own front matter, each such page loaded on its own before it renders, since a load
+binds one document value; each of those loads re-sends and re-validates the whole
+envelope, so the cost grows with the untyped pages times the size of the site — 18 of 25
+pages on the limulus-dot-net port branch cost about 0.35 s in all.
+
+- Step 2 is not yet run (∆c4j, ∆d1N): no plugin data hook or document transform, and no
+  manifest on the declaration, so no `asset()` resolves; a `plugin("…")` source is an
+  error at its binding.
+- Step 7 and step 8's CSS bundle are not yet run (∆F4y): every mark keeps its default
+  content, and nothing a page collected is written.
+- Step 9 is not yet run (∆Oyi, ∆yOJ).
+- Step 10 is not yet run (∆zu0): a feed renders with the other pages, reading none of
+  their output.
 
 Dev incrementality comes from two reported sets. Render-reported deps: template edit →
 recompile one file, re-render dependents; content edit → `upsertRecord`, re-render readers;

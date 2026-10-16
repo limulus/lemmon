@@ -428,7 +428,9 @@ input directory.
 
 - **A content type is page-backed by `extends Page`**, and its front matter is its own
   fields, flat: `page.title` beside `page.url`. A `from` glob's element type must extend
-  `Page`. A document's type is the element type of the collection whose glob matched it;
+  `Page`. A list of `Page` itself collects nothing, and is an error at the binding's type.
+  A page belongs to one collection, so two globs that match one page are an error at the
+  page. A document's type is the element type of the collection whose glob matched it;
   a front-matter `type:` key may name a subtype instead — or, where no glob matched, any
   record that extends `Page` — and the checker reports at that key if the named type does
   not extend the element type. The host names that type per file, and the file's unit

@@ -1,10 +1,12 @@
 import { spawnSync } from 'node:child_process'
-import { mkdirSync, symlinkSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
 import { run, USAGE } from './cli.ts'
+import { AMBIENT_FILE } from './program.ts'
+import { ENV, PASSTHROUGH, project, SITE, SITE_LEM } from '../mocks/sites.ts'
 import { tempDir } from '../mocks/temp-dir.ts'
 
 /** What one run wrote, and the code it exited with. */
@@ -14,26 +16,28 @@ interface Ran {
   stderr: string
 }
 
-/** Runs `lem` with `args` in `cwd`, capturing what it writes. */
-async function lem(args: string[], cwd = tempDir()): Promise<Ran> {
+/**
+ * Runs `lem` with `args` in `cwd`, capturing what it writes: in `env`, at a fixed
+ * time unless `now` is `null`, when the system clock tells it.
+ */
+async function lem(
+  args: string[],
+  cwd = tempDir(),
+  {
+    env = ENV,
+    now = new Date('2026-10-15T12:00:00Z'),
+  }: { env?: object; now?: Date | null } = {}
+): Promise<Ran> {
   const out: string[] = []
   const err: string[] = []
   const code = await run(args, {
     stdout: { write: (text: string) => out.push(text) },
     stderr: { write: (text: string) => err.push(text) },
     cwd: () => cwd,
+    env: env as Record<string, string>,
+    ...(now === null ? {} : { now: () => now }),
   })
   return { code, stdout: out.join(''), stderr: err.join('') }
-}
-
-/** A project directory: a config naming `www` and `dist`, and `files` under `www/`. */
-function project(files: Record<string, string>, passthrough: string[] = []): string {
-  const fields = JSON.stringify({ input: 'www', output: 'dist', passthrough })
-  const config = `export default ${fields}`
-  const entries = Object.entries(files).map(([path, text]) => [`www/${path}`, text])
-  const dir = tempDir({ 'lemmon.config.ts': config, ...Object.fromEntries(entries) })
-  mkdirSync(join(dir, 'www'), { recursive: true })
-  return dir
 }
 
 describe('run()', () => {
@@ -84,73 +88,48 @@ describe('run()', () => {
   })
 
   describe('build', () => {
-    it('should summarize the site and list each page with its url', async () => {
-      const cwd = project(
-        {
-          'feed/the-rebound/index.md': '---\ntitle: x\n---\n',
-          'feed/index.lem': '---\nurl: /feed.xml\n---\n',
-          'tils/topic.lem': '---\nfor:\n  topic: site.tilTopics\n---\n',
-          'odd.md': '---\nurl: 3\n---\n',
-          'layouts.lem': '<p></p>\n',
-          'assets/x.png': '',
-          'x.webc': '',
-        },
-        ['assets/**']
-      )
+    it('should build the site and say what it wrote', async () => {
+      const cwd = project(SITE, PASSTHROUGH)
 
       expect(await lem(['build'], cwd)).toEqual({
         code: 0,
-        stdout: [
-          'www: 2 documents, 3 templates (2 with front matter), 1 passthrough, 1 ignored',
-          '',
-          'pages:',
-          '  /feed.xml           feed/index.lem',
-          '  /feed/the-rebound/  feed/the-rebound/index.md',
-          '  3                   odd.md',
-          '  (generator)         tils/topic.lem',
-          '',
-        ].join('\n'),
+        stdout: 'wrote 4 pages, copied 1 file\n',
         stderr: '',
       })
+      expect(readFileSync(join(cwd, 'dist/notes/loose/index.html'), 'utf8')).toContain(
+        '2026-10-15T12:00:00Z'
+      )
     })
 
-    it('should count one in the singular, and list no pages if none', async () => {
-      const cwd = project({ 'a.lem': '', 'b.md': '' })
+    it('should count one in the singular, and read the system clock by default', async () => {
+      const cwd = project({ 'site.lem': '', 'a.md': '<lem.build.time.year()>\n' })
 
-      expect((await lem(['build'], cwd)).stdout).toBe(
-        'www: 1 document, 1 template (0 with front matter), 0 passthrough, 0 ignored\n' +
-          '\npages:\n  /b/  b.md\n'
-      )
-      expect((await lem(['build'], project({}))).stdout).toBe(
-        'www: 0 documents, 0 templates (0 with front matter), 0 passthrough, 0 ignored\n'
+      expect(await lem(['build'], cwd, { now: null })).toEqual({
+        code: 0,
+        stdout: 'wrote 1 page, copied 0 files\n',
+        stderr: '',
+      })
+      expect(readFileSync(join(cwd, 'dist/a/index.html'), 'utf8')).toBe(
+        `${new Date().getUTCFullYear()}\n`
       )
     })
 
     it('should read the config --config names, from the working directory', async () => {
       const cwd = tempDir({
         'site/lemmon.config.ts': "export default { input: 'src', output: 'out' }",
+        'site/src/site.lem': '',
         'site/src/a.md': '',
       })
 
       const ran = await lem(['build', '--config', 'site/lemmon.config.ts'], cwd)
 
-      expect(ran.code).toBe(0)
-      expect(ran.stdout).toMatch(/^site\/src: 1 document,/)
-    })
-
-    it('should show the input as `.` from inside, and absolute from outside', async () => {
-      const cwd = project({})
-
-      expect(
-        (await lem(['build', '--config', '../lemmon.config.ts'], join(cwd, 'www'))).stdout
-      ).toMatch(/^\.: 0 documents/)
-      expect(
-        (await lem(['build', '--config', join(cwd, 'lemmon.config.ts')], tempDir())).stdout
-      ).toMatch(new RegExp(`^${join(cwd, 'www')}: 0 documents`))
+      expect(ran).toMatchObject({ code: 0, stdout: 'wrote 1 page, copied 0 files\n' })
+      expect(existsSync(join(cwd, 'site/out/a/index.html'))).toBe(true)
     })
 
     it('should print each diagnostic at its place, and exit 1 on an error', async () => {
       const cwd = project({
+        ...SITE,
         'a.md': '---\ntitle: a: b\n---\n',
         'feed/b.md': '---\nnote: x\nwhen: !!timestamp 2024\n---\n',
         'c.md': '---\nsubhead: I’m here\ntitle: a\ntitle: b\n---\n',
@@ -158,28 +137,128 @@ describe('run()', () => {
 
       const ran = await lem(['build'], cwd)
 
-      expect(ran.code).toBe(1)
-      expect(ran.stderr).toBe(
-        [
+      expect(ran).toEqual({
+        code: 1,
+        stdout: '',
+        stderr: [
           'www/a.md:2:8: error: front matter is not valid YAML: ' +
             'Nested mappings are not allowed in compact mappings',
           'www/c.md:4:1: error: `title` is already given',
           '  www/c.md:3:1: first given here',
           'www/feed/b.md:3:7: warning: Unresolved tag: tag:yaml.org,2002:timestamp',
+          'lem: 2 errors, so nothing was written',
           '',
-        ].join('\n')
+        ].join('\n'),
+      })
+      expect(existsSync(join(cwd, 'dist'))).toBe(false)
+    })
+
+    it('should print every failure the build reports, and exit 1', async () => {
+      const failures: [string, Record<string, string>, object, string][] = [
+        [
+          'a compile error',
+          { 'broken.lem': '<lem-fn broken()><lem.nope></lem-fn>\n' },
+          ENV,
+          'www/broken.lem:1:23: error: undefined name `nope`',
+        ],
+        [
+          'an environment variable that is not set',
+          {},
+          {},
+          'www/site.lem:18:10: error: `motto` loads the environment variable `MOTTO`, ' +
+            'which is not set',
+        ],
+        [
+          'a data file that is not there',
+          { '_data/photos.json': '' },
+          ENV,
+          'www/site.lem:17:10: error: `photos` loads `_data/photos.json`, which is not a ' +
+            'file in the input directory',
+        ],
+        [
+          'a plugin source',
+          { 'site.lem': `${SITE_LEM}<lem-let more: string from plugin("more") />\n` },
+          ENV,
+          'www/site.lem:19:10: error: `more` loads `plugin("more")`, and plugins are not ' +
+            'supported yet (∆c4j)',
+        ],
+        [
+          'a render error',
+          { 'posts/b.md': '---\ntitle: B\n---\n<lem.site.photos["nope"].caption>\n' },
+          ENV,
+          'www/posts/b.md:4:6: error: no key "nope"',
+        ],
+      ]
+      for (const [what, files, env, line] of failures) {
+        const site = Object.fromEntries(
+          Object.entries({ ...SITE, ...files }).filter(([, text]) => text !== '')
+        )
+        const cwd = project(site, PASSTHROUGH)
+
+        const ran = await lem(['build'], cwd, { env })
+
+        expect(ran.code, what).toBe(1)
+        expect(ran.stdout, what).toBe('')
+        expect(ran.stderr, what).toMatch(/\nlem: 1 error, so nothing was written\n$/)
+        expect(ran.stderr.startsWith(line), `${what}: ${ran.stderr}`).toBe(true)
+        expect(existsSync(join(cwd, 'dist')), what).toBe(false)
+      }
+    })
+
+    it('should report a file the file system refuses, and exit 1', async () => {
+      const cwd = project(SITE, PASSTHROUGH)
+      mkdirSync(join(cwd, 'dist'))
+      writeFileSync(join(cwd, 'dist/posts'), 'stale')
+
+      const ran = await lem(['build'], cwd)
+
+      expect(ran.code).toBe(1)
+      expect(ran.stdout).toBe('')
+      expect(ran.stderr).toMatch(
+        /^lem: could not write dist\/posts\/a\/index\.html: ENOTDIR: [^\n]*\n/
       )
-      expect(ran.stdout).toMatch(/^www: 3 documents/)
+      expect(ran.stderr).toMatch(
+        /\nlem: every page rendered, and the output may hold what was written before it\n$/
+      )
+    })
+
+    it('should show a label in the shell’s own declarations where the file is', async () => {
+      const cwd = project({
+        ...SITE,
+        'bad.lem': '<lem-type Odd extends Page>\n  url: string\n</lem-type>\n',
+      })
+
+      const ran = await lem(['build'], cwd)
+
+      expect(ran.code).toBe(1)
+      expect(ran.stderr).toContain(
+        'www/bad.lem:2:3: error: `url` is a `url` in `Page` and cannot be redeclared as ' +
+          `a \`string\`\n  ${AMBIENT_FILE}:2:3: declared here\n`
+      )
     })
 
     it('should exit 0 when every diagnostic is a warning', async () => {
       const ran = await lem(
         ['build'],
-        project({ 'b.md': '---\nwhen: !!timestamp 2024\n---\n' })
+        project({ ...SITE, 'feed/b.md': '---\nwhen: !!timestamp 2024\n---\n' })
       )
 
       expect(ran.code).toBe(0)
       expect(ran.stderr).toMatch(/: warning: /)
+      expect(ran.stdout).toBe('wrote 5 pages, copied 0 files\n')
+    })
+
+    it('should report a site with no `site.lem`, and exit 1', async () => {
+      const cwd = project({ 'a.md': '' })
+
+      expect(await lem(['build'], cwd)).toEqual({
+        code: 1,
+        stdout: '',
+        stderr:
+          `lem: ${join(cwd, 'www', 'site.lem')}: no bindings file: a site declares its ` +
+          'collections and data in a `site.lem` without front matter here, and an empty ' +
+          'one declares none\n',
+      })
     })
 
     it('should report a config it cannot load, and exit 1', async () => {

@@ -30,9 +30,9 @@ use lemmon_corpus::Case;
 use lemmon_syntax::spans::at;
 use lemmon_syntax::{DIAGNOSTICS_TRAILER, FrontMatter};
 use lemmon_vm::{
-    Ambient, Claim, Data, Decls as _, Fulfilled, Host, HostSpan, LineIndex, Loaded, Map,
-    Mark, Module, Op, Payload, Rendered, RuntimeError, Source, SourceFile, SourceKind,
-    Span, Spans, Value, collects, compile, field_path, is_document, load, render,
+    Ambient, Claim, Data, FromBinding, Host, HostSpan, LineIndex, Loaded, Map, Mark,
+    Module, Op, Payload, Rendered, RuntimeError, Source, SourceFile, SourceKind, Span,
+    Spans, Value, compile, field_path, from_bindings, is_document, load, render,
     render_page,
 };
 use saphyr::{LoadableYamlNode, MarkedYaml, Scalar, YamlData};
@@ -67,10 +67,15 @@ fn untyped_host() -> Host {
 /// a `Build`, `site` the record of the bindings `site.lem` declares, every page
 /// rendered through its `layout` field and placed by its `url`.
 fn declared_host() -> Host {
+    declared_host_reading(SITE)
+}
+
+/// [`declared_host`], with `site` read from the bindings of the file at `bindings`.
+fn declared_host_reading(bindings: &str) -> Host {
     Host::new()
         .bind("page", Ambient::named("Page"))
         .bind("build", Ambient::named("Build"))
-        .bind("site", Ambient::bindings(SITE))
+        .bind("site", Ambient::bindings(bindings))
         .documents("page")
         .rendered_through("layout")
         .addressed_by("url")
@@ -92,6 +97,11 @@ const ASSETS: &[(&str, &str)] = &[
 const AMBIENT: &str = "host/environment/ambient.lem";
 const SITE: &str = "host/environment/site.lem";
 
+/// Where a case is a bindings file of its own: the declaration reads `site` from the
+/// case in place of the environment's `site.lem`, which the compile leaves out, since a
+/// `from` binding stands nowhere else.
+const BINDINGS_CASES: &str = "host/bindings/";
+
 /// The directory the environment's globs are relative to — the `host/` group is the
 /// site's content root, so `pages/*.md` names `host/pages/*.md`.
 const CONTENT_ROOT: &str = "host/";
@@ -111,22 +121,17 @@ fn collections() -> &'static [(String, String)] {
         let Some(module) = compiled.output else {
             return Vec::new();
         };
-        let mut collections = Vec::new();
-        for plan in &module.bindings {
-            for step in &plan.steps {
-                let Fulfilled::ByHost(kind @ SourceKind::File(pattern)) = &step.fulfilled
-                else {
-                    continue;
-                };
-                let ty = module
-                    .field(&plan.record, &step.name)
-                    .expect("a binding is a field of its record");
-                if let Some(element) = collects(&module, &host, kind, &ty) {
-                    collections.push((pattern.to_string(), element.to_string()));
-                }
-            }
-        }
-        collections
+        from_bindings(&module, &host)
+            .into_iter()
+            .filter_map(|binding| match binding {
+                FromBinding {
+                    kind: SourceKind::File(pattern),
+                    collects: Some(element),
+                    ..
+                } => Some((pattern.to_string(), element.to_string())),
+                _ => None,
+            })
+            .collect()
     })
 }
 
@@ -333,7 +338,8 @@ fn html(case: &Case) -> String {
 
 /// A `host/` case, compiled with the environment the declaration describes — the two
 /// files skipped where the case is one of them, since one compile may not name a file
-/// twice — then loaded and rendered as the shell would: a page as the one member of its
+/// twice, and `site.lem` skipped where the case is a bindings file of its own — then
+/// loaded and rendered as the shell would: a page as the one member of its
 /// collection, or on its own in `pages` when its `type:` key typed it and no glob holds
 /// it, with the values the shell derives (`url`, `inputPath`) added to its front matter;
 /// the shell's own `build`; and an untyped `page` for whatever is not a loaded page,
@@ -342,12 +348,15 @@ fn html(case: &Case) -> String {
 /// record's `layout`, with its own output as the body; anything else as its own output.
 fn typed_html(case: &Case) -> String {
     let path = case.path();
-    let host = declared_host();
+    let own_bindings = path.starts_with(BINDINGS_CASES);
+    let host = declared_host_reading(if own_bindings { &path } else { SITE });
     let page_shaped = is_document(&path) || front_matter(&case.source).is_some();
     let document = page_shaped.then(|| PageInput::of(case));
     let mut files: Vec<SourceFile> = environment()
         .into_iter()
-        .filter(|environment| environment.path != path)
+        .filter(|environment| {
+            environment.path != path && !(own_bindings && environment.path == SITE)
+        })
         .collect();
     let mut file = SourceFile::new(&path, &case.source);
     if let Some((record, span)) = document.as_ref().and_then(|d| d.record.as_ref()) {
@@ -395,54 +404,44 @@ fn envelope(
 ) -> Data {
     let mut sources = Vec::new();
     let mut in_glob = false;
-    for plan in &module.bindings {
-        for step in &plan.steps {
-            let Fulfilled::ByHost(kind) = &step.fulfilled else {
-                continue;
-            };
-            let ty = module
-                .field(&plan.record, &step.name)
-                .expect("a binding is a field of its record");
-            let source = match kind {
-                SourceKind::File(pattern)
-                    if collects(module, host, kind, &ty).is_some() =>
-                {
-                    let member = document
-                        .filter(|_| matches(pattern, path))
-                        .map(|document| document.loaded(path));
-                    in_glob |= member.is_some();
-                    Source::Many(member.into_iter().collect())
-                }
-                SourceKind::File(file) => {
-                    assert_eq!(
-                        **file, *PHOTOS_PATH,
-                        "no fixture for the data file `{file}`"
-                    );
-                    let parsed = Parsed::of(PHOTOS, 0..PHOTOS.len(), false);
-                    Source::One(Loaded {
-                        value: parsed.value,
-                        path: Some(PHOTOS_PATH.to_owned()),
-                        spans: parsed.spans,
+    for binding in from_bindings(module, host) {
+        let source = match (&binding.kind, &binding.collects) {
+            (SourceKind::File(pattern), Some(_)) => {
+                let member = document
+                    .filter(|_| matches(pattern, path))
+                    .map(|document| document.loaded(path));
+                in_glob |= member.is_some();
+                Source::Many(member.into_iter().collect())
+            }
+            (SourceKind::File(file), None) => {
+                assert_eq!(
+                    **file, *PHOTOS_PATH,
+                    "no fixture for the data file `{file}`"
+                );
+                let parsed = Parsed::of(PHOTOS, 0..PHOTOS.len(), false);
+                Source::One(Loaded {
+                    value: parsed.value,
+                    path: Some(PHOTOS_PATH.to_owned()),
+                    spans: parsed.spans,
+                })
+            }
+            (SourceKind::Env(name), _) => {
+                let value = ENV
+                    .iter()
+                    .find(|(key, _)| **key == **name)
+                    .unwrap_or_else(|| {
+                        panic!("no fixture for the environment value `{name}`")
                     })
-                }
-                SourceKind::Env(name) => {
-                    let value = ENV
-                        .iter()
-                        .find(|(key, _)| **key == **name)
-                        .unwrap_or_else(|| {
-                            panic!("no fixture for the environment value `{name}`")
-                        })
-                        .1;
-                    Source::One(Loaded {
-                        value: Value::str(value),
-                        path: None,
-                        spans: Spans::new(),
-                    })
-                }
-                SourceKind::Plugin(name) => panic!("no fixture for the plugin `{name}`"),
-            };
-            sources.push((step.name.to_string(), source));
-        }
+                    .1;
+                Source::One(Loaded {
+                    value: Value::str(value),
+                    path: None,
+                    spans: Spans::new(),
+                })
+            }
+            (SourceKind::Plugin(name), _) => panic!("no fixture for the plugin `{name}`"),
+        };
+        sources.push((binding.name.to_string(), source));
     }
     Data {
         ambient: vec![

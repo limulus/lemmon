@@ -23,7 +23,7 @@ use std::rc::Rc;
 
 use lemmon_vm::{
     ExportIndex, Host, LineIndex, Module, SourceFile, Store, Unit, Value, compile_unit,
-    link, load, prepare, render, render_page, repeated_path,
+    from_bindings, link, load, prepare, render, render_page, repeated_path,
 };
 use wasm_bindgen::JsError;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -31,8 +31,8 @@ use wasm_bindgen::prelude::wasm_bindgen;
 mod wire;
 
 use wire::{
-    CodePayloadOut, CompileOut, DataInput, Diagnostic, FileInput, HostInput, LineIndexes,
-    PageRef, PlannedOut, RenderMeta, encode_render,
+    CodePayloadOut, CompileOut, DataInput, Diagnostic, FileInput, FromBindingOut,
+    HostInput, LineIndexes, PageRef, PlannedOut, RenderMeta, encode_render,
 };
 
 /// The version of the core this `.wasm` was built from.
@@ -106,13 +106,17 @@ impl Core {
     /// Compiles the given files — only the changed ones — into resident units and
     /// relinks the program. `files` is JSON `[{path, text, record?}]`, where `record`
     /// names the schema a document's content is (D30). The result is JSON
-    /// `{diagnostics, payloads}`: the diagnostics about those files (and about any
-    /// resident unit the relink found stale) — none of them an error on success, since a
-    /// program is still produced when the only diagnostics are warnings — and the
-    /// payload of every code block those files write, `{id, language, info, code}`, each
-    /// once (D42). A resident file's warnings and payloads are reported by the call that
-    /// compiled it, not again by later calls: a host keeps the payloads by id, which is
-    /// what a render's `code` mark names.
+    /// `{diagnostics, payloads, sources}`: the diagnostics about those files (and about
+    /// any resident unit the relink found stale) — none of them an error on success,
+    /// since a program is still produced when the only diagnostics are warnings — and
+    /// the payload of every code block those files write, `{id, language, info, code}`,
+    /// each once (D42). A resident file's warnings and payloads are reported by the call
+    /// that compiled it, not again by later calls: a host keeps the payloads by id,
+    /// which is what a render's `code` mark names. `sources` is every `from` binding of
+    /// the program a clean relink installed, `{name, kind, literal, collects?, path,
+    /// span}` in the order its bindings file declares them — what the host fulfils in
+    /// `loadData`, and which documents it compiles as which record (∆muD) — and empty
+    /// when the call installed no program.
     ///
     /// `host` is the ambient declaration, JSON `{ambient, document?, entry?, url?,
     /// assets?, marks?}`: it is resident too, so a call that changes nothing about the
@@ -297,6 +301,10 @@ impl Core {
                 self.units.insert(unit.path.clone(), unit);
             }
         }
+        // What the host loads for the program a clean relink installs; nothing from a
+        // compile that installs none, since the program it would describe is not the
+        // one a load runs against.
+        let mut sources: Vec<FromBindingOut> = Vec::new();
         // A file that failed keeps its previous unit, so the program stays renderable
         // — stale until fixed — and the module is only replaced by a clean relink.
         // Warnings are not failures: a program that only warns is the new program.
@@ -310,6 +318,10 @@ impl Core {
             let relinked = link(&units, &self.index, &self.host);
             diagnostics.extend(relinked.diagnostics);
             if let Some(module) = relinked.output {
+                sources = from_bindings(&module, &self.host)
+                    .into_iter()
+                    .map(|binding| FromBindingOut::placed(binding, &self.unit_indexes))
+                    .collect();
                 self.linked = Some(Linked {
                     module,
                     host: self.host.clone(),
@@ -334,6 +346,7 @@ impl Core {
         serde_json::to_string(&CompileOut {
             diagnostics,
             payloads,
+            sources,
         })
         .map_err(|e| format!("serialising the compile result failed: {e}"))
     }
@@ -1163,6 +1176,110 @@ mod tests {
         // `motto` came through `site` — all bound at the render of that document.
         let html = html_of(&core, "posts/a.md");
         assert!(html.contains("A\nposts/a.md\nhi"), "{html}");
+    }
+
+    /// The `sources` of a `compile` reply.
+    fn sources(json: &str) -> serde_json::Value {
+        let reply: serde_json::Value = serde_json::from_str(json).expect("a JSON reply");
+        reply["sources"].clone()
+    }
+
+    #[test]
+    fn reports_the_from_bindings_of_the_program_it_installs() {
+        let mut core = Core::new();
+        let reply = core.compile_json(&site_files(), Some(SITE_HOST)).unwrap();
+        let reported = sources(&reply);
+        let shown: Vec<(&str, &str, &str, Option<&str>)> = reported
+            .as_array()
+            .expect("an array")
+            .iter()
+            .map(|source| {
+                (
+                    source["name"].as_str().unwrap(),
+                    source["kind"].as_str().unwrap(),
+                    source["literal"].as_str().unwrap(),
+                    source["collects"].as_str(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            shown,
+            [
+                ("posts", "file", "posts/*.md", Some("Post")),
+                ("photos", "file", "_data/photos.json", None),
+                ("motto", "env", "MOTTO", None),
+            ]
+        );
+        // A data file's `collects` is absent rather than null, and the binding is
+        // placed at its name, in bytes and positions both.
+        let motto = &reported[2];
+        assert!(motto.get("collects").is_none(), "{motto}");
+        assert_eq!(motto["path"], "site.lem");
+        let (start, end) = (
+            motto["span"]["start"].as_u64().unwrap() as usize,
+            motto["span"]["end"].as_u64().unwrap() as usize,
+        );
+        assert_eq!(&SITE_LEM[start..end], "motto");
+        assert_eq!(motto["span"]["range"]["start"]["line"], 11);
+    }
+
+    #[test]
+    fn places_a_source_by_the_index_of_the_bindings_file_it_stands_in() {
+        // The host reads `data` from `data.lem`, and a `site.lem` beside it is a plain
+        // template of one line: placed by any index but `data.lem`'s, the binding on
+        // that file's fifth line would land elsewhere, or past the end of the text.
+        const DATA_LEM: &str = "<lem-type Photo>\n  caption: string\n</lem-type>\n\n\
+            <lem-let photos: {string: Photo} from \"_data/photos.json\" />";
+        let files = serde_json::json!([
+            {"path": "ambient.lem", "text": AMBIENT_LEM},
+            {"path": "site.lem", "text": "<lem-fn decoy()>x</lem-fn>"},
+            {"path": "data.lem", "text": DATA_LEM},
+        ]);
+        let host = r#"{"ambient": {"page": "Page", "data": {"bindingsOf": "data.lem"}},
+            "document": "page", "entry": "layout", "url": "url"}"#;
+        let mut core = Core::new();
+        let reply = core.compile_json(&files.to_string(), Some(host)).unwrap();
+        assert_eq!(diagnostics(&reply), serde_json::json!([]));
+        let photos = &sources(&reply)[0];
+        assert_eq!(photos["path"], "data.lem");
+        let (start, end) = (
+            photos["span"]["start"].as_u64().unwrap() as usize,
+            photos["span"]["end"].as_u64().unwrap() as usize,
+        );
+        assert_eq!(&DATA_LEM[start..end], "photos");
+        assert_eq!(
+            photos["span"]["range"]["start"],
+            serde_json::json!({"line": 4, "character": 9})
+        );
+    }
+
+    #[test]
+    fn reports_the_sources_from_every_compile_that_installs_a_program() {
+        // A call carrying only a page relinks the resident bindings file with it, so
+        // the program it installs reports what the host loads for it — the same list.
+        let mut core = site_core();
+        let page = serde_json::json!([
+            {"path": "posts/a.md", "text": POST_MD, "record": "Post"}
+        ]);
+        let reply = core.compile_json(&page.to_string(), None).unwrap();
+        assert_eq!(diagnostics(&reply), serde_json::json!([]));
+        assert_eq!(sources(&reply).as_array().map(Vec::len), Some(3));
+    }
+
+    #[test]
+    fn reports_no_sources_from_a_compile_that_installs_no_program() {
+        let mut core = site_core();
+        let failed = core
+            .compile_json(r#"[{"path": "posts/a.md", "text": "<lem-if x>"}]"#, None)
+            .unwrap();
+        assert_eq!(diagnostics(&failed)[0]["severity"], "error");
+        assert_eq!(sources(&failed), serde_json::json!([]));
+        // A program with no bindings file installs, and has nothing to load.
+        let mut bare = Core::new();
+        let reply = bare
+            .compile_json(r#"[{"path": "page.lem", "text": "hi"}]"#, Some(UNTYPED))
+            .unwrap();
+        assert_eq!(reply, r#"{"diagnostics":[],"payloads":[],"sources":[]}"#);
     }
 
     #[test]

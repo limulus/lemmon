@@ -12,9 +12,8 @@ const project = (name: string, root: string) => ({
 
 export default defineConfig({
   // A spec that imports a sibling package at run time gets its `src/`, as `tscc` and the
-  // `lem` bin do. The shell's own modules import core for types alone so far, so only
-  // its specs reach core this way: one compiles through the staged wasm. Specs run in
-  // Vite's server environment, which reads `ssr.resolve` and ignores a top-level
+  // `lem` bin do: the shell builds through core's `src/` and the staged wasm. Specs run
+  // in Vite's server environment, which reads `ssr.resolve` and ignores a top-level
   // `resolve.conditions`; the list is Vite's server defaults with `source` in front,
   // since setting it replaces them.
   ssr: { resolve: { conditions: ['source', 'module', 'node', 'development|production'] } },

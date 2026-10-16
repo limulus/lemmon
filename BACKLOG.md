@@ -32,16 +32,13 @@ comparator that accepts every later slice. Eric runs `lem build` in the limulus-
 branch, opens the seven `feed/` posts from `dist/` in a browser, and `npm run parity` there
 reports them against the 11ty `dist/` with every difference in a named forgiveness class.
 
-- `∆muD` `lem build` writes the-rebound to `dist/`
-  - Declare the host, compile, load, plan, render, write HTML and passthrough; reproduces
-    what `test:fidelity` renders from a directory of files. The first usable `lem`
 - `∆foi` Port: `site.lem`, three layouts, the posts' components
   - `Page` and `Post`, the base, page and article layouts and the components the seven feed
     posts use, written as an author would, on the limulus-dot-net port branch
 - `∆Zo7` `npm run parity` for the seven posts
   - The comparator from `scripts/lib/rendered-html.ts` run per page against the 11ty
     `dist/`, with an allowlist of forgiveness classes and their counts
-  - needs: `∆muD`, `∆foi`
+  - needs: `∆foi`
 
 ### 2. Styled and formatted
 
@@ -53,7 +50,6 @@ them.
 - `∆F4y` Mark resolution and the default plugin
   - Producers and decorators resolve marks in the shell (D42), and the default plugin's
     `styles` producer writes per-page hashed CSS bundles under `/assets/immutable/`
-  - needs: `∆muD`
 - `∆D3R` `lem-style` in the ported layouts
   - The three CSS files and the components' scoped styles become `lem-style` blocks in the
     port, replacing the interim `<link>` to passthrough-copied CSS

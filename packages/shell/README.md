@@ -1,24 +1,9 @@
 # @limulus/lemmon-shell
 
 The Node/TypeScript shell around the Lemmon core (see `docs/architecture.md` §Shape and
-§Build pipeline). It does the first step of a build, discovery, and nothing after it yet:
-it compiles and renders nothing, and writes no output.
-
-- `loadConfig()` imports a site's `lemmon.config.ts` and validates it: `input` and `output`
-  directories, relative to the config file, and `passthrough` globs, relative to `input`
-  and with Eleventy's glob semantics (picomatch, dotfiles included, case-insensitive).
-- `walk()` lists every file under `input`, sorted by path, as a `document` (`.md`), a
-  `template` (`.lem`, marked as a page when it opens with front matter, D41), a
-  `passthrough` file (a glob matched it, whatever its extension), or `ignored`. Like
-  Eleventy it never enters a `node_modules` or `.git` directory; unlike Eleventy it does
-  not follow a symbolically linked directory, so no glob reaches the files under one.
-- `readPage()` reads a page's front matter with the `yaml` package into the
-  `LoadedValue` the core loads — `type:` and `for:` read and stripped, `url` and
-  `inputPath` (the path from the config's directory, `www/feed/x/index.md`) derived where
-  it gives none — with a span for every field path, in bytes and UTF-16 positions as the
-  core counts them. Bad YAML is a `Diagnostic`, never a throw. `findFrontMatter()` finds
-  the block by the core scanner's rule.
-- `discover()` does all three and returns the site: entries, pages by path, diagnostics.
+§Build pipeline): the `lem` CLI and what it drives. `lem build` reads a site, compiles and
+renders every page through the WASM core, and writes HTML and passthrough files to the
+output directory.
 
 ```ts
 // lemmon.config.ts
@@ -31,8 +16,74 @@ export default {
 } satisfies Config
 ```
 
-`lem build [--config <path>]` discovers the site, prints a summary and every page's url,
-and prints each diagnostic as `path:line:col: severity: message`, exiting 1 on an error.
+`input` and `output` are directories relative to the config file; `passthrough` globs are
+relative to `input`, with Eleventy's glob semantics (picomatch, dotfiles included,
+case-insensitive).
+
+## `lem build [--config <path>]`
+
+1. **Discover.** Walks `input` — never entering a `node_modules` or `.git` directory, the
+   output, or a symbolically linked directory — and classifies each file: a `passthrough`
+   glob's match is copied as it is, `.md` is a document, `.lem` a template (a page when
+   it opens with front matter, D41), and anything else is left alone until a `from`
+   binding names it. Each page's front matter is read with the `yaml` package, with a
+   span for every field path: `type:` and `for:` are read and stripped, `url` derived
+   where the front matter gives none (`feed/x/index.md` at `/feed/x/`, `index.lem` at
+   `/`), and `inputPath` added (the path from the config's directory,
+   `www/feed/x/index.md`).
+2. **Compile**, in two calls. First the shell's own `ambient.lem` — `Page`, `Build` and
+   `Code` (docs/language.md §Ambient types) — and every template, under the declaration
+   `site` → the bindings of `site.lem`, `page` → `Page`, `build` → `Build`, pages
+   rendered through `layout` and placed by `url`. Page templates are in this call too,
+   without their records, so that what one defines is in sight of the layouts. The core
+   reports the program's `from` bindings and the record each glob collects; every page
+   is matched against those globs (with the passthrough glob semantics, so case aside),
+   and then all pages — documents and page templates — compile in one call, each as its
+   own `type:` or as the record of the glob that holds it. A page two globs match is an
+   error at the page. Documents compile only in the second call, so what a document
+   (`.md`) defines is invisible to every template, with front matter or without.
+3. **Load.** `build` is `{time, generator}` — the clock as RFC 3339 in UTC, and `Lemmon`
+   with the core's version. A glob's binding is the front matter of the pages it holds;
+   a data file (JSON or YAML) is read from `input` with positions, and one whose path
+   leads outside `input` is an error at its binding; `env("X")` is the variable's text.
+   Every page no glob holds whose `type:` named its record is carried on its own.
+4. **Plan and render.** Every loaded page renders through its layout. A page no glob
+   holds and no `type:` names has no schema: it renders its own output, with `page` its
+   front matter as read, loaded on its own before it renders. Each of those loads
+   re-sends and re-validates the whole envelope, so the cost grows with the untyped
+   pages times the size of the site: 18 of 25 pages on the limulus-dot-net port branch
+   cost about 0.35 s in all.
+5. **Write.** A url ending in `/` is written as `<output>/<url>/index.html`, any other as
+   the file it names; each passthrough file is copied to its own path. Nothing in the
+   output is removed. Before the first file is written, every page has been rendered and
+   its file checked against every other page's and every passthrough file's: the same
+   file, the same but for case or Unicode form (APFS holds those as one), and a file
+   where another needs a directory are each an error at the later page, labelled at the
+   first.
+
+It prints every diagnostic as `path:line:col: severity: message`, each label on an
+indented line beneath, and `wrote N pages, copied M files`. Any error, at any step, stops
+the build before it writes a file, and `lem` exits 1; warnings are printed and the build
+goes on. A write the file system then refuses — a file an earlier build left where a
+directory is needed, say — is reported as `lem: could not write <file>: …`, exit 1, and
+the output may hold what was written before it. A site needs a `site.lem` without front
+matter in `input`, even an empty one: without it no glob matches anything.
+
+### Not yet
+
+- **Marks and fragments.** No producer or decorator resolves a mark, so a code block and
+  `mark("styles")` keep their default content, and nothing a page's `lem-style`,
+  `lem-head` or `lem-script` collected is written: ∆F4y. No `asset()` resolves, since
+  the declaration carries no manifest: ∆d1N.
+- **Plugins.** A `from plugin("…")` binding is an error at the binding: ∆c4j.
+- **Generators.** A page whose front matter has `for:` is an error at the key: ∆99b.
+- **Drafts.** `draft: true` is built like any page; `--drafts` and leaving drafts out
+  are ∆1rD, as is `lem check`.
+- **Second phase.** A feed renders with the other pages, reading none of their output:
+  ∆zu0.
+- **The rest of the pipeline.** No output transform (dprint, ∆Oyi), no integrity check
+  (∆yOJ), no dev server (∆Vhi), and no worker pool or incremental rebuild: every build
+  compiles and renders everything in one core.
 
 ## Running from a checkout
 
@@ -47,6 +98,8 @@ can therefore depend on a checkout with `file:` and see every edit without a bui
 ```
 
 npm links the directory and leaves its dependencies to the checkout's own `node_modules`,
-`@limulus/lemmon-core` among them, so nothing is fetched. Importing the package from a
-site's own code needs the condition too (`node --conditions=source`, and
-`customConditions: ["source"]` for its typecheck), or a `npm run build` here first.
+`@limulus/lemmon-core` among them, so nothing is fetched; the core finds the staged
+`.wasm` in the checkout's `artifacts/wasm/`, so run `npm run rust:wasm` there first.
+Importing the package from a site's own code needs the condition too
+(`node --conditions=source`, and `customConditions: ["source"]` for its typecheck), or a
+`npm run build` here first.
