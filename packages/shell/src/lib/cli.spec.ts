@@ -114,6 +114,35 @@ describe('run()', () => {
       )
     })
 
+    it('should say how many files the plugins produced, where they produced any', async () => {
+      // Written as TypeScript source, since the directory cannot resolve the shell's
+      // package to import a type from.
+      const config = (...urls: string[]) =>
+        "export default { input: 'www', output: 'dist', plugins: [{ name: 'sheets', marks: [" +
+        "{ name: 'styles', produce: ({ marks, write }) => { " +
+        urls.map((url) => `write('${url}', '.a {}'); `).join('') +
+        "return marks.map(() => '<link>') } }] }] }"
+      const site = (...urls: string[]) =>
+        tempDir({
+          'lemmon.config.ts': config(...urls),
+          'www/site.lem': '',
+          'www/a.md': '<lem.mark("styles")>\n',
+          'www/b.md': '<lem.mark("styles")>\n',
+        })
+
+      // Two pages writing the same bytes to one file produce it once.
+      const one = site('/s.css')
+      expect(await lem(['build'], one)).toEqual({
+        code: 0,
+        stdout: 'wrote 2 pages and 1 produced file, copied 0 files\n',
+        stderr: '',
+      })
+      expect(readFileSync(join(one, 'dist/s.css'), 'utf8')).toBe('.a {}')
+      expect((await lem(['build'], site('/s.css', '/t.css'))).stdout).toBe(
+        'wrote 2 pages and 2 produced files, copied 0 files\n'
+      )
+    })
+
     it('should read the config --config names, from the working directory', async () => {
       const cwd = tempDir({
         'site/lemmon.config.ts': "export default { input: 'src', output: 'out' }",

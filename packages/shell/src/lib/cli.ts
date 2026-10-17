@@ -99,9 +99,12 @@ async function buildCommand(configPath: string, io: Io): Promise<number> {
     )
     return 1
   }
+  const { pages, produced, copied } = result
+  // A build whose plugins wrote no file says nothing of them.
+  const and =
+    produced.length === 0 ? '' : ` and ${plural(produced.length, 'produced file')}`
   io.stdout.write(
-    `wrote ${plural(result.pages.length, 'page')}, ` +
-      `copied ${plural(result.copied.length, 'file')}\n`
+    `wrote ${plural(pages.length, 'page')}${and}, copied ${plural(copied.length, 'file')}\n`
   )
   return 0
 }

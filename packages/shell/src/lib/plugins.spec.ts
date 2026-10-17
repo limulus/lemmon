@@ -1,4 +1,9 @@
-import { loadCore, type Diagnostic, type MarkContext } from '@limulus/lemmon-core'
+import {
+  loadCore,
+  type Diagnostic,
+  type Mark,
+  type MarkContext,
+} from '@limulus/lemmon-core'
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -7,6 +12,8 @@ import {
   validatePlugins,
   type Plugin,
   type PluginHandler,
+  type ProducedFile,
+  type ProducerContext,
 } from './plugins.ts'
 import { callouts, copy, highlighter, inline, shell, wrapping } from '../mocks/plugins.ts'
 import { at } from '../mocks/spans.ts'
@@ -157,7 +164,7 @@ describe('resolvePage()', () => {
   /** `PAGE` rendered and resolved with `plugins`, as the build would for `page.lem`. */
   async function resolved(
     plugins: Plugin[]
-  ): Promise<{ html: string; diagnostics: Diagnostic[] }> {
+  ): Promise<{ html: string; files: ProducedFile[]; diagnostics: Diagnostic[] }> {
     const core = await loadCore()
     const compiled = core.compile([{ path: 'page.lem', text: PAGE }], {
       ambient: {},
@@ -166,8 +173,11 @@ describe('resolvePage()', () => {
     expect(compiled.diagnostics).toEqual([])
     core.loadData({})
     const page = { path: 'page.lem', plugins, payloads: new Map() }
-    const { bytes, diagnostics } = resolvePage(core.render({ path: 'page.lem' }), page)
-    return { html: decoder.decode(bytes), diagnostics }
+    const { bytes, files, diagnostics } = resolvePage(
+      core.render({ path: 'page.lem' }),
+      page
+    )
+    return { html: decoder.decode(bytes), files, diagnostics }
   }
 
   /** A plugin whose `styles` producer is `produce`. */
@@ -183,6 +193,81 @@ describe('resolvePage()', () => {
 
     expect(html).toBe('<a>|<b>|<H>\n')
     expect(diagnostics).toEqual([])
+  })
+
+  describe('the files a producer writes', () => {
+    it('should hand each on as bytes, at the producer’s first mark', async () => {
+      const bytes = new Uint8Array([1, 2])
+      const buffer = Buffer.from('ab')
+      const { files, diagnostics } = await resolved([
+        styles(({ marks, write }: ProducerContext) => {
+          write('/a.css', 'café')
+          write('/b.bin', bytes)
+          write('/c.bin', buffer)
+          // Copied as written: a change after the call is not the file's, and a Node
+          // `Buffer`, whose `slice` is a view, is copied too.
+          bytes[0] = 9
+          buffer[0] = 0x7a
+          return marks.map(() => '')
+        }),
+        head,
+      ])
+
+      expect(diagnostics).toEqual([])
+      expect(files).toEqual([
+        {
+          url: '/a.css',
+          bytes: new TextEncoder().encode('café'),
+          plugin: 'styles',
+          mark: expect.objectContaining({ path: 'page.lem', span: FIRST }) as Mark,
+        },
+        expect.objectContaining({ url: '/b.bin', bytes: new Uint8Array([1, 2]) }),
+        expect.objectContaining({ url: '/c.bin', bytes: new Uint8Array([0x61, 0x62]) }),
+      ])
+    })
+
+    it('should refuse what is not a url and content, at the producer’s first mark', async () => {
+      const write = (url: unknown, content: unknown) =>
+        styles(({ marks, write }: ProducerContext) => {
+          write(url as string, content as string)
+          return marks.map(() => '')
+        })
+      const problems = [
+        [write(5, '.a {}'), 'with 5 and a string'],
+        [write('/a.css', {}), 'with a string and an object'],
+      ] as const
+
+      for (const [plugin, problem] of problems) {
+        const { files, diagnostics } = await resolved([plugin, head])
+
+        expect(files).toEqual([])
+        expect(diagnostics).toEqual([
+          {
+            path: 'page.lem',
+            span: FIRST,
+            severity: 'error',
+            message:
+              "the `styles` plugin's producer for `styles` called `write` on `page.lem` " +
+              `${problem}, where it takes a url and a string or bytes`,
+            labels: [],
+          },
+        ])
+      }
+    })
+
+    it('should keep nothing a producer that fails wrote, nor what was wrong with it', async () => {
+      const { files, diagnostics } = await resolved([
+        styles(({ write }: ProducerContext) => {
+          write('/a.css', '.a {}')
+          write(5 as unknown as string, '')
+          throw new Error('no bundle')
+        }),
+        head,
+      ])
+
+      expect(files).toEqual([])
+      expect(diagnostics.map((d) => d.severity)).toEqual(['warning'])
+    })
   })
 
   describe('a producer that fails', () => {

@@ -41,7 +41,11 @@ What it reports, in the order it finds them:
 - **Render errors**: an `any` read that misses, a map key that is absent, a list index out
   of range — and a page whose url names no file, or a file another page or a passthrough
   file writes, or one a file system could not hold beside it: the same name but for case or
-  Unicode form, or a file where the other needs a directory.
+  Unicode form, or a file where the other needs a directory. A file a plugin's producer
+  writes is checked the same way against pages, passthrough files and other produced
+  files, an error at the later writer — a page's url or the producer's mark — labelled at
+  the first; and at the producer's mark, a url or content of the wrong kind, a url naming
+  no file, or other content where a producer wrote already.
 - **Handler warnings**: a plugin's handler that throws, or returns anything but its
   content, at the mark, which keeps the content it had; and what a page collects that
   nothing on it places — a `lem-style` with no `mark("styles")` in its layout — at the block

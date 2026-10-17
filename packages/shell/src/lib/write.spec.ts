@@ -52,6 +52,7 @@ describe('write()', () => {
       join(root, 'www'),
       join(root, 'dist'),
       [{ file: 'a/b/index.html', bytes }],
+      [],
       []
     )
 
@@ -70,6 +71,7 @@ describe('write()', () => {
       join(root, 'www'),
       join(root, 'dist'),
       [],
+      [],
       ['assets/css/site.css', 'robots.txt']
     )
 
@@ -78,5 +80,42 @@ describe('write()', () => {
       'robots.txt': 'User-agent: *\n',
       'old.html': 'old',
     })
+  })
+
+  it('should write each produced file, creating its directories', async () => {
+    const root = tempDir({ 'www/.keep': '' })
+    const css = new TextEncoder().encode('.a {}')
+
+    await write(
+      join(root, 'www'),
+      join(root, 'dist'),
+      [],
+      [{ file: 'assets/immutable/bundle/x.css', bytes: css }],
+      []
+    )
+
+    expect(tree(join(root, 'dist'))).toEqual({ 'assets/immutable/bundle/x.css': '.a {}' })
+  })
+
+  it('should write the pages, then the produced files, then the passthrough files', async () => {
+    // The build never lets two claim one file; here they do, so the last to write wins.
+    const root = tempDir({ 'www/a.txt': 'copied' })
+    const bytes = (text: string) => new TextEncoder().encode(text)
+
+    await write(
+      join(root, 'www'),
+      join(root, 'dist'),
+      [
+        { file: 'a.txt', bytes: bytes('page') },
+        { file: 'b.txt', bytes: bytes('page') },
+      ],
+      [
+        { file: 'a.txt', bytes: bytes('produced') },
+        { file: 'b.txt', bytes: bytes('produced') },
+      ],
+      ['a.txt']
+    )
+
+    expect(tree(join(root, 'dist'))).toEqual({ 'a.txt': 'copied', 'b.txt': 'produced' })
   })
 })

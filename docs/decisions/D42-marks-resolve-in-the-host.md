@@ -31,8 +31,15 @@
   naming different payloads or key fields for one name, are refused at config load, naming
   both plugins, and so are keys for a name no handler keys by a payload field, whose
   `mark()` calls would carry no key for them to match; a handler that throws or returns
-  anything but its content is a warning at the mark, which keeps the content it had; and a
-  code block's handlers see its payload beside its id
+  anything but its content is a warning at the mark, which keeps the content it had; a
+  code block's handlers see its payload beside its id; and a producer writes a file of its
+  own through its context's `write(url, content)`, which never throws: the file is queued
+  and written after the pages, once where two pages' producers write the same bytes; a url
+  or content of the wrong kind, a url naming no file, or other bytes at a produced file is
+  an error at the producer's mark, and a clash with a page, a passthrough file or another
+  produced file — the same file, the same but for case or Unicode form, or a file where the
+  other needs a directory — an error at the later writer, labelled at the first, while what
+  a producer that fails wrote is dropped
 - **Backlog item:** ∆1Hp (the mark, claims by name, the collect tags, the boundary);
   ∆7wK (the `code` mark, keys and payloads, the core's highlighter removed); ∆F4y (the
   shell's plugins and their handlers)

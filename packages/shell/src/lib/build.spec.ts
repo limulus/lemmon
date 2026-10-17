@@ -76,6 +76,7 @@ describe('build()', () => {
           'index.html',
           'notes/loose/index.html',
         ],
+        produced: [],
         copied: ['assets/site.css'],
         diagnostics: [],
       })
@@ -425,6 +426,248 @@ describe('build()', () => {
       expect(tree(join(dir, 'dist'))['notes/loose/index.html']).toBe(
         '<pre class="ts">let y</pre>\n'
       )
+    })
+  })
+
+  describe('files a producer writes', () => {
+    // Every page the base layout renders places its styles; `posts/a.md` collects some.
+    const layouts = LAYOUTS_LEM.replace('<main>', '<lem.mark("styles")>\n  <main>')
+    const card = '<lem-fn card()>\n  <lem-style>\n    .card {}\n  </lem-style>\n</lem-fn>\n'
+    const files = {
+      ...SITE,
+      'layouts.lem': layouts,
+      'card.lem': card,
+      'posts/a.md': `${SITE['posts/a.md']}<lem.card()>\n`,
+    }
+    const MARK = at(layouts, 'mark("styles")')
+
+    /**
+     * A plugin whose `styles` producer writes what the page collected to the file `url`
+     * names for it, and links it.
+     */
+    const sheets = (
+      url: (css: string) => string,
+      content = (css: string) => css
+    ): Plugin => ({
+      name: 'sheets',
+      marks: [
+        {
+          name: 'styles',
+          produce: ({ marks, fragments, write }) => {
+            const css = fragments.map((f) => f.text).join('\n')
+            write(url(css), content(css))
+            return marks.map(() => `<link href="${url(css)}">`)
+          },
+        },
+      ],
+    })
+
+    /** A plugin whose `styles` producer writes each of `files`, `[url, content]`. */
+    const writing = (...files: [string, string][]): Plugin => ({
+      name: 'writing',
+      marks: [
+        {
+          name: 'styles',
+          produce: ({ marks, write }) => {
+            for (const [url, content] of files) write(url, content)
+            return marks.map(() => '')
+          },
+        },
+      ],
+    })
+    const byContent = sheets((css) =>
+      css === '' ? '/assets/none.css' : '/assets/card.css'
+    )
+
+    it('should write each produced file beside the pages, once however many write it', async () => {
+      const { result, dir } = await built(files, { plugins: [byContent] })
+
+      expect(result.diagnostics).toEqual([])
+      // In the order first written: `posts/a.md` collected the card's styles, and the two
+      // pages after it collected nothing, alike.
+      expect(result.produced).toEqual(['assets/card.css', 'assets/none.css'])
+      const written = tree(join(dir, 'dist'))
+      expect(written['assets/card.css']).toBe('.card {}')
+      expect(written['assets/none.css']).toBe('')
+      expect(written['posts/b/index.html']).toContain('<link href="/assets/none.css">')
+    })
+
+    it('should refuse other content where another page produced a file', async () => {
+      // Contents of one length, so that only the bytes tell them apart.
+      const same = sheets(
+        () => '/assets/s.css',
+        (css) => (css === '' ? '.none {}' : css)
+      )
+      const errors = await refused(files, { plugins: [same] })
+
+      // `posts/a.md` wrote it first; the two pages after it collected nothing.
+      expect(errors).toEqual(
+        ['posts/b.md', 'index.lem'].map((page) => ({
+          path: 'layouts.lem',
+          span: MARK,
+          severity: 'error',
+          message:
+            `the \`sheets\` plugin writes a file for this mark on \`${page}\`, and the ` +
+            '`sheets` plugin, for `posts/a.md`, writes other content to `assets/s.css`',
+          labels: [
+            {
+              path: 'layouts.lem',
+              span: MARK,
+              message: 'the first to write there, as `assets/s.css`',
+            },
+          ],
+        }))
+      )
+    })
+
+    it('should refuse a produced url that names no file', async () => {
+      const errors = await refused(files, { plugins: [sheets(() => '/assets/../s.css')] })
+
+      expect(errors).toHaveLength(3)
+      expect(errors[0]).toEqual({
+        path: 'layouts.lem',
+        span: MARK,
+        severity: 'error',
+        message:
+          'the `sheets` plugin writes a file for this mark on `posts/a.md` at the url ' +
+          '"/assets/../s.css", which names no file in the output directory: a file\'s url ' +
+          'is a path from `/`, without an empty, `.` or `..` segment, a percent-encoded `/` ' +
+          'or `\\`, a query, or a fragment',
+        labels: [],
+      })
+    })
+
+    it('should refuse a produced file where a passthrough file is, or would be but for case', async () => {
+      const lead = 'the `sheets` plugin writes a file for this mark on `posts/a.md`, and '
+      for (const [url, message] of [
+        [
+          '/assets/site.css',
+          '`assets/site.css` is written by the passthrough file `assets/site.css` already',
+        ],
+        [
+          '/Assets/site.css',
+          '`Assets/site.css` differs from `assets/site.css`, which the passthrough file ' +
+            '`assets/site.css` writes, only in case or Unicode form, and a file system ' +
+            'may hold the two as one file',
+        ],
+      ]) {
+        const errors = await refused(files, { plugins: [sheets(() => url)] })
+
+        expect(errors[0]).toEqual({
+          path: 'layouts.lem',
+          span: MARK,
+          severity: 'error',
+          message: `${lead}${message}`,
+          labels: [
+            {
+              path: 'assets/site.css',
+              span: START,
+              message: 'the first to write there, as `assets/site.css`',
+            },
+          ],
+        })
+      }
+    })
+
+    it('should refuse a producer writing one file twice with different content', async () => {
+      const errors = await refused(files, {
+        plugins: [writing(['/s.css', '.a {}'], ['/s.css', '.b {}'])],
+      })
+
+      expect(errors[0]).toEqual({
+        path: 'layouts.lem',
+        span: MARK,
+        severity: 'error',
+        message:
+          'the `writing` plugin writes `s.css` twice with different content for this mark ' +
+          'on `posts/a.md`',
+        labels: [],
+      })
+    })
+
+    it('should refuse two produced files that differ only in case, though alike', async () => {
+      const errors = await refused(files, {
+        plugins: [writing(['/s.css', '.a {}'], ['/S.css', '.a {}'])],
+      })
+
+      expect(errors[0]).toEqual({
+        path: 'layouts.lem',
+        span: MARK,
+        severity: 'error',
+        message:
+          'the `writing` plugin writes a file for this mark on `posts/a.md`, and `S.css` ' +
+          'differs from `s.css`, which the `writing` plugin, for `posts/a.md`, writes, only ' +
+          'in case or Unicode form, and a file system may hold the two as one file',
+        labels: [
+          {
+            path: 'layouts.lem',
+            span: MARK,
+            message: 'the first to write there, as `s.css`',
+          },
+        ],
+      })
+    })
+
+    it('should refuse a produced file where a page is written, either way round', async () => {
+      // The page's own file is claimed before its producers write; a page rendered
+      // later meets the file another page's producer wrote.
+      const own = await refused(files, { plugins: [sheets(() => '/posts/a/index.html')] })
+      expect(own[0]).toMatchObject({
+        path: 'layouts.lem',
+        span: MARK,
+        message:
+          'the `sheets` plugin writes a file for this mark on `posts/a.md`, and ' +
+          '`posts/a/index.html` is written by `posts/a.md` already',
+        labels: [expect.objectContaining({ path: 'posts/a.md' })],
+      })
+
+      const loose = SITE['notes/loose.md']
+      const atLoose = sheets((css) => (css === '' ? '/assets/none.css' : '/notes/loose/'))
+      const later = await refused(files, { plugins: [atLoose] })
+      expect(later).toEqual([
+        {
+          path: 'notes/loose.md',
+          span: at(loose, 'title: Loose'),
+          severity: 'error',
+          message:
+            '`notes/loose/index.html` is written by the `sheets` plugin, for `posts/a.md`, ' +
+            'already',
+          labels: [
+            {
+              path: 'layouts.lem',
+              span: MARK,
+              message: 'the first to write there, as `notes/loose/index.html`',
+            },
+          ],
+        },
+      ])
+    })
+
+    it('should drop what a producer that fails wrote, and say nothing of it', async () => {
+      const failing: Plugin = {
+        name: 'failing',
+        marks: [
+          {
+            name: 'styles',
+            produce: ({ write }) => {
+              write('/kept.css', '.a {}')
+              write('/../nowhere', '')
+              throw new Error('no bundle')
+            },
+          },
+        ],
+      }
+      const { result, dir } = await built(files, { plugins: [failing] })
+
+      expect(result.diagnostics.map((d) => [d.severity, d.message])).toEqual(
+        ['posts/a.md', 'posts/b.md', 'index.lem'].map((page) => [
+          'warning',
+          `the \`failing\` plugin's producer for \`styles\` failed on \`${page}\`, so the ` +
+            'marks it answers keep their default content: it threw Error: no bundle',
+        ])
+      )
+      expect(result.produced).toEqual([])
+      expect(existsSync(join(dir, 'dist/kept.css'))).toBe(false)
     })
   })
 

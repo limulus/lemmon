@@ -5,6 +5,7 @@ import {
   type CodePayload,
   type Diagnostic,
   type Mark,
+  type MarkContext,
   type MarkHandler,
   type RenderResult,
 } from '@limulus/lemmon-core'
@@ -28,11 +29,14 @@ export interface Plugin {
 
 /**
  * One mark handler of a plugin — a producer, a decorator, or both, as a core
- * {@link MarkHandler} is — with the record its marks carry. A handler sees a code block's
- * mark with its payload filled in, `{language, info, code}` as `Code` declares it, beside
- * the id the render names it by.
+ * {@link MarkHandler} is — with the record its marks carry, and a producer given a
+ * {@link ProducerContext}, which can write files. A handler sees a code block's mark with
+ * its payload filled in, `{language, info, code}` as `Code` declares it, beside the id
+ * the render names it by.
  */
-export interface PluginHandler extends MarkHandler {
+export interface PluginHandler extends Omit<MarkHandler, 'produce'> {
+  /** One replacement per mark it answers, in the order the marks were given. */
+  produce?: (context: ProducerContext) => readonly (string | Uint8Array)[]
   /**
    * The declared record a mark of {@link name} carries, which every `mark()` call's
    * payload is checked against — `Code` for `code`, which the shell declares; any other
@@ -45,6 +49,29 @@ export interface PluginHandler extends MarkHandler {
    * {@link payload}.
    */
   keyedBy?: string
+}
+
+/**
+ * What a producer is given: the core's {@link MarkContext}, and a way to write a file of
+ * its own beside the pages — a stylesheet its marks link to.
+ */
+export interface ProducerContext extends MarkContext {
+  /**
+   * Queues `content` as the output file `url` names — a path from `/`, mapped to a file
+   * as a page's url is — written with the pages once every page has rendered. A file
+   * another page's producer wrote with the same bytes is written once. It works only
+   * while the producer runs: a call after the producer returns is dropped.
+   *
+   * It never throws. A url that is not a string, content neither a string nor bytes, a
+   * url naming no file, and other content where this producer or another page's wrote
+   * already are each an error at this producer's first mark. The file is also checked
+   * against every page, passthrough file and other produced file — the same file, the
+   * same but for case or Unicode form, or a file where the other needs a directory — an
+   * error at the later writer, a page's url or a producer's mark, labelled at the first.
+   * Any of these stops the build before it writes. A producer that fails writes nothing,
+   * and nothing is said about what it queued.
+   */
+  write(url: string, content: string | Uint8Array): void
 }
 
 const PLUGIN_FIELDS: readonly string[] = ['name', 'marks'] satisfies (keyof Plugin)[]
@@ -317,9 +344,22 @@ export interface PageMarks {
   payloads: ReadonlyMap<string, CodePayload>
 }
 
-/** A page with its marks resolved, and what resolving them reported. */
+/** A file a producer wrote through its context, for the build to claim and write. */
+export interface ProducedFile {
+  /** The url the producer named, as it named it. */
+  url: string
+  bytes: Uint8Array
+  /** The plugin whose producer wrote it. */
+  plugin: string
+  /** The producer's first mark on the page: where a refusal of the file points. */
+  mark: Mark
+}
+
+/** A page with its marks resolved, what its producers wrote, and what was reported. */
 export interface ResolvedPage {
   bytes: Uint8Array
+  /** Every file a producer that succeeded wrote, in the order written. */
+  files: ProducedFile[]
   diagnostics: Diagnostic[]
 }
 
@@ -328,20 +368,23 @@ export interface ResolvedPage {
  * of the build pipeline, D42): each mark's producer over the page as the core returned
  * it, then its decorators, in the order the plugins and their handlers are listed.
  *
- * Nothing a handler does stops the build or breaks the page (D42). One that throws, or
+ * No handler's failure breaks the page or stops the build (D42). One that throws, or
  * returns anything but its content — a promise, a count other than one per mark, a value
  * neither a string nor bytes — is a warning at the mark, the producer's first, and the
  * marks keep the content they had: the default for a producer's, the content so far for
- * a decorator's. What the page collected under a name it never marks is a warning at the
+ * a decorator's. A file a producer that succeeded wrote is another matter: one `write`
+ * was given the wrong kind of value for is an error here, and the build checks the rest
+ * ({@link ProducerContext.write}). What the page collected under a name it never marks is a warning at the
  * first such fragment, since nothing writes it. A mark nothing answers keeps its default
  * content unreported here: the compile warned at a literal name or key no handler
  * claims, and a key computed at render, or a code block with no language where the
  * producers of `code` list keys, is not reported at all.
  */
 export function resolvePage(rendered: RenderResult, page: PageMarks): ResolvedPage {
-  const diagnostics: Diagnostic[] = []
+  const resolved: Omit<ResolvedPage, 'bytes'> = { files: [], diagnostics: [] }
+  const { diagnostics } = resolved
   const handlers = page.plugins.flatMap((plugin) =>
-    (plugin.marks ?? []).map((handler) => wrapped(plugin.name, handler, page, diagnostics))
+    (plugin.marks ?? []).map((handler) => wrapped(plugin.name, handler, page, resolved))
   )
   const { html, unplaced } = resolveMarks(rendered, handlers)
   for (const name of unplaced) {
@@ -356,19 +399,21 @@ export function resolvePage(rendered: RenderResult, page: PageMarks): ResolvedPa
       labels: [],
     })
   }
-  return { bytes: html, diagnostics }
+  return { bytes: html, ...resolved }
 }
 
 /**
  * `handler`, of the plugin `plugin`, as the core's dispatch runs it for one page: given
- * marks with their code payloads filled in, and kept from failing the page (above).
+ * marks with their code payloads filled in, kept from failing the page (above), and a
+ * producer's files taken into `resolved` only once it has succeeded.
  */
 function wrapped(
   plugin: string,
   handler: PluginHandler,
   page: PageMarks,
-  diagnostics: Diagnostic[]
+  resolved: Omit<ResolvedPage, 'bytes'>
 ): MarkHandler {
+  const { diagnostics, files } = resolved
   const { name, keys, produce, decorate } = handler
   const wrapper: MarkHandler = { name, keys }
   const failed = (role: string, mark: Mark, kept: string, problem: string) => {
@@ -385,12 +430,40 @@ function wrapped(
   if (produce !== undefined) {
     wrapper.produce = (context) => {
       const marks = context.marks.map((mark) => filled(mark, page.payloads))
+      // Queued as given and judged once the call has succeeded, so that a producer that
+      // fails leaves no file and no error behind, and `write` has nothing to throw.
+      const queued: { url: unknown; content: unknown }[] = []
+      const write = (url: string, content: string | Uint8Array) => {
+        // Bytes are copied as they stand now: the producer may reuse its buffer.
+        // `new Uint8Array` copies; a Node `Buffer`'s `slice` is a view.
+        const copy = content instanceof Uint8Array ? new Uint8Array(content) : content
+        queued.push({ url, content: copy })
+      }
       let made: unknown
       const problem = failure(() => {
-        made = produce.call(handler, { ...context, marks })
+        made = produce.call(handler, { ...context, marks, write })
         return unproduced(made, marks.length)
       })
-      if (problem === undefined) return made as (string | Uint8Array)[]
+      if (problem === undefined) {
+        for (const { url, content } of queued) {
+          if (typeof url === 'string' && isContent(content)) {
+            const bytes = typeof content === 'string' ? encoder.encode(content) : content
+            files.push({ url, bytes, plugin, mark: marks[0] })
+            continue
+          }
+          diagnostics.push({
+            path: marks[0].path,
+            span: marks[0].span,
+            severity: 'error',
+            message:
+              `the \`${plugin}\` plugin's producer for \`${name}\` called \`write\` on ` +
+              `\`${page.path}\` with ${shown(url)} and ${shown(content)}, where it takes a ` +
+              'url and a string or bytes',
+            labels: [],
+          })
+        }
+        return made as (string | Uint8Array)[]
+      }
       settle(made)
       failed(
         'producer',
@@ -430,6 +503,8 @@ function filled(mark: Mark, payloads: ReadonlyMap<string, CodePayload>): Mark {
   const { language, info, code } = payload
   return { ...mark, payload: { language, info, code } }
 }
+
+const encoder = new TextEncoder()
 
 /** How `call` failed — the problem it returned, or what it threw — if it did. */
 function failure(call: () => string | undefined): string | undefined {

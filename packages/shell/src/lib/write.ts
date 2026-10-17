@@ -34,12 +34,20 @@ export function outputFile(url: string): string | undefined {
   return decoded.join('/')
 }
 
-/** What writes an output file: a page, or a passthrough file copied as it is. */
+/**
+ * What writes an output file: a page, a passthrough file copied as it is, or a plugin's
+ * producer, for a page.
+ */
 export interface Writer {
-  /** The page's path, or the passthrough file's, relative to the input directory. */
+  /**
+   * The page's path, or the passthrough file's, relative to the input directory — or the
+   * file the producer's mark stands in.
+   */
   path: string
-  /** Where the page's url stands; none for a passthrough file. */
+  /** Where the page's url stands, or the producer's mark; none for a passthrough file. */
   span?: Span
+  /** The plugin whose producer wrote the file, and the page it was written for. */
+  producer?: { plugin: string; page: string }
 }
 
 /** An output file another writer has claimed in a way that rules this one out. */
@@ -105,11 +113,11 @@ function parents(file: string): string[] {
   return segments.slice(1).map((_, i) => segments.slice(0, i + 1).join('/'))
 }
 
-/** A rendered page and the file it is written to. */
+/** A rendered page, or a file a producer wrote, and the file it is written to. */
 export interface Output {
   /** Relative to the output directory, with `/` separators. */
   file: string
-  /** The page as the core returned it, with its marks resolved. */
+  /** The page as the core returned it with its marks resolved, or what was produced. */
   bytes: Uint8Array
 }
 
@@ -129,10 +137,11 @@ export class WriteError extends Error {
 }
 
 /**
- * Writes each page to its file under `output`, and copies each passthrough file —
- * a path relative to `input` — to the same path under `output`, creating directories
- * as needed. The bytes are written as they are, and nothing already in `output` is
- * removed: a file no page or passthrough names is left where it is.
+ * Writes each page to its file under `output`, then each file a producer wrote, and
+ * copies each passthrough file — a path relative to `input` — to the same path under
+ * `output`, creating directories as needed. The bytes are written as they are, and
+ * nothing already in `output` is removed: a file no page, producer or passthrough names
+ * is left where it is.
  *
  * @throws {WriteError} at the first file the file system refuses; the files before it
  *   are written.
@@ -141,6 +150,7 @@ export async function write(
   input: string,
   output: string,
   pages: Output[],
+  produced: Output[],
   passthrough: string[]
 ): Promise<void> {
   const target = (path: string): string => join(output, ...path.split('/'))
@@ -152,7 +162,7 @@ export async function write(
       throw new WriteError(file, cause as Error)
     }
   }
-  for (const page of pages) {
+  for (const page of [...pages, ...produced]) {
     const file = target(page.file)
     await attempt(file, () => writeFile(file, page.bytes))
   }

@@ -58,6 +58,18 @@ so far, on the marks carrying a key it lists or on every mark of its name where 
 none. A code block is a `code` mark keyed by its language, and its handlers see its
 payload, `{language, info, code}`, as `mark.payload`.
 
+A producer may also write files of its own — the stylesheet its marks link to — through its
+context's `write(url, content)`, which takes a url as a page's url is, a path from `/`, and
+a string or bytes, and works only while the producer runs. A file is queued, checked as a
+page's file is, and written after the pages; two pages whose producers write the same bytes
+to one file write it once. A url or content of the wrong kind, a url naming no file, and
+other content where this producer or another page's wrote already are each an error at the
+producer's mark. A clash with a page, a passthrough file or another produced file — the same
+file, the same but for case or Unicode form, or a file where the other needs a directory —
+is an error at the later writer, a page's url or a producer's mark, labelled at the first.
+`write` never throws, and what a producer that then fails had written is dropped,
+unremarked.
+
 The claims are declared to the core at compile, so a `mark()` name no plugin claims is a
 warning at the name, with a did-you-mean, and so is a literal key no producer lists; a site
 listing no plugins is warned at every mark. A decorator's keys choose what it decorates,
@@ -110,27 +122,28 @@ promise, and a function where a plugin belongs, a plugin factory not called.
    is correct either way. What a page collects under a name nothing on it marks is a
    warning at the block that collected it, since nothing writes it.
 6. **Write.** A url ending in `/` is written as `<output>/<url>/index.html`, any other as
-   the file it names; each passthrough file is copied to its own path. Nothing in the
-   output is removed. Before the first file is written, every page has been rendered and
-   its file checked against every other page's and every passthrough file's: the same
-   file, the same but for case or Unicode form (APFS holds those as one), and a file
-   where another needs a directory are each an error at the later page, labelled at the
-   first.
+   the file it names; then each file a producer wrote; and each passthrough file is
+   copied to its own path. Nothing in the output is removed. Before the first file is
+   written, every page has been rendered and every file checked against every other —
+   page, produced, and passthrough: the same file, the same but for case or Unicode form
+   (APFS holds those as one), and a file where another needs a directory are each an
+   error at the later writer, a page's url or a producer's mark, labelled at the first.
 
-It prints every diagnostic as `path:line:col: severity: message`, each label on an
-indented line beneath, and `wrote N pages, copied M files`. Any error, at any step, stops
-the build before it writes a file, and `lem` exits 1; warnings are printed and the build
-goes on. A write the file system then refuses — a file an earlier build left where a
-directory is needed, say — is reported as `lem: could not write <file>: …`, exit 1, and
-the output may hold what was written before it. A site needs a `site.lem` without front
-matter in `input`, even an empty one: without it no glob matches anything.
+It prints every diagnostic as `path:line:col: severity: message`, each label on an indented
+line beneath, and `wrote N pages and P produced files, copied M files`, the middle clause
+only where a producer wrote a file. Any error, at any step, stops the build before it writes
+a file, and `lem` exits 1; warnings are printed and the build goes on. A write the file
+system then refuses — a file an earlier build left where a directory is needed, say — is
+reported as `lem: could not write <file>: …`, exit 1, and the output may hold what was
+written before it. A site needs a `site.lem` without front matter in `input`, even an empty
+one: without it no glob matches anything.
 
 ### Not yet
 
-- **The default plugin and produced files.** The shell ships no `styles`, `scripts` or
-  `head` producer and no highlighter, so only a site's own plugins fill a mark, and a
-  producer writes no file of its own — no CSS bundle: ∆F4y, and ∆Nxd for highlighting.
-  No `asset()` resolves, since the declaration carries no manifest: ∆d1N.
+- **The default plugin.** The shell ships no `styles`, `scripts` or `head` producer and no
+  highlighter, so only a site's own plugins fill a mark or write a file — no CSS bundle:
+  ∆F4y, and ∆Nxd for highlighting. No `asset()` resolves, since the declaration carries
+  no manifest: ∆d1N.
 - **Computed mark keys.** A key a template computes and no producer lists keeps the
   default content, unreported: ∆CxX.
 - **Plugins.** A plugin's only hook is `marks`, and a `from plugin("…")` binding is an

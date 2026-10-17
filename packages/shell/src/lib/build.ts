@@ -3,13 +3,16 @@ import {
   type Core,
   type Diagnostic,
   type JsonValue,
+  type Label,
+  type Mark,
   type Span,
 } from '@limulus/lemmon-core'
 import { strict as assert } from 'node:assert'
+import { Buffer } from 'node:buffer'
 
 import type { LoadedConfig } from './config.ts'
 import { envelope, type Environment } from './load.ts'
-import { resolvePage, type Plugin } from './plugins.ts'
+import { resolvePage, type Plugin, type ProducedFile } from './plugins.ts'
 import { compileSite, FILE_START, hasError, pageSpan, type Program } from './program.ts'
 import { discover } from './site.ts'
 import {
@@ -19,6 +22,7 @@ import {
   WriteError,
   type Collision,
   type Output,
+  type Writer,
 } from './write.ts'
 
 /** What a build takes from its surroundings, so that a spec can fix both. */
@@ -37,6 +41,11 @@ export interface BuildResult {
    * path order. Empty when an error or a failed write stopped the build.
    */
   pages: string[]
+  /**
+   * Each file a plugin's producer wrote, relative to the output directory, in the order
+   * first written — once, however many pages wrote it. Empty when the build stopped.
+   */
+  produced: string[]
   /** Each passthrough file copied, by its path under the input and the output both. */
   copied: string[]
   diagnostics: Diagnostic[]
@@ -51,12 +60,13 @@ export interface BuildResult {
  * Builds the site `config` describes into its output directory — every step of the
  * build pipeline this shell has (docs/architecture.md §Build pipeline): discover,
  * compile, load, plan, render each page and resolve its marks with the config's
- * plugins, write it and copy the passthrough files. Any error diagnostic, at any step,
- * stops the build before it writes a file, since every page is rendered and its output
- * file checked against every other before the first is written; warnings are reported
- * and the build goes on. A write the file system then refuses — a file an earlier build
- * left in the way, which nothing removes — is reported as the result's `failure`, and
- * the output may hold what was written before it.
+ * plugins, write it and the files its producers wrote, and copy the passthrough files.
+ * Any error diagnostic, at any step, stops the build before it writes a file, since
+ * every page is rendered and every output file checked against every other before the
+ * first is written; warnings are reported and the build goes on. A write the file
+ * system then refuses — a file an earlier build left in the way, which nothing removes —
+ * is reported as the result's `failure`, and the output may hold what was written before
+ * it.
  *
  * A page whose record the core loaded renders through its layout. A page no glob held
  * and no `type:` named has no schema, so it renders its own output with `page` bound
@@ -77,7 +87,7 @@ export async function build(
   const passthrough = site.entries
     .filter((entry) => entry.kind === 'passthrough')
     .map((entry) => entry.path)
-  const failed = { pages: [], copied: [], diagnostics }
+  const failed = { pages: [], produced: [], copied: [], diagnostics }
   if (hasError(diagnostics)) return failed
   const core = await loadCore()
   try {
@@ -111,12 +121,14 @@ export async function build(
     }
     if (hasError(diagnostics)) return failed
     try {
-      await write(config.input, config.output, renderer.outputs, passthrough)
+      const { outputs, produced } = renderer
+      await write(config.input, config.output, outputs, produced, passthrough)
     } catch (error) {
       return { ...failed, failure: error as WriteError }
     }
     return {
       pages: renderer.outputs.map((output) => output.file),
+      produced: renderer.produced.map((output) => output.file),
       copied: passthrough,
       diagnostics,
     }
@@ -126,16 +138,22 @@ export async function build(
 }
 
 /**
- * Renders pages into memory, their marks resolved, refusing any two whose files cannot
- * both be written.
+ * Renders pages into memory, their marks resolved, with the files their producers wrote,
+ * refusing any two files that cannot both be written.
  */
 class Renderer {
   readonly outputs: Output[] = []
+  readonly produced: Output[] = []
   readonly #core: Core
   readonly #program: Program
   readonly #plugins: readonly Plugin[]
   readonly #diagnostics: Diagnostic[]
   readonly #files = new OutputFiles()
+  /**
+   * Each file a producer wrote, by its path, with who wrote it first and the mark that
+   * call was given — one object for every file one producer call writes.
+   */
+  readonly #written = new Map<string, { bytes: Uint8Array; writer: Writer; mark: Mark }>()
 
   constructor(
     core: Core,
@@ -149,7 +167,8 @@ class Renderer {
     this.#plugins = plugins
     this.#diagnostics = diagnostics
     // Each passthrough file is where the walk found it, so no two collide in a way
-    // the input's own file system allowed; a page is checked against them all.
+    // the input's own file system allowed; a page or a produced file is checked
+    // against them all, and against each other in whichever order they come.
     for (const path of passthrough) this.#files.claim(path, { path })
   }
 
@@ -157,8 +176,8 @@ class Renderer {
    * Renders the page at `path` to the file its `url` names, its marks resolved, or
    * reports why it cannot be written: a url that names no file, or a file another page
    * or a passthrough file writes, or one that cannot stand beside it on disk. A failed
-   * render reports its runtime diagnostic, and resolving reports what the handlers did
-   * wrong, as warnings.
+   * render reports its runtime diagnostic, resolving reports what the handlers did
+   * wrong, and each file its producers wrote is checked as the page's own file is.
    */
   render(path: string, url: JsonValue): void {
     const page = this.#program.pages.get(path)
@@ -172,8 +191,7 @@ class Renderer {
         severity: 'error',
         message:
           `the url ${JSON.stringify(url)} names no file in the output directory: a ` +
-          "page's url is a path from `/`, without an empty, `.` or `..` segment, a " +
-          'percent-encoded `/` or `\\`, a query, or a fragment',
+          `page's url ${URL_RULE}`,
         labels: [],
       })
       return
@@ -192,45 +210,119 @@ class Renderer {
     const resolved = resolvePage(rendered, { path, plugins: this.#plugins, payloads })
     this.#diagnostics.push(...resolved.diagnostics)
     this.outputs.push({ file, bytes: resolved.bytes })
+    for (const produced of resolved.files) this.#produce(path, produced)
+  }
+
+  /**
+   * Takes the file a producer wrote while the page at `page` resolved, or reports why
+   * it cannot be written, at the producer's mark: its url names no file, another
+   * producer wrote other bytes there, or a page or a passthrough file claims it, or a
+   * file that cannot stand beside it. The same bytes another producer wrote at the same
+   * file are taken as written already — the stylesheet two pages share — and other
+   * bytes from the same call are the producer writing the file twice.
+   */
+  #produce(page: string, { url, bytes, plugin, mark }: ProducedFile): void {
+    const { path, span } = mark
+    const lead = `the \`${plugin}\` plugin writes a file for this mark on \`${page}\``
+    const file = outputFile(url)
+    if (file === undefined) {
+      this.#diagnostics.push({
+        path,
+        span,
+        severity: 'error',
+        message:
+          `${lead} at the url ${JSON.stringify(url)}, which names no file in the output ` +
+          `directory: a file's url ${URL_RULE}`,
+        labels: [],
+      })
+      return
+    }
+    const writer: Writer = { path, span, producer: { plugin, page } }
+    const first = this.#written.get(file)
+    if (first !== undefined) {
+      if (Buffer.compare(first.bytes, bytes) === 0) return
+      // One call's files share its first mark, which is where both would point.
+      const twice = first.mark === mark
+      this.#diagnostics.push({
+        path,
+        span,
+        severity: 'error',
+        message: twice
+          ? `the \`${plugin}\` plugin writes \`${file}\` twice with different content ` +
+            `for this mark on \`${page}\``
+          : `${lead}, and ${who(first.writer)} writes other content to \`${file}\``,
+        labels: twice ? [] : [label(first.writer, file)],
+      })
+      return
+    }
+    const collision = this.#files.claim(file, writer)
+    if (collision !== undefined) {
+      this.#diagnostics.push(collided(path, span, file, collision, lead))
+      return
+    }
+    this.#written.set(file, { bytes, writer, mark })
+    this.produced.push({ file, bytes })
+  }
+}
+
+/** What a url must be to name a file in the output directory. */
+const URL_RULE =
+  'is a path from `/`, without an empty, `.` or `..` segment, a percent-encoded `/` or ' +
+  '`\\`, a query, or a fragment'
+
+/**
+ * How a message names `writer`: a page by its path, a passthrough file as one, and a
+ * producer's file by its plugin and the page it was written for.
+ */
+function who(writer: Writer): string {
+  if (writer.producer !== undefined) {
+    const { plugin, page } = writer.producer
+    return `the \`${plugin}\` plugin, for \`${page}\`,`
+  }
+  return writer.span === undefined
+    ? `the passthrough file \`${writer.path}\``
+    : `\`${writer.path}\``
+}
+
+/**
+ * The label at `writer`, the first to claim `file`: at a page's url, a producer's mark,
+ * or the start of a passthrough file.
+ */
+function label(writer: Writer, file: string): Label {
+  return {
+    path: writer.path,
+    span: writer.span ?? FILE_START,
+    message: `the first to write there, as \`${file}\``,
   }
 }
 
 /**
- * The error at the page at `path`, whose url at `span` names `file`, for the claim it
- * collides with, labelled where that claim was made: at the other page's url, or at the
- * start of the passthrough file.
+ * The error at `span` in `path` — a page's url, or the mark whose producer wrote the
+ * file, which `lead` then says — for `file` and the claim it collides with, labelled
+ * where that claim was made.
  */
 function collided(
   path: string,
   span: Span,
   file: string,
-  collision: Collision
+  collision: Collision,
+  lead?: string
 ): Diagnostic {
-  const { writer } = collision
-  const who =
-    writer.span === undefined
-      ? `the passthrough file \`${writer.path}\``
-      : `\`${writer.path}\``
+  const by = who(collision.writer)
   const other = `\`${collision.file}\``
   const message = {
-    same: `\`${file}\` is written by ${who} already`,
+    same: `\`${file}\` is written by ${by} already`,
     fold:
-      `\`${file}\` differs from ${other}, which ${who} writes, only in case or ` +
+      `\`${file}\` differs from ${other}, which ${by} writes, only in case or ` +
       'Unicode form, and a file system may hold the two as one file',
-    inside: `\`${file}\` would be inside ${other}, which ${who} writes as a file`,
-    holds: `\`${file}\` would be a file, and ${who} writes ${other} inside it`,
+    inside: `\`${file}\` would be inside ${other}, which ${by} writes as a file`,
+    holds: `\`${file}\` would be a file, and ${by} writes ${other} inside it`,
   }[collision.how]
   return {
     path,
     span,
     severity: 'error',
-    message,
-    labels: [
-      {
-        path: writer.path,
-        span: writer.span ?? FILE_START,
-        message: `the first to write there, as ${other}`,
-      },
-    ],
+    message: lead === undefined ? message : `${lead}, and ${message}`,
+    labels: [label(collision.writer, collision.file)],
   }
 }
