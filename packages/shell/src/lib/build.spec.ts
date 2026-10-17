@@ -1,12 +1,12 @@
 import { loadCore, type Diagnostic } from '@limulus/lemmon-core'
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
-import { build, type BuildResult } from './build.ts'
+import { build, check, type BuildResult } from './build.ts'
 import { bundler } from './bundler.ts'
 import type { Plugin } from './plugins.ts'
-import { FILE_START as START, SiteError } from './program.ts'
+import { AMBIENT_FILE, FILE_START as START, SiteError } from './program.ts'
 import { WriteError } from './write.ts'
 import {
   CALLOUT_LEM,
@@ -80,6 +80,7 @@ describe('build()', () => {
         produced: [],
         copied: ['assets/site.css'],
         diagnostics: [],
+        texts: expect.any(Map) as Map<string, string>,
       })
       expect(tree(join(dir, 'dist'))).toEqual({
         'posts/a/index.html':
@@ -1000,5 +1001,118 @@ describe('build()', () => {
       expect(result.failure?.file).toBe(join(dir, 'dist/posts/a/index.html'))
       expect(result.failure?.message).toMatch(/^could not write .*: ENOTDIR: /)
     })
+  })
+
+  describe('the texts it read', () => {
+    it('should carry every page, template and data file by its path, and its own declarations', async () => {
+      const { result } = await built(SITE)
+      const read = (path: string): [string, string] => [path, SITE[path]]
+
+      // Not the stylesheet a passthrough glob copies, nor the component the walk
+      // ignores: no step reads either.
+      expect(result.texts).toEqual(
+        new Map([
+          read('site.lem'),
+          read('layouts.lem'),
+          read('posts/a.md'),
+          read('posts/b.md'),
+          read('index.lem'),
+          read('notes/loose.md'),
+          read('_data/photos.json'),
+          [AMBIENT_FILE, readFileSync(AMBIENT_FILE, 'utf8')],
+        ])
+      )
+    })
+
+    it('should carry what it read before an error stopped it', async () => {
+      const post = '---\ntitle: a: b\n---\n'
+      const photos = '{"sunset": {}, "sunset": {}}'
+
+      const early = await built({ ...SITE, 'posts/c.md': post })
+      const late = await built({ ...SITE, '_data/photos.json': photos })
+
+      expect(early.result.texts.get('posts/c.md')).toBe(post)
+      // Nothing compiled, so nothing else was read.
+      expect(early.result.texts.has(AMBIENT_FILE)).toBe(false)
+      expect(late.result.texts.get('_data/photos.json')).toBe(photos)
+    })
+
+    it('should be the texts the spans were computed against, though a file changes during the build', async () => {
+      const post = '---\ntitle: B\n---\n<lem.mark("edit")>\n'
+      const dir = project({ ...SITE, 'posts/b.md': post }, PASSTHROUGH)
+      const file = join(dir, 'www/posts/b.md')
+      // A producer rewrites the page it answers for while the build renders it.
+      const editor: Plugin = {
+        name: 'editor',
+        marks: [
+          {
+            name: 'edit',
+            produce: ({ marks }) => {
+              writeFileSync(file, 'changed since')
+              return marks.map(() => '')
+            },
+          },
+        ],
+      }
+
+      const result = await build(configOf(dir, PASSTHROUGH, [editor]), {
+        now: NOW,
+        env: ENV,
+      })
+
+      expect(result.diagnostics).toEqual([])
+      expect(readFileSync(file, 'utf8')).toBe('changed since')
+      expect(result.texts.get('posts/b.md')).toBe(post)
+    })
+  })
+})
+
+describe('check()', () => {
+  /** Checks `files` as a project: the result, and the project. */
+  async function checked(files: Record<string, string>, passthrough = PASSTHROUGH) {
+    const dir = project(files, passthrough)
+    const config = configOf(dir, passthrough)
+    return { result: await check(config, { now: NOW, env: ENV }), dir }
+  }
+
+  it('should find what a build would write, and write nothing', async () => {
+    const { result, dir } = await checked(SITE)
+    const { result: wrote } = await built(SITE)
+
+    expect(result).toEqual({ ...wrote, texts: expect.any(Map) as Map<string, string> })
+    expect(result.texts).toEqual(wrote.texts)
+    expect(existsSync(join(dir, 'dist'))).toBe(false)
+  })
+
+  it('should render every page, finding what only rendering finds', async () => {
+    const post = '---\ntitle: B\n---\n<lem.site.photos["nope"].caption>\n'
+    const css = '---\nurl: /assets/site.css\n---\n'
+    const { result, dir } = await checked({
+      ...SITE,
+      'posts/b.md': post,
+      'notes/loose.md': css,
+    })
+
+    expect(result.pages).toEqual([])
+    expect(result.diagnostics).toEqual([
+      expect.objectContaining({ path: 'posts/b.md', message: 'no key "nope"' }),
+      expect.objectContaining({
+        path: 'notes/loose.md',
+        span: at(css, 'url: /assets/site.css'),
+      }),
+    ])
+    expect(existsSync(join(dir, 'dist'))).toBe(false)
+  })
+
+  it('should leave the output as it is, though a build could not write over it', async () => {
+    const dir = project(SITE, PASSTHROUGH)
+    mkdirSync(join(dir, 'dist'))
+    writeFileSync(join(dir, 'dist/posts'), 'stale')
+
+    const result = await check(configOf(dir, PASSTHROUGH), { now: NOW, env: ENV })
+
+    expect(result.pages).toHaveLength(4)
+    expect(result.diagnostics).toEqual([])
+    expect(tree(join(dir, 'dist'))).toEqual({ posts: 'stale' })
   })
 })

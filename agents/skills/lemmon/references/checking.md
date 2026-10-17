@@ -1,17 +1,26 @@
 # Checking what you wrote
 
-`lem build` is the check: it compiles every file of the site, loads its front matter and
-data against the declared types, and renders every page, printing each diagnostic as
-`path:line:col: severity: message` with its labels on indented lines beneath. Any error
-stops it before it writes a file, and it exits 1; with none it says what it wrote.
-`lem check`, the same report without the writing, is not yet built (∆Uqg).
+`lem check` compiles every file of the site, loads its front matter and data against the
+declared types, and renders every page — all `lem build` does but the writing — printing
+each diagnostic as `path:line:col: severity: message`, the lines its span covers beneath
+with `^` under what it covers, and its labels on indented lines:
+
+```text
+www/layouts.lem:2:15: error: `Post` has no field `titel`; did you mean `title`?
+> 2 |   <title><lem.p.titel></title>
+    |               ^^^^^^^
+lem: 1 error
+```
+
+Any error makes it exit 1; with none it says how many pages it checked. It never touches
+the output directory. `lem build` prints the same report, and writes nothing on an error.
 
 Run it from the site's directory, the one holding `lemmon.config.ts`, through the lemmon
 checkout's bin, which finds the core staged in that checkout (`npm run rust:wasm` there
 rebuilds it):
 
 ```sh
-node --conditions=source /path/to/lemmon/packages/shell/bin/lem.ts build
+node --conditions=source /path/to/lemmon/packages/shell/bin/lem.ts check
 ```
 
 A document is typed the way the shell types it: by its `type:` key, or else by the `from`

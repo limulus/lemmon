@@ -133,11 +133,18 @@ export interface Compiled {
  * invisible to every template, with front matter or without: the first call is where
  * a template is checked, and no document is in it.
  *
+ * The text of {@link AMBIENT_FILE}, which this reads, is recorded in `texts` by its
+ * path, as a build records every text its diagnostics may be placed in.
+ *
  * @throws {SiteError} when the input has no {@link BINDINGS_FILE}: the declaration
  *   names it whatever the site holds, and without it no glob matches anything, so
  *   every document would render as it is, without its layout, far from the cause.
  */
-export async function compileSite(core: Core, site: Site): Promise<Compiled> {
+export async function compileSite(
+  core: Core,
+  site: Site,
+  texts: Map<string, string>
+): Promise<Compiled> {
   const templates: SourceFileInput[] = []
   const pageTemplates = new Set<string>()
   for (const entry of site.entries) {
@@ -153,6 +160,7 @@ export async function compileSite(core: Core, site: Site): Promise<Compiled> {
     )
   }
   const ambient = { path: AMBIENT_FILE, text: await readFile(AMBIENT_FILE, 'utf8') }
+  texts.set(ambient.path, ambient.text)
   const first = core.compile([ambient, ...templates], hostFor(site.config.plugins))
   if (hasError(first.diagnostics)) return { diagnostics: first.diagnostics }
   // A page template compiles again in the second call, as its record, and reports its

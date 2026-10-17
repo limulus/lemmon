@@ -84,7 +84,7 @@ Two mistakes compile without a word: a string with `{…}` in it prints the brac
 
 ### While loading front matter
 
-These surface once data loads — in `lem build`, not in the compile-only check script.
+These surface once data loads, which `lem check` and `lem build` both do.
 
 - `subhed: Off by one` — _`Post` has no field `subhed`; did you mean `subhead`?_
 - `tags: [article]` — _`Post` has no field `tags`_: collection membership is the glob.

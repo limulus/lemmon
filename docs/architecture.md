@@ -237,9 +237,12 @@ not a break:
     ∆zu0) render after steps 6–9 have finished every other page, with those outputs
     loaded back as a string source (D42).
 
-What `lem build` (∆muD) runs is steps 1 and 3–8, produced files included, in one
-core on one thread. Step 3's first call compiles every `.lem` — page templates too,
-without their records, so a layout sees what they define — and its second the pages as
+What `lem build` (∆muD) runs is steps 1 and 3–8, produced files included, in one core on one
+thread. `lem check` runs the same and stops before the first write, so it reports every
+diagnostic a build would, render errors and output collisions included; it never touches the
+output directory, so a write the file system refuses is found only by `lem build`. Step 3's
+first call compiles every `.lem` — page templates too, without their records, so a layout
+sees what they define — and its second the pages as
 their records; a document compiles only in the second, so no template sees what a
 document defines. Every page is rendered and its output file checked against every
 other — the same file, the same but for case or Unicode form, or a file where another

@@ -35,12 +35,18 @@ export interface Envelope {
  * errors at the binding, and a data file that does not parse is an error in the file;
  * each leaves no envelope, since the core refuses one that fulfils fewer bindings than
  * the program declares.
+ *
+ * A data file is read once in a build: its text is recorded in `texts` by the path its
+ * diagnostics name it by, its binding's literal, and a path `texts` holds already — a
+ * file the walk read, or another binding's — is taken from there, so every diagnostic
+ * in one file is placed against one text.
  */
 export async function envelope(
   input: string,
   program: Program,
   build: BuildInfo,
-  env: Environment
+  env: Environment,
+  texts: Map<string, string>
 ): Promise<Envelope> {
   const diagnostics: Diagnostic[] = []
   const sources: Record<string, LoadedValue | LoadedValue[]> = {}
@@ -72,17 +78,20 @@ export async function envelope(
         at('which is outside the input directory')
         continue
       }
-      let text: string
-      try {
-        text = await readFile(file, 'utf8')
-      } catch (error) {
-        const { code, message } = error as NodeJS.ErrnoException
-        at(
-          code === 'ENOENT'
-            ? 'which is not a file in the input directory'
-            : `which cannot be read: ${message}`
-        )
-        continue
+      let text = texts.get(source.literal)
+      if (text === undefined) {
+        try {
+          text = await readFile(file, 'utf8')
+        } catch (error) {
+          const { code, message } = error as NodeJS.ErrnoException
+          at(
+            code === 'ENOENT'
+              ? 'which is not a file in the input directory'
+              : `which cannot be read: ${message}`
+          )
+          continue
+        }
+        texts.set(source.literal, text)
       }
       const read = readData(source.literal, text)
       diagnostics.push(...read.diagnostics)

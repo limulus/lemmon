@@ -1,7 +1,13 @@
 // What a plugin's handlers are given, so that a site's config can type them from here.
 export type { Fragment, Mark, MarkContext } from '@limulus/lemmon-core'
 
-export { build, type BuildOptions, type BuildResult } from './lib/build.ts'
+export {
+  build,
+  check,
+  type BuildOptions,
+  type BuildResult,
+  type CheckResult,
+} from './lib/build.ts'
 export { bundler } from './lib/bundler.ts'
 export { ConfigError, loadConfig, type Config, type LoadedConfig } from './lib/config.ts'
 export * from './lib/front-matter.ts'

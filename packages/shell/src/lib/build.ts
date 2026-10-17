@@ -33,12 +33,15 @@ export interface BuildOptions {
   env: Environment
 }
 
-/** What a build did: the files it wrote and copied, and everything it reported. */
-export interface BuildResult {
+/**
+ * What a check found: the files a build would write and copy, and everything it
+ * reported.
+ */
+export interface CheckResult {
   /**
    * Each page's file, relative to the output directory, in the order rendered: every
    * page the core loaded, in its plan's order, then every page no record typed, in
-   * path order. Empty when an error or a failed write stopped the build.
+   * path order. Empty when an error stopped the build.
    */
   pages: string[]
   /**
@@ -46,12 +49,29 @@ export interface BuildResult {
    * first written — once, however many pages wrote it. Empty when the build stopped.
    */
   produced: string[]
-  /** Each passthrough file copied, by its path under the input and the output both. */
+  /**
+   * Each passthrough file copied, or that a build would copy, by its path under the
+   * input and the output both.
+   */
   copied: string[]
   diagnostics: Diagnostic[]
   /**
+   * The text of every file the build read, once each, by the path its diagnostics name
+   * it by: each document and template the walk found, the shell's own `ambient.lem`,
+   * and each data file a binding read. Every diagnostic's own path is among them, since
+   * each is placed in a file the build read; a label may name a passthrough file, which
+   * no step reads. These are the texts the spans were computed against, so a span is
+   * shown from here rather than from the file read again, which may have changed since.
+   */
+  texts: Map<string, string>
+}
+
+/** What a build did: what a check finds, with the files written and copied. */
+export interface BuildResult extends CheckResult {
+  /**
    * The file the file system refused, where writing failed: every page had been
-   * rendered and checked, and the output may hold the files written before it.
+   * rendered and checked, and the output may hold the files written before it. The
+   * files the result lists are then empty.
    */
   failure?: WriteError
 }
@@ -82,16 +102,58 @@ export async function build(
   config: LoadedConfig,
   options: BuildOptions
 ): Promise<BuildResult> {
+  const { result, rendered } = await renderSite(config, options)
+  if (rendered === undefined) return result
+  try {
+    const { outputs, produced } = rendered
+    await write(config.input, config.output, outputs, produced, result.copied)
+  } catch (error) {
+    const stopped = { pages: [], produced: [], copied: [] }
+    return { ...result, ...stopped, failure: error as WriteError }
+  }
+  return result
+}
+
+/**
+ * Checks the site `config` describes as {@link build} builds it, every step but the
+ * writing: every page is rendered and its marks resolved, and every output file
+ * checked against every other, so a check reports what a build would, the runtime
+ * errors and the collisions among them, and the output directory is not touched.
+ *
+ * @throws {SiteError} when the input has no `site.lem`.
+ */
+export async function check(
+  config: LoadedConfig,
+  options: BuildOptions
+): Promise<CheckResult> {
+  return (await renderSite(config, options)).result
+}
+
+/**
+ * Every step of the build before the writing, in one core freed before it returns:
+ * what a check found, and the pages and produced files rendered into memory unless an
+ * error stopped it.
+ */
+async function renderSite(
+  config: LoadedConfig,
+  options: BuildOptions
+): Promise<{ result: CheckResult; rendered?: Pick<Renderer, 'outputs' | 'produced'> }> {
   const site = await discover(config)
   const diagnostics = [...site.diagnostics]
+  const texts = new Map<string, string>()
+  for (const entry of site.entries) {
+    if (entry.kind === 'document' || entry.kind === 'template') {
+      texts.set(entry.path, entry.text)
+    }
+  }
   const passthrough = site.entries
     .filter((entry) => entry.kind === 'passthrough')
     .map((entry) => entry.path)
-  const failed = { pages: [], produced: [], copied: [], diagnostics }
+  const failed = { result: { pages: [], produced: [], copied: [], diagnostics, texts } }
   if (hasError(diagnostics)) return failed
   const core = await loadCore()
   try {
-    const compiled = await compileSite(core, site)
+    const compiled = await compileSite(core, site, texts)
     diagnostics.push(...compiled.diagnostics)
     if (compiled.program === undefined) return failed
     const { program } = compiled
@@ -100,7 +162,8 @@ export async function build(
       config.input,
       program,
       { time: options.now, generator },
-      options.env
+      options.env,
+      texts
     )
     diagnostics.push(...loaded.diagnostics)
     if (loaded.data === undefined) return failed
@@ -120,18 +183,15 @@ export async function build(
       renderer.render(path, value.url)
     }
     if (hasError(diagnostics)) return failed
-    try {
-      const { outputs, produced } = renderer
-      await write(config.input, config.output, outputs, produced, passthrough)
-    } catch (error) {
-      return { ...failed, failure: error as WriteError }
-    }
-    return {
+    const result = {
       pages: renderer.outputs.map((output) => output.file),
       produced: renderer.produced.map((output) => output.file),
       copied: passthrough,
       diagnostics,
+      texts,
     }
+    const { outputs, produced } = renderer
+    return { result, rendered: { outputs, produced } }
   } finally {
     core.free()
   }

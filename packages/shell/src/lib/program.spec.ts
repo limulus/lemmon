@@ -16,7 +16,7 @@ async function compiled(
   plugins: Plugin[] = []
 ): Promise<Compiled> {
   const site = await discover(configOf(project(files), [], plugins))
-  return await compileSite(await loadCore(), site)
+  return await compileSite(await loadCore(), site, new Map())
 }
 
 /** The pages of a compile that is expected to succeed, as `[path, record, binding]`. */
@@ -120,7 +120,11 @@ describe('compileSite()', () => {
     const { 'site.lem': _, ...files } = SITE
     const dir = project(files)
 
-    const compiling = compileSite(await loadCore(), await discover(configOf(dir)))
+    const compiling = compileSite(
+      await loadCore(),
+      await discover(configOf(dir)),
+      new Map()
+    )
 
     await expect(compiling).rejects.toThrow(SiteError)
     await expect(compiling).rejects.toMatchObject({
@@ -133,7 +137,7 @@ describe('compileSite()', () => {
     const dir = project({ ...SITE, 'site.lem': `---\ntitle: Site\n---\n${SITE_LEM}` })
 
     await expect(
-      compileSite(await loadCore(), await discover(configOf(dir)))
+      compileSite(await loadCore(), await discover(configOf(dir)), new Map())
     ).rejects.toThrow(SiteError)
   })
 

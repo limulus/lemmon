@@ -96,7 +96,8 @@ crates/lemmon-wasm/     wasm-bindgen boundary: the resident Core (lemmon-core's 
                         build.rs pins the .wasm's stack
 packages/core/          @limulus/lemmon-core — typed JS wrapper around the .wasm
 packages/shell/         @limulus/lemmon-shell — the `lem` CLI: config, walk, front matter,
-                        the two-phase compile, load, render and write (`lem build`)
+                        the two-phase compile, load, render and write (`lem build`),
+                        and `lem check`, all of it but the write
 tests/corpus/           golden inputs → expected trees + diagnostics; see its README
 tests/fidelity/         the-rebound's sources and its 11ty reference page; see its README
 scripts/                repo tooling run by npm scripts (wasm staging + check, the
@@ -208,14 +209,17 @@ that checks the 1 ms/page criterion — runs only by hand.
 describes it), the bin at `packages/shell/bin/lem.ts` compiles the site in two calls, loads
 it, renders every page into memory, resolves its marks through the plugins the config lists
 — the shell's default plugin, `bundler()`, runs only where the config lists it — and then
-writes HTML, the files the plugins produced (its CSS bundles), and passthrough files. It
-runs from source under the `source` export condition, so the limulus-dot-net port branch
-depends on this checkout with `file:` and sees every edit without a build.
+writes HTML, the files the plugins produced (its CSS bundles), and passthrough files.
+`lem check` runs the same pipeline and stops before the write, so it never touches the
+output directory; both print each diagnostic with the source its span covers framed
+beneath, from the text the build read. The bin runs from source under the `source` export
+condition, so the limulus-dot-net port branch depends on this checkout with `file:` and
+sees every edit without a build.
 
 Still aspirational; keep them true as they come to exist:
 
 - `cargo fuzz run parser` — parser/VM fuzzing (never commit a panic repro as expected)
-- `lem dev | check | fmt` — the rest of the CLI; `lem build` exists (below)
+- `lem dev | fmt` — the rest of the CLI; `lem build` and `lem check` exist (above)
 
 ## TypeScript setup
 

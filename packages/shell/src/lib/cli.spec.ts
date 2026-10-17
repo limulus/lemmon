@@ -1,12 +1,14 @@
+import type { Diagnostic } from '@limulus/lemmon-core'
 import { spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
-import { run, USAGE } from './cli.ts'
-import { AMBIENT_FILE } from './program.ts'
+import { formatted, run, USAGE } from './cli.ts'
+import { AMBIENT_FILE, FILE_START as START } from './program.ts'
 import { ENV, PASSTHROUGH, project, SITE, SITE_LEM } from '../mocks/sites.ts'
+import { at } from '../mocks/spans.ts'
 import { tempDir } from '../mocks/temp-dir.ts'
 
 /** What one run wrote, and the code it exited with. */
@@ -172,9 +174,15 @@ describe('run()', () => {
         stderr: [
           'www/a.md:2:8: error: front matter is not valid YAML: ' +
             'Nested mappings are not allowed in compact mappings',
+          '> 2 | title: a: b',
+          '    |        ^',
           'www/c.md:4:1: error: `title` is already given',
+          '> 4 | title: b',
+          '    | ^^^^^',
           '  www/c.md:3:1: first given here',
           'www/feed/b.md:3:7: warning: Unresolved tag: tag:yaml.org,2002:timestamp',
+          '> 3 | when: !!timestamp 2024',
+          '    |       ^^^^^^^^^^^',
           'lem: 2 errors, so nothing was written',
           '',
         ].join('\n'),
@@ -262,7 +270,8 @@ describe('run()', () => {
       expect(ran.code).toBe(1)
       expect(ran.stderr).toContain(
         'www/bad.lem:2:3: error: `url` is a `url` in `Page` and cannot be redeclared as ' +
-          `a \`string\`\n  ${AMBIENT_FILE}:2:3: declared here\n`
+          'a `string`\n> 2 |   url: string\n    |   ^^^\n' +
+          `  ${AMBIENT_FILE}:2:3: declared here\n`
       )
     })
 
@@ -327,5 +336,136 @@ describe('run()', () => {
 
       await expect(lem(['build'], cwd)).rejects.toThrow(/ENOENT/)
     })
+  })
+
+  describe('check', () => {
+    it('should check the site, say what it checked, and write nothing', async () => {
+      const cwd = project(SITE, PASSTHROUGH)
+
+      expect(await lem(['check'], cwd)).toEqual({
+        code: 0,
+        stdout: 'checked 4 pages\n',
+        stderr: '',
+      })
+      expect(existsSync(join(cwd, 'dist'))).toBe(false)
+    })
+
+    it('should count the files the plugins would produce', async () => {
+      const cwd = tempDir({
+        'lemmon.config.ts':
+          "export default { input: 'www', output: 'dist', plugins: [{ name: 'sheets', " +
+          "marks: [{ name: 'styles', produce: ({ marks, write }) => { " +
+          "write('/s.css', '.a {}'); return marks.map(() => '<link>') } }] }] }",
+        'www/site.lem': '',
+        'www/a.md': '<lem.mark("styles")>\n',
+      })
+
+      expect(await lem(['check'], cwd)).toEqual({
+        code: 0,
+        stdout: 'checked 1 page and 1 produced file\n',
+        stderr: '',
+      })
+      expect(existsSync(join(cwd, 'dist'))).toBe(false)
+    })
+
+    it('should print each diagnostic with the source it points at, and exit 1', async () => {
+      const post = '---\ntitle: B\n---\n<lem.page.byline>\n'
+      const cwd = project({ ...SITE, 'posts/b.md': post }, PASSTHROUGH)
+
+      expect(await lem(['check'], cwd)).toEqual({
+        code: 1,
+        stdout: '',
+        stderr: [
+          'www/posts/b.md:4:6: error: `Post` has no field `byline`',
+          '> 4 | <lem.page.byline>',
+          '    |      ^^^^^^^^^^^',
+          'lem: 1 error',
+          '',
+        ].join('\n'),
+      })
+      expect(existsSync(join(cwd, 'dist'))).toBe(false)
+    })
+
+    it('should frame a diagnostic in a data file', async () => {
+      const photos = '{\n  "sunset": { "caption": "A" },\n  "sunset": {}\n}\n'
+      const cwd = project({ ...SITE, '_data/photos.json': photos })
+
+      expect((await lem(['check'], cwd)).stderr).toBe(
+        [
+          'www/_data/photos.json:3:3: error: `sunset` is already given',
+          '> 3 |   "sunset": {}',
+          '    |   ^^^^^^^^',
+          '  www/_data/photos.json:2:3: first given here',
+          'lem: 1 error',
+          '',
+        ].join('\n')
+      )
+    })
+
+    it('should print its warnings and exit 0 where nothing is an error', async () => {
+      const cwd = project({ ...SITE, 'feed/b.md': '---\nwhen: !!timestamp 2024\n---\n' })
+
+      expect(await lem(['check'], cwd)).toEqual({
+        code: 0,
+        stdout: 'checked 5 pages\n',
+        stderr: [
+          'www/feed/b.md:2:7: warning: Unresolved tag: tag:yaml.org,2002:timestamp',
+          '> 2 | when: !!timestamp 2024',
+          '    |       ^^^^^^^^^^^',
+          '',
+        ].join('\n'),
+      })
+    })
+
+    it('should read the config --config names, and report one it cannot load', async () => {
+      const cwd = tempDir({
+        'site/lemmon.config.ts': "export default { input: 'src', output: 'out' }",
+        'site/src/site.lem': '',
+        'site/src/a.md': '',
+      })
+
+      expect(await lem(['check', '--config', 'site/lemmon.config.ts'], cwd)).toEqual({
+        code: 0,
+        stdout: 'checked 1 page\n',
+        stderr: '',
+      })
+      expect(await lem(['check'], cwd)).toEqual({
+        code: 1,
+        stdout: '',
+        stderr: `lem: ${join(cwd, 'lemmon.config.ts')}: no config file here\n`,
+      })
+    })
+  })
+})
+
+describe('formatted()', () => {
+  const diagnostic: Diagnostic = {
+    path: 'a.lem',
+    span: at('x\n<lem.nope>\n', 'nope'),
+    severity: 'error',
+    message: 'undefined name `nope`',
+    labels: [{ path: 'b.lem', span: START, message: 'here' }],
+  }
+
+  it('should frame the span from the text the build read, not the file', () => {
+    const texts = new Map([['a.lem', 'x\n<lem.nope>\n']])
+
+    expect(formatted(diagnostic, texts, '/site/www', '/site')).toBe(
+      [
+        'www/a.lem:2:6: error: undefined name `nope`',
+        '> 2 | <lem.nope>',
+        '    |      ^^^^',
+        '  www/b.lem:1:1: here',
+      ].join('\n')
+    )
+  })
+
+  it('should print a diagnostic in a file it has no text for without a frame', () => {
+    expect(formatted(diagnostic, new Map(), '/site/www', '/elsewhere')).toBe(
+      [
+        '/site/www/a.lem:2:6: error: undefined name `nope`',
+        '  /site/www/b.lem:1:1: here',
+      ].join('\n')
+    )
   })
 })

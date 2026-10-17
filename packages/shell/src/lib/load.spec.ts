@@ -11,19 +11,28 @@ import { at } from '../mocks/spans.ts'
 
 const BUILD = { time: new Date('2026-10-15T12:00:00Z'), generator: 'Lemmon 0.0.0' }
 
+/** How {@link enveloped} fulfils a program. */
+interface Options {
+  env?: object
+  /** Changes the project between the compile and the load. */
+  prepare?: (dir: string) => void
+  /** The texts the build holds already, which the load records into. */
+  texts?: Map<string, string>
+}
+
 /**
  * The envelope `files` load from: compiled in a fresh core, then fulfilled from the
- * project, in `env`. `prepare` may change the project between the two.
+ * project, in `env`.
  */
 async function enveloped(
   files: Record<string, string>,
-  { env = ENV, prepare = () => {} }: { env?: object; prepare?: (dir: string) => void } = {}
+  { env = ENV, prepare = () => {}, texts = new Map() }: Options = {}
 ): Promise<Envelope> {
   const dir = project(files)
   const config = configOf(dir)
-  const { program } = await compileSite(await loadCore(), await discover(config))
+  const { program } = await compileSite(await loadCore(), await discover(config), texts)
   prepare(dir)
-  return await envelope(config.input, program!, BUILD, env as Record<string, string>)
+  return await envelope(config.input, program!, BUILD, env as Record<string, string>, texts)
 }
 
 describe('envelope()', () => {
@@ -184,5 +193,51 @@ describe('envelope()', () => {
       expect.objectContaining({ path: '_data/photos.json', severity: 'warning' }),
     ])
     expect(data?.sources?.photos).toMatchObject({ value: { sunset: { caption: 'A' } } })
+  })
+
+  describe('the texts it reads', () => {
+    it('should record each data file by its binding’s literal', async () => {
+      const texts = new Map<string, string>()
+
+      await enveloped(SITE, { texts })
+
+      expect(texts.get('_data/photos.json')).toBe(SITE['_data/photos.json'])
+    })
+
+    it('should take a file the build read already from its text, and not read it again', async () => {
+      // A binding loading a document the walk read, which changed on disk since.
+      const card = 'caption: As the walk read it\n'
+      const site = `${SITE_LEM}<lem-let card: Photo from "notes/card.md" />\n`
+      const texts = new Map([['notes/card.md', card]])
+
+      const { data } = await enveloped(
+        { ...SITE, 'site.lem': site, 'notes/card.md': card },
+        {
+          texts,
+          prepare: (dir) => {
+            writeFileSync(join(dir, 'www/notes/card.md'), 'caption: Since\n')
+          },
+        }
+      )
+
+      expect(data?.sources?.card).toMatchObject({
+        value: { caption: 'As the walk read it' },
+      })
+      expect(texts.get('notes/card.md')).toBe(card)
+    })
+
+    it('should load two bindings of one file from the one text it records', async () => {
+      const site = `${SITE_LEM}<lem-let again: {string: Photo} from "_data/photos.json" />\n`
+      const texts = new Map<string, string>()
+
+      const { data, diagnostics } = await enveloped(
+        { ...SITE, 'site.lem': site },
+        { texts }
+      )
+
+      expect(diagnostics).toEqual([])
+      expect(data?.sources?.again).toEqual(data?.sources?.photos)
+      expect(texts.get('_data/photos.json')).toBe(SITE['_data/photos.json'])
+    })
   })
 })

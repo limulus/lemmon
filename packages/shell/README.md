@@ -4,7 +4,7 @@ The Node/TypeScript shell around the Lemmon core (see `docs/architecture.md` §S
 §Build pipeline): the `lem` CLI and what it drives. `lem build` reads a site, compiles and
 renders every page through the WASM core, fills each page's marks with its plugins, and
 writes HTML, the files the plugins produced, and passthrough files to the output
-directory.
+directory; `lem check` does all of it but the writing.
 
 ```ts
 // lemmon.config.ts
@@ -152,14 +152,26 @@ promise, and a function where a plugin belongs, a plugin factory not called.
    another needs a directory are each an error at the later writer, a page's url or a
    producer's mark, labelled at the first.
 
-It prints every diagnostic as `path:line:col: severity: message`, each label on an indented
-line beneath, and `wrote N pages and P produced files, copied M files`, the middle clause
-only where a producer wrote a file. Any error, at any step, stops the build before it writes
-a file, and `lem` exits 1; warnings are printed and the build goes on. A write the file
-system then refuses — a file an earlier build left where a directory is needed, say — is
-reported as `lem: could not write <file>: …`, exit 1, and the output may hold what was
-written before it. A site needs a `site.lem` without front matter in `input`, even an empty
-one: without it no glob matches anything.
+It prints every diagnostic as `path:line:col: severity: message`, then each line its span
+covers, numbered, with `^` beneath what the span covers there — a span over more than five
+lines shows its first three and its last, and a line over 100 UTF-16 units a window of it,
+cut with `…` — and then each label on an indented line:
+
+```text
+www/layouts.lem:2:15: error: `Post` has no field `titel`; did you mean `title`?
+> 2 |   <title><lem.p.titel></title>
+    |               ^^^^^^^
+lem: 1 error, so nothing was written
+```
+
+The lines are the text the build read, which the span was computed against, not the file
+read again. With no error it prints `wrote N pages and P produced files, copied M files`,
+the middle clause only where a producer wrote a file. Any error, at any step, stops the
+build before it writes a file, and `lem` exits 1; warnings are printed and the build goes
+on. A write the file system then refuses — a file an earlier build left where a directory
+is needed, say — is reported as `lem: could not write <file>: …`, exit 1, and the output
+may hold what was written before it. A site needs a `site.lem` without front matter in
+`input`, even an empty one: without it no glob matches anything.
 
 ### Not yet
 
@@ -174,12 +186,21 @@ one: without it no glob matches anything.
 - **Generators.** A page whose front matter has `for:` is an error at the key: ∆99b.
 - **Drafts.** `draft: true` is built like any page; `--drafts` and leaving drafts out
   are ∆Han, in Someday/Maybe.
-- **Checking.** No `lem check`, the build without the writing: ∆Uqg.
 - **Second phase.** A feed renders with the other pages, reading none of their output:
   ∆zu0.
 - **The rest of the pipeline.** No output transform (∆c4j), no integrity check
   (∆yOJ), no dev server (∆Vhi), and no worker pool or incremental rebuild: every build
   compiles and renders everything in one core.
+
+## `lem check [--config <path>]`
+
+`lem build`'s steps 1–5 and the checks step 6 makes before its first write: every page is
+rendered and its marks resolved, and every file checked against every other, so it reports
+every diagnostic a build would — render errors and collisions among them — in the same
+form, and never creates or touches the output directory. A write the file system would
+refuse is therefore found only by `lem build`. It ends with `lem: N errors` and exit 1, or
+`checked N pages and P produced files` and exit 0, the middle clause again only where a
+producer wrote a file.
 
 ## Comparing rendered HTML
 
