@@ -176,7 +176,7 @@ one: without it no glob matches anything.
   are ∆1rD, as is `lem check`.
 - **Second phase.** A feed renders with the other pages, reading none of their output:
   ∆zu0.
-- **The rest of the pipeline.** No output transform (dprint, ∆Oyi), no integrity check
+- **The rest of the pipeline.** No output transform (∆c4j), no integrity check
   (∆yOJ), no dev server (∆Vhi), and no worker pool or incremental rebuild: every build
   compiles and renders everything in one core.
 

@@ -27,19 +27,15 @@ lands inside the slice that needs it.
 Slice 1, a page from `lem build`, was accepted on 2026-10-17; its five items' journal
 entries record it.
 
-### 2. Styled and formatted
+### 2. Styled
 
-Marks resolved in the shell, CSS as per-page bundles, output formatted. Eric opens the seven
-posts and sees them identical to the live site, with their CSS as per-page hashed bundles
-under `/assets/immutable/`, and `npm run parity` reports zero unexpected differences for
-them.
+Marks resolved in the shell and CSS as per-page bundles. Eric opens the seven posts and
+sees them identical to the live site, with their CSS as per-page hashed bundles under
+`/assets/immutable/`, and `npm run parity` reports zero unexpected differences for them.
 
 - `∆D3R` `lem-style` in the ported layouts
   - The three CSS files and the components' scoped styles become `lem-style` blocks in the
     port, replacing the interim `<link>` to passthrough-copied CSS
-- `∆Oyi` dprint output transform
-  - The dprint-markup `transformOutput` (lineWidth 92) from `11ty/dprint.ts`, the first
-    output transform; the comparator, not dprint, stays the judge of parity
 
 ### 3. The daily loop
 
@@ -234,6 +230,10 @@ initiative before starting it.
 - `∆CxX` Report a computed mark key no producer covers
   - A key read from the record at render reaches no handler unless one lists it, so a
     mistyped computed key keeps its default content and nothing says so (D42)
+- `∆wOb` Formatted HTML for limulus.net
+  - Eleventy's dprint transform formats 28 of its 55 pages and fails on the rest; after the
+    cutover none would be formatted unless the site adds a `transformOutput` plugin
+  - needs: `∆c4j`
 - `∆v6d` Serialize the linked program
   - `exportModule`/`importModule` serialize the linked program (D14 headroom), deferred from
     `∆TNT` because a fact nothing consumes is a comment

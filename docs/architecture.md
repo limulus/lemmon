@@ -281,7 +281,7 @@ share one bundle.
 - No highlighter ships, nor step 7's cache of a code block's output by payload id —
   not yet built (∆Nxd) — so a code block naming a language keeps comrak's plain block
   and is warned at, since no producer claims its language.
-- Step 9 is not yet run (∆Oyi, ∆yOJ).
+- Step 9 is not yet run: no output transform (∆c4j) and no integrity check (∆yOJ).
 - Step 10 is not yet run (∆zu0): a feed renders with the other pages, reading none of
   their output.
 
