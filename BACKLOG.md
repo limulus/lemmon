@@ -33,9 +33,10 @@ Marks resolved in the shell and CSS as per-page bundles. Eric opens the seven po
 sees them identical to the live site, with their CSS as per-page hashed bundles under
 `/assets/immutable/`, and `npm run parity` reports zero unexpected differences for them.
 
-- `∆D3R` `lem-style` in the ported layouts
-  - The three CSS files and the components' scoped styles become `lem-style` blocks in the
-    port, replacing the interim `<link>` to passthrough-copied CSS
+Built on 2026-10-17 (journal entries for ∆F4y and ∆D3R; ∆Oyi retired, dprint leaving
+the slice); the run above is Eric's to make before slice 3 starts. `npm run parity:look`
+compares the posts as Chrome draws them with client scripts off on both sides, since
+Lemmon has none until ∆d1N; Eric decides whether "identical to the live site" means that.
 
 ### 3. The daily loop
 

@@ -12,7 +12,8 @@ a parity harness shows zero unexpected output diffs.
 page rendering end-to-end from the WASM core) is done, and the rest is cut into slices that
 each end in software Eric runs. The first, `lem build` and `npm run parity` over
 limulus.net's feed posts on its `lemmon-port` branch, was accepted on 2026-10-17; the
-second, styled output, is under way.
+second, styled output with `npm run parity:look`'s screenshots, is built and awaits his
+run.
 The language runs end to end — scanner → parser → typed AST → compiler → VM, with `.md`
 through document mode — and what each stage settled is the decision index
 (`docs/decisions/README.md`, D01–D43), which is the status. The shape to hold in mind:
