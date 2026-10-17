@@ -13,5 +13,6 @@ render-reported deps and `upsertRecord` (docs/architecture.md §Build pipeline),
   render-reported deps (`∆xBO`) is its own epic, opened only if that time exceeds one
   second.
 - Slice 3's acceptance, which this item serves: Eric runs `lem dev` in the branch, edits a
-  post or a layout and sees the change in the browser, sees `lem check` report a deliberate
-  error with its span, and sees a draft under `--drafts` that `lem build` omits.
+  post or a layout and sees the change in the browser, and sees `lem check` report a
+  deliberate error with its span. Drafts, which the item's background names, moved to
+  Someday/Maybe as `∆Han` on 2026-10-17.

@@ -374,7 +374,8 @@ The standard shell (`@limulus/lemmon-shell`) ships this declaration and binds `p
 </lem-type>
 ```
 
-`draft` is D19's flag — a draft is skipped and left out of collections unless `--drafts`.
+`draft` is D19's flag, which the shell does not yet read (∆Han): a draft is built like any
+page.
 `inputPath` is the source file's path from the directory holding `lemmon.config.ts`, with
 `/` separators — `www/feed/the-rebound/index.md` — where the core's path starts at the
 input directory.

@@ -362,6 +362,6 @@ Prose inside an element: a blank line on each side lets the markdown run.
 
 Run `lem build` (`references/checking.md` says how): it compiles, loads and renders the
 whole site, prints each diagnostic as `path:line:col`, and writes nothing on an error.
-`lem check`, the same report without the writing, is not yet built (∆1rD). When the compiler
+`lem check`, the same report without the writing, is not yet built (∆Uqg). When the compiler
 objects, its message says what to write instead, and `references/mistakes.md` lists the
 diagnostics authors hit most, each with a source that earns it.

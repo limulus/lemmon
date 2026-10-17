@@ -4,7 +4,7 @@
 data against the declared types, and renders every page, printing each diagnostic as
 `path:line:col: severity: message` with its labels on indented lines beneath. Any error
 stops it before it writes a file, and it exits 1; with none it says what it wrote.
-`lem check`, the same report without the writing, is not yet built (∆1rD).
+`lem check`, the same report without the writing, is not yet built (∆Uqg).
 
 Run it from the site's directory, the one holding `lemmon.config.ts`, through the lemmon
 checkout's bin, which finds the core staged in that checkout (`npm run rust:wasm` there

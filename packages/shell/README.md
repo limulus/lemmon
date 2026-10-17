@@ -173,7 +173,8 @@ one: without it no glob matches anything.
   as `<lem.styles()>` — and a `from plugin("…")` binding is an error at the binding: ∆c4j.
 - **Generators.** A page whose front matter has `for:` is an error at the key: ∆99b.
 - **Drafts.** `draft: true` is built like any page; `--drafts` and leaving drafts out
-  are ∆1rD, as is `lem check`.
+  are ∆Han, in Someday/Maybe.
+- **Checking.** No `lem check`, the build without the writing: ∆Uqg.
 - **Second phase.** A feed renders with the other pages, reading none of their output:
   ∆zu0.
 - **The rest of the pipeline.** No output transform (∆c4j), no integrity check

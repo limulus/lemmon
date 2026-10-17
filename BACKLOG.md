@@ -33,17 +33,16 @@ slice 2. Slice 2's `npm run parity:look` refuses `/lib/**` on both sides until �
 The authoring loop Eleventy provides today, without incrementality: a change rebuilds
 everything, and the rebuild time recorded here decides whether the Incrementality epic
 opens. Eric runs `lem dev` in the branch, edits a post or a layout and sees the change in
-the browser, sees `lem check` report a deliberate error with its span, and sees a draft
-under `--drafts` that `lem build` omits.
+the browser, and sees `lem check` report a deliberate error with its span.
 
 - `∆Vhi` `lem dev`
   - Dev server with COOP/COEP headers and live reload; a change rebuilds everything, and the
     full rebuild time is recorded for the Incrementality epic. Replaces `eleventy --serve`
   - needs: `∆muD`
-- `∆1rD` `lem check` and `--drafts`
-  - `lem check` prints spanned diagnostics without writing; the `draft` field on `Page` and
-    the `--drafts` flag (D19) show a draft in `lem dev` that `lem build` omits
-  - needs: `∆muD`, `∆Vhi`
+- `∆Uqg` `lem check`
+  - The build without the writing: compile, load and render every page, and print each
+    diagnostic with its span, so an author checks a change without touching the output
+  - needs: `∆muD`
 
 ### 4. Every document page
 
@@ -228,3 +227,7 @@ initiative before starting it.
 - `∆v6d` Serialize the linked program
   - `exportModule`/`importModule` serialize the linked program (D14 headroom), deferred from
     `∆TNT` because a fact nothing consumes is a comment
+- `∆Han` Drafts
+  - `draft: true` leaves a page out of the build and its collections unless `--drafts`
+    shows it in `lem dev` (D19); limulus.net has no drafts today, so the port needs none
+  - needs: `∆Vhi`
