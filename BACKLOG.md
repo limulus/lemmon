@@ -34,17 +34,12 @@ posts and sees them identical to the live site, with their CSS as per-page hashe
 under `/assets/immutable/`, and `npm run parity` reports zero unexpected differences for
 them.
 
-- `∆F4y` Mark resolution and the default plugin
-  - Producers and decorators resolve marks in the shell (D42), and the default plugin's
-    `styles` producer writes per-page hashed CSS bundles under `/assets/immutable/`
 - `∆D3R` `lem-style` in the ported layouts
   - The three CSS files and the components' scoped styles become `lem-style` blocks in the
     port, replacing the interim `<link>` to passthrough-copied CSS
-  - needs: `∆F4y`, `∆foi`
 - `∆Oyi` dprint output transform
   - The dprint-markup `transformOutput` (lineWidth 92) from `11ty/dprint.ts`, the first
     output transform; the comparator, not dprint, stays the judge of parity
-  - needs: `∆F4y`
 
 ### 3. The daily loop
 
@@ -72,7 +67,6 @@ hashed URLs, compare clean.
 - `∆c4j` Plugin host
   - The `Plugin` hooks in full (data, transformDocument, assets, transformOutput, emit,
     commands, watch), plugin `.lem` via `lem-import` in `site.lem` (D23, D06), a content API
-  - needs: `∆F4y`
 - `∆d1N` esbuild asset pipeline
   - Bundle `**/index.ts` + `**/worker.ts` (D09), resolve the `XXXXXXXX` placeholder (D10),
     and hand the manifest to the host declaration at `compile` as compile-time facts
