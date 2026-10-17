@@ -11,7 +11,7 @@ expect it to feed fixes back into Phase 1 items
 
 ## Scope and constraints
 
-- Slice 2's acceptance, which this item serves: Eric opens the eight posts and sees them
+- Slice 2's acceptance, which this item serves: Eric opens the seven posts and sees them
   identical to the live site, with their CSS as per-page hashed bundles under
   `/assets/immutable/`, and `npm run parity` reports zero unexpected differences for them.
 - Branch work: the layouts and components from `∆foi` gain `lem-style` scoping (D20), and

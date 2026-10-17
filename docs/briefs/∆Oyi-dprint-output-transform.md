@@ -11,7 +11,7 @@ splice, so formatted HTML diffs cleanly in the parity harness
 
 ## Scope and constraints
 
-- Slice 2's acceptance, which this item serves: Eric opens the eight posts and sees them
+- Slice 2's acceptance, which this item serves: Eric opens the seven posts and sees them
   identical to the live site, with their CSS as per-page hashed bundles under
   `/assets/immutable/`, and `npm run parity` reports zero unexpected differences for them.
 - The dprint half of the original item; the sprite is `∆IvY`.

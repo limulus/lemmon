@@ -20,7 +20,7 @@ and a content API for out-of-build tools. Gates the port (D12)
 
 ## Scope and constraints
 
-- Slice 2's acceptance, which this item serves: Eric opens the eight posts and sees them
+- Slice 2's acceptance, which this item serves: Eric opens the seven posts and sees them
   identical to the live site, with their CSS as per-page hashed bundles under
   `/assets/immutable/`, and `npm run parity` reports zero unexpected differences for them.
 - The marks part of the plugin host only: producers with keys and a payload record,

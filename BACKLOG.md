@@ -24,16 +24,8 @@ true. The shell is built here (`@limulus/lemmon-shell`, docs/architecture.md §B
 pipeline, §Shell plugin API); the port lives in limulus-dot-net on a branch while 11ty stays
 green on main, and that branch is where every slice is accepted. A language or core feature
 lands inside the slice that needs it.
-
-### 1. A page from `lem build`
-
-The walking skeleton: the thinnest path from the branch's files to pages on disk, and the
-comparator that accepts every later slice. Eric runs `lem build` in the limulus-dot-net port
-branch, opens the seven `feed/` posts from `dist/` in a browser, and `npm run parity` there
-reports them against the 11ty `dist/` with every difference in a named forgiveness class.
-Built on 2026-10-15 (journal entries for its five items); the run above is Eric's to make
-before slice 2 starts.
-
+Slice 1, a page from `lem build`, was accepted on 2026-10-17; its five items' journal
+entries record it.
 
 ### 2. Styled and formatted
 
