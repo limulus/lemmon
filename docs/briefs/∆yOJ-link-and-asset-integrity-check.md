@@ -16,3 +16,8 @@ link/asset integrity check, CloudFront untouched
   code blocks highlighted and client JavaScript bundled to hashed URLs, compare clean.
 - The integrity check from the original output writer item; HTML and passthrough are `∆muD`,
   the `styles` producer is `∆F4y`.
+- A link must match a written file's path exactly, case and Unicode form included. S3
+  and CloudFront match names exactly, but `lem dev` (`∆Vhi`) serves from a file system
+  that may not: on macOS it answers `/Feed/` and an NFD `café` with the page at `/feed/`
+  and the NFC `café`, so a mis-cased link works in the dev server and 404s in production.
+  This check is where that is caught, not the dev server.
