@@ -24,7 +24,7 @@
     "rust:wasm": "cargo build --release -p lemmon-wasm --target wasm32-unknown-unknown && node scripts/stage-wasm.ts",
     "rust:wasm:test": "CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER=wasm-bindgen-test-runner cargo test -p lemmon-wasm --target wasm32-unknown-unknown --test boundary",
     "test": "vitest run --coverage",
-    "test:fidelity": "node scripts/render-the-rebound.ts",
+    "test:fidelity": "node --conditions=source scripts/render-the-rebound.ts",
     "test:fixtures": "node scripts/bench-wasm.ts",
     "tscc": "node node_modules/typescript-7/bin/tsc --build tsconfig.json packages/*/tsconfig.json",
     "verify": "concurrently -c cyan,magenta,blue,yellow npm:verify:js npm:rust",
