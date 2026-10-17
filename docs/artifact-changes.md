@@ -466,14 +466,25 @@ moved it. Newest last. An entry is removed when its change has been applied.
   block (D42).
 
 - **Shell plugin API and build pipeline** — add the `marks` registration to the `Plugin`
-  sketch: a producer names what it makes, the keys it covers, and the payload record its
-  `.lem` declares; a decorator transforms current content; two producers on one name and
-  key is a load error naming both; the shell's own `styles`/`scripts`/`head` bundler is a
-  default plugin the site lists. In the pipeline, a Resolve step between Render and Write
+  sketch, as `PluginHandler[]`: a handler is `{name, keys?, payload?, keyedBy?, produce?,
+  decorate?}` — a producer names what it makes, the keys it covers, the payload record a
+  `.lem` declares and the field of it holding a mark's key; a decorator transforms current
+  content — and a producer's context is the core's `{name, marks, fragments, page}` with
+  `write(url, content)`, which queues a file of its own beside the pages. A site lists its
+  plugins as `plugins` in `lemmon.config.ts`; two producers on one name and key, and two
+  handlers naming different payloads or key fields for one name, are refused at config
+  load naming both plugins; a handler that throws or returns anything but its content is
+  a warning at its mark, which keeps the content it had. The shell's own
+  `styles`/`scripts`/`head` producers are the default plugin `bundler()`, which the site
+  lists as `plugins: [bundler()]`: `styles` writes a page's collected CSS to
+  `/assets/immutable/bundle/<name>.css`, the name the first ten base64url characters of its
+  SHA-256, and links it; `scripts` places a module `<script>` per collected URL; `head`
+  places the `lem-head` fragments. In the pipeline, a Resolve step between Render and Write
   runs each mark's producer then its decorators, cached by payload id, before any
-  transform; and a Second phase renders pages that read other pages' finished output
-  (feeds) after every other page is written, that output loaded back as a string source.
-  D06's "plugins cannot inject logic" is scoped to the language and the core (D42).
+  transform; Write writes the pages, then the files producers wrote, then passthrough; and
+  a Second phase renders pages that read other pages' finished output (feeds) after every
+  other page is written, that output loaded back as a string source. D06's "plugins
+  cannot inject logic" is scoped to the language and the core (D42; ∆F4y).
 
 - **WASM API, the render reply** — where the API sketch says a render returns JSON, say
   the page crosses as bytes beside a JSON header of its marks and fragments: a four-byte
@@ -560,3 +571,10 @@ moved it. Newest last. An entry is removed when its change has been applied.
   to the cutover, with the parity comparator in use from the first slice. The exit criterion
   and the single cutover (D15) are unchanged; a language feature lands in the slice that
   needs it, and incremental rebuilds wait for a measured rebuild time that asks for them.
+
+- **Template mapping, the CSS bundle** — where the text maps the bundle plugin: the
+  `<link>` whose href is `getBundleFileUrl('css')` becomes `<lem.mark("styles")>`, which
+  the shell's default plugin, `bundler()`, listed in the site's config, replaces with the
+  `<link>` to the page's bundle. It is written to `/assets/immutable/bundle/`, named as
+  Eleventy names one — the first ten base64url characters of the bytes' SHA-256 — so the
+  CloudFront config caching `/assets/immutable/*` is untouched (D13, D42; ∆F4y).

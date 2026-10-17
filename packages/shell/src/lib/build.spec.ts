@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 import { build, type BuildResult } from './build.ts'
+import { bundler } from './bundler.ts'
 import type { Plugin } from './plugins.ts'
 import { FILE_START as START, SiteError } from './program.ts'
 import { WriteError } from './write.ts'
@@ -668,6 +669,56 @@ describe('build()', () => {
       )
       expect(result.produced).toEqual([])
       expect(existsSync(join(dir, 'dist/kept.css'))).toBe(false)
+    })
+  })
+
+  describe('the default plugin', () => {
+    // The base layout places all three names the bundler produces; the two posts call
+    // one styled component, and the home page that one and another.
+    const layouts = LAYOUTS_LEM.replace(
+      '<main>',
+      '<lem.mark("styles")>\n  <lem.mark("head")>\n  <main>'
+    ).replace('</main>', '</main>\n  <lem.mark("scripts")>')
+    const card =
+      '<lem-fn card()>\n  <p class="card">card</p>\n  <lem-style>\n    .card {\n' +
+      '      color: red;\n    }\n  </lem-style>\n  <lem-head>\n' +
+      '    <meta name="card" content="1">\n  </lem-head>\n</lem-fn>\n'
+    const badge =
+      '<lem-fn badge()>\n  <lem-style>\n    .badge {}\n  </lem-style>\n</lem-fn>\n'
+    const files = {
+      ...SITE,
+      'layouts.lem': layouts,
+      'components.lem': `${card}\n${badge}`,
+      'posts/a.md': `${SITE['posts/a.md']}\n<lem.card()>\n`,
+      'posts/b.md': `${SITE['posts/b.md']}\n<lem.card()>\n`,
+      'index.lem': `${SITE['index.lem']}<lem.card()>\n<lem.badge()>\n`,
+    }
+    // Each name computed apart from the code, with node:crypto by hand.
+    const CARD = 'assets/immutable/bundle/yksIFyWM8s.css'
+    const BOTH = 'assets/immutable/bundle/2QUgyN6hdD.css'
+
+    it('should write a page’s collected CSS as a hashed bundle its `mark("styles")` links', async () => {
+      const { result, dir } = await built(files, { plugins: [bundler()] })
+
+      // The claims cover every mark the layout makes, so nothing is warned at.
+      expect(result.diagnostics).toEqual([])
+      const written = tree(join(dir, 'dist'))
+      expect(written[CARD]).toBe('.card {\n  color: red;\n}')
+      expect(written['posts/a/index.html']).toContain(
+        `<link rel="stylesheet" href="/${CARD}">\n<meta name="card" content="1">\n<main>`
+      )
+    })
+
+    it('should share one bundle between pages with the same styles, and write two for two', async () => {
+      const { result, dir } = await built(files, { plugins: [bundler()] })
+
+      // In the order first written: by `posts/a.md`, which `posts/b.md` shares, and then
+      // by the home page.
+      expect(result.produced).toEqual([CARD, BOTH])
+      const written = tree(join(dir, 'dist'))
+      expect(written[BOTH]).toBe('.card {\n  color: red;\n}\n.badge {}')
+      expect(written['posts/b/index.html']).toContain(`href="/${CARD}"`)
+      expect(written['index.html']).toContain(`href="/${BOTH}"`)
     })
   })
 

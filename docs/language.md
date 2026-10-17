@@ -780,7 +780,8 @@ collapsed blindly (D15's "normalized"; `packages/shell/src/lib/rendered-html.ts`
 - `<lem.…>` of `string`: escapes `& < > " '` — safe in text and quoted attributes.
 - `html`: verbatim; sources are block-bodied functions, markdown, `raw()` (the single
   grep target for trusted input).
-- `url`: attribute-escaped.
+- `url` and `asset`: attribute-escaped, since percent-encoding leaves `&` and `'` alone.
+  A `lem-script` fragment is its `asset` printed so, already escaped for an attribute.
 - Unquoted attribute interpolation (`class=<lem.x>`) is a lint warning.
 - A mark's resolved content is the host's: a producer's output replaces the range after
   render, trusted as an output transform is (D42, § Marks).
@@ -825,7 +826,9 @@ the files that named another.
 A host that claims a name ships an ordinary `lem-fn` wrapping it —
 `<lem-fn styles(): html = mark("styles") />` — so a layout reads `<lem.styles()>` and a
 site author writes the primitive only where no wrapper exists; a plugin's component
-wraps its own mark the same way.
+wraps its own mark the same way. No host ships a wrapper yet, since a plugin's `.lem`
+is not yet bound (∆c4j): the shell's default plugin, `bundler()`, ships none, so
+`<lem.styles()>` is an undefined name and a layout writes `<lem.mark("styles")>`.
 
 A mark travels on the value it was made in: a captured value carrying marks places them
 as often as it is printed, and none if it is never printed. `==` on `html` compares marks

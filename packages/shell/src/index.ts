@@ -2,6 +2,7 @@
 export type { Fragment, Mark, MarkContext } from '@limulus/lemmon-core'
 
 export { build, type BuildOptions, type BuildResult } from './lib/build.ts'
+export { bundler } from './lib/bundler.ts'
 export { ConfigError, loadConfig, type Config, type LoadedConfig } from './lib/config.ts'
 export * from './lib/front-matter.ts'
 export type { Environment } from './lib/load.ts'

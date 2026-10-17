@@ -59,7 +59,7 @@ export interface Resolved {
   unclaimed: Unclaimed[]
   /**
    * Every name the page collected fragments under but never marked, so nothing was
-   * placed to receive them — a layout missing its `<lem.styles()>`. Look the fragments
+   * placed to receive them — a layout missing its `mark("styles")`. Look the fragments
    * up in {@link RenderResult.fragments} to say where they came from.
    */
   unplaced: string[]

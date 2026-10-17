@@ -8,12 +8,13 @@ import { validatePlugins, type Plugin } from './plugins.ts'
  * What a site's `lemmon.config.ts` exports by default:
  *
  * ```ts
- * import type { Config } from '@limulus/lemmon-shell'
+ * import { bundler, type Config } from '@limulus/lemmon-shell'
  *
  * export default {
  *   input: 'www',
  *   output: 'dist/www',
  *   passthrough: ['assets/**', 'robots.txt'],
+ *   plugins: [bundler()],
  * } satisfies Config
  * ```
  *
@@ -36,7 +37,9 @@ export interface Config {
   /**
    * The site's plugins, whose mark handlers fill each page's marks (D42): what they
    * claim is declared to the core, and a page's decorators run in this order. None when
-   * omitted, and a site with none is warned at every mark, since nothing will fill one.
+   * omitted, and a site with none is warned at every mark, since nothing will fill one —
+   * not even `styles`, which the shell's default plugin, `bundler()`, produces only where
+   * it is listed.
    */
   plugins?: Plugin[]
 }

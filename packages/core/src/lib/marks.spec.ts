@@ -209,7 +209,7 @@ describe('resolveMarks()', () => {
   })
 
   it('should report a name whose fragments nothing placed', () => {
-    // A layout that forgot its `<lem.styles()>`: the CSS was collected and has nowhere
+    // A layout that forgot its `mark("styles")`: the CSS was collected and has nowhere
     // to go, which is worth saying rather than dropping.
     const result = rendered('<p>a</p>', [], { styles: [fragment('.a {}')] })
     expect(resolved(result).unplaced).toEqual(['styles'])

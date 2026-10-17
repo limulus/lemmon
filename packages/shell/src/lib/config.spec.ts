@@ -450,6 +450,28 @@ describe('loadConfig()', () => {
       ).toBe('the plugin `a` produces `styles` twice; a mark has one producer (D42)')
     })
 
+    it('should refuse a site’s own `styles` producer beside the default plugin, naming both', async () => {
+      // The config imports the shell as a site's does, by the file the package exports,
+      // since the temporary directory has no `node_modules` to find it in.
+      const shell = new URL('../index.ts', import.meta.url).href
+      const listed = (plugins: string) =>
+        `import { bundler } from '${shell}'\n${listing(plugins)}`
+      const error = await refusal(
+        listed(`[bundler(), ${plugin('site', produces('styles'))}]`)
+      )
+
+      expect(error.field).toBe('plugins')
+      expect(error.message).toBe(
+        `${error.file}: the plugins \`bundler\` and \`site\` both produce \`styles\`; a ` +
+          'mark has one producer (D42)'
+      )
+      // Producing a name the bundler does not is no overlap.
+      const loaded = await loadConfig(
+        configFile(listed(`[bundler(), ${plugin('site', produces('toc'))}]`))
+      )
+      expect(loaded.plugins.map((p) => p.name)).toEqual(['bundler', 'site'])
+    })
+
     it('should refuse two producers of one key, and take producers whose keys are apart', async () => {
       const hljs = plugin('hljs', produces('code', "'ts', 'js'"))
 

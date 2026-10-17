@@ -117,7 +117,7 @@ judge (∆Zo7), not these examples'.
 | `eleventy.generator`                    | `build.generator`                           |
 | `site.url` (`_data/site.json`)          | a binding not named `url`: `site.siteUrl`   |
 | `this.svg(name)`                        | `<lem.svgUse(name)>`; the sprite is ∆IvY's  |
-| `getBundleFileUrl('css')`               | `<lem.mark("styles")>`                      |
+| `<link>` to `getBundleFileUrl('css')`   | `<lem.mark("styles")>`, link and all        |
 | `getBundle('html', 'head')`             | `<lem.mark("head")>`                        |
 | `src="/lib/x/index.XXXXXXXX.js"`        | `<lem-script src = asset("…") />` (∆d1N)    |
 | `{% renderTemplate 'webc' %}` in a post | a lem block alone on its line               |
@@ -379,7 +379,9 @@ receives `content`. In Lemmon the schema's `layout` default names `article`, whi
 its markup and calls `pageLayout`, which calls `base`. `base` takes the page as `Page` and
 tests `p is Article` where `base.webc` tested `tags?.includes('article')`. The bundles
 become marks, and the record arrives as a parameter — inside a layout, `page` is typed
-`Page` and has no `title`.
+`Page` and has no `title`. The site's config lists `plugins: [bundler()]`, the shell's
+default plugin, which fills the marks: `mark("styles")` stands for the whole `<link>` to
+the page's bundle, not its href.
 
 ```lem layouts.lem
 <lem-fn article(post: Article, body: html)>

@@ -32,17 +32,23 @@
   both plugins, and so are keys for a name no handler keys by a payload field, whose
   `mark()` calls would carry no key for them to match; a handler that throws or returns
   anything but its content is a warning at the mark, which keeps the content it had; a
-  code block's handlers see its payload beside its id; and a producer writes a file of its
+  code block's handlers see its payload beside its id; a producer writes a file of its
   own through its context's `write(url, content)`, which never throws: the file is queued
   and written after the pages, once where two pages' producers write the same bytes; a url
   or content of the wrong kind, a url naming no file, or other bytes at a produced file is
   an error at the producer's mark, and a clash with a page, a passthrough file or another
   produced file — the same file, the same but for case or Unicode form, or a file where the
   other needs a directory — an error at the later writer, labelled at the first, while what
-  a producer that fails wrote is dropped
+  a producer that fails wrote is dropped; and the default plugin is `bundler()`, which a
+  site lists in `plugins` like any other, so an omitted list claims not even `styles`: its
+  `styles`, `scripts` and `head` producers list no keys, and `styles` writes a page's
+  collected CSS, joined by newlines, to `/assets/immutable/bundle/<name>.css`, the name the
+  first ten base64url characters of its SHA-256 — Eleventy's bundle form — and links it
+  from every `styles` mark; no wrapping `lem-fn` ships with it, since a plugin's `.lem` is
+  ∆c4j's, so a layout writes `mark("styles")`
 - **Backlog item:** ∆1Hp (the mark, claims by name, the collect tags, the boundary);
   ∆7wK (the `code` mark, keys and payloads, the core's highlighter removed); ∆F4y (the
-  shell's plugins and their handlers)
+  shell's plugins, their handlers, and the default plugin)
 - **Normative text:** `docs/language.md` § Marks, § Document mode, Code blocks;
   `docs/architecture.md` § WASM API, § Build pipeline, § Shell plugin API
 

@@ -204,11 +204,12 @@ timing modes are not in the pre-push gate: CI's `verify` job runs `wasm:bench` a
 that checks the 1 ms/page criterion — runs only by hand.
 
 `lem build` is real: in a directory with a `lemmon.config.ts` (`packages/shell/README.md`
-describes it), the bin at `packages/shell/bin/lem.ts` compiles the site in two calls,
-loads it, renders every page into memory, resolves its marks through the plugins the
-config lists, and then writes HTML and passthrough files. It runs from source under the
-`source` export condition, so the limulus-dot-net port branch depends on this checkout
-with `file:` and sees every edit without a build.
+describes it), the bin at `packages/shell/bin/lem.ts` compiles the site in two calls, loads
+it, renders every page into memory, resolves its marks through the plugins the config lists
+— the shell's default plugin, `bundler()`, runs only where the config lists it — and then
+writes HTML, the files the plugins produced (its CSS bundles), and passthrough files. It
+runs from source under the `source` export condition, so the limulus-dot-net port branch
+depends on this checkout with `file:` and sees every edit without a build.
 
 Still aspirational; keep them true as they come to exist:
 

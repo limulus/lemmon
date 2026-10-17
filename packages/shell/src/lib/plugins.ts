@@ -374,11 +374,11 @@ export interface ResolvedPage {
  * marks keep the content they had: the default for a producer's, the content so far for
  * a decorator's. A file a producer that succeeded wrote is another matter: one `write`
  * was given the wrong kind of value for is an error here, and the build checks the rest
- * ({@link ProducerContext.write}). What the page collected under a name it never marks is a warning at the
- * first such fragment, since nothing writes it. A mark nothing answers keeps its default
- * content unreported here: the compile warned at a literal name or key no handler
- * claims, and a key computed at render, or a code block with no language where the
- * producers of `code` list keys, is not reported at all.
+ * ({@link ProducerContext.write}). What the page collected under a name it never marks is
+ * a warning at the first such fragment, since nothing writes it. A mark nothing answers
+ * keeps its default content unreported here: the compile warned at a literal name or key
+ * no handler claims, and a key computed at render, or a code block with no language where
+ * the producers of `code` list keys, is not reported at all.
  */
 export function resolvePage(rendered: RenderResult, page: PageMarks): ResolvedPage {
   const resolved: Omit<ResolvedPage, 'bytes'> = { files: [], diagnostics: [] }

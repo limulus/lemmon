@@ -228,9 +228,10 @@ not a break:
 7. **Resolve** (shell) — for each mark, the producer for its name and key, then its
    decorators in plugin order, over the page as the core returned it; a code block's
    output cached by payload id, the payload itself kept from `compile` (D42). The
-   handlers are the plugins' (§Shell plugin API), the shell's own CSS bundler among them.
-8. **Write** (shell) — HTML, the per-page CSS bundle the `styles` producer wrote under
-   `/assets/immutable/…`, passthrough.
+   handlers are the plugins' (§Shell plugin API), the shell's default plugin,
+   `bundler()`, among them where the site lists it.
+8. **Write** (shell) — HTML, the files producers wrote — the per-page CSS bundles
+   `bundler()` writes under `/assets/immutable/bundle/` — and passthrough.
 9. **Post-process** (shell) — optional transforms (dprint), link/asset integrity check.
 10. **Second phase** (shell) — pages that read other pages' finished output (feeds,
     ∆zu0) render after steps 6–9 have finished every other page, with those outputs
@@ -264,15 +265,22 @@ producers write to one file are written once. A produced file is checked as a pa
 against every page, passthrough file and other produced file — the same file, the same but
 for case or Unicode form, a file where the other needs a directory — an error at the later
 writer, a page's url or a producer's mark, labelled at the first. A producer that fails
-writes nothing.
+writes nothing. The shell's default plugin, `bundler()`, is listed like any other —
+`plugins: [bundler()]` — and produces `styles`, `scripts` and `head`, each without keys:
+what a page's `lem-style` blocks collected, joined by newlines in collection order, is
+written to `/assets/immutable/bundle/<name>.css`, its name the first ten characters of its
+SHA-256 in base64url (Eleventy's bundle form), and every `styles` mark becomes the
+`<link>` to it, or nothing where the page collected no styles; every `scripts` mark
+becomes a module `<script>` per URL the `lem-script` tags collected; and every `head`
+mark the `lem-head` fragments, joined by newlines. Pages that collect the same styles
+share one bundle.
 
 - Step 2 is not yet run (∆c4j, ∆d1N): no plugin data hook or document transform, and no
   manifest on the declaration, so no `asset()` resolves; a `plugin("…")` source is an
   error at its binding.
-- The shell's own `styles`/`scripts`/`head` plugin is not yet built (∆F4y), so step 8
-  writes no CSS bundle: a mark is filled, and a file produced, only by a plugin the site
-  writes itself.
-- Step 7's cache of a code block's output by payload id is not yet built (∆Nxd).
+- No highlighter ships, nor step 7's cache of a code block's output by payload id —
+  not yet built (∆Nxd) — so a code block naming a language keeps comrak's plain block
+  and is warned at, since no producer claims its language.
 - Step 9 is not yet run (∆Oyi, ∆yOJ).
 - Step 10 is not yet run (∆zu0): a feed renders with the other pages, reading none of
   their output.
@@ -423,7 +431,7 @@ interface Plugin {
   assets?(ctx): Promise<AssetManifest> // logicalPath → {url, hash, deps}
   markdown?: MarkdownRenderer // reserved override (D08)
   transformOutput?(file, ctx): OutputFile
-  marks?: MarkHandler[] // producers (name, keys, payload record) and decorators (D42)
+  marks?: PluginHandler[] // producers and decorators (D42), below
   emit?(ctx): Promise<OutputFile[]>
   commands?: Command[] // e.g. `lem photos add`
   watch?(ctx): AsyncIterable<Change>
@@ -439,9 +447,37 @@ whatever content a mark has, two producers on one name and key is a load error n
 both, and the shell's own `styles`/`scripts`/`head` producers ship as a default plugin
 the site config lists, so a site can produce those names itself. A plugin that claims a
 name ships a `lem-fn` wrapping `mark()` for it in its `.lem`, so a layout reads
-`<lem.styles()>` and a component `<lem.diagram(…)>` (D42).
+`<lem.styles()>` and a component `<lem.diagram(…)>` (D42) — not yet (∆c4j): no plugin
+ships `.lem`, the shell's default plugin included, so a layout writes `mark("styles")`.
 The shell also exposes a content API (`loadSite(config).collection('articles')`) for
 tools like the revisions updater.
+
+As built, a site lists its plugins in `lemmon.config.ts` as `plugins`, and a plugin is
+`{name, marks}`: a plugin with any other hook is refused at config load, since the shell
+does not yet run one (∆c4j). A mark handler, and what a producer is given:
+
+```ts
+interface PluginHandler {
+  name: string // the mark name it answers
+  keys?: string[] // the keys it answers; a producer listing none answers keyless marks
+  payload?: string // the record its marks carry, which a `.lem` file declares
+  keyedBy?: string // the field of that record holding a mark's key; needs `payload`
+  produce?(ctx: ProducerContext): (string | Uint8Array)[] // one per mark it answers
+  decorate?(mark: Mark, content: Uint8Array): string | Uint8Array
+}
+
+interface ProducerContext {
+  name: string
+  marks: Mark[] // every mark of the name on the page that it answers
+  fragments: Fragment[] // what the page collected under the name
+  page: Uint8Array // the page as the core returned it
+  write(url: string, content: string | Uint8Array): void // a file beside the pages
+}
+```
+
+The shell's default plugin is `bundler()`, exported from `@limulus/lemmon-shell`, whose
+`styles`, `scripts` and `head` producers §Build pipeline describes; a site lists it as
+`plugins: [bundler()]`, and one that produces those names itself leaves it out.
 
 ## Editor tooling (day one, D16)
 

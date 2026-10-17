@@ -248,6 +248,12 @@ its markup and passing it on, and places what components collected with `mark("s
 so read the record through the parameter; and no parameter may be named `page`, `site` or
 `build`.
 
+Those three marks are filled by the shell's default plugin, which the site's
+`lemmon.config.ts` lists as `plugins: [bundler()]`: `styles` becomes a `<link>` to the
+page's collected CSS, written as one hashed file under `/assets/immutable/bundle/`. A site
+listing no plugins is warned at every mark. Write the `mark()` call itself: a
+`<lem.styles()>` wrapper is not yet shipped (∆c4j), so that name is undefined.
+
 ```lem layouts.lem
 <lem-fn base(title: string, body: html)>
   <!doctype html>

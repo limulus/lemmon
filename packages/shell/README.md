@@ -2,23 +2,45 @@
 
 The Node/TypeScript shell around the Lemmon core (see `docs/architecture.md` §Shape and
 §Build pipeline): the `lem` CLI and what it drives. `lem build` reads a site, compiles and
-renders every page through the WASM core, and writes HTML and passthrough files to the
-output directory.
+renders every page through the WASM core, fills each page's marks with its plugins, and
+writes HTML, the files the plugins produced, and passthrough files to the output
+directory.
 
 ```ts
 // lemmon.config.ts
-import type { Config } from '@limulus/lemmon-shell'
+import { bundler, type Config } from '@limulus/lemmon-shell'
 
 export default {
   input: 'www',
   output: 'dist/www',
   passthrough: ['assets/**/*', '**/*.{png,svg,jpg,jpeg,xsd,xsl,txt,pdf}'],
+  plugins: [bundler()],
 } satisfies Config
 ```
 
 `input` and `output` are directories relative to the config file; `passthrough` globs are
 relative to `input`, with Eleventy's glob semantics (picomatch, dotfiles included,
 case-insensitive); `plugins` lists the site's plugins, none when omitted.
+
+## The default plugin
+
+`bundler()` is the shell's own plugin, listed like any other. It produces the three names
+the collect tags collect under, none of them keyed, so a layout places what a page's
+components collected:
+
+- `styles`: what the page's `lem-style` blocks collected, joined by newlines in the order
+  collected, is written to `/assets/immutable/bundle/<name>.css`, its name the first ten
+  characters of its SHA-256 in base64url — Eleventy's bundle form — and every
+  `<lem.mark("styles")>` becomes `<link rel="stylesheet" href="…">` to it. Pages that
+  collect the same styles share one file; a page that collects none gets no `<link>`.
+- `scripts`: every `<lem.mark("scripts")>` becomes a `<script type="module" src="…">` per
+  URL the page's `lem-script` tags collected. Each arrives as its `asset()` prints,
+  escaped for an attribute already, so `scripts` does not escape it again.
+- `head`: every `<lem.mark("head")>` becomes what the page's `lem-head` blocks collected.
+
+A site that produces one of those names itself leaves `bundler()` out, since two producers
+for one mark are refused at config load. It ships no `.lem`, so there is no
+`<lem.styles()>` wrapper: a layout writes `<lem.mark("styles")>`.
 
 ## Plugins
 
@@ -122,12 +144,13 @@ promise, and a function where a plugin belongs, a plugin factory not called.
    is correct either way. What a page collects under a name nothing on it marks is a
    warning at the block that collected it, since nothing writes it.
 6. **Write.** A url ending in `/` is written as `<output>/<url>/index.html`, any other as
-   the file it names; then each file a producer wrote; and each passthrough file is
-   copied to its own path. Nothing in the output is removed. Before the first file is
-   written, every page has been rendered and every file checked against every other —
-   page, produced, and passthrough: the same file, the same but for case or Unicode form
-   (APFS holds those as one), and a file where another needs a directory are each an
-   error at the later writer, a page's url or a producer's mark, labelled at the first.
+   the file it names; then each file a producer wrote, the bundler's stylesheets among
+   them; and each passthrough file is copied to its own path. Nothing in the output is
+   removed. Before the first file is written, every page has been rendered and every
+   file checked against every other — page, produced, and passthrough: the same file,
+   the same but for case or Unicode form (APFS holds those as one), and a file where
+   another needs a directory are each an error at the later writer, a page's url or a
+   producer's mark, labelled at the first.
 
 It prints every diagnostic as `path:line:col: severity: message`, each label on an indented
 line beneath, and `wrote N pages and P produced files, copied M files`, the middle clause
@@ -140,14 +163,14 @@ one: without it no glob matches anything.
 
 ### Not yet
 
-- **The default plugin.** The shell ships no `styles`, `scripts` or `head` producer and no
-  highlighter, so only a site's own plugins fill a mark or write a file — no CSS bundle:
-  ∆F4y, and ∆Nxd for highlighting. No `asset()` resolves, since the declaration carries
-  no manifest: ∆d1N.
+- **Highlighting.** The shell ships no highlighter, so a code block naming a language
+  keeps comrak's plain block and is warned at: ∆Nxd.
+- **Assets.** No `asset()` resolves, since the declaration carries no manifest, so no
+  `lem-script` collects a URL: ∆d1N.
 - **Computed mark keys.** A key a template computes and no producer lists keeps the
   default content, unreported: ∆CxX.
-- **Plugins.** A plugin's only hook is `marks`, and a `from plugin("…")` binding is an
-  error at the binding: ∆c4j.
+- **Plugins.** A plugin's only hook is `marks`, it ships no `.lem` — so no wrapper such
+  as `<lem.styles()>` — and a `from plugin("…")` binding is an error at the binding: ∆c4j.
 - **Generators.** A page whose front matter has `for:` is an error at the key: ∆99b.
 - **Drafts.** `draft: true` is built like any page; `--drafts` and leaving drafts out
   are ∆1rD, as is `lem check`.
