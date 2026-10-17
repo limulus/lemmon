@@ -1,7 +1,7 @@
-import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 import { discover } from './site.ts'
+import { configOf } from '../mocks/sites.ts'
 import { at } from '../mocks/spans.ts'
 import { tempDir } from '../mocks/temp-dir.ts'
 
@@ -20,13 +20,7 @@ describe('discover()', () => {
     const root = tempDir(
       Object.fromEntries(Object.entries(files).map(([path, text]) => [`www/${path}`, text]))
     )
-    const config = {
-      file: join(root, 'lemmon.config.ts'),
-      input: join(root, 'www'),
-      output: join(root, 'dist'),
-      passthrough: ['*.txt'],
-      plugins: [],
-    }
+    const config = configOf(root, ['*.txt'])
     return { config, site: await discover(config) }
   }
 

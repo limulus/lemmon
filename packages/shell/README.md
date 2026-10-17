@@ -15,12 +15,26 @@ export default {
   output: 'dist/www',
   passthrough: ['assets/**/*', '**/*.{png,svg,jpg,jpeg,xsd,xsl,txt,pdf}'],
   plugins: [bundler()],
+  dev: {
+    headers: {
+      'Cross-Origin-Opener-Policy': 'same-origin',
+      'Cross-Origin-Embedder-Policy': 'require-corp',
+    },
+  },
 } satisfies Config
 ```
 
 `input` and `output` are directories relative to the config file; `passthrough` globs are
 relative to `input`, with Eleventy's glob semantics (picomatch, dotfiles included,
-case-insensitive); `plugins` lists the site's plugins, none when omitted.
+case-insensitive); `plugins` lists the site's plugins, none when omitted. `dev.headers`
+are the headers the dev server adds to every response it writes itself, as the site's
+host sends them — the two above make a page cross-origin isolated — none when omitted;
+the dev server is not yet a command (∆Vhi). Refused at load: a name or value Node would
+not send, two names equal but for case, and a header that is the server's
+(`SERVER_HEADERS` in `src/lib/config.ts`) — one it sends, such as `Content-Type`,
+`Cache-Control`, `Location` and Node's framing, or one that would describe the body other
+than as it is sent: `Content-Encoding`, and `Trailer`, which Node refuses to write beside
+a length. So neither side overrides the other.
 
 ## The default plugin
 

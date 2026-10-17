@@ -35,6 +35,7 @@ export function configOf(
     output: join(dir, 'dist'),
     passthrough,
     plugins,
+    dev: { headers: {} },
   }
 }
 

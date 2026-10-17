@@ -40,6 +40,7 @@ describe('loadConfig()', () => {
       output: resolve(file, '..', '..', 'dist', 'www'),
       passthrough: ['assets/**'],
       plugins: [],
+      dev: { headers: {} },
     })
   })
 
@@ -133,7 +134,7 @@ describe('loadConfig()', () => {
 
       expect(error.field).toBe('passthru')
       expect(error.message).toMatch(
-        /: unknown field `passthru`; a config has `input`, `output`, `passthrough`, `plugins`$/
+        /: unknown field `passthru`; a config has `input`, `output`, `passthrough`, `plugins`, `dev`$/
       )
     })
 
@@ -527,6 +528,165 @@ describe('loadConfig()', () => {
 
         expect(await loaded(`[${plugins.join(', ')}]`)).toHaveLength(3)
       })
+    })
+  })
+
+  describe('dev', () => {
+    /** A config whose `dev` is `dev`, the source of a JavaScript expression. */
+    const listing = (dev: string) =>
+      `export default { input: 'www', output: 'dist', dev: ${dev} }`
+
+    /** Why loading a config whose `dev` is `dev` is refused, past the file's name. */
+    async function refused(dev: string): Promise<string> {
+      const error = await refusal(listing(dev))
+      expect(error.field).toBe('dev')
+      return error.message.slice(`${error.file}: `.length)
+    }
+
+    /** The headers a config whose `dev.headers` is `headers` loads with. */
+    async function loaded(headers: string) {
+      return (await loadConfig(configFile(listing(`{ headers: ${headers} }`)))).dev.headers
+    }
+
+    it('should default to no headers, with `dev` or its `headers` omitted', async () => {
+      const omitted = configFile("export default { input: 'www', output: 'dist' }")
+
+      expect((await loadConfig(omitted)).dev).toEqual({ headers: {} })
+      expect((await loadConfig(configFile(listing('{}')))).dev).toEqual({ headers: {} })
+    })
+
+    it('should take the headers as written', async () => {
+      const headers = await loaded(
+        "{ 'Cross-Origin-Opener-Policy': 'same-origin', 'Cross-Origin-Embedder-Policy': " +
+          "'require-corp' }"
+      )
+
+      expect(headers).toEqual({
+        'Cross-Origin-Opener-Policy': 'same-origin',
+        'Cross-Origin-Embedder-Policy': 'require-corp',
+      })
+    })
+
+    it('should take what Node sends: an empty value, a tab, and Latin-1 past ASCII', async () => {
+      // U+0085 is a control character, but one Node sends as the byte it is.
+      const headers =
+        "{ 'X-Empty': '', 'X-Tab': 'a\\tb', 'X-Latin': 'café', 'X-C1': 'a\\u0085b' }"
+
+      expect(await loaded(headers)).toEqual({
+        'X-Empty': '',
+        'X-Tab': 'a\tb',
+        'X-Latin': 'café',
+        'X-C1': 'a\u0085b',
+      })
+    })
+
+    it('should take headers in an object with no prototype', async () => {
+      const headers = "Object.assign(Object.create(null), { 'X-A': 'b' })"
+
+      expect({ ...(await loaded(headers)) }).toEqual({ 'X-A': 'b' })
+    })
+
+    it('should refuse a `dev` that is not an object written as one', async () => {
+      for (const dev of ["'x'", 'null', '[]', 'new Map()']) {
+        expect(await refused(dev), dev).toBe('`dev` must be a plain object, `{…}`')
+      }
+    })
+
+    it('should refuse an unknown field, naming the fields there are', async () => {
+      expect(await refused("{ header: { 'X-A': 'b' } }")).toBe(
+        'unknown field `dev.header`; `dev` has `headers`'
+      )
+    })
+
+    it('should refuse headers that are not an object of names and values', async () => {
+      for (const headers of [
+        "'X-A: b'",
+        'null',
+        "[['X-A', 'b']]",
+        "new Headers({ 'X-A': 'b' })",
+      ]) {
+        expect(await refused(`{ headers: ${headers} }`), headers).toBe(
+          '`dev.headers` must be a plain object, `{…}`, of header names and their values'
+        )
+      }
+    })
+
+    it('should refuse a name that is not a header name', async () => {
+      for (const name of ['X A', 'é', '', 'X:A']) {
+        expect(await refused(`{ headers: { '${name}': 'b' } }`), name).toBe(
+          `\`dev.headers\` names \`${name}\`, which is no header name: a name is ` +
+            "letters, digits, and any of ``!#$%&'*+-.^_`|~``"
+        )
+      }
+      expect(await loaded("{ \"X-!#$%&'*+-.^_`|~\": 'b' }")).toHaveProperty(
+        "X-!#$%&'*+-.^_`|~"
+      )
+    })
+
+    it('should refuse a value that is not a string', async () => {
+      for (const value of ['3', 'true', "['a', 'b']", 'undefined']) {
+        expect(await refused(`{ headers: { 'X-A': ${value} } }`), value).toBe(
+          "`dev.headers['X-A']` must be a string"
+        )
+      }
+    })
+
+    it('should refuse a value Node would not send', async () => {
+      for (const value of ['a\\nb', 'a\\rb', 'a\\u0000b', 'a\\u007fb', '€']) {
+        expect(await refused(`{ headers: { 'X-A': '${value}' } }`), value).toBe(
+          "`dev.headers['X-A']` is no header value: a value holds only tabs and the " +
+            'characters from U+0020 to U+00FF but U+007F'
+        )
+      }
+    })
+
+    it('should refuse two names equal but for case, naming both', async () => {
+      expect(await refused("{ headers: { 'X-A': 'b', 'x-a': 'c' } }")).toBe(
+        '`dev.headers` names `X-A` and `x-a`, which are one header'
+      )
+    })
+
+    /** Why a config naming `name` in `dev.headers` is refused, past the file's name. */
+    const owned = (name: string) =>
+      `\`dev.headers\` names \`${name}\`, which is the dev server's to send or leave out`
+
+    it('should refuse each name the dev server sends itself, in any case', async () => {
+      for (const name of [
+        'allow',
+        'cache-control',
+        'connection',
+        'content-length',
+        'content-type',
+        'date',
+        'keep-alive',
+        'location',
+        'transfer-encoding',
+        'upgrade',
+      ]) {
+        for (const written of [name, name.toUpperCase()]) {
+          expect(await refused(`{ headers: { '${written}': 'b' } }`), written).toBe(
+            owned(written)
+          )
+        }
+      }
+      // A name holding one, or starting as one does, is the site's.
+      const neighbours = {
+        'X-Content-Type-Options': 'nosniff',
+        'Content-Security-Policy': "default-src 'self'",
+      }
+      expect(await loaded(JSON.stringify(neighbours))).toEqual(neighbours)
+    })
+
+    it('should refuse a header that would describe the body other than as it is sent', async () => {
+      // A body goes out as the build wrote it, with its length, so it is neither
+      // encoded nor followed by trailers; Node refuses to write a `Trailer` beside a
+      // length, so the server could not answer at all.
+      expect(await refused("{ headers: { 'Content-Encoding': 'gzip' } }")).toBe(
+        owned('Content-Encoding')
+      )
+      expect(await refused("{ headers: { Trailer: 'Server-Timing' } }")).toBe(
+        owned('Trailer')
+      )
     })
   })
 })

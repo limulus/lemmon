@@ -1,4 +1,5 @@
 import { existsSync, statSync } from 'node:fs'
+import { validateHeaderName, validateHeaderValue } from 'node:http'
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
@@ -15,6 +16,7 @@ import { validatePlugins, type Plugin } from './plugins.ts'
  *   output: 'dist/www',
  *   passthrough: ['assets/**', 'robots.txt'],
  *   plugins: [bundler()],
+ *   dev: { headers: { 'Cross-Origin-Opener-Policy': 'same-origin' } },
  * } satisfies Config
  * ```
  *
@@ -42,7 +44,48 @@ export interface Config {
    * it is listed.
    */
   plugins?: Plugin[]
+  /** How the dev server serves the output. */
+  dev?: DevConfig
 }
+
+/** How the dev server serves a site's output. */
+export interface DevConfig {
+  /**
+   * The headers it sends with every response it writes itself, as the site's host
+   * sends them — a `Cross-Origin-Embedder-Policy` the site's pages need, say. Each name
+   * and value is one Node would send; two names equal but for case, and a name that is
+   * the server's ({@link SERVER_HEADERS}), are refused. None when omitted.
+   */
+  headers?: Record<string, string>
+}
+
+/**
+ * The headers that are the dev server's, lowercased: those it sends — the redirect's
+ * `location`, the refused method's `allow`, the 426's `upgrade` — and those Node adds
+ * to frame a response, and two that would describe its body other than as it is sent:
+ * `content-encoding`, since the body goes out as the build wrote it, and `trailer`,
+ * since a body sent with its length has no trailers (Node refuses to write one). A
+ * site's `dev.headers` may name none of them, so that the server never decides which
+ * side wins. The WebSocket handshake is the `ws` package's and carries none of the
+ * site's headers, so its own are not here.
+ */
+export const SERVER_HEADERS = [
+  'allow',
+  'cache-control',
+  'connection',
+  'content-encoding',
+  'content-length',
+  'content-type',
+  'date',
+  'keep-alive',
+  'location',
+  'trailer',
+  'transfer-encoding',
+  'upgrade',
+] as const
+
+/** A header that is the dev server's. */
+export type ServerHeader = (typeof SERVER_HEADERS)[number]
 
 /** A config as loaded: where it came from, and its directories made absolute. */
 export interface LoadedConfig {
@@ -54,6 +97,8 @@ export interface LoadedConfig {
   output: string
   passthrough: string[]
   plugins: Plugin[]
+  /** {@link Config.dev}, its `headers` none where it names none. */
+  dev: { headers: Record<string, string> }
 }
 
 /**
@@ -81,7 +126,10 @@ const FIELDS: readonly string[] = [
   'output',
   'passthrough',
   'plugins',
+  'dev',
 ] satisfies (keyof Config)[]
+
+const DEV_FIELDS: readonly string[] = ['headers'] satisfies (keyof DevConfig)[]
 
 /**
  * Loads the config at `path`, relative to the working directory: imports the module —
@@ -118,8 +166,7 @@ function validated(file: string, exported: unknown): LoadedConfig {
   const fields = exported as Record<string, unknown>
   for (const field of Object.keys(fields)) {
     if (!FIELDS.includes(field)) {
-      const expected = FIELDS.map((name) => `\`${name}\``).join(', ')
-      const message = `unknown field \`${field}\`; a config has ${expected}`
+      const message = `unknown field \`${field}\`; a config has ${listed(FIELDS)}`
       throw new ConfigError(file, message, { field })
     }
   }
@@ -141,8 +188,12 @@ function validated(file: string, exported: unknown): LoadedConfig {
     output,
     passthrough: globs(file, fields.passthrough),
     plugins: plugins(file, fields.plugins),
+    dev: dev(file, fields.dev),
   }
 }
+
+/** Field names as a message lists them. */
+const listed = (fields: readonly string[]) => fields.map((name) => `\`${name}\``).join(', ')
 
 function directory(file: string, fields: Record<string, unknown>, field: string): string {
   const value = fields[field]
@@ -176,6 +227,77 @@ function plugins(file: string, value: unknown): Plugin[] {
   } catch (error) {
     throw new ConfigError(file, (error as Error).message, { field: 'plugins' })
   }
+}
+
+function dev(file: string, value: unknown): LoadedConfig['dev'] {
+  const refused = (message: string) => new ConfigError(file, message, { field: 'dev' })
+  if (value === undefined) return { headers: {} }
+  if (!isPlainObject(value)) throw refused('`dev` must be a plain object, `{…}`')
+  for (const field of Object.keys(value)) {
+    if (!DEV_FIELDS.includes(field)) {
+      throw refused(`unknown field \`dev.${field}\`; \`dev\` has ${listed(DEV_FIELDS)}`)
+    }
+  }
+  const { headers } = value
+  if (headers === undefined) return { headers: {} }
+  if (!isPlainObject(headers)) {
+    throw refused(
+      '`dev.headers` must be a plain object, `{…}`, of header names and their values'
+    )
+  }
+  // Each name by its lowercased form, which is how a client compares them.
+  const names = new Map<string, string>()
+  for (const [name, text] of Object.entries(headers)) {
+    try {
+      validateHeaderName(name)
+    } catch {
+      throw refused(
+        `\`dev.headers\` names \`${name}\`, which is no header name: a name is letters, ` +
+          "digits, and any of ``!#$%&'*+-.^_`|~``"
+      )
+    }
+    const folded = name.toLowerCase()
+    if (isServerHeader(folded)) {
+      throw refused(
+        `\`dev.headers\` names \`${name}\`, which is the dev server's to send or leave out`
+      )
+    }
+    const earlier = names.get(folded)
+    if (earlier !== undefined) {
+      throw refused(
+        `\`dev.headers\` names \`${earlier}\` and \`${name}\`, which are one header`
+      )
+    }
+    names.set(folded, name)
+    if (typeof text !== 'string') {
+      throw refused(`\`dev.headers['${name}']\` must be a string`)
+    }
+    try {
+      validateHeaderValue(name, text)
+    } catch {
+      throw refused(
+        `\`dev.headers['${name}']\` is no header value: a value holds only tabs and ` +
+          'the characters from U+0020 to U+00FF but U+007F'
+      )
+    }
+  }
+  return { headers: headers as Record<string, string> }
+}
+
+/** Whether `name`, lowercased, is one of the dev server's. */
+function isServerHeader(name: string): boolean {
+  return (SERVER_HEADERS as readonly string[]).includes(name)
+}
+
+/**
+ * Whether `value` is an object written as one, `{…}`: not a list, and not an instance
+ * such as `new Headers()`, whose entries are not its own fields and would be read as
+ * none.
+ */
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  if (typeof value !== 'object' || value === null) return false
+  const prototype: unknown = Object.getPrototypeOf(value)
+  return prototype === Object.prototype || prototype === null
 }
 
 /** Whether `path` is `dir` or inside it. */

@@ -9,7 +9,13 @@ export {
   type CheckResult,
 } from './lib/build.ts'
 export { bundler } from './lib/bundler.ts'
-export { ConfigError, loadConfig, type Config, type LoadedConfig } from './lib/config.ts'
+export {
+  ConfigError,
+  loadConfig,
+  type Config,
+  type DevConfig,
+  type LoadedConfig,
+} from './lib/config.ts'
 export * from './lib/front-matter.ts'
 export type { Environment } from './lib/load.ts'
 export type { Plugin, PluginHandler, ProducerContext } from './lib/plugins.ts'
