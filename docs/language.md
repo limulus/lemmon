@@ -260,7 +260,8 @@ and adding a duration to a moment would settle it by accident.
 `minutes()` drops the remainder rather than rounding it, so a site that counts a part
 minute words that rule itself. `readingTime()` counts the text between tags at two
 hundred words a minute and rounds up; a tag separates words the way whitespace does,
-which is what never building a DOM costs (invariant 2). `text()` gives a URL's encoded
+which is what never building a DOM costs (invariant 2). It counts what a reader sees, not
+the source, so a link counts as its words and not its URL. `text()` gives a URL's encoded
 text back, which is how two are joined: `url(site.siteUrl.text() + page.url.text())` —
 `+` puts two strings together and nothing else, and encoding what is encoded changes
 nothing, so the `url()` marks where encoding happens without doing it twice.

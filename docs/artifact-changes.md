@@ -269,6 +269,9 @@ moved it. Newest last. An entry is removed when its change has been applied.
   its function, and its nested selectors carry an explicit `&` (`& > a`, `& img.preview`):
   a bare nested type selector is dropped by Chrome before 120 and Safari before 17.2,
   inside D20's browser floor (∆D3R).
+- **`readingTime()`** — say it counts what a reader sees, not the source, so a link counts
+  as its words and not its URL; Eric accepted for limulus.net that this reads a minute
+  under Eleventy's count near a rounding boundary (D38, 2026-10-17).
 
 ## Shell & Core
 

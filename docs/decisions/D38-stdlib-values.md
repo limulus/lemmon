@@ -1,6 +1,9 @@
 # D38 — Stdlib values and the manifest at compile
 
-- **Status:** Accepted 2026-09-11 (∆Q6L); implemented 2026-09-12 (∆Q6L)
+- **Status:** Accepted 2026-09-11 (∆Q6L); implemented 2026-09-12 (∆Q6L). On 2026-10-17
+  Eric accepted for limulus.net that `readingTime()` counts what a reader sees where
+  Eleventy's `reading-time` counted the markdown source, so a page near a rounding
+  boundary reads a minute lower after the cutover
 - **Backlog item:** ∆Q6L
 - **Normative text:** `docs/language.md` § Types, § Names & namespaces (Ambient),
   § Checking (Calls, Printing), § Schemas; `docs/architecture.md` § WASM API,
