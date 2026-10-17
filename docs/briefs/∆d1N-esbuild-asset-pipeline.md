@@ -18,3 +18,6 @@ stores, since the core does no path arithmetic
   through an inline loader at the end of `body` (`SCRIPT_LIBS` and `unbuiltScripts` in the
   port branch's `bin/parity/classes.ts`) — while `bundler()` places every collected URL at
   every `scripts` mark.
+- Slice 2 was accepted with the port branch's `npm run parity:look` refusing `/lib/**` on
+  both sides, since Lemmon's build had no client scripts. Once this item bundles them,
+  `bin/parity-look.ts` stops refusing `/lib/**`, and its header comment says so.

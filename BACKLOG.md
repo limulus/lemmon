@@ -24,19 +24,9 @@ true. The shell is built here (`@limulus/lemmon-shell`, docs/architecture.md §B
 pipeline, §Shell plugin API); the port lives in limulus-dot-net on a branch while 11ty stays
 green on main, and that branch is where every slice is accepted. A language or core feature
 lands inside the slice that needs it.
-Slice 1, a page from `lem build`, was accepted on 2026-10-17; its five items' journal
-entries record it.
-
-### 2. Styled
-
-Marks resolved in the shell and CSS as per-page bundles. Eric opens the seven posts and
-sees them identical to the live site, with their CSS as per-page hashed bundles under
-`/assets/immutable/`, and `npm run parity` reports zero unexpected differences for them.
-
-Built on 2026-10-17 (journal entries for ∆F4y and ∆D3R; ∆Oyi retired, dprint leaving
-the slice); the run above is Eric's to make before slice 3 starts. `npm run parity:look`
-compares the posts as Chrome draws them with client scripts off on both sides, since
-Lemmon has none until ∆d1N; Eric decides whether "identical to the live site" means that.
+Slices 1 and 2, a page from `lem build` and then styled output, were accepted on
+2026-10-17; their items' journal entries record them, and ∆Oyi's records why dprint left
+slice 2. Slice 2's `npm run parity:look` refuses `/lib/**` on both sides until ∆d1N.
 
 ### 3. The daily loop
 
