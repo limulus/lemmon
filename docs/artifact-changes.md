@@ -265,6 +265,10 @@ moved it. Newest last. An entry is removed when its change has been applied.
   extend `Page`, say a list of `Page` itself collects nothing and is an error at the
   binding's type, and that a page belongs to one collection, so two globs that match one
   page are an error at the page (∆muD).
+- **`lem-style` example (D20)** — the card component's class is `articleCard`, named after
+  its function, and its nested selectors carry an explicit `&` (`& > a`, `& img.preview`):
+  a bare nested type selector is dropped by Chrome before 120 and Safari before 17.2,
+  inside D20's browser floor (∆D3R).
 
 ## Shell & Core
 

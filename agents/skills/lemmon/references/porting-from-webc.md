@@ -188,7 +188,8 @@ which Lemmon can do because it never parses HTML.
 
 `chip-list.webc` is a `<slot>` in a `<ul>` with `:host` styles. The slot is an `html`
 parameter; the styles nest under a class named after the function (D20), and `:host[…]`
-becomes `&[…]`. The caller captures its items, then calls.
+becomes `&[…]` (the whole rule is under Styles, below). The caller captures its items,
+then calls.
 
 ```lem components.lem
 <lem-fn chipList(size: string?, slot: html)>
@@ -199,7 +200,7 @@ becomes `&[…]`. The caller captures its items, then calls.
   </chip-list>
   <lem-style>
     .chipList {
-      ul { display: flex; flex-wrap: wrap; gap: 0.5rem; list-style: none; }
+      & ul { display: flex; flex-wrap: wrap; gap: 0.5rem; list-style: none; }
       &[size="small"] ul { font-size: 0.7rem; }
     }
   </lem-style>
@@ -225,24 +226,27 @@ becomes `&[…]`. The caller captures its items, then calls.
 ## JavaScript becomes typed functions
 
 The chips' `webc:type="js"` blocks are small programs: `nolink ? chip : <a>chip</a>`, a
-minutes rounding rule, a lookup in `$data.authors`. Each is a function or a capture.
+minutes rounding rule, a lookup in `$data.authors`. Each is a function or a capture. The
+author's chip has a photo where the others have an icon, so `dataChip`'s icon is optional
+and `authorChip` calls it rather than writing a `data-chip` of its own (Styles, below).
 
 ```lem components.lem
-<lem-fn dataChip(icon: string, slot: html)>
+<lem-fn dataChip(icon: string?, slot: html)>
   <data-chip class="dataChip">
-    <lem.svgUse(icon)>
+    <lem-if icon>
+      <lem.svgUse(icon)>
+    </lem-if>
     <lem.slot>
   </data-chip>
 </lem-fn>
 
 <lem-fn authorChip(id: string, nolink: bool)>
   <lem-let author = site.authors[id] />
-  <lem-let chip>
-    <data-chip class="dataChip">
-      <lem.phoPicture(site.photos[author.photo], ["xs"])>
-      <lem.author.name>
-    </data-chip>
+  <lem-let face>
+    <lem.phoPicture(site.photos[author.photo], ["xs"])>
+    <lem.author.name>
   </lem-let>
+  <lem-let chip = dataChip(null, face) />
   <lem-if nolink>
     <lem.chip>
   <lem-else />
@@ -386,7 +390,7 @@ the page's bundle, not its href.
 ```lem layouts.lem
 <lem-fn article(post: Article, body: html)>
   <lem-let main>
-    <article>
+    <article class="article">
       <header>
         <lem.articleHeader(post)>
       </header>
@@ -394,6 +398,11 @@ the page's bundle, not its href.
       <lem.revisionHistory(post)>
     </article>
   </lem-let>
+  <lem-style>
+    .article {
+      & > header { margin-bottom: 1.5rem; }
+    }
+  </lem-style>
   <lem.pageLayout(post, post.title, post.subhead ?? post.teaser, main)>
 </lem-fn>
 
@@ -416,6 +425,7 @@ the page's bundle, not its href.
     <head>
       <meta charset="utf-8">
       <lem.mark("styles")>
+      <lem.siteStyles()>
       <title><lem.docTitle(p.url)></title>
       <meta property="og:title" content="<lem.title>">
       <meta property="og:url" content="<lem.site.siteUrl><lem.p.url>">
@@ -438,6 +448,50 @@ the page's bundle, not its href.
   </html>
 </lem-fn>
 ```
+
+## Styles
+
+A `<style webc:scoped>` becomes one `lem-style`, placed after the calls it makes (below)
+and translated line for line so that it still diffs against the `.webc`: the body goes
+inside `.fnName { … }`, each `:host` becomes `&` (a bare `:host { … }` is `& { … }`), and
+an `@media` stays where it stood, nested. Every nested selector keeps its `&` — `& ul`,
+never a bare `ul`, which Chrome before 120 and Safari before 17.2 drop. `@keyframes` cannot
+nest in a style rule, so it goes after the wrapper's closing brace. A plain `<style>` keeps
+its selectors and gets no wrapper. The specificity is WebC's: `&` under `.fnName` is one
+class, as the hash was.
+
+WebC bundles a page's styles children first: a component's after the components it calls,
+the body's before its layout's, each layout's before the next one's. Lemmon collects
+blocks in the order they run, so where a block stands decides its turn. A component's
+block goes at the end of its body, after every call it makes. A layout's goes after its
+`lem-let` capture and before its call to the next layout, as `article`'s above: before
+the capture, it would collect ahead of the components the capture runs.
+
+`base.webc`'s links to `../css/*.css` were bundled last, after every component's styles.
+A `.lem` file cannot read a stylesheet, so the port generates a copy — a script writes
+`siteStyles()`, one `lem-style` per stylesheet, each line indented so that the block's
+trim and dedent (D26) give back the file trimmed — and `base` calls it beside the mark:
+`base` runs last, so they collect after every other block. Edit the CSS and rerun the
+script, never the generated file. A `lem-style` body is a template, which only `<lem.`,
+`<lem-` and `</lem-` interrupt (invariant 2), so a stylesheet holding one of those — a
+`</lem-` in a comment would close the block — cannot be copied so; the generator refuses
+any `<` at all, as a guard.
+
+```lem site-styles.lem
+<lem-fn siteStyles()>
+  <lem-style>
+    html {
+      font-family: 'Mona Sans', sans-serif;
+    }
+  </lem-style>
+</lem-fn>
+```
+
+A block collects when its function runs — whether or not the value it stands in is
+printed — and only then, so a component's styles reach the pages that call it. A function
+that writes another component's class therefore calls that component instead: an
+`authorChip` that printed `<data-chip class="dataChip">` itself left `.dataChip`'s styles to
+whichever other chip on the page called `dataChip`.
 
 ## Posts
 

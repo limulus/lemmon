@@ -919,7 +919,7 @@ An indented block has none.
 
 ```
 <lem-fn articleCard(article: Article)>
-  <article class="article-card">
+  <article class="articleCard">
     <a href="<lem.article.url>">
       <lem-let preview = article.image ?? article.hero />
       <lem-if preview>
@@ -946,9 +946,9 @@ An indented block has none.
     </a>
   </article>
   <lem-style>
-    .article-card {
-      > a { display: block; overflow: hidden; }
-      img.preview { display: block; width: 100%; height: auto; }
+    .articleCard {
+      & > a { display: block; overflow: hidden; }
+      & img.preview { display: block; width: 100%; height: auto; }
     }
   </lem-style>
 </lem-fn>
