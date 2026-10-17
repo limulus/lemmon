@@ -22,9 +22,20 @@
   "no wildcard producer" holds in the wrapper's dispatch as in the claims; a payload
   crosses as JSON, so the VM also refuses one holding a function or a float that is not
   a finite number, and two claims naming different payloads for one name are a
-  malformed declaration
+  malformed declaration. As built (∆F4y): a handler is an entry of a plugin's `marks` in
+  `lemmon.config.ts`, and the claims `lem build` declares are the listed plugins', so an
+  omitted list declares an empty claim set and warns at every mark; the shell sends no
+  name-only claim — a decorator claims its name with an empty key list, and so does a
+  keyless producer — since a claim listing no keys covers every key and would silence the
+  warning at a code block's language; two producers on one name and key, and two handlers
+  naming different payloads or key fields for one name, are refused at config load, naming
+  both plugins, and so are keys for a name no handler keys by a payload field, whose
+  `mark()` calls would carry no key for them to match; a handler that throws or returns
+  anything but its content is a warning at the mark, which keeps the content it had; and a
+  code block's handlers see its payload beside its id
 - **Backlog item:** ∆1Hp (the mark, claims by name, the collect tags, the boundary);
-  ∆7wK (the `code` mark, keys and payloads, the core's highlighter removed)
+  ∆7wK (the `code` mark, keys and payloads, the core's highlighter removed); ∆F4y (the
+  shell's plugins and their handlers)
 - **Normative text:** `docs/language.md` § Marks, § Document mode, Code blocks;
   `docs/architecture.md` § WASM API, § Build pipeline, § Shell plugin API
 

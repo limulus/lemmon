@@ -237,6 +237,9 @@ initiative before starting it.
 - `∆qLe` Refusing a render on purpose
   - A layout only a subtype can use cannot refuse the base record: D32 forbids
     `layout: (VideoPost, html)`, and a `lem-default` arm has no way to fail the render
+- `∆CxX` Report a computed mark key no producer covers
+  - A key read from the record at render reaches no handler unless one lists it, so a
+    mistyped computed key keeps its default content and nothing says so (D42)
 - `∆v6d` Serialize the linked program
   - `exportModule`/`importModule` serialize the linked program (D14 headroom), deferred from
     `∆TNT` because a fact nothing consumes is a comment

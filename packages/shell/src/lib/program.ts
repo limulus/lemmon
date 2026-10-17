@@ -1,4 +1,5 @@
 import type {
+  CodePayload,
   Core,
   Diagnostic,
   FromBinding,
@@ -13,6 +14,7 @@ import { fileURLToPath } from 'node:url'
 import picomatch from 'picomatch'
 
 import type { Page } from './front-matter.ts'
+import { claimsOf, type Plugin } from './plugins.ts'
 import type { Site } from './site.ts'
 
 /**
@@ -25,15 +27,25 @@ export const BINDINGS_FILE = 'site.lem'
  * The environment the standard shell declares (D30): `site` the bindings of
  * {@link BINDINGS_FILE}, `page` a `Page` and `build` a `Build` — both declared by
  * {@link AMBIENT_FILE} — every page rendered through its `layout` field and placed by
- * its `url` (D43). It claims no marks, so a mark keeps its default content until the
- * shell's handlers arrive (∆F4y), and carries no asset manifest, so no `asset()`
- * resolves until the esbuild pipeline hands one over (∆d1N).
+ * its `url` (D43). It is the ambient part alone: the mark claims are a site's plugins',
+ * which {@link hostFor} adds. It carries no asset manifest, so no `asset()` resolves
+ * until the esbuild pipeline hands one over (∆d1N).
  */
 export const HOST: HostDecl = {
   ambient: { site: { bindingsOf: BINDINGS_FILE }, page: 'Page', build: 'Build' },
   document: 'page',
   entry: 'layout',
   url: 'url',
+}
+
+/**
+ * The declaration a site whose config lists `plugins` compiles under: {@link HOST} with
+ * what their handlers claim (D42). The claims are sent even when there are none, so a
+ * site listing no plugins is warned at every mark, which nothing will fill: only a host
+ * with no handlers at all — a playground, an editor — omits them, and hears nothing.
+ */
+export function hostFor(plugins: readonly Plugin[]): HostDecl {
+  return { ...HOST, marks: claimsOf(plugins) }
 }
 
 /**
@@ -92,6 +104,12 @@ export interface Program {
   sources: FromBinding[]
   /** Every page, by path, in path order. */
   pages: Map<string, CompiledPage>
+  /**
+   * Every code block's payload, by the id a render's mark names it with (D42): what a
+   * handler is given beside the id. The second compile call reports them all, since a
+   * code block is markdown and documents compile only there.
+   */
+  payloads: Map<string, CodePayload>
 }
 
 /** What compiling a site found: its program, unless an error stopped it, and why. */
@@ -102,12 +120,13 @@ export interface Compiled {
 
 /**
  * Compiles `site` into `core`, in the two calls a page's record needs (step 3 of the
- * build pipeline). The first compiles {@link AMBIENT_FILE} and every template under
- * {@link HOST} — those without front matter, {@link BINDINGS_FILE} among them, and the
- * page templates too, with no record, so that what a page template defines is in the
- * index a layout is compiled against. It reports the `from` bindings and the record
- * each glob collects. The second compiles every page — documents and page templates —
- * matched against the collecting globs, as its record. An error in the first call
+ * build pipeline). The first compiles {@link AMBIENT_FILE} and every template under the
+ * declaration {@link hostFor} makes of the config's plugins — those without front
+ * matter, {@link BINDINGS_FILE} among them, and the page templates too, with no record,
+ * so that what a page template defines is in the index a layout is compiled against. It
+ * reports the `from` bindings and the record each glob collects. The second compiles
+ * every page — documents and page templates — matched against the collecting globs, as
+ * its record. An error in the first call
  * stops the second, since no page can be typed without the globs; a warning does not.
  *
  * Documents compile only in the second call, so what a document (`.md`) defines is
@@ -134,7 +153,7 @@ export async function compileSite(core: Core, site: Site): Promise<Compiled> {
     )
   }
   const ambient = { path: AMBIENT_FILE, text: await readFile(AMBIENT_FILE, 'utf8') }
-  const first = core.compile([ambient, ...templates], HOST)
+  const first = core.compile([ambient, ...templates], hostFor(site.config.plugins))
   if (hasError(first.diagnostics)) return { diagnostics: first.diagnostics }
   // A page template compiles again in the second call, as its record, and reports its
   // warnings there; its first, recordless compile would report them twice.
@@ -185,7 +204,8 @@ export async function compileSite(core: Core, site: Site): Promise<Compiled> {
   const second = core.compile(files)
   diagnostics.push(...second.diagnostics)
   if (hasError(diagnostics)) return { diagnostics }
-  return { program: { sources: first.sources, pages }, diagnostics }
+  const payloads = new Map(second.payloads.map((payload) => [payload.id, payload]))
+  return { program: { sources: first.sources, pages, payloads }, diagnostics }
 }
 
 /** Whether any of `diagnostics` is an error. */

@@ -109,8 +109,8 @@ function parents(file: string): string[] {
 export interface Output {
   /** Relative to the output directory, with `/` separators. */
   file: string
-  /** The page, exactly as the core returned it. */
-  html: Uint8Array
+  /** The page as the core returned it, with its marks resolved. */
+  bytes: Uint8Array
 }
 
 /**
@@ -154,7 +154,7 @@ export async function write(
   }
   for (const page of pages) {
     const file = target(page.file)
-    await attempt(file, () => writeFile(file, page.html))
+    await attempt(file, () => writeFile(file, page.bytes))
   }
   for (const path of passthrough) {
     const file = target(path)

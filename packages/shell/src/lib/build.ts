@@ -9,13 +9,8 @@ import { strict as assert } from 'node:assert'
 
 import type { LoadedConfig } from './config.ts'
 import { envelope, type Environment } from './load.ts'
-import {
-  compileSite,
-  FILE_START,
-  hasError,
-  pageSpan,
-  type CompiledPage,
-} from './program.ts'
+import { resolvePage, type Plugin } from './plugins.ts'
+import { compileSite, FILE_START, hasError, pageSpan, type Program } from './program.ts'
 import { discover } from './site.ts'
 import {
   OutputFiles,
@@ -55,13 +50,13 @@ export interface BuildResult {
 /**
  * Builds the site `config` describes into its output directory — every step of the
  * build pipeline this shell has (docs/architecture.md §Build pipeline): discover,
- * compile, load, plan, render each page, write it and copy the passthrough files. Any
- * error diagnostic, at any step, stops the build before it writes a file, since every
- * page is rendered and its output file checked against every other before the first
- * is written; warnings are reported and the build goes on. A write the file system
- * then refuses — a file an earlier build left in the way, which nothing removes — is
- * reported as the result's `failure`, and the output may hold what was written before
- * it.
+ * compile, load, plan, render each page and resolve its marks with the config's
+ * plugins, write it and copy the passthrough files. Any error diagnostic, at any step,
+ * stops the build before it writes a file, since every page is rendered and its output
+ * file checked against every other before the first is written; warnings are reported
+ * and the build goes on. A write the file system then refuses — a file an earlier build
+ * left in the way, which nothing removes — is reported as the result's `failure`, and
+ * the output may hold what was written before it.
  *
  * A page whose record the core loaded renders through its layout. A page no glob held
  * and no `type:` named has no schema, so it renders its own output with `page` bound
@@ -102,7 +97,7 @@ export async function build(
     const { data } = loaded
     diagnostics.push(...core.loadData(data))
     if (hasError(diagnostics)) return failed
-    const renderer = new Renderer(core, program.pages, passthrough, diagnostics)
+    const renderer = new Renderer(core, program, config.plugins, passthrough, diagnostics)
     for (const planned of core.plan()) {
       assert(planned.url !== undefined, 'the shell’s host names the url field')
       renderer.render(planned.path, planned.url)
@@ -130,22 +125,28 @@ export async function build(
   }
 }
 
-/** Renders pages into memory, refusing any two whose files cannot both be written. */
+/**
+ * Renders pages into memory, their marks resolved, refusing any two whose files cannot
+ * both be written.
+ */
 class Renderer {
   readonly outputs: Output[] = []
   readonly #core: Core
-  readonly #pages: Map<string, CompiledPage>
+  readonly #program: Program
+  readonly #plugins: readonly Plugin[]
   readonly #diagnostics: Diagnostic[]
   readonly #files = new OutputFiles()
 
   constructor(
     core: Core,
-    pages: Map<string, CompiledPage>,
+    program: Program,
+    plugins: readonly Plugin[],
     passthrough: string[],
     diagnostics: Diagnostic[]
   ) {
     this.#core = core
-    this.#pages = pages
+    this.#program = program
+    this.#plugins = plugins
     this.#diagnostics = diagnostics
     // Each passthrough file is where the walk found it, so no two collide in a way
     // the input's own file system allowed; a page is checked against them all.
@@ -153,13 +154,14 @@ class Renderer {
   }
 
   /**
-   * Renders the page at `path` to the file its `url` names, or reports why it cannot
-   * be written: a url that names no file, or a file another page or a passthrough
-   * file writes, or one that cannot stand beside it on disk. A failed render reports
-   * its runtime diagnostic.
+   * Renders the page at `path` to the file its `url` names, its marks resolved, or
+   * reports why it cannot be written: a url that names no file, or a file another page
+   * or a passthrough file writes, or one that cannot stand beside it on disk. A failed
+   * render reports its runtime diagnostic, and resolving reports what the handlers did
+   * wrong, as warnings.
    */
   render(path: string, url: JsonValue): void {
-    const page = this.#pages.get(path)
+    const page = this.#program.pages.get(path)
     assert(page !== undefined, 'every planned page was compiled by this build')
     const at = page.page.loaded.spans.url ?? pageSpan(page.page)
     const file = typeof url === 'string' ? outputFile(url) : undefined
@@ -183,10 +185,13 @@ class Renderer {
     }
     const rendered = this.#core.render({ path })
     this.#diagnostics.push(...rendered.diagnostics)
-    // The marks and fragments are set aside: no handler resolves a mark yet (∆F4y), so
-    // each keeps the default content it already holds in the page, and nothing the
-    // page collected is bundled.
-    if (rendered.html !== null) this.outputs.push({ file, html: rendered.html })
+    if (rendered.html === null) return
+    // Resolved as soon as it renders, before any output transform could see the page
+    // (D42).
+    const { payloads } = this.#program
+    const resolved = resolvePage(rendered, { path, plugins: this.#plugins, payloads })
+    this.#diagnostics.push(...resolved.diagnostics)
+    this.outputs.push({ file, bytes: resolved.bytes })
   }
 }
 

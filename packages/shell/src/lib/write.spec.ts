@@ -51,7 +51,7 @@ describe('write()', () => {
     await write(
       join(root, 'www'),
       join(root, 'dist'),
-      [{ file: 'a/b/index.html', html: bytes }],
+      [{ file: 'a/b/index.html', bytes }],
       []
     )
 

@@ -25,6 +25,7 @@ describe('discover()', () => {
       input: join(root, 'www'),
       output: join(root, 'dist'),
       passthrough: ['*.txt'],
+      plugins: [],
     }
     return { config, site: await discover(config) }
   }

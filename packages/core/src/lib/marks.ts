@@ -67,6 +67,13 @@ export interface Resolved {
 
 const encoder = new TextEncoder()
 
+/**
+ * Whether `handler` produces at all: what {@link resolveMarks} dispatches producers by,
+ * and {@link producerOverlap} counts them by.
+ */
+const isProducer = (handler: { produce?: unknown }): boolean =>
+  typeof handler.produce === 'function'
+
 /** Whether `handler` is the producer for `mark`: no wildcard, and no key for no key. */
 const produces = (handler: MarkHandler, mark: Mark): boolean =>
   handler.keys === undefined
@@ -93,8 +100,9 @@ const decorates = (handler: MarkHandler, mark: Mark): boolean =>
  * @throws If the render failed, if two producers answer one name and key — or two
  * produce one name without keys — if a producer returns a number of replacements other
  * than one per mark it answers, or if the marks do not stand in order: each a caller
- * bug rather than anything a template can provoke. (The plugin-load error naming both
- * plugins that claim a key is the shell's, ∆F4y.)
+ * bug rather than anything a template can provoke. A host that loads handlers refuses
+ * the overlap first, with {@link producerOverlap}, naming whoever listed the two: the
+ * shell's config load names both plugins.
  */
 export function resolveMarks(
   result: RenderResult,
@@ -104,8 +112,16 @@ export function resolveMarks(
   if (html === null || marks === null || fragments === null) {
     throw new TypeError('a render that failed has no page to resolve')
   }
-  const producers = handlers.filter((handler) => handler.produce)
-  refuseOverlap(producers)
+  const overlap = producerOverlap(handlers)
+  if (overlap !== undefined) {
+    const { name, key } = overlap
+    throw new TypeError(
+      key === undefined
+        ? `two handlers produce \`${name}\`; only one may`
+        : `two handlers produce \`${name}\` for \`${key}\`; only one may`
+    )
+  }
+  const producers = handlers.filter(isProducer)
   const unplaced = Object.keys(fragments).filter(
     (name) => !marks.some((mark) => mark.name === name)
   )
@@ -150,27 +166,47 @@ export function resolveMarks(
   return { html: splice(html, marks, contents), unclaimed, unplaced }
 }
 
+/** Two producers that would both answer one mark, as {@link producerOverlap} finds them. */
+export interface ProducerOverlap<H> {
+  /** The one given first. */
+  first: H
+  second: H
+  /** The name both produce. */
+  name: string
+  /** The key both list under it, where they list keys; absent for two keyless ones. */
+  key?: string
+}
+
 /**
- * Refuses producers that would both answer one mark: two keyless producers of one name,
- * or two that list one key under it. Checked over the handlers rather than the page, so
- * a plugin list that cannot work fails on the first page it meets.
+ * The first two producers among `handlers` that would both answer one mark — two keyless
+ * producers of one name, or two that list one key under it — or `undefined` where every
+ * mark has one producer at most. A decorator overlaps nothing, and one producer listing
+ * a key twice is still one producer. Checked over the handlers rather than a page, so a
+ * plugin list that cannot work fails on the first page it meets, or before any.
+ *
+ * This is the rule {@link resolveMarks} throws on, exported so that a host loading
+ * handlers can refuse the same lists and say who listed the two. It reads whether a
+ * handler produces, never what with, so it takes a host's own handler shape — and hands
+ * back the two as given.
  */
-function refuseOverlap(producers: readonly MarkHandler[]): void {
-  const seen = new Set<string>()
-  for (const { name, keys } of producers) {
-    // One producer listing a key twice is still one producer.
+export function producerOverlap<
+  H extends Pick<MarkHandler, 'name' | 'keys'> & { produce?: unknown },
+>(handlers: readonly H[]): ProducerOverlap<H> | undefined {
+  const seen = new Map<string, H>()
+  for (const handler of handlers) {
+    if (!isProducer(handler)) continue
+    const { name, keys } = handler
     for (const key of keys === undefined ? [undefined] : new Set(keys)) {
       const slot = JSON.stringify([name, key ?? null])
-      if (seen.has(slot)) {
-        throw new TypeError(
-          key === undefined
-            ? `two handlers produce \`${name}\`; only one may`
-            : `two handlers produce \`${name}\` for \`${key}\`; only one may`
-        )
+      const first = seen.get(slot)
+      if (first !== undefined) {
+        const overlap = { first, second: handler, name }
+        return key === undefined ? overlap : { ...overlap, key }
       }
-      seen.add(slot)
+      seen.set(slot, handler)
     }
   }
+  return undefined
 }
 
 /** A handler's answer as bytes: a string is encoded once, bytes pass through. */

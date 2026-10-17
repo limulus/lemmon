@@ -145,13 +145,13 @@ pub struct Claim {
     /// The keys the name's producers cover, sorted — what a did-you-mean at a key is
     /// drawn from, and what makes the listing deterministic.
     keys: BTreeSet<Rc<str>>,
-    /// Whether the name's marks are keyed: some claim for it listed keys, or named the
-    /// payload field its marks are keyed by. A producer that lists keys covers those and
-    /// no others, and one that names a key field without listing any covers none — there
-    /// is no wildcard producer (D42), and the host's dispatch gives a producer only the
-    /// keys it lists. A claim that does neither covers whatever comes, which is every
-    /// decorator and the shell's own `styles` bundler. Keyed with no keys is not the same
-    /// as unkeyed, so this is a flag rather than `keys.is_empty()`.
+    /// Whether the name's marks are keyed: some claim for it listed keys — an empty list
+    /// among them — or named the payload field its marks are keyed by. A claim that lists
+    /// keys covers those and no others, and one that names a key field without listing
+    /// any covers none — there is no wildcard producer (D42), and the host's dispatch
+    /// gives a producer only the keys it lists. A name only claims that do neither make
+    /// covers whatever comes, so no key of it is ever warned at. Keyed with no keys is not
+    /// the same as unkeyed, so this is a flag rather than `keys.is_empty()`.
     keyed: bool,
     /// The record a mark of this name carries, where the handlers take a payload.
     payload: Option<Rc<str>>,
@@ -162,15 +162,15 @@ pub struct Claim {
 }
 
 impl Claim {
-    /// A claim carrying nothing beyond being made — a decorator's, or a handler for a
-    /// name with neither keys nor a payload.
+    /// A claim carrying nothing beyond being made: it lists no keys, so it covers
+    /// whatever comes, and names no payload.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// The same claim, covering `keys` — a producer's claim. Adds to any already
-    /// claimed, since one name's producers are merged.
+    /// The same claim, keyed and covering `keys` — none at all for an empty list. Adds to
+    /// any already claimed, since one name's claims are merged.
     #[must_use]
     pub fn with_keys<'a>(mut self, keys: impl IntoIterator<Item = &'a str>) -> Self {
         self.keys.extend(keys.into_iter().map(Rc::from));

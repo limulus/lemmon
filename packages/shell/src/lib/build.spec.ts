@@ -4,11 +4,21 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 import { build, type BuildResult } from './build.ts'
+import type { Plugin } from './plugins.ts'
 import { FILE_START as START, SiteError } from './program.ts'
 import { WriteError } from './write.ts'
 import {
+  CALLOUT_LEM,
+  callouts,
+  copy,
+  highlighter,
+  inline,
+  wrapping,
+} from '../mocks/plugins.ts'
+import {
   configOf,
   ENV,
+  LAYOUTS_LEM,
   PASSTHROUGH,
   project,
   SITE,
@@ -19,13 +29,20 @@ import { at } from '../mocks/spans.ts'
 
 const NOW = new Date('2026-10-15T12:00:00Z')
 
+/** How {@link built} builds: in what environment, copying what, with which plugins. */
+interface Options {
+  env?: object
+  passthrough?: string[]
+  plugins?: Plugin[]
+}
+
 /** Builds `files` as a project, in `env`, returning the result and the project. */
 async function built(
   files: Record<string, string>,
-  { env = ENV, passthrough = PASSTHROUGH }: { env?: object; passthrough?: string[] } = {}
+  { env = ENV, passthrough = PASSTHROUGH, plugins = [] }: Options = {}
 ): Promise<{ result: BuildResult; dir: string }> {
   const dir = project(files, passthrough)
-  const result = await build(configOf(dir, passthrough), {
+  const result = await build(configOf(dir, passthrough, plugins), {
     now: NOW,
     env: env as Record<string, string>,
   })
@@ -35,7 +52,7 @@ async function built(
 /** Builds `files`, expecting it to fail before writing anything: the errors it reported. */
 async function refused(
   files: Record<string, string>,
-  options: { env?: object; passthrough?: string[] } = {}
+  options: Options = {}
 ): Promise<Diagnostic[]> {
   const { result, dir } = await built(files, options)
   expect(result.pages).toEqual([])
@@ -191,6 +208,223 @@ describe('build()', () => {
       ])
       expect(result.pages).toHaveLength(4)
       expect(existsSync(join(dir, 'dist/index.html'))).toBe(true)
+    })
+  })
+
+  describe('marks', () => {
+    // The base layout places the page's styles, and a post's body holds a code block.
+    const layouts = LAYOUTS_LEM.replace('<main>', '<lem.mark("styles")>\n  <main>')
+    const post = '---\ntitle: A\n---\n\n```ts {1}\nlet x = 1\n```\n'
+    const files = { ...SITE, 'layouts.lem': layouts, 'posts/a.md': post }
+    const KEPT = '<pre><code class="language-ts">let x = 1\n</code></pre>'
+
+    /** The page `posts/a.md` was written as, after building `files` with `plugins`. */
+    async function postA(plugins: Plugin[], more: Record<string, string> = {}) {
+      const { result, dir } = await built({ ...files, ...more }, { plugins })
+      return { result, html: tree(join(dir, 'dist'))['posts/a/index.html'] }
+    }
+
+    /** A plugin whose `code` producer for `ts` is `produce`. */
+    const ts = (produce: () => never[]): Plugin => ({
+      name: 'ts',
+      marks: [
+        { name: 'code', keys: ['ts'], payload: 'Code', keyedBy: 'language', produce },
+      ],
+    })
+
+    it('should replace each mark with its producer’s output, then decorators in plugin order', async () => {
+      const frame: Plugin = { name: 'frame', marks: [wrapping('frame')] }
+      const { result, html } = await postA([copy, inline, highlighter, frame])
+
+      expect(result.diagnostics).toEqual([])
+      // The producer runs first wherever its plugin is listed; the decorators follow in
+      // the order the plugins are.
+      expect(html).toContain('<frame><copy><pre class="ts">let x = 1</pre></copy></frame>')
+      expect(html).toContain('<style></style>\n<main>')
+    })
+
+    it('should give a code block’s handlers the payload the compile reported', async () => {
+      const seen: unknown[] = []
+      const watching: Plugin = {
+        name: 'watching',
+        marks: [
+          {
+            name: 'code',
+            keys: ['ts'],
+            payload: 'Code',
+            keyedBy: 'language',
+            produce: ({ marks }) => {
+              seen.push(...marks.map(({ payload, payloadId }) => ({ payload, payloadId })))
+              return ['<p>made</p>']
+            },
+            decorate: ({ payload }, content) => {
+              seen.push({ payload })
+              return content
+            },
+          },
+        ],
+      }
+      const { html } = await postA([inline, watching])
+
+      const payload = { language: 'ts', info: 'ts {1}', code: 'let x = 1\n' }
+      expect(seen).toEqual([
+        { payload, payloadId: expect.stringMatching(/^[0-9a-f]{16}$/) as string },
+        { payload },
+      ])
+      expect(html).toContain('<p>made</p>')
+    })
+
+    it('should dispatch a template’s mark by the payload field its claim keys by', async () => {
+      const home =
+        '---\ntype: Home\ntitle: Home\nurl: /\n---\n' +
+        '<lem-let d><p>plain</p></lem-let>\n' +
+        '<lem.mark("callout", {kind: "note", text: "Read me"}, default: d)>\n' +
+        '<lem.mark("callout", {kind: "tip", text: "Or not"}, default: d)>\n'
+      const { result, dir } = await built(
+        { ...files, 'site.lem': `${SITE_LEM}${CALLOUT_LEM}`, 'index.lem': home },
+        { plugins: [inline, highlighter, callouts] }
+      )
+
+      expect(result.diagnostics).toEqual([
+        expect.objectContaining({
+          path: 'index.lem',
+          span: at(home, '"tip"'),
+          severity: 'warning',
+          message:
+            'no producer claims `tip` for `callout`, so this mark keeps its default content',
+        }),
+      ])
+      expect(tree(join(dir, 'dist'))['index.html']).toContain(
+        '<main><aside class="note">Read me</aside>\n<p>plain</p>\n</main>'
+      )
+    })
+
+    it('should leave a mark nothing claims its default content', async () => {
+      const toc =
+        '---\ntitle: A\n---\n<lem-let d><nav>none</nav></lem-let>\n' +
+        '<lem.mark("toc", default: d)>\n'
+      const { result, html } = await postA([inline], { 'posts/a.md': toc })
+
+      expect(result.diagnostics.map((d) => d.message)).toEqual([
+        'no handler claims `toc`, so this mark keeps its default content',
+      ])
+      expect(html).toContain('<nav>none</nav>')
+    })
+
+    it('should warn and keep the default content where a producer throws, resolving the rest', async () => {
+      const throwing = ts(() => {
+        throw new Error('no grammar')
+      })
+      const { result, html } = await postA([inline, throwing])
+
+      expect(result.diagnostics).toEqual([
+        {
+          path: 'posts/a.md',
+          span: at(post, '«ts» {1}'),
+          severity: 'warning',
+          message:
+            "the `ts` plugin's producer for `code` failed on `posts/a.md`, so the marks it " +
+            'answers keep their default content: it threw Error: no grammar',
+          labels: [],
+        },
+      ])
+      expect(html).toContain(KEPT)
+      // The page's other mark is resolved all the same.
+      expect(html).toContain('<style></style>')
+      expect(result.pages).toHaveLength(4)
+    })
+
+    it('should warn and keep the default content where a producer miscounts', async () => {
+      const { result, html } = await postA([inline, ts(() => [])])
+
+      expect(result.diagnostics).toEqual([
+        expect.objectContaining({
+          span: at(post, '«ts» {1}'),
+          message: expect.stringMatching(
+            /: it returned 0 replacements for 1 mark$/
+          ) as string,
+        }),
+      ])
+      expect(html).toContain(KEPT)
+    })
+
+    it('should warn and keep the content so far where a decorator throws', async () => {
+      const throwing: Plugin = {
+        name: 'throwing',
+        marks: [
+          {
+            name: 'code',
+            decorate: () => {
+              throw new Error('no button')
+            },
+          },
+        ],
+      }
+      const { result, html } = await postA([inline, highlighter, throwing, copy])
+
+      expect(result.diagnostics).toEqual([
+        expect.objectContaining({
+          path: 'posts/a.md',
+          span: at(post, '«ts» {1}'),
+          severity: 'warning',
+          message:
+            "the `throwing` plugin's decorator for `code` failed on `posts/a.md`, so this " +
+            'mark keeps the content it had: it threw Error: no button',
+        }),
+      ])
+      expect(html).toContain('<copy><pre class="ts">let x = 1</pre></copy>')
+    })
+
+    describe('what a page collects', () => {
+      // Two fragments under one name: the warning points at the first.
+      const card =
+        '<lem-fn card()>\n  <p>card</p>\n  <lem-style>\n    .card {}\n  </lem-style>\n' +
+        '  <lem-style>\n    .card p {}\n  </lem-style>\n</lem-fn>\n'
+      const carded = '---\ntitle: C\n---\n<lem.card()>\n'
+
+      it('should warn at the fragments a page collects where nothing on it places them', async () => {
+        const { result } = await built(
+          { ...SITE, 'card.lem': card, 'posts/c.md': carded },
+          { plugins: [inline] }
+        )
+
+        // One warning per page that collected them, each naming its page.
+        expect(result.diagnostics).toEqual([
+          {
+            path: 'card.lem',
+            span: at(card, '<lem-style>\n    .card {}\n  </lem-style>'),
+            severity: 'warning',
+            message:
+              '`posts/c.md` collects `styles` here, and nothing on that page places ' +
+              '`mark("styles")`, so what it collected is not written',
+            labels: [],
+          },
+        ])
+      })
+
+      it('should not warn where a page places what it collected, or collected nothing', async () => {
+        const { result, dir } = await built(
+          { ...files, 'card.lem': card, 'posts/c.md': carded },
+          { plugins: [inline, highlighter] }
+        )
+
+        expect(result.diagnostics).toEqual([])
+        expect(tree(join(dir, 'dist'))['posts/c/index.html']).toContain(
+          '<style>.card {}\n.card p {}</style>'
+        )
+      })
+    })
+
+    it('should resolve an untyped page as a loaded one', async () => {
+      const { result, dir } = await built(
+        { ...files, 'notes/loose.md': '```ts\nlet y\n```\n' },
+        { plugins: [inline, highlighter] }
+      )
+
+      expect(result.diagnostics).toEqual([])
+      expect(tree(join(dir, 'dist'))['notes/loose/index.html']).toBe(
+        '<pre class="ts">let y</pre>\n'
+      )
     })
   })
 

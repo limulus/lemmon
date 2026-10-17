@@ -165,8 +165,10 @@ pub(crate) struct HostInput {
 
 /// One claim a host declares (D42): the name its handlers answer for, and, for a
 /// producer, the keys it covers; the record a mark of the name carries; and which field
-/// of that record holds a mark's key. A decorator's claim is the name alone. Several
-/// claims for one name are merged, and two naming different payloads are refused.
+/// of that record holds a mark's key. A claim without `keys` covers every key of its
+/// name; one with `keys`, even an empty list, covers only those, which is how a host keeps
+/// a key no producer lists warned at (the shell sends a list for every handler, ∆F4y).
+/// Several claims for one name are merged, and two naming different payloads are refused.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct ClaimInput {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { resolveMarks } from './marks.ts'
+import { producerOverlap, resolveMarks } from './marks.ts'
 import type { MarkHandler } from './marks.ts'
 import type { Fragment, Mark, RenderResult, Span } from './types.ts'
 
@@ -290,5 +290,92 @@ describe('resolveMarks()', () => {
     expect(() => resolveMarks(overlapping)).toThrow(/does not stand in order/)
     const backwards = rendered('abcdef', [mark('a', 4, 2)])
     expect(() => resolveMarks(backwards)).toThrow(/does not stand in order/)
+  })
+})
+
+describe('producerOverlap()', () => {
+  const produce = () => []
+  const decorate = (_: Mark, content: Uint8Array) => content
+
+  it('should find two keyless producers of one name, in the order given', () => {
+    const first: MarkHandler = { name: 'styles', produce }
+    const second: MarkHandler = { name: 'styles', produce }
+
+    expect(producerOverlap([first, { name: 'head', produce }, second])).toStrictEqual({
+      first,
+      second,
+      name: 'styles',
+    })
+  })
+
+  it('should find two producers listing one key under one name', () => {
+    const ts: MarkHandler = { name: 'code', keys: ['ts', 'js'], produce }
+    const js: MarkHandler = { name: 'code', keys: ['rust', 'js'], produce }
+
+    expect(producerOverlap([ts, js])).toStrictEqual({
+      first: ts,
+      second: js,
+      name: 'code',
+      key: 'js',
+    })
+  })
+
+  it('should find none where the producers’ keys or names are apart', () => {
+    // A keyless producer answers the marks with no key, so it shares none with one
+    // that lists keys under the same name.
+    expect(
+      producerOverlap([
+        { name: 'code', keys: ['ts'], produce },
+        { name: 'code', keys: ['rust'], produce },
+        { name: 'code', produce },
+        { name: 'diagram', keys: ['ts'], produce },
+      ])
+    ).toBeUndefined()
+  })
+
+  it('should take a producer listing a key twice as one producer', () => {
+    expect(producerOverlap([{ name: 'code', keys: ['js', 'ts', 'js'], produce }])).toBe(
+      undefined
+    )
+  })
+
+  it('should not count a decorator, whatever it lists', () => {
+    const producer: MarkHandler = { name: 'code', keys: ['ts'], produce }
+
+    expect(
+      producerOverlap([
+        producer,
+        { name: 'code', keys: ['ts'], decorate },
+        { name: 'code', decorate },
+        { name: 'styles', produce },
+        { name: 'styles', decorate },
+      ])
+    ).toBeUndefined()
+    // The same list with the decorator producing too, as a handler may.
+    expect(
+      producerOverlap([producer, { name: 'code', keys: ['ts'], decorate, produce }])
+    ).toMatchObject({ first: producer, key: 'ts' })
+  })
+
+  it('should count as producers exactly the handlers the dispatch runs', () => {
+    // A `produce` that is no function, as a JavaScript caller may write: neither run
+    // nor counted, so the list that resolves is the list that passes.
+    const handlers = [
+      { name: 'styles', produce: null } as unknown as MarkHandler,
+      { name: 'styles', produce: () => ['S'] },
+    ]
+
+    expect(producerOverlap(handlers)).toBeUndefined()
+    expect(resolved(rendered('a', [mark('styles', 1)]), handlers).html).toBe('aS')
+  })
+
+  it('should hand back the two as given, whatever else they carry', () => {
+    const listed = [
+      { name: 'styles', produce, plugin: 'bundler' },
+      { name: 'styles', produce, plugin: 'site' },
+    ]
+    const overlap = producerOverlap(listed)
+
+    expect([overlap?.first.plugin, overlap?.second.plugin]).toEqual(['bundler', 'site'])
   })
 })

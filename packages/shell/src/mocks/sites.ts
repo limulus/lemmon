@@ -3,6 +3,7 @@ import { join, relative, sep } from 'node:path'
 
 import { tempDir } from './temp-dir.ts'
 import type { LoadedConfig } from '../lib/config.ts'
+import type { Plugin } from '../lib/plugins.ts'
 
 /**
  * A project directory: a `lemmon.config.ts` naming `www` as the input and `dist` as the
@@ -19,13 +20,21 @@ export function project(files: Record<string, string>, passthrough: string[] = [
   return dir
 }
 
-/** The config {@link project} writes, as `loadConfig` would load it. */
-export function configOf(dir: string, passthrough: string[] = []): LoadedConfig {
+/**
+ * The config {@link project} writes, as `loadConfig` would load it, listing `plugins` —
+ * which a config written as JSON cannot hold, so they are given here alone.
+ */
+export function configOf(
+  dir: string,
+  passthrough: string[] = [],
+  plugins: Plugin[] = []
+): LoadedConfig {
   return {
     file: join(dir, 'lemmon.config.ts'),
     input: join(dir, 'www'),
     output: join(dir, 'dist'),
     passthrough,
+    plugins,
   }
 }
 

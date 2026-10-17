@@ -236,7 +236,7 @@ not a break:
     ∆zu0) render after steps 6–9 have finished every other page, with those outputs
     loaded back as a string source (D42).
 
-What `lem build` (∆muD) runs is steps 1 and 3–6, and step 8's HTML and passthrough, in one
+What `lem build` (∆muD) runs is steps 1 and 3–7, and step 8's HTML and passthrough, in one
 core on one thread. Step 3's first call compiles every `.lem` — page templates too,
 without their records, so a layout sees what they define — and its second the pages as
 their records; a document compiles only in the second, so no template sees what a
@@ -248,13 +248,23 @@ was written before it. A page no glob matched and no `type:` named renders with 
 its own front matter, each such page loaded on its own before it renders, since a load
 binds one document value; each of those loads re-sends and re-validates the whole
 envelope, so the cost grows with the untyped pages times the size of the site — 18 of 25
-pages on the limulus-dot-net port branch cost about 0.35 s in all.
+pages on the limulus-dot-net port branch cost about 0.35 s in all. Step 7 runs as each
+page renders, with the handlers of the plugins `lemmon.config.ts` lists, whose claims step
+3's first call declared — an empty list for a site listing none, which warns at every mark.
+A plugin list two producers would answer one mark under, or whose handlers name two
+payloads or key fields for one name, is refused at config load, naming both plugins, and
+so are keys for a name no handler keys by a payload field; a handler that throws, or
+returns anything but its content, is a warning at its mark, which keeps the content it
+had; and fragments a page collects under a name nothing on it marks are a warning at the
+first of them.
 
 - Step 2 is not yet run (∆c4j, ∆d1N): no plugin data hook or document transform, and no
   manifest on the declaration, so no `asset()` resolves; a `plugin("…")` source is an
   error at its binding.
-- Step 7 and step 8's CSS bundle are not yet run (∆F4y): every mark keeps its default
-  content, and nothing a page collected is written.
+- Step 8's files a producer writes, the CSS bundle among them, are not yet written (∆F4y),
+  and the shell's own `styles`/`scripts`/`head` plugin is not yet built (∆F4y): a mark is
+  filled only by a plugin the site writes itself.
+- Step 7's cache of a code block's output by payload id is not yet built (∆Nxd).
 - Step 9 is not yet run (∆Oyi, ∆yOJ).
 - Step 10 is not yet run (∆zu0): a feed renders with the other pages, reading none of
   their output.

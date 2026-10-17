@@ -812,13 +812,15 @@ function.
 
 **A mark's key is what the handlers for its name are dispatched on**, and the claim names
 the payload field that holds it — `language` on `code`. Written as a literal, the key is
-checked against the producers' keys while the file compiles, and one none of them covers
-is a **warning** at the key, with a did-you-mean; computed, it is read from the record at
-render and left to the handler to check at build. A claim naming no key field keys none of
-its marks, so every handler for the name sees them — which is what a bundler wants. What
-the claims said about a name *and a key* is the fact (D25), so a producer that starts
-covering one language leaves the files that named it stale, and not the files that named
-another.
+checked against the producers' keys while the file compiles, and one none of them covers is
+a **warning** at the key, with a did-you-mean; computed, it is read from the record at
+render, and one no producer lists keeps the default content — a mistake the build does
+not yet report (∆CxX). A claim naming no key field keys none of its marks, so they reach the
+name's keyless producer and every decorator listing no keys — which is what a bundler wants
+— and never a handler that lists keys, which is why the shell refuses keys for a name no
+handler keys by a field. What the claims said about a name *and a key* is the fact (D25), so
+a producer that starts covering one language leaves the files that named it stale, and not
+the files that named another.
 
 A host that claims a name ships an ordinary `lem-fn` wrapping it —
 `<lem-fn styles(): html = mark("styles") />` — so a layout reads `<lem.styles()>` and a

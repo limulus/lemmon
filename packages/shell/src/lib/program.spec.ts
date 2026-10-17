@@ -3,14 +3,19 @@ import { readFileSync } from 'node:fs'
 import { isAbsolute, join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
+import type { Plugin } from './plugins.ts'
 import { AMBIENT_FILE, compileSite, HOST, SiteError, type Compiled } from './program.ts'
 import { discover } from './site.ts'
-import { configOf, project, SITE, SITE_LEM } from '../mocks/sites.ts'
+import { copy, highlighter, inline, shell } from '../mocks/plugins.ts'
+import { configOf, LAYOUTS_LEM, project, SITE, SITE_LEM } from '../mocks/sites.ts'
 import { at } from '../mocks/spans.ts'
 
-/** Compiles `files` as a project's input, in a fresh core. */
-async function compiled(files: Record<string, string>): Promise<Compiled> {
-  const site = await discover(configOf(project(files)))
+/** Compiles `files` as a project's input, listing `plugins`, in a fresh core. */
+async function compiled(
+  files: Record<string, string>,
+  plugins: Plugin[] = []
+): Promise<Compiled> {
+  const site = await discover(configOf(project(files), [], plugins))
   return await compileSite(await loadCore(), site)
 }
 
@@ -211,5 +216,107 @@ describe('compileSite()', () => {
         labels: [],
       },
     ])
+  })
+
+  describe('the marks', () => {
+    // The base layout places the page's styles, and a post's body holds a code block.
+    const layouts = LAYOUTS_LEM.replace('<main>', '<lem.mark("styles")>\n  <main>')
+    const fenced = (language: string, code = 'let x = 1') =>
+      `---\ntitle: A\n---\n\n\`\`\`${language}\n${code}\n\`\`\`\n`
+    const post = fenced('ts')
+    const files = { ...SITE, 'layouts.lem': layouts, 'posts/a.md': post }
+
+    /** What compiling `files` with `plugins` warned, as `[path, message, span]`. */
+    async function warned(files: Record<string, string>, plugins: Plugin[]) {
+      const { program, diagnostics } = await compiled(files, plugins)
+      expect(program).toBeDefined()
+      return diagnostics.map(({ path, message, span }) => [path, message, span])
+    }
+
+    it('should declare what the listed plugins claim, so a misspelled mark is warned at', async () => {
+      const misspelled = layouts.replace('mark("styles")', 'mark("stylez")')
+
+      expect(
+        await warned({ ...files, 'layouts.lem': misspelled }, [inline, highlighter])
+      ).toEqual([
+        [
+          'layouts.lem',
+          'no handler claims `stylez`; did you mean `styles`?',
+          at(misspelled, '"stylez"'),
+        ],
+      ])
+    })
+
+    it('should warn at every mark of a site listing no plugins, and at none a plugin claims', async () => {
+      expect(await warned(files, [])).toEqual([
+        [
+          'layouts.lem',
+          'no handler claims `styles`, so this mark keeps its default content',
+          at(layouts, '"styles"'),
+        ],
+        [
+          'posts/a.md',
+          'no handler claims `code`, so this mark keeps its default content',
+          at(post, '«ts»\n'),
+        ],
+      ])
+      expect(await warned(files, [inline, highlighter])).toEqual([])
+    })
+
+    it('should leave a key only a decorator lists warned at', async () => {
+      // The decorator for `sh` chooses what it decorates; it covers no key.
+      const sh = fenced('sh', 'ls')
+
+      expect(
+        await warned({ ...files, 'posts/b.md': sh }, [inline, highlighter, shell])
+      ).toEqual([
+        [
+          'posts/b.md',
+          expect.stringMatching(/^no producer claims `sh` for `code`/),
+          at(sh, '«sh»\n'),
+        ],
+      ])
+    })
+
+    it('should leave every code block warned at where only a decorator handles `code`', async () => {
+      expect(await warned(files, [inline, copy])).toEqual([
+        [
+          'posts/a.md',
+          'no producer claims `ts` for `code`, so this mark keeps its default content',
+          at(post, '«ts»\n'),
+        ],
+      ])
+    })
+
+    it('should leave every code block naming a language warned at for a keyless producer', async () => {
+      // It answers only the blocks with no language, so the one with none is silent.
+      const plain: Plugin = { name: 'plain', marks: [{ name: 'code', produce: () => [] }] }
+      const bare = fenced('')
+
+      expect(await warned({ ...files, 'posts/b.md': bare }, [inline, plain])).toEqual([
+        [
+          'posts/a.md',
+          'no producer claims `ts` for `code`, so this mark keeps its default content',
+          at(post, '«ts»\n'),
+        ],
+      ])
+    })
+
+    it('should keep every code block’s payload by id, each once', async () => {
+      const both = `${post}\n\`\`\`sh {1}\nls\n\`\`\`\n`
+      const { program } = await compiled(
+        { ...files, 'posts/a.md': both, 'posts/b.md': post },
+        [inline, highlighter]
+      )
+
+      const payloads = [...program!.payloads]
+      expect(
+        payloads.map(([, { language, info, code }]) => [language, info, code])
+      ).toEqual([
+        ['ts', 'ts', 'let x = 1\n'],
+        ['sh', 'sh {1}', 'ls\n'],
+      ])
+      expect(payloads.every(([id, payload]) => id === payload.id)).toBe(true)
+    })
   })
 })

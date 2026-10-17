@@ -18,7 +18,56 @@ export default {
 
 `input` and `output` are directories relative to the config file; `passthrough` globs are
 relative to `input`, with Eleventy's glob semantics (picomatch, dotfiles included,
-case-insensitive).
+case-insensitive); `plugins` lists the site's plugins, none when omitted.
+
+## Plugins
+
+A plugin is `{name, marks}`: a name its errors and warnings call it by, and the mark
+handlers it brings (D42). Any other field is refused when the config loads, since this
+shell runs no other hook. A handler answers one mark name:
+
+```ts
+import type { Config } from '@limulus/lemmon-shell'
+
+export default {
+  input: 'www',
+  output: 'dist/www',
+  plugins: [
+    {
+      name: 'callouts',
+      marks: [
+        {
+          name: 'callout', // what `mark("callout", …)` places
+          keys: ['note', 'tip'], // the keys it produces, read from the payload's…
+          keyedBy: 'kind', // …`kind` field
+          payload: 'Callout', // the record a mark carries, declared in the site's `.lem`
+          produce: ({ marks }) => marks.map((mark) => `<aside>${mark.key}</aside>`),
+        },
+      ],
+    },
+  ],
+} satisfies Config
+```
+
+A **producer** (`produce`) runs once per page, over every mark of its name it answers, with
+the fragments the page collected under that name and the page as the core returned it,
+and returns one replacement per mark — a string or bytes. One that lists `keys` answers
+the marks carrying one of them, and one that lists none answers the marks with no key, so
+there is no wildcard producer. A **decorator** (`decorate`) runs per mark, over the content
+so far, on the marks carrying a key it lists or on every mark of its name where it lists
+none. A code block is a `code` mark keyed by its language, and its handlers see its
+payload, `{language, info, code}`, as `mark.payload`.
+
+The claims are declared to the core at compile, so a `mark()` name no plugin claims is a
+warning at the name, with a did-you-mean, and so is a literal key no producer lists; a site
+listing no plugins is warned at every mark. A decorator's keys choose what it decorates,
+not what is covered, so a `code` block in a language only a decorator lists is warned at
+too. Refused at config load, naming both plugins: two producers that would answer one mark
+(one name, and one key or none), and two handlers naming different `payload`s or
+`keyedBy` fields for one name. Refused too: `keys` for a name no handler of it names
+`keyedBy` for — a `mark()` call's key is read from that field, so for `code` a handler says
+`payload: 'Code', keyedBy: 'language'` — an `async` handler, since the build waits for no
+promise, and a function where a plugin belongs, a plugin factory not called.
 
 ## `lem build [--config <path>]`
 
@@ -41,7 +90,8 @@ case-insensitive).
    and then all pages — documents and page templates — compile in one call, each as its
    own `type:` or as the record of the glob that holds it. A page two globs match is an
    error at the page. Documents compile only in the second call, so what a document
-   (`.md`) defines is invisible to every template, with front matter or without.
+   (`.md`) defines is invisible to every template, with front matter or without. The
+   first call's declaration carries the plugins' claims, so the core warns at the marks.
 3. **Load.** `build` is `{time, generator}` — the clock as RFC 3339 in UTC, and `Lemmon`
    with the core's version. A glob's binding is the front matter of the pages it holds;
    a data file (JSON or YAML) is read from `input` with positions, and one whose path
@@ -53,7 +103,13 @@ case-insensitive).
    re-sends and re-validates the whole envelope, so the cost grows with the untyped
    pages times the size of the site: 18 of 25 pages on the limulus-dot-net port branch
    cost about 0.35 s in all.
-5. **Write.** A url ending in `/` is written as `<output>/<url>/index.html`, any other as
+5. **Resolve.** As each page renders, its marks are filled by the plugins' handlers, in
+   the order the plugins and their handlers are listed. A handler that throws, or returns
+   anything but its content, is a warning at the mark, which keeps the content it had —
+   the default for a producer's marks, the content so far for a decorator's — so the page
+   is correct either way. What a page collects under a name nothing on it marks is a
+   warning at the block that collected it, since nothing writes it.
+6. **Write.** A url ending in `/` is written as `<output>/<url>/index.html`, any other as
    the file it names; each passthrough file is copied to its own path. Nothing in the
    output is removed. Before the first file is written, every page has been rendered and
    its file checked against every other page's and every passthrough file's: the same
@@ -71,11 +127,14 @@ matter in `input`, even an empty one: without it no glob matches anything.
 
 ### Not yet
 
-- **Marks and fragments.** No producer or decorator resolves a mark, so a code block and
-  `mark("styles")` keep their default content, and nothing a page's `lem-style`,
-  `lem-head` or `lem-script` collected is written: ∆F4y. No `asset()` resolves, since
-  the declaration carries no manifest: ∆d1N.
-- **Plugins.** A `from plugin("…")` binding is an error at the binding: ∆c4j.
+- **The default plugin and produced files.** The shell ships no `styles`, `scripts` or
+  `head` producer and no highlighter, so only a site's own plugins fill a mark, and a
+  producer writes no file of its own — no CSS bundle: ∆F4y, and ∆Nxd for highlighting.
+  No `asset()` resolves, since the declaration carries no manifest: ∆d1N.
+- **Computed mark keys.** A key a template computes and no producer lists keeps the
+  default content, unreported: ∆CxX.
+- **Plugins.** A plugin's only hook is `marks`, and a `from plugin("…")` binding is an
+  error at the binding: ∆c4j.
 - **Generators.** A page whose front matter has `for:` is an error at the key: ∆99b.
 - **Drafts.** `draft: true` is built like any page; `--drafts` and leaving drafts out
   are ∆1rD, as is `lem check`.

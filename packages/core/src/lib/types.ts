@@ -99,9 +99,11 @@ export interface HostDecl {
 }
 
 /**
- * One claim a host's handlers make (D42). A decorator's is the name alone; a producer's
- * lists the keys it covers, since there is no wildcard producer, and names the record
- * its marks carry.
+ * One claim a host's handlers make (D42). A producer's lists the keys it covers, since
+ * there is no wildcard producer, and names the record its marks carry. A claim listing
+ * no keys at all covers every key, so it suits a name nothing keys; a decorator of a
+ * keyed name — a copy button over every code block — claims it with an empty list, as
+ * the shell does, or the warning at a key no producer covers would be silenced.
  */
 export interface Claim {
   /** The name `mark()` places and the handler answers for — `code` for a code block. */
