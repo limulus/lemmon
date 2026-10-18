@@ -32,9 +32,8 @@ export function findFrontMatter(text: string): Block | undefined {
   let opened: number | undefined
   let pos = 0
   while (pos < text.length) {
-    const newline = text.indexOf('\n', pos)
-    const lineEnd = newline === -1 ? text.length : newline + 1
-    const isRule = text.slice(pos, lineEnd).replace(/[\r\n]+$/, '') === '---'
+    const lineEnd = endOfLine(text, pos)
+    const isRule = ruleAt(text, pos, lineEnd)
     if (opened === undefined) {
       if (!isRule) return undefined
       opened = lineEnd
@@ -45,6 +44,25 @@ export function findFrontMatter(text: string): Block | undefined {
   }
   return undefined
 }
+
+/**
+ * Whether `text` opens with the line that opens front matter by {@link findFrontMatter}'s
+ * rule, whether or not a line closes it — a block nothing closes is still front matter
+ * to the core, which reports it.
+ */
+export function opensFrontMatter(text: string): boolean {
+  return ruleAt(text, 0, endOfLine(text, 0))
+}
+
+/** One past the newline ending the line that starts at `pos`, or the end of the text. */
+function endOfLine(text: string, pos: number): number {
+  const newline = text.indexOf('\n', pos)
+  return newline === -1 ? text.length : newline + 1
+}
+
+/** Whether the line from `pos` to `lineEnd` is exactly `---`, line ending aside. */
+const ruleAt = (text: string, pos: number, lineEnd: number): boolean =>
+  text.slice(pos, lineEnd).replace(/[\r\n]+$/, '') === '---'
 
 /**
  * A page — a document, or a template that opens with front matter (D41) — as the shell

@@ -33,6 +33,13 @@ What it reports, in the order it finds them:
 
 - **Front matter that does not read**: bad YAML, a key given twice, a value JSON cannot
   carry. Nothing compiles past one.
+- **Plugin hooks that fail**: a plugin's `transformDocument` that throws or returns
+  anything but the document's body, at the document's front matter; and a plugin's
+  `assets` hook that throws or returns anything but `{manifest?, files?}`, a logical path
+  two plugins both map, or an asset file that collides with another output file, at the
+  start of `lemmon.config.ts`, printed without source lines. Nothing compiles past one.
+  The text a transform leaves is what compiles: a diagnostic in what it appended points
+  past the end of the file you wrote, and its frame shows the appended text.
 - **Compile errors**: everything the checker finds, in every `.lem` first — page templates
   among them, compiled without their records so a layout sees what they define — then in the
   pages as their records. A template never sees what a document (`.md`) defines.
@@ -49,13 +56,13 @@ What it reports, in the order it finds them:
   a bad date in YAML, a data file with keys its type does not declare, two pages at one url.
   The [load mistakes](mistakes.md#while-loading-front-matter) are the common ones.
 - **Render errors**: an `any` read that misses, a map key that is absent, a list index out
-  of range — and a page whose url names no file, or a file another page or a passthrough
-  file writes, or one a file system could not hold beside it: the same name but for case or
-  Unicode form, or a file where the other needs a directory. A file a plugin's producer
-  writes is checked the same way against pages, passthrough files and other produced
-  files, an error at the later writer — a page's url or the producer's mark — labelled at
-  the first; and at the producer's mark, a url or content of the wrong kind, a url naming
-  no file, or other content where a producer wrote already.
+  of range — and a page whose url names no file, or a file another page, a passthrough file
+  or a plugin's `assets` hook writes, or one a file system could not hold beside it: the
+  same name but for case or Unicode form, or a file where the other needs a directory. A
+  file a plugin's producer writes is checked the same way against pages, passthrough files,
+  asset files and other produced files, an error at the later writer — a page's url or the
+  producer's mark — labelled at the first; and at the producer's mark, a url or content of
+  the wrong kind, a url naming no file, or other content where a producer wrote already.
 - **Handler warnings**: a plugin's handler that throws, or returns anything but its
   content, at the mark, which keeps the content it had; and what a page collects that
   nothing on it places — a `lem-style` with no `mark("styles")` in its layout — at the block
@@ -63,8 +70,8 @@ What it reports, in the order it finds them:
 
 What it does not cover:
 
-- **Assets.** The declaration carries no manifest, so every `asset("…")` reports that the
-  host declares none. That is expected while the esbuild pipeline is not yet built (∆d1N)
-  and hands the shell no manifest.
+- **Assets.** An `asset("…")` resolves against the manifest the config's plugins'
+  `assets` hooks return. The esbuild plugin is not yet built (∆d1N), so where no plugin of
+  the site's own maps the path, it reports that the manifest has no such asset.
 - **Computed mark keys.** A key a template computes is read at render, and one no producer
   lists keeps the default content without a word: not yet reported (∆CxX).

@@ -37,11 +37,13 @@ export interface Config {
    */
   passthrough?: string[]
   /**
-   * The site's plugins, whose mark handlers fill each page's marks (D42): what they
-   * claim is declared to the core, and a page's decorators run in this order. None when
-   * omitted, and a site with none is warned at every mark, since nothing will fill one —
-   * not even `styles`, which the shell's default plugin, `bundler()`, produces only where
-   * it is listed.
+   * The site's plugins, in the order their hooks run: their document transforms rewrite
+   * each document's body before it compiles, their asset hooks hand the compile its
+   * manifest and the build their files (D44), and their mark handlers fill each page's
+   * marks (D42) — what those claim is declared to the core, and a page's decorators run
+   * in this order. None when omitted, and a site with none is warned at every mark,
+   * since nothing will fill one — not even `styles`, which the shell's default plugin,
+   * `bundler()`, produces only where it is listed.
    */
   plugins?: Plugin[]
   /** How the dev server serves the output. */
@@ -294,7 +296,7 @@ function isServerHeader(name: string): boolean {
  * such as `new Headers()`, whose entries are not its own fields and would be read as
  * none.
  */
-function isPlainObject(value: unknown): value is Record<string, unknown> {
+export function isPlainObject(value: unknown): value is Record<string, unknown> {
   if (typeof value !== 'object' || value === null) return false
   const prototype: unknown = Object.getPrototypeOf(value)
   return prototype === Object.prototype || prototype === null

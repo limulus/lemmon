@@ -196,10 +196,13 @@ not a break:
 1. **Discover** (shell) — walk input, classify (document/template/passthrough/ignored),
    parse front matter with positions, load `lemmon.config.ts`. A data file is read when a
    `from` binding names it.
-2. **Providers** (shell) — plugin data hooks, document transforms (e.g. link-post reference
-   appender), asset pipeline: esbuild → manifest, which is handed to `compile` on the
-   host declaration because `asset()` is answered there (D10, D38) — its values the URLs
-   assets shipped at, since the core does no path arithmetic.
+2. **Providers** (shell) — plugin data hooks; each plugin's `transformDocument` over
+   every document's body (the link-post reference appender), in plugin order, the text it
+   leaves what compiles and what diagnostics are framed against; and each plugin's
+   `assets` hook (the esbuild pipeline), awaited once per build, whose merged manifest is
+   handed to `compile` on the host declaration because `asset()` is answered there (D10,
+   D38) — its values the URLs assets shipped at, since the core does no path arithmetic
+   — and whose files are written with the pages (D44).
 3. **Compile** (core) — every changed `.lem`/`.md` → its own bytecode unit, then a link step
    joins the units into the module (D25, §Separate compilation); document prose rendered by
    comrak here and stored in the document's unit (markdown never runs at render time),
@@ -230,14 +233,15 @@ not a break:
    output cached by payload id, the payload itself kept from `compile` (D42). The
    handlers are the plugins' (§Shell plugin API), the shell's default plugin,
    `bundler()`, among them where the site lists it.
-8. **Write** (shell) — HTML, the files producers wrote — the per-page CSS bundles
-   `bundler()` writes under `/assets/immutable/bundle/` — and passthrough.
+8. **Write** (shell) — HTML, the files the asset hooks built, the files producers wrote
+   — the per-page CSS bundles `bundler()` writes under `/assets/immutable/bundle/` — and
+   passthrough.
 9. **Post-process** (shell) — optional transforms (dprint), link/asset integrity check.
 10. **Second phase** (shell) — pages that read other pages' finished output (feeds,
     ∆zu0) render after steps 6–9 have finished every other page, with those outputs
     loaded back as a string source (D42).
 
-What `lem build` (∆muD) runs is steps 1 and 3–8, produced files included, in one core on one
+What `lem build` (∆muD) runs is steps 1–8, step 2 but its data hooks, in one core on one
 thread. `lem check` runs the same and stops before the first write, so it reports every
 diagnostic a build would, render errors and output collisions included; it never touches the
 output directory, so a write the file system refuses is found only by `lem build`.
@@ -264,13 +268,14 @@ so are keys for a name no handler keys by a payload field; a handler that throws
 returns anything but its content, is a warning at its mark, which keeps the content it
 had; and fragments a page collects under a name nothing on it marks are a warning at the
 first of them. A producer writes a file of its own through its context's
-`write(url, content)`; step 8 writes the pages, then those files, then the passthrough
-files. A url or content of the wrong kind, a url naming no file, and other bytes where a
-producer wrote already are each an error at the producer's mark; the same bytes two pages'
-producers write to one file are written once. A produced file is checked as a page's is,
-against every page, passthrough file and other produced file — the same file, the same but
-for case or Unicode form, a file where the other needs a directory — an error at the later
-writer, a page's url or a producer's mark, labelled at the first. A producer that fails
+`write(url, content)`; step 8 writes the pages, then the files the asset hooks built,
+then those, then the passthrough files. A url or content of the wrong kind, a url naming
+no file, and other bytes where a producer wrote already are each an error at the
+producer's mark; the same bytes two pages' producers write to one file are written once.
+A produced file is checked as a page's is, against every page, passthrough file, asset
+hook's file and other produced file — the same file, the same but for case or Unicode
+form, a file where the other needs a directory — an error at the later writer, a page's
+url or a producer's mark, labelled at the first. A producer that fails
 writes nothing. The shell's default plugin, `bundler()`, is listed like any other —
 `plugins: [bundler()]` — and produces `styles`, `scripts` and `head`, each without keys:
 what a page's `lem-style` blocks collected, joined by newlines in collection order, is
@@ -281,9 +286,33 @@ becomes a module `<script>` per URL the `lem-script` tags collected; and every `
 mark the `lem-head` fragments, joined by newlines. Pages that collect the same styles
 share one bundle.
 
-- Step 2 is not yet run (∆wOn, ∆ETy, ∆d1N): no plugin data hook or document transform,
-  and no manifest on the declaration, so no `asset()` resolves; a `plugin("…")` source is an
-  error at its binding.
+Step 2 runs once discovery has read the site, before anything compiles. Each document whose
+front matter read — not a page template, which has no markdown and whose definitions every
+layout compiles against — is handed to every plugin's `transformDocument` in the order
+listed, as its path, its front matter as the core loads it (frozen, so a write to it throws
+in strict-mode code and changes nothing) and its body, and the body each returns is the next
+one's; the front matter is kept byte for byte, so its spans hold. A transform that appends
+keeps every position the author's file has, and one that changes anything earlier moves
+them. A transform is synchronous: an `async` one is refused at config load, and one that
+throws or returns anything but a string the core can be sent — or a body that would give the
+text other front matter, a `---` first line where it had none, or a first line other than a
+newline after a closing `---` that ended the file — is an error at the document's front
+matter, which stops the build before it compiles. Then each plugin's `assets` hook is
+awaited, in order, given the input and output directories, whether the build writes
+(`lem check` does not) and the build's environment, the values `env("…")` bindings read,
+and returning `{manifest?, files?}`; the manifests merge, a logical path two plugins both
+map an error naming both. A hook that throws or returns anything else is an error at the
+start of `lemmon.config.ts`, which lists the plugin and is printed without a frame, since no
+step reads it as text. The hooks' files are claimed after the passthrough files and before
+any page: one that names no file, or collides with a passthrough file or another plugin's,
+is an error at the config's start, and a page or produced file that collides with one is an
+error at that page's url or mark, labelled at the config. Any error in step 2 stops the
+build before it compiles. `lem dev` reads the config once, so a plugin object outlives every
+build, and each build calls its hooks again.
+
+- Step 2's data hooks are not yet run (∆wOn), so a `plugin("…")` source is an error at
+  its binding; and the esbuild plugin is not yet built (∆d1N), so an `asset()` resolves
+  only against a manifest a site's own plugin returns.
 - No highlighter ships, nor step 7's cache of a code block's output by payload id —
   not yet built (∆Nxd) — so a code block naming a language keeps comrak's plain block
   and is warned at, since no producer claims its language.
@@ -434,8 +463,8 @@ interface Plugin {
   name: string
   contentSources?(ctx): ContentSource[] // the on-demand seam (D14)
   data?(ctx): Promise<Record<string, unknown>> // typed via site.lem declarations
-  transformDocument?(doc, ctx): Document // pre-markdown text transform
-  assets?(ctx): Promise<AssetManifest> // logicalPath → {url, hash, deps}
+  transformDocument?(document: DocumentSource): string // a document's body, below
+  assets?(context: AssetsContext): Assets | Promise<Assets> // manifest and files, below
   markdown?: MarkdownRenderer // reserved override (D08)
   transformOutput?(file, ctx): OutputFile
   marks?: PluginHandler[] // producers and decorators (D42), below
@@ -447,8 +476,10 @@ interface Plugin {
 
 Plugins ship `.lem` files (functions + types) bound via `lem-import` in `site.lem` (D23),
 as the shell ships its own `ambient.lem` (D30); they cannot inject build-time JS into
-the language or the core (D06). What they do with a page after the core returns it —
-an output transform, a mark handler — is the shell's trust (D42): a producer makes a
+the language or the core (D06). What they hand the core before it compiles — a document
+transform's body, an asset hook's manifest and files (D44) — and what they do with a page
+after the core returns it — an output transform, a mark handler — is the shell's trust
+(D42): a producer makes a
 mark's content from its payload and claims the keys it covers, a decorator transforms
 whatever content a mark has, two producers on one name and key is a load error naming
 both, and the shell's own `styles`/`scripts`/`head` producers ship as a default plugin
@@ -460,8 +491,37 @@ The shell also exposes a content API (`loadSite(config).collection('articles')`)
 tools like the revisions updater.
 
 As built, a site lists its plugins in `lemmon.config.ts` as `plugins`, and a plugin is
-`{name, marks}`: a plugin with any other hook is refused at config load, since the shell
-does not yet run one (∆ETy, ∆wOn, ∆fwn, ∆HzB). A mark handler, and what a producer is given:
+`{name, transformDocument?, assets?, marks?}` (D44, D42). Any other hook is refused at
+config load, since the shell runs none of them:
+
+- `data` and `commands`: not yet built (∆wOn).
+- `transformOutput`: not yet built (∆fwn).
+- `watch` and `emit`: not yet built (∆HzB).
+- `contentSources` and `markdown`: reserved seams (D14, D08) that nothing has asked for.
+
+The two hooks that run before compile (§Build pipeline, step 2):
+
+```ts
+interface DocumentSource {
+  path: string // relative to the input directory: `links/x/index.md`
+  frontMatter: { readonly [key: string]: JsonValue } // as the core loads it; frozen
+  body: string // the text after the front matter, as the transform before left it
+}
+
+interface AssetsContext {
+  input: string // the input directory, absolute
+  output: string // the output directory, absolute, where the files are written
+  writes: boolean // false for `lem check`, which writes none of them
+  env: Readonly<Environment> // what `env("…")` bindings read; a frozen copy
+}
+
+interface Assets {
+  manifest?: Record<string, string> // logical path → the finished URL it ships at (D38)
+  files?: Record<string, string | Uint8Array> // url → contents, written with the pages
+}
+```
+
+A mark handler, and what a producer is given:
 
 ```ts
 interface PluginHandler {

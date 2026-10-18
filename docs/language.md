@@ -210,9 +210,9 @@ the checker's question, not the parser's.
 - `duration` is a span of time in whole seconds, and an `int` where one is declared in
   data. It has no printed form: how long something takes is shown as a site words it —
   through `seconds()` or `minutes()` — never as a bare count of seconds.
-- `asset` resolves against the esbuild manifest at compile/load; printing yields the
-  hashed URL; unknown path = error with span. Created by `asset("…")` or `[asset]`
-  fields.
+- `asset` resolves against the manifest the host declares at compile/load — in the
+  shell, what its plugins' `assets` hooks return (D38, D44); printing yields the hashed
+  URL; unknown path = error with span. Created by `asset("…")` or `[asset]` fields.
 - `url` is text percent-encoded once, by `url("…")` or by standing where the type is
   declared; attribute-escaped on emit, since encoding leaves `&` and `'` alone.
   Encoding again changes nothing, so a URL composed from one already encoded is safe —

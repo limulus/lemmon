@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
+import type { Plugin } from './plugins.ts'
 import { discover } from './site.ts'
+import { appending } from '../mocks/plugins.ts'
 import { configOf } from '../mocks/sites.ts'
 import { at } from '../mocks/spans.ts'
 import { tempDir } from '../mocks/temp-dir.ts'
@@ -16,11 +18,11 @@ describe('discover()', () => {
     'robots.txt': '',
   }
 
-  async function discovered() {
+  async function discovered(plugins: Plugin[] = []) {
     const root = tempDir(
       Object.fromEntries(Object.entries(files).map(([path, text]) => [`www/${path}`, text]))
     )
-    const config = configOf(root, ['*.txt'])
+    const config = configOf(root, ['*.txt'], plugins)
     return { config, site: await discover(config) }
   }
 
@@ -71,5 +73,49 @@ describe('discover()', () => {
         severity: 'error',
       }),
     ])
+  })
+
+  describe('with plugins that transform documents', () => {
+    it('should hold each document whose front matter read as transformed, and no template', async () => {
+      const { site } = await discovered([appending('Appended.\n')])
+
+      const texts = Object.fromEntries(
+        site.entries.map((entry) => [entry.path, 'text' in entry ? entry.text : null])
+      )
+      expect(texts).toEqual({
+        ...files,
+        'feed/the-rebound/index.md': `${post}Appended.\n`,
+        // Its front matter has an error, so there is nothing to give a transform.
+        'feed/broken/index.md': broken,
+        'robots.txt': null,
+      })
+      // The page read before the transform, and its body starts where it did.
+      expect(site.pages.get('feed/the-rebound/index.md')?.body).toBe(at(post, 'Body').start)
+    })
+
+    it('should report a transform that fails beside what the front matter reported', async () => {
+      const failing: Plugin = {
+        name: 'failing',
+        transformDocument: () => {
+          throw new Error('no')
+        },
+      }
+
+      const { site } = await discovered([failing])
+
+      expect(site.diagnostics.map((d) => [d.path, d.span, d.severity])).toEqual([
+        ['feed/broken/index.md', at(broken, 'title: a\n«title»'), 'error'],
+        [
+          'feed/the-rebound/index.md',
+          at(post, 'type: Article\ntitle: The Rebound'),
+          'error',
+        ],
+      ])
+      expect(site.entries.find((e) => e.path === 'feed/the-rebound/index.md')).toEqual({
+        kind: 'document',
+        path: 'feed/the-rebound/index.md',
+        text: post,
+      })
+    })
   })
 })

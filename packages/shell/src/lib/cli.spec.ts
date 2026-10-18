@@ -179,6 +179,57 @@ describe('run()', () => {
       )
     })
 
+    describe('with a plugin that builds assets', () => {
+      // A plugin whose asset hook builds one script, and, `producing`, whose `styles`
+      // producer writes a stylesheet, as TypeScript source.
+      const config = (assets: string, producing = false) =>
+        "export default { input: 'www', output: 'dist', plugins: [{ name: 'app', " +
+        `assets: ${assets}` +
+        (producing
+          ? ", marks: [{ name: 'styles', produce: ({ marks, write }) => { " +
+            "write('/s.css', ''); return marks.map(() => '') } }]"
+          : '') +
+        ' }] }'
+      const BUILDS =
+        "async () => ({ manifest: { 'app.js': '/app.1.js' }, files: { '/app.1.js': 'run()' } })"
+      const site = (lemmonConfig: string, page = '<lem.asset("app.js")>\n') =>
+        tempDir({ 'lemmon.config.ts': lemmonConfig, 'www/site.lem': '', 'www/a.md': page })
+
+      it('should count the asset files beside the pages, and the produced files after', async () => {
+        const one = site(config(BUILDS))
+        expect(await lem(['build'], one)).toEqual({
+          code: 0,
+          stdout: 'wrote 1 page and 1 asset file, copied 0 files\n',
+          stderr: '',
+        })
+        expect(readFileSync(join(one, 'dist/a/index.html'), 'utf8')).toBe('/app.1.js\n')
+        expect(readFileSync(join(one, 'dist/app.1.js'), 'utf8')).toBe('run()')
+
+        const both = site(
+          config(BUILDS, true),
+          '<lem.asset("app.js")>\n\n<lem.mark("styles")>\n'
+        )
+        expect((await lem(['build'], both)).stdout).toBe(
+          'wrote 1 page, 1 asset file and 1 produced file, copied 0 files\n'
+        )
+        expect((await lem(['check'], both)).stdout).toBe(
+          'checked 1 page, 1 asset file and 1 produced file\n'
+        )
+      })
+
+      it('should print a hook that fails at the config, with no frame, and exit 1', async () => {
+        const failing = site(config("() => { throw new Error('no esbuild') }"))
+
+        expect(await lem(['build'], failing)).toEqual({
+          code: 1,
+          stdout: '',
+          stderr:
+            "lemmon.config.ts:1:1: error: the `app` plugin's `assets` hook failed: it " +
+            'threw Error: no esbuild\nlem: 1 error, so nothing was written\n',
+        })
+      })
+    })
+
     it('should read the config --config names, from the working directory', async () => {
       const cwd = tempDir({
         'site/lemmon.config.ts': "export default { input: 'src', output: 'out' }",

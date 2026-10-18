@@ -362,9 +362,45 @@ describe('loadConfig()', () => {
 
       expect(await refused(seo(', transformOutput: (file) => file'))).toBe(
         'the plugin `seo` has `transformOutput`, which this shell does not run; a plugin ' +
-          'has `name`, `marks`'
+          'has `name`, `transformDocument`, `assets`, `marks`'
       )
       expect(await loaded(seo(''))).toHaveLength(1)
+    })
+
+    describe('the hooks before compile', () => {
+      it('should take a document transform and an asset hook, an async one among them', async () => {
+        const plugins = await loaded(
+          "[{ name: 'a', transformDocument: ({ body }) => body + '!', " +
+            'assets: async () => ({}) }]'
+        )
+
+        // Taken as they are, so a hook is the function the config wrote.
+        const document = { path: 'a.md', frontMatter: {}, body: 'Hi' }
+        expect(plugins[0].transformDocument?.(document)).toBe('Hi!')
+        const context = { input: '', output: '', writes: false, env: {} }
+        expect(await plugins[0].assets?.(context)).toEqual({})
+      })
+
+      it('should refuse a hook that is not a function', async () => {
+        expect(await refused("[{ name: 'a', transformDocument: 'append' }]")).toBe(
+          '`transformDocument` of the plugin `a` must be a function'
+        )
+        expect(await refused("[{ name: 'a', assets: { manifest: {} } }]")).toBe(
+          '`assets` of the plugin `a` must be a function'
+        )
+      })
+
+      it('should refuse an async document transform, and take one that returns a promise', async () => {
+        // The per-document check is what a promise returned in time meets.
+        expect(
+          await refused("[{ name: 'a', transformDocument: async ({ body }) => body }]")
+        ).toBe(
+          '`transformDocument` of the plugin `a` is async, and a transform returns the ' +
+            "document's body as it runs: the build waits for no promise from it"
+        )
+        const promising = "[{ name: 'a', transformDocument: () => Promise.resolve('') }]"
+        expect(await loaded(promising)).toHaveLength(1)
+      })
     })
 
     it('should refuse marks that are not a list of objects with a name', async () => {

@@ -1,6 +1,6 @@
 import type { Mark } from '@limulus/lemmon-core'
 
-import type { Plugin, PluginHandler } from '../lib/plugins.ts'
+import type { Assets, Plugin, PluginHandler } from '../lib/plugins.ts'
 
 const decoder = new TextDecoder()
 
@@ -85,4 +85,28 @@ export const inline: Plugin = {
         marks.map(() => `<style>${fragments.map((f) => f.text).join('\n')}</style>`),
     },
   ],
+}
+
+/**
+ * A link-post appender: to each document whose front matter names a `linkUrl`, appends
+ * the `[link]` reference definition its body cites, after a blank line, since a
+ * definition cannot interrupt a paragraph a body ends without a newline; and leaves any
+ * other document as it is.
+ */
+export const appender: Plugin = {
+  name: 'appender',
+  transformDocument: ({ frontMatter, body }) =>
+    typeof frontMatter.linkUrl === 'string'
+      ? `${body}\n\n[link]: ${frontMatter.linkUrl}\n`
+      : body,
+}
+
+/** A plugin named `name` whose document transform appends `text` to every body. */
+export function appending(text: string, name = 'appending'): Plugin {
+  return { name, transformDocument: ({ body }) => `${body}${text}` }
+}
+
+/** A plugin named `name` whose asset hook builds `assets`, resolving them as it awaits. */
+export function shipping(assets: Assets, name = 'shipping'): Plugin {
+  return { name, assets: () => Promise.resolve(assets) }
 }

@@ -398,9 +398,10 @@ moved it. Newest last. An entry is removed when its change has been applied.
   on `loadData`'s envelope because `asset("…")` is answered while compiling, and that a
   rebuild re-hashing an asset is therefore a change to the declaration (D10, D38).
 
-- **Build pipeline, steps 2 and 4** — step 2's esbuild manifest is handed to `compile` on
-  the host declaration rather than to `loadData`; step 4 resolves `[asset]` fields against
-  that same manifest, reporting a miss at the YAML position the shell sent (D38).
+- **Build pipeline, steps 2 and 4** — step 2's manifest — every plugin's `assets` hook's,
+  merged, as the esbuild plugin's will be (D44) — is handed to `compile` on the host
+  declaration rather than to `loadData`; step 4 resolves `[asset]` fields against that
+  same manifest, reporting a miss at the YAML position the shell sent (D38).
 
 - **Separate compilation, the facts a unit records** — add the manifest entries a file
   resolved to the signatures, type references and ambient bindings it already lists,
@@ -491,7 +492,9 @@ moved it. Newest last. An entry is removed when its change has been applied.
   transform; Write writes the pages, then the files producers wrote, then passthrough; and
   a Second phase renders pages that read other pages' finished output (feeds) after every
   other page is written, that output loaded back as a string source. D06's "plugins
-  cannot inject logic" is scoped to the language and the core (D42; ∆F4y).
+  cannot inject logic" is scoped to the language and the core (D42; ∆F4y): what a plugin
+  hands the core before it compiles — a document transform's body, an asset hook's
+  manifest — is the shell's trust too, as what it does to a page afterwards is (D44).
 
 - **WASM API, the render reply** — where the API sketch says a render returns JSON, say
   the page crosses as bytes beside a JSON header of its marks and fragments: a four-byte
@@ -563,6 +566,24 @@ moved it. Newest last. An entry is removed when its change has been applied.
   and every file written, until the Incrementality epic, which opens only if that full
   rebuild of limulus.net takes over a second. It reads `lemmon.config.ts` once, so a
   change to it needs a restart (∆Vhi).
+
+- **Shell plugin API and build pipeline, the hooks before compile** — in the `Plugin`
+  sketch, `transformDocument?(doc, ctx): Document` becomes `transformDocument?(document:
+  DocumentSource): string` and `assets?(ctx): Promise<AssetManifest>` becomes
+  `assets?(context: AssetsContext): Assets | Promise<Assets>`, with `DocumentSource =
+  {path, frontMatter, body}`, `AssetsContext = {input, output, writes, env}` and `Assets =
+  {manifest?, files?}`. Say what step 2 does with them: each document (`.md`, never a
+  template) is handed to every plugin's transform in order, with its front matter as
+  loaded and frozen, and the body each returns is the next one's, the front matter kept
+  byte for byte; the text left is what compiles and what diagnostics are framed against,
+  so an append keeps the author's positions. A transform is synchronous, and its failure
+  is an error at the document. Each `assets` hook is awaited once per build, before
+  `compile`; the manifests merge onto the declaration, a path two plugins map an error
+  naming both; the files are output checked against every other, claimed after
+  passthrough and before pages, and written with the pages; `lem check` calls the hook
+  with `writes: false`. A hook's failure is an error at the start of `lemmon.config.ts`.
+  The sketch's other hooks stay unbuilt: `data` and `commands`, `transformOutput`, and
+  `watch` and `emit` are refused at config load (D44; ∆ETy).
 
 ## From Eleventy to Lemmon
 

@@ -129,10 +129,8 @@ async function built(config: LoadedConfig, io: Io): Promise<boolean> {
     )
     return false
   }
-  const { pages, produced, copied } = result
-  io.stdout.write(
-    `wrote ${files(pages, produced)}, copied ${plural(copied.length, 'file')}\n`
-  )
+  const copied = plural(result.copied.length, 'file')
+  io.stdout.write(`wrote ${files(result)}, copied ${copied}\n`)
   return true
 }
 
@@ -147,7 +145,7 @@ async function checkCommand(configPath: string, io: Io): Promise<number> {
     io.stderr.write(`lem: ${plural(errors, 'error')}\n`)
     return 1
   }
-  io.stdout.write(`checked ${files(result.pages, result.produced)}\n`)
+  io.stdout.write(`checked ${files(result)}\n`)
   return 0
 }
 
@@ -210,13 +208,18 @@ async function reported<R extends CheckResult>(
 }
 
 /**
- * The pages and produced files a build writes, counted: a build whose plugins wrote no
- * file says nothing of them.
+ * The pages a build writes and the files the plugins built, counted — `4 pages, 2 asset
+ * files and 1 produced file` — saying nothing of a kind of file the plugins built none
+ * of.
  */
-function files(pages: string[], produced: string[]): string {
-  const and =
-    produced.length === 0 ? '' : ` and ${plural(produced.length, 'produced file')}`
-  return `${plural(pages.length, 'page')}${and}`
+function files({ pages, assets, produced }: CheckResult): string {
+  const counts = [
+    plural(pages.length, 'page'),
+    ...(assets.length === 0 ? [] : [plural(assets.length, 'asset file')]),
+    ...(produced.length === 0 ? [] : [plural(produced.length, 'produced file')]),
+  ]
+  const last = counts.pop()!
+  return counts.length === 0 ? last : `${counts.join(', ')} and ${last}`
 }
 
 const plural = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`
@@ -226,9 +229,9 @@ const plural = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`
  * lines and columns from 1 as an editor shows them, then the source its span covers,
  * framed from `texts` — the text the build read, which the span was computed against —
  * and each label on an indented line of its own. A path is the core's — relative to the
- * input directory `input` — or absolute, as the shell's own `ambient.lem` is. A
- * diagnostic in a file `texts` does not hold prints without a frame: none a build
- * reports today (`CheckResult.texts`).
+ * input directory `input` — or absolute, as the shell's own `ambient.lem` and the config
+ * file are. A diagnostic in a file `texts` does not hold prints without a frame: one at
+ * the start of the config file, where a plugin's asset hook failed (`CheckResult.texts`).
  */
 export function formatted(
   diagnostic: Diagnostic,

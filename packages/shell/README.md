@@ -1,11 +1,12 @@
 # @limulus/lemmon-shell
 
 The Node/TypeScript shell around the Lemmon core (see `docs/architecture.md` §Shape and
-§Build pipeline): the `lem` CLI and what it drives. `lem build` reads a site, compiles and
-renders every page through the WASM core, fills each page's marks with its plugins, and
-writes HTML, the files the plugins produced, and passthrough files to the output
-directory; `lem check` does all of it but the writing; and `lem dev` builds the site,
-serves the output, and builds it again on every change, reloading the pages open on it.
+§Build pipeline): the `lem` CLI and what it drives. `lem build` reads a site, runs its
+plugins' document transforms and asset hooks, compiles and renders every page through the
+WASM core, fills each page's marks with its plugins, and writes HTML, the files the plugins
+built, and passthrough files to the output directory; `lem check` does all of it but the
+writing; and `lem dev` builds the site, serves the output, and builds it again on every
+change, reloading the pages open on it.
 
 ```ts
 // lemmon.config.ts
@@ -58,9 +59,101 @@ for one mark are refused at config load. It ships no `.lem`, so there is no
 
 ## Plugins
 
-A plugin is `{name, marks}`: a name its errors and warnings call it by, and the mark
-handlers it brings (D42). Any other field is refused when the config loads, since this
-shell runs no other hook. A handler answers one mark name:
+A plugin is `{name, transformDocument?, assets?, marks?}`: a name its errors and warnings
+call it by, a document transform and an asset hook that run before anything compiles
+(D44), and the mark handlers that fill each page's marks after it renders (D42). Any other
+field is refused when the config loads, since this shell runs no other hook. The types
+are exported: `Plugin`, `DocumentSource`, `AssetsContext`, `Assets`, `PluginHandler` and
+`ProducerContext`.
+
+### Document transforms
+
+`transformDocument(document)` is given each document (`.md`) whose front matter read —
+never a page template, which has no markdown and whose definitions every layout compiles
+against — as `{path, frontMatter, body}`: its path
+from the input directory, its front matter as the core loads it (`type:` and `for:` read
+off, `url` and `inputPath` derived), and the text after the front matter. It returns the
+body the document compiles with:
+
+```ts
+import type { Plugin } from '@limulus/lemmon-shell'
+
+/**
+ * Appends the `[link]` definition a link post's markdown cites, after a blank line: a
+ * definition cannot interrupt a paragraph, which a body ending without a newline ends in.
+ */
+export const linkPosts: Plugin = {
+  name: 'link-posts',
+  transformDocument: ({ frontMatter, body }) =>
+    typeof frontMatter.linkUrl === 'string'
+      ? `${body}\n\n[link]: ${frontMatter.linkUrl}\n`
+      : body,
+}
+```
+
+The transforms run in the order the plugins are listed, each over the body the one before
+returned, and the front matter is kept byte for byte: it is read before any transform runs,
+and it is frozen, so a transform writing to it throws — in strict-mode code, which an ES
+module such as `lemmon.config.ts` is; elsewhere the write is ignored. The text they leave is
+what the core compiles, and what `lem build` frames a diagnostic in the document against, so
+a transform that appends keeps every line and column the author's file has; one that changes
+anything earlier moves them. A transform returns as it runs, so an `async` one is refused at
+config load. One that throws, or returns anything but a string — a promise among them — or a
+string holding a lone surrogate, which has no UTF-8 form, or a body that would give the text
+other front matter — a `---` first line in a document that had none, or one closing a block
+nothing closed — is an error at the document's front matter, or its start where it has none,
+and the build stops before it compiles. Where the closing `---` is the file's last line,
+with no newline after it, the body must start with one, which ends that line; the message
+says so.
+
+### Assets
+
+`assets(context)` is called once per build, after the transforms and before anything
+compiles, and the build waits for it: it may be `async`. The context is `{input, output,
+writes, env}`: the input and output directories, absolute; whether the build writes —
+`false` for `lem check`; and the build's environment, the values `env("…")` bindings
+read, as a frozen copy — so a hook reads a token from it rather than from `process.env`,
+and a spec can hand it one. It returns `{manifest?, files?}`:
+
+```ts
+import { readFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import type { Plugin } from '@limulus/lemmon-shell'
+
+/** A script shipped under a hashed name, as a bundler would name what it builds. */
+export const scripts: Plugin = {
+  name: 'scripts',
+  assets: async ({ input }) => ({
+    // What `asset("lib/app.js")` and an `[asset]` field resolve to: a finished URL.
+    manifest: { 'lib/app.js': '/lib/app.1a2b3c4d.js' },
+    // What the build writes with the pages, at the file each url names in the output.
+    files: { '/lib/app.1a2b3c4d.js': await readFile(join(input, 'lib/app.js')) },
+  }),
+}
+```
+
+`manifest` maps each logical path — what `asset("…")` names — to the URL the asset ships
+at, both non-empty strings, since the core does no path arithmetic (D38); every plugin's
+manifest is declared to the core with the others', so `asset()` resolves at compile and an
+unmapped path is a compile error with a did-you-mean. `files` maps each url — a path from
+`/`, mapped to a file as a page's url is — to a string, written as UTF-8, or bytes. A hook
+that throws or rejects, or returns anything else — a field it does not have, a manifest
+or files that are not plain objects of those — and a logical path two plugins both map
+are each an error at the start of `lemmon.config.ts`, printed without a frame, and the
+build stops before it compiles. The files are claimed after the passthrough files and
+before any page: a url that names no file, or a file a passthrough file or another
+plugin's hook writes — the same file, the same but for case or Unicode form, or a file
+where the other needs a directory — is an error at the config's start; a page or produced
+file that collides with one is an error at the page's url or the producer's mark,
+labelled at the config. `lem check` calls the hook too, and writes none of its files.
+
+`lem dev` reads the config once, so a plugin object outlives every build, and each build
+calls its hooks again: anything a plugin caches when its factory runs must stay true
+across rebuilds.
+
+### Mark handlers
+
+A handler answers one mark name:
 
 ```ts
 import type { Config } from '@limulus/lemmon-shell'
@@ -100,9 +193,10 @@ a string or bytes, and works only while the producer runs. A file is queued, che
 page's file is, and written after the pages; two pages whose producers write the same bytes
 to one file write it once. A url or content of the wrong kind, a url naming no file, and
 other content where this producer or another page's wrote already are each an error at the
-producer's mark. A clash with a page, a passthrough file or another produced file — the same
-file, the same but for case or Unicode form, or a file where the other needs a directory —
-is an error at the later writer, a page's url or a producer's mark, labelled at the first.
+producer's mark. A clash with a page, a passthrough file, an asset hook's file or another
+produced file — the same file, the same but for case or Unicode form, or a file where the
+other needs a directory — is an error at the later writer, a page's url or a producer's
+mark, labelled at the first.
 `write` never throws, and what a producer that then fails had written is dropped,
 unremarked.
 
@@ -127,8 +221,10 @@ promise, and a function where a plugin belongs, a plugin factory not called.
    span for every field path: `type:` and `for:` are read and stripped, `url` derived
    where the front matter gives none (`feed/x/index.md` at `/feed/x/`, `index.lem` at
    `/`), and `inputPath` added (the path from the config's directory,
-   `www/feed/x/index.md`).
-2. **Compile**, in two calls. First the shell's own `ambient.lem` — `Page`, `Build` and
+   `www/feed/x/index.md`). Each document then goes through the plugins' transforms.
+2. **Assets.** Each plugin's `assets` hook, in order; the manifests merge onto the
+   declaration the compile is given, and the files are claimed.
+3. **Compile**, in two calls. First the shell's own `ambient.lem` — `Page`, `Build` and
    `Code` (docs/language.md §Ambient types) — and every template, under the declaration
    `site` → the bindings of `site.lem`, `page` → `Page`, `build` → `Build`, pages
    rendered through `layout` and placed by `url`. Page templates are in this call too,
@@ -140,31 +236,32 @@ promise, and a function where a plugin belongs, a plugin factory not called.
    error at the page. Documents compile only in the second call, so what a document
    (`.md`) defines is invisible to every template, with front matter or without. The
    first call's declaration carries the plugins' claims, so the core warns at the marks.
-3. **Load.** `build` is `{time, generator}` — the clock as RFC 3339 in UTC, and `Lemmon`
+4. **Load.** `build` is `{time, generator}` — the clock as RFC 3339 in UTC, and `Lemmon`
    with the core's version. A glob's binding is the front matter of the pages it holds;
    a data file (JSON or YAML) is read from `input` with positions, and one whose path
    leads outside `input` is an error at its binding; `env("X")` is the variable's text.
    Every page no glob holds whose `type:` named its record is carried on its own.
-4. **Plan and render.** Every loaded page renders through its layout. A page no glob
+5. **Plan and render.** Every loaded page renders through its layout. A page no glob
    holds and no `type:` names has no schema: it renders its own output, with `page` its
    front matter as read, loaded on its own before it renders. Each of those loads
    re-sends and re-validates the whole envelope, so the cost grows with the untyped
    pages times the size of the site: 18 of 25 pages on the limulus-dot-net port branch
    cost about 0.35 s in all.
-5. **Resolve.** As each page renders, its marks are filled by the plugins' handlers, in
+6. **Resolve.** As each page renders, its marks are filled by the plugins' handlers, in
    the order the plugins and their handlers are listed. A handler that throws, or returns
    anything but its content, is a warning at the mark, which keeps the content it had —
    the default for a producer's marks, the content so far for a decorator's — so the page
    is correct either way. What a page collects under a name nothing on it marks is a
    warning at the block that collected it, since nothing writes it.
-6. **Write.** A url ending in `/` is written as `<output>/<url>/index.html`, any other as
-   the file it names; then each file a producer wrote, the bundler's stylesheets among
-   them; and each passthrough file is copied to its own path. Nothing in the output is
-   removed. Before the first file is written, every page has been rendered and every
-   file checked against every other — page, produced, and passthrough: the same file,
-   the same but for case or Unicode form (APFS holds those as one), and a file where
-   another needs a directory are each an error at the later writer, a page's url or a
-   producer's mark, labelled at the first.
+7. **Write.** A url ending in `/` is written as `<output>/<url>/index.html`, any other as
+   the file it names; then each file an asset hook built; then each file a producer
+   wrote, the bundler's stylesheets among them; and each passthrough file is copied to
+   its own path. Nothing in the output is removed. Before the first file is written,
+   every page has been rendered and every file checked against every other — page,
+   asset, produced, and passthrough: the same file, the same but for case or Unicode form
+   (APFS holds those as one), and a file where another needs a directory are each an
+   error at the later writer, a page's url or a producer's mark — or the config's start,
+   for an asset hook's file — labelled at the first.
 
 It prints every diagnostic as `path:line:col: severity: message`, then each line its span
 covers, numbered, with `^` beneath what the span covers there — a span over more than five
@@ -179,24 +276,26 @@ lem: 1 error, so nothing was written
 ```
 
 The lines are the text the build read, which the span was computed against, not the file
-read again. With no error it prints `wrote N pages and P produced files, copied M files`,
-the middle clause only where a producer wrote a file. Any error, at any step, stops the
-build before it writes a file, and `lem` exits 1; warnings are printed and the build goes
-on. A write the file system then refuses — a file an earlier build left where a directory
-is needed, say — is reported as `lem: could not write <file>: …`, exit 1, and the output
-may hold what was written before it. A site needs a `site.lem` without front matter in
-`input`, even an empty one: without it no glob matches anything.
+read again. With no error it prints `wrote N pages, A asset files and P produced files,
+copied M files`, each kind of plugin-built file counted only where a plugin built one.
+Any error, at any step, stops the build before it writes a file, and `lem` exits 1;
+warnings are printed and the build goes on. A write the file system then refuses — a file
+an earlier build left where a directory is needed, say — is reported as
+`lem: could not write <file>: …`, exit 1, and the output may hold what was written before
+it. A site needs a `site.lem` without front matter in `input`, even an empty one: without
+it no glob matches anything.
 
 ### Not yet
 
 - **Highlighting.** The shell ships no highlighter, so a code block naming a language
   keeps comrak's plain block and is warned at: ∆Nxd.
-- **Assets.** No `asset()` resolves, since the declaration carries no manifest, so no
-  `lem-script` collects a URL: ∆d1N.
+- **Assets.** The shell ships no esbuild plugin, so an `asset()` resolves only where a
+  site's own plugin's `assets` hook maps it: ∆d1N.
 - **Computed mark keys.** A key a template computes and no producer lists keeps the
   default content, unreported: ∆CxX.
-- **Plugins.** A plugin's only hook is `marks`, it ships no `.lem` — so no wrapper such
-  as `<lem.styles()>` — and a `from plugin("…")` binding is an error at the binding: ∆wOn.
+- **Plugins.** A plugin has no data hook and no `lem` command, it ships no `.lem` — so
+  no wrapper such as `<lem.styles()>` — and a `from plugin("…")` binding is an error at
+  the binding: ∆wOn.
 - **Generators.** A page whose front matter has `for:` is an error at the key: ∆99b.
 - **Drafts.** `draft: true` is built like any page; `--drafts` and leaving drafts out
   are ∆Han, in Someday/Maybe.
@@ -208,13 +307,14 @@ may hold what was written before it. A site needs a `site.lem` without front mat
 
 ## `lem check [--config <path>]`
 
-`lem build`'s steps 1–5 and the checks step 6 makes before its first write: every page is
-rendered and its marks resolved, and every file checked against every other, so it reports
-every diagnostic a build would — render errors and collisions among them — in the same
-form, and never creates or touches the output directory. A write the file system would
-refuse is therefore found only by `lem build`. It ends with `lem: N errors` and exit 1, or
-`checked N pages and P produced files` and exit 0, the middle clause again only where a
-producer wrote a file.
+`lem build`'s steps 1–6 and the checks step 7 makes before its first write: every
+document is transformed, the asset hooks run — told the build writes nothing — every page
+is rendered and its marks resolved, and every file checked against every other, so it
+reports every diagnostic a build would — render errors and collisions among them — in the
+same form, and never creates or touches the output directory. A write the file system
+would refuse is therefore found only by `lem build`. It ends with `lem: N errors` and exit
+1, or `checked N pages, A asset files and P produced files` and exit 0, each kind of
+plugin-built file again counted only where a plugin built one.
 
 ## `lem dev [--config <path>] [--port <n>]`
 

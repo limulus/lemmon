@@ -14,6 +14,7 @@ import type { LoadedConfig } from './config.ts'
 import { envelope, type Environment } from './load.ts'
 import { resolvePage, type Plugin, type ProducedFile } from './plugins.ts'
 import { compileSite, FILE_START, hasError, pageSpan, type Program } from './program.ts'
+import { provided, type AssetFile } from './providers.ts'
 import { discover } from './site.ts'
 import {
   OutputFiles,
@@ -45,6 +46,11 @@ export interface CheckResult {
    */
   pages: string[]
   /**
+   * Each file a plugin's asset hook built, relative to the output directory, in the
+   * order the plugins and their files are listed. Empty when the build stopped.
+   */
+  assets: string[]
+  /**
    * Each file a plugin's producer wrote, relative to the output directory, in the order
    * first written — once, however many pages wrote it. Empty when the build stopped.
    */
@@ -57,11 +63,15 @@ export interface CheckResult {
   diagnostics: Diagnostic[]
   /**
    * The text of every file the build read, once each, by the path its diagnostics name
-   * it by: each document and template the walk found, the shell's own `ambient.lem`,
-   * and each data file a binding read. Every diagnostic's own path is among them, since
-   * each is placed in a file the build read; a label may name a passthrough file, which
-   * no step reads. These are the texts the spans were computed against, so a span is
-   * shown from here rather than from the file read again, which may have changed since.
+   * it by: each document — as the plugins' transforms left it, which is what compiled —
+   * and template the walk found, the shell's own `ambient.lem`, and each data file a
+   * binding read. Every diagnostic's own path is among them, since each is placed in a
+   * file the build read, but for the config file's: a plugin's asset hook that failed,
+   * or a file it built that cannot be written, is placed at the start of the config,
+   * which lists the plugin and is never read as text. A label may name the config too,
+   * or a passthrough file, which no step reads. These are the texts the spans were
+   * computed against, so a span is shown from here rather than from the file read
+   * again, which may have changed since.
    */
   texts: Map<string, string>
 }
@@ -93,9 +103,10 @@ export interface BuildResult extends CheckResult {
 
 /**
  * Builds the site `config` describes into its output directory — every step of the
- * build pipeline this shell has (docs/architecture.md §Build pipeline): discover,
- * compile, load, plan, render each page and resolve its marks with the config's
- * plugins, write it and the files its producers wrote, and copy the passthrough files.
+ * build pipeline this shell has (docs/architecture.md §Build pipeline): discover and
+ * transform each document with the config's plugins, build their assets, compile, load,
+ * plan, render each page and resolve its marks with the plugins, write it, the files
+ * their asset hooks and producers built, and copy the passthrough files.
  * Any error diagnostic, at any step, stops the build before it writes a file, since
  * every page is rendered and every output file checked against every other before the
  * first is written; warnings are reported and the build goes on. A write the file
@@ -118,13 +129,14 @@ export async function build(
   config: LoadedConfig,
   options: BuildOptions
 ): Promise<BuildResult> {
-  const { result, rendered } = await renderSite(config, options)
+  const { result, rendered } = await renderSite(config, options, true)
   if (rendered === undefined) return result
   try {
-    const { outputs, produced } = rendered
-    await write(config.input, config.output, outputs, produced, result.copied)
+    const { outputs, assets, produced } = rendered
+    const built = [...assets, ...produced]
+    await write(config.input, config.output, outputs, built, result.copied)
   } catch (error) {
-    const stopped = { pages: [], produced: [], copied: [] }
+    const stopped = { pages: [], assets: [], produced: [], copied: [] }
     return { ...result, ...stopped, failure: error as WriteError }
   }
   return result
@@ -132,9 +144,11 @@ export async function build(
 
 /**
  * Checks the site `config` describes as {@link build} builds it, every step but the
- * writing: every page is rendered and its marks resolved, and every output file
- * checked against every other, so a check reports what a build would, the runtime
- * errors and the collisions among them, and the output directory is not touched.
+ * writing: every document is transformed, the plugins' assets are built, every page is
+ * rendered and its marks resolved, and every output file checked against every other,
+ * so a check reports what a build would, the runtime errors and the collisions among
+ * them, and the output directory is not touched. The asset hooks are told the build
+ * writes nothing.
  *
  * @throws {SiteError} when the input has no `site.lem`.
  * @throws {CoreTrapped} when a call into the core never returned.
@@ -143,18 +157,26 @@ export async function check(
   config: LoadedConfig,
   options: BuildOptions
 ): Promise<CheckResult> {
-  return (await renderSite(config, options)).result
+  return (await renderSite(config, options, false)).result
+}
+
+/** What a build that no error stopped holds in memory to write. */
+interface Rendered {
+  outputs: Output[]
+  assets: Output[]
+  produced: Output[]
 }
 
 /**
  * Every step of the build before the writing, in one core freed before it returns:
- * what a check found, and the pages and produced files rendered into memory unless an
- * error stopped it.
+ * what a check found, and the pages and the files the plugins built, in memory, unless
+ * an error stopped it — for a build that `writes` its output, or for a check.
  */
 async function renderSite(
   config: LoadedConfig,
-  options: BuildOptions
-): Promise<{ result: CheckResult; rendered?: Pick<Renderer, 'outputs' | 'produced'> }> {
+  options: BuildOptions,
+  writes: boolean
+): Promise<{ result: CheckResult; rendered?: Rendered }> {
   const site = await discover(config)
   const diagnostics = [...site.diagnostics]
   const texts = new Map<string, string>()
@@ -166,12 +188,23 @@ async function renderSite(
   const passthrough = site.entries
     .filter((entry) => entry.kind === 'passthrough')
     .map((entry) => entry.path)
-  const failed = { result: { pages: [], produced: [], copied: [], diagnostics, texts } }
+  const failed = {
+    result: { pages: [], assets: [], produced: [], copied: [], diagnostics, texts },
+  }
+  if (hasError(diagnostics)) return failed
+  const built = await provided(config, { writes, env: options.env })
+  diagnostics.push(...built.diagnostics)
+  // Each passthrough file is where the walk found it, so no two collide in a way the
+  // input's own file system allowed; an asset file is checked against them all and
+  // against each other, and a page or a produced file against all of those.
+  const files = new OutputFiles()
+  for (const path of passthrough) files.claim(path, { path })
+  const assets = claimed(files, built.files, config.file, diagnostics)
   if (hasError(diagnostics)) return failed
   const core = await loadCore()
   let threw = false
   try {
-    const compiled = await compileSite(core, site, texts)
+    const compiled = await compileSite(core, site, texts, built.manifest)
     diagnostics.push(...compiled.diagnostics)
     if (compiled.program === undefined) return failed
     const { program } = compiled
@@ -188,7 +221,7 @@ async function renderSite(
     const { data } = loaded
     diagnostics.push(...core.loadData(data))
     if (hasError(diagnostics)) return failed
-    const renderer = new Renderer(core, program, config.plugins, passthrough, diagnostics)
+    const renderer = new Renderer(core, program, config.plugins, files, diagnostics)
     for (const planned of core.plan()) {
       assert(planned.url !== undefined, 'the shell’s host names the url field')
       renderer.render(planned.path, planned.url)
@@ -203,13 +236,14 @@ async function renderSite(
     if (hasError(diagnostics)) return failed
     const result = {
       pages: renderer.outputs.map((output) => output.file),
+      assets: assets.map((output) => output.file),
       produced: renderer.produced.map((output) => output.file),
       copied: passthrough,
       diagnostics,
       texts,
     }
     const { outputs, produced } = renderer
-    return { result, rendered: { outputs, produced } }
+    return { result, rendered: { outputs, assets, produced } }
   } catch (error) {
     threw = true
     throw released(core, error)
@@ -236,6 +270,46 @@ function released(core: Core, error: unknown): unknown {
 }
 
 /**
+ * The files the plugins' asset hooks built, each claimed in `files` for the file its url
+ * names, or reported in `diagnostics` at the start of `config`, the config file: a url
+ * that names no file, or a file a passthrough file or another asset file writes, or one
+ * that cannot stand beside it on disk.
+ */
+function claimed(
+  files: OutputFiles,
+  assets: AssetFile[],
+  config: string,
+  diagnostics: Diagnostic[]
+): Output[] {
+  const outputs: Output[] = []
+  for (const { url, bytes, plugin } of assets) {
+    const lead = `the \`${plugin}\` plugin's \`assets\` hook returns a file`
+    const file = outputFile(url)
+    if (file === undefined) {
+      diagnostics.push({
+        path: config,
+        span: FILE_START,
+        severity: 'error',
+        message:
+          `${lead} at the url ${JSON.stringify(url)}, which names no file in the output ` +
+          `directory: a file's url ${URL_RULE}`,
+        labels: [],
+      })
+      continue
+    }
+    const collision = files.claim(file, { path: config, assets: { plugin } })
+    if (collision !== undefined) {
+      diagnostics.push(
+        collided(config, FILE_START, file, collision, `${lead} at \`${url}\``)
+      )
+      continue
+    }
+    outputs.push({ file, bytes })
+  }
+  return outputs
+}
+
+/**
  * Renders pages into memory, their marks resolved, with the files their producers wrote,
  * refusing any two files that cannot both be written.
  */
@@ -246,7 +320,8 @@ class Renderer {
   readonly #program: Program
   readonly #plugins: readonly Plugin[]
   readonly #diagnostics: Diagnostic[]
-  readonly #files = new OutputFiles()
+  /** Every output file claimed so far: the passthrough and asset files to start with. */
+  readonly #files: OutputFiles
   /**
    * Each file a producer wrote, by its path, with who wrote it first and the mark that
    * call was given — one object for every file one producer call writes.
@@ -257,25 +332,23 @@ class Renderer {
     core: Core,
     program: Program,
     plugins: readonly Plugin[],
-    passthrough: string[],
+    files: OutputFiles,
     diagnostics: Diagnostic[]
   ) {
     this.#core = core
     this.#program = program
     this.#plugins = plugins
+    this.#files = files
     this.#diagnostics = diagnostics
-    // Each passthrough file is where the walk found it, so no two collide in a way
-    // the input's own file system allowed; a page or a produced file is checked
-    // against them all, and against each other in whichever order they come.
-    for (const path of passthrough) this.#files.claim(path, { path })
   }
 
   /**
    * Renders the page at `path` to the file its `url` names, its marks resolved, or
-   * reports why it cannot be written: a url that names no file, or a file another page
-   * or a passthrough file writes, or one that cannot stand beside it on disk. A failed
-   * render reports its runtime diagnostic, resolving reports what the handlers did
-   * wrong, and each file its producers wrote is checked as the page's own file is.
+   * reports why it cannot be written: a url that names no file, or a file another page,
+   * a passthrough file or an asset hook writes, or one that cannot stand beside it on
+   * disk. A failed render reports its runtime diagnostic, resolving reports what the
+   * handlers did wrong, and each file its producers wrote is checked as the page's own
+   * file is.
    */
   render(path: string, url: JsonValue): void {
     const page = this.#program.pages.get(path)
@@ -314,10 +387,11 @@ class Renderer {
   /**
    * Takes the file a producer wrote while the page at `page` resolved, or reports why
    * it cannot be written, at the producer's mark: its url names no file, another
-   * producer wrote other bytes there, or a page or a passthrough file claims it, or a
-   * file that cannot stand beside it. The same bytes another producer wrote at the same
-   * file are taken as written already — the stylesheet two pages share — and other
-   * bytes from the same call are the producer writing the file twice.
+   * producer wrote other bytes there, or a page, a passthrough file or an asset hook's
+   * file claims it, or a file that cannot stand beside it. The same bytes another
+   * producer wrote at the same file are taken as written already — the stylesheet two
+   * pages share — and other bytes from the same call are the producer writing the file
+   * twice.
    */
   #produce(page: string, { url, bytes, plugin, mark }: ProducedFile): void {
     const { path, span } = mark
@@ -369,13 +443,17 @@ const URL_RULE =
   '`\\`, a query, or a fragment'
 
 /**
- * How a message names `writer`: a page by its path, a passthrough file as one, and a
- * producer's file by its plugin and the page it was written for.
+ * How a message names `writer`: a page by its path, a passthrough file as one, an asset
+ * hook's file by its plugin, and a producer's file by its plugin and the page it was
+ * written for.
  */
 function who(writer: Writer): string {
   if (writer.producer !== undefined) {
     const { plugin, page } = writer.producer
     return `the \`${plugin}\` plugin, for \`${page}\`,`
+  }
+  if (writer.assets !== undefined) {
+    return `the \`${writer.assets.plugin}\` plugin's \`assets\` hook`
   }
   return writer.span === undefined
     ? `the passthrough file \`${writer.path}\``
@@ -384,7 +462,7 @@ function who(writer: Writer): string {
 
 /**
  * The label at `writer`, the first to claim `file`: at a page's url, a producer's mark,
- * or the start of a passthrough file.
+ * or the start of a passthrough file or of the config listing an asset hook's plugin.
  */
 function label(writer: Writer, file: string): Label {
   return {
@@ -395,9 +473,9 @@ function label(writer: Writer, file: string): Label {
 }
 
 /**
- * The error at `span` in `path` — a page's url, or the mark whose producer wrote the
- * file, which `lead` then says — for `file` and the claim it collides with, labelled
- * where that claim was made.
+ * The error at `span` in `path` — a page's url, the mark whose producer wrote the file,
+ * or the start of the config listing an asset hook's plugin, which `lead` then says —
+ * for `file` and the claim it collides with, labelled where that claim was made.
  */
 function collided(
   path: string,

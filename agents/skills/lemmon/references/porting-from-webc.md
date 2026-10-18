@@ -7,7 +7,10 @@ Four things change in kind, not just in spelling:
 
 - **No JavaScript at build time** (D06). Every `<script webc:type="js">` and `webc:setup`
   becomes Lemmon: a typed `lem-fn`, a schema default, a computed binding in `site.lem` — or,
-  where the work needs something Lemmon cannot compute, data a plugin hands the site.
+  where the work needs something Lemmon cannot compute, data a plugin hands the site. What
+  `eleventy.config.ts` does to a post's markdown before it renders, such as appending link
+  definitions, is a plugin's `transformDocument` in `lemmon.config.ts`, which rewrites the
+  body alone; its front matter is the schema's to compute.
 - **Data is typed.** Front matter and data files load against declared records, and a record
   has exactly its declared fields. `$data`, `collections` and `this.getPhoto` become reads
   of `site`.
@@ -121,6 +124,7 @@ judge (∆Zo7), not these examples'.
 | `getBundle('html', 'head')`             | `<lem.mark("head")>`                        |
 | `src="/lib/x/index.XXXXXXXX.js"`        | `<lem-script src = asset("…") />` (∆d1N)    |
 | `{% renderTemplate 'webc' %}` in a post | a lem block alone on its line               |
+| JS appending to a post's markdown       | a plugin's `transformDocument`              |
 
 ## No direct equivalent
 

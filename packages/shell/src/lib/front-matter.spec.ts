@@ -2,7 +2,13 @@ import type { Diagnostic } from '@limulus/lemmon-core'
 import { loadCore } from '@limulus/lemmon-core'
 import { describe, expect, it } from 'vitest'
 
-import { derivedUrl, findFrontMatter, readPage, type Page } from './front-matter.ts'
+import {
+  derivedUrl,
+  findFrontMatter,
+  opensFrontMatter,
+  readPage,
+  type Page,
+} from './front-matter.ts'
 import { at, covered } from '../mocks/spans.ts'
 
 /** The page `text` reads as, which a test expects to read cleanly. */
@@ -65,6 +71,21 @@ describe('findFrontMatter()', () => {
   it('should find nothing where an opening line is never closed', () => {
     expect(findFrontMatter('---\na: 1\n')).toBeUndefined()
     expect(findFrontMatter('---')).toBeUndefined()
+  })
+})
+
+describe('opensFrontMatter()', () => {
+  it('should hold for a text opening with a rule, whether or not one closes it', () => {
+    expect(opensFrontMatter('---\ntitle: a\n---\nBody\n')).toBe(true)
+    expect(opensFrontMatter('---\r\ntitle: a\n')).toBe(true)
+    expect(opensFrontMatter('---')).toBe(true)
+  })
+
+  it('should not hold for a text opening with anything else, or empty', () => {
+    expect(opensFrontMatter('Body\n---\ntitle: a\n---\n')).toBe(false)
+    expect(opensFrontMatter(' ---\n')).toBe(false)
+    expect(opensFrontMatter('----\n')).toBe(false)
+    expect(opensFrontMatter('')).toBe(false)
   })
 })
 

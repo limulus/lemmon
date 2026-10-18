@@ -27,9 +27,8 @@ export const BINDINGS_FILE = 'site.lem'
  * The environment the standard shell declares (D30): `site` the bindings of
  * {@link BINDINGS_FILE}, `page` a `Page` and `build` a `Build` — both declared by
  * {@link AMBIENT_FILE} — every page rendered through its `layout` field and placed by
- * its `url` (D43). It is the ambient part alone: the mark claims are a site's plugins',
- * which {@link hostFor} adds. It carries no asset manifest, so no `asset()` resolves
- * until the esbuild pipeline hands one over (∆d1N).
+ * its `url` (D43). It is the ambient part alone: the mark claims and the asset manifest
+ * are a site's plugins', which {@link hostFor} adds.
  */
 export const HOST: HostDecl = {
   ambient: { site: { bindingsOf: BINDINGS_FILE }, page: 'Page', build: 'Build' },
@@ -40,12 +39,16 @@ export const HOST: HostDecl = {
 
 /**
  * The declaration a site whose config lists `plugins` compiles under: {@link HOST} with
- * what their handlers claim (D42). The claims are sent even when there are none, so a
- * site listing no plugins is warned at every mark, which nothing will fill: only a host
- * with no handlers at all — a playground, an editor — omits them, and hears nothing.
+ * what their handlers claim (D42), and `assets`, the manifest their asset hooks
+ * returned (D38, D44). The claims are sent even when there are none, so a site listing
+ * no plugins is warned at every mark, which nothing will fill: only a host with no
+ * handlers at all — a playground, an editor — omits them, and hears nothing.
  */
-export function hostFor(plugins: readonly Plugin[]): HostDecl {
-  return { ...HOST, marks: claimsOf(plugins) }
+export function hostFor(
+  plugins: readonly Plugin[],
+  assets: Record<string, string> = {}
+): HostDecl {
+  return { ...HOST, assets, marks: claimsOf(plugins) }
 }
 
 /**
@@ -120,14 +123,15 @@ export interface Compiled {
 
 /**
  * Compiles `site` into `core`, in the two calls a page's record needs (step 3 of the
- * build pipeline). The first compiles {@link AMBIENT_FILE} and every template under the
- * declaration {@link hostFor} makes of the config's plugins — those without front
- * matter, {@link BINDINGS_FILE} among them, and the page templates too, with no record,
- * so that what a page template defines is in the index a layout is compiled against. It
- * reports the `from` bindings and the record each glob collects. The second compiles
- * every page — documents and page templates — matched against the collecting globs, as
- * its record. An error in the first call
- * stops the second, since no page can be typed without the globs; a warning does not.
+ * build pipeline). The first compiles {@link AMBIENT_FILE} and every template — those
+ * without front matter, {@link BINDINGS_FILE} among them, and the page templates too,
+ * with no record, so that what a page template defines is in the index a layout is
+ * compiled against — under the declaration {@link hostFor} makes of the config's
+ * plugins and `assets`, the manifest their asset hooks returned. It reports the `from`
+ * bindings and the record each glob collects. The second compiles every page —
+ * documents and page templates — matched against the collecting globs, as its record.
+ * An error in the first call stops the second, since no page can be typed without the
+ * globs; a warning does not.
  *
  * Documents compile only in the second call, so what a document (`.md`) defines is
  * invisible to every template, with front matter or without: the first call is where
@@ -143,7 +147,8 @@ export interface Compiled {
 export async function compileSite(
   core: Core,
   site: Site,
-  texts: Map<string, string>
+  texts: Map<string, string>,
+  assets: Record<string, string> = {}
 ): Promise<Compiled> {
   const templates: SourceFileInput[] = []
   const pageTemplates = new Set<string>()
@@ -161,7 +166,7 @@ export async function compileSite(
   }
   const ambient = { path: AMBIENT_FILE, text: await readFile(AMBIENT_FILE, 'utf8') }
   texts.set(ambient.path, ambient.text)
-  const first = core.compile([ambient, ...templates], hostFor(site.config.plugins))
+  const first = core.compile([ambient, ...templates], hostFor(site.config.plugins, assets))
   if (hasError(first.diagnostics)) return { diagnostics: first.diagnostics }
   // A page template compiles again in the second call, as its record, and reports its
   // warnings there; its first, recordless compile would report them twice.

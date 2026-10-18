@@ -9,11 +9,14 @@ import type { Plugin } from './plugins.ts'
 import { AMBIENT_FILE, FILE_START as START, SiteError } from './program.ts'
 import { WriteError } from './write.ts'
 import {
+  appender,
+  appending,
   CALLOUT_LEM,
   callouts,
   copy,
   highlighter,
   inline,
+  shipping,
   wrapping,
 } from '../mocks/plugins.ts'
 import {
@@ -77,6 +80,7 @@ describe('build()', () => {
           'index.html',
           'notes/loose/index.html',
         ],
+        assets: [],
         produced: [],
         copied: ['assets/site.css'],
         diagnostics: [],
@@ -670,6 +674,305 @@ describe('build()', () => {
       )
       expect(result.produced).toEqual([])
       expect(existsSync(join(dir, 'dist/kept.css'))).toBe(false)
+    })
+  })
+
+  describe('document transforms', () => {
+    it('should compile each document as the plugins’ transforms leave it', async () => {
+      // A body ending without a newline, and a document that is all front matter, its
+      // closing `---` the file's last line.
+      const loose =
+        '---\ntitle: Loose\nlinkUrl: https://example.com/\n---\nSee [the post][link].'
+      const bare = '---\ntitle: Bare\nlinkUrl: https://example.com/\n---'
+      const { result, dir } = await built(
+        { ...SITE, 'notes/loose.md': loose, 'notes/bare.md': bare },
+        { plugins: [appender] }
+      )
+
+      expect(result.diagnostics).toEqual([])
+      const written = tree(join(dir, 'dist'))
+      expect(written['notes/loose/index.html']).toBe(
+        '<p>See <a href="https://example.com/">the post</a>.</p>\n'
+      )
+      expect(written['notes/bare/index.html']).toBe('')
+      // What compiled is what a diagnostic would be framed against; a document the
+      // transform leaves alone is as it was read.
+      expect(result.texts.get('notes/loose.md')).toBe(
+        `${loose}\n\n[link]: https://example.com/\n`
+      )
+      expect(result.texts.get('notes/bare.md')).toBe(
+        `${bare}\n\n[link]: https://example.com/\n`
+      )
+      expect(result.texts.get('posts/a.md')).toBe(SITE['posts/a.md'])
+    })
+
+    it('should place a diagnostic in what a transform appended, in the text it compiled', async () => {
+      const { result } = await built(SITE, { plugins: [appending('<lem.page.byline>\n')] })
+
+      const text = result.texts.get('posts/b.md')!
+      expect(text).toBe(`${SITE['posts/b.md']}<lem.page.byline>\n`)
+      expect(result.diagnostics).toContainEqual(
+        expect.objectContaining({
+          path: 'posts/b.md',
+          span: at(text, 'page.byline'),
+          message: '`Post` has no field `byline`',
+        })
+      )
+    })
+
+    it('should stop at a transform that fails, before compiling', async () => {
+      const failing: Plugin = {
+        name: 'failing',
+        transformDocument: ({ path }) => {
+          if (path === 'posts/b.md') throw new Error('no link')
+          return ''
+        },
+      }
+      const { result, dir } = await built(SITE, { plugins: [failing] })
+
+      expect(result.diagnostics).toEqual([
+        {
+          path: 'posts/b.md',
+          span: at(SITE['posts/b.md'], 'title: B'),
+          severity: 'error',
+          message:
+            "the `failing` plugin's `transformDocument` failed on this document: it " +
+            'threw Error: no link',
+          labels: [],
+        },
+      ])
+      expect(result.texts.has(AMBIENT_FILE)).toBe(false)
+      expect(existsSync(join(dir, 'dist'))).toBe(false)
+    })
+  })
+
+  describe('asset hooks', () => {
+    const layouts = LAYOUTS_LEM.replace(
+      '<main>',
+      '<script src="<lem.asset("lib/app.js")>"></script>\n  <main>'
+    )
+    const files = { ...SITE, 'layouts.lem': layouts }
+    const BUILT = { 'lib/app.js': '/lib/app.1a2b.js' }
+    const app = shipping({ manifest: BUILT, files: { '/lib/app.1a2b.js': 'run()\n' } })
+
+    it('should resolve `asset()` against the manifest, and write the files with the pages', async () => {
+      const { result, dir } = await built(files, { plugins: [app] })
+
+      expect(result.diagnostics).toEqual([])
+      expect(result.assets).toEqual(['lib/app.1a2b.js'])
+      const written = tree(join(dir, 'dist'))
+      expect(written['lib/app.1a2b.js']).toBe('run()\n')
+      expect(written['posts/a/index.html']).toContain(
+        '<script src="/lib/app.1a2b.js"></script>\n<main>'
+      )
+    })
+
+    it('should resolve an `[asset]` field in front matter against the same manifest', async () => {
+      const site = SITE_LEM.replace(
+        '  title: string\n  layout: (Home',
+        '  title: string\n  script: asset\n  layout: (Home'
+      )
+      const index =
+        '---\ntype: Home\ntitle: Home\nurl: /\nscript: lib/app.js\n---\n<lem.page.script>\n'
+      const { result, dir } = await built(
+        { ...files, 'site.lem': site, 'index.lem': index },
+        { plugins: [app] }
+      )
+
+      expect(result.diagnostics).toEqual([])
+      expect(tree(join(dir, 'dist'))['index.html']).toContain(
+        '<main>/lib/app.1a2b.js\n</main>'
+      )
+    })
+
+    it('should declare the manifest to the core, which refuses a path it does not map', async () => {
+      const typo = layouts.replace('lib/app.js', 'lib/ap.js')
+      const errors = await refused({ ...files, 'layouts.lem': typo }, { plugins: [app] })
+
+      expect(errors).toEqual([
+        expect.objectContaining({
+          path: 'layouts.lem',
+          span: at(typo, '"lib/ap.js"'),
+          message: 'the manifest has no asset `lib/ap.js`; did you mean `lib/app.js`?',
+        }),
+      ])
+    })
+
+    it('should tell each hook whether the build writes and its environment, and check without writing', async () => {
+      const told: [boolean, string | undefined][] = []
+      const telling: Plugin = {
+        name: 'telling',
+        assets: ({ writes, env }) => {
+          told.push([writes, env.MOTTO])
+          return { manifest: BUILT, files: { '/lib/app.1a2b.js': '' } }
+        },
+      }
+      const dir = project(files, PASSTHROUGH)
+      const config = configOf(dir, PASSTHROUGH, [telling])
+
+      const checked = await check(config, { now: NOW, env: ENV })
+      expect(checked.assets).toEqual(['lib/app.1a2b.js'])
+      expect(existsSync(join(dir, 'dist'))).toBe(false)
+      await build(config, { now: NOW, env: ENV })
+
+      // The environment `env("MOTTO")` reads in `site.lem`, not the process's.
+      expect(told).toEqual([
+        [false, 'hi'],
+        [true, 'hi'],
+      ])
+      expect(existsSync(join(dir, 'dist/lib/app.1a2b.js'))).toBe(true)
+    })
+
+    it('should run every hook again on each build of one config, as `lem dev` does', async () => {
+      const dir = project({ ...files, 'version.txt': '1' }, PASSTHROUGH)
+      const versioned: Plugin = {
+        name: 'versioned',
+        transformDocument: ({ body }) => `${body}Transformed.\n`,
+        assets: ({ input }) => {
+          const version = readFileSync(join(input, 'version.txt'), 'utf8')
+          const url = `/lib/app.${version}.js`
+          return { manifest: { 'lib/app.js': url }, files: { [url]: version } }
+        },
+      }
+      const config = configOf(dir, PASSTHROUGH, [versioned])
+      await build(config, { now: NOW, env: ENV })
+
+      writeFileSync(join(dir, 'www/version.txt'), '2')
+      writeFileSync(join(dir, 'www/posts/b.md'), '---\ntitle: B\n---\nEdited.\n')
+      const second = await build(config, { now: NOW, env: ENV })
+
+      expect(second.diagnostics).toEqual([])
+      expect(second.assets).toEqual(['lib/app.2.js'])
+      const written = tree(join(dir, 'dist'))
+      expect(written['posts/b/index.html']).toContain('src="/lib/app.2.js"')
+      expect(written['posts/b/index.html']).toContain('<p>Edited.\nTransformed.</p>')
+    })
+
+    it('should stop at a hook that fails, at the config’s start, before compiling', async () => {
+      const failing: Plugin = {
+        name: 'failing',
+        assets: () => {
+          throw new Error('no esbuild')
+        },
+      }
+      const { result, dir } = await built(files, { plugins: [failing] })
+
+      // Without the manifest, the layout's `asset()` would be an error too.
+      expect(result.diagnostics).toEqual([
+        {
+          path: join(dir, 'lemmon.config.ts'),
+          span: START,
+          severity: 'error',
+          message:
+            "the `failing` plugin's `assets` hook failed: it threw Error: no esbuild",
+          labels: [],
+        },
+      ])
+      expect(result.texts.has(AMBIENT_FILE)).toBe(false)
+    })
+
+    describe('the files a hook builds', () => {
+      /** The errors building {@link files} with `plugins` reports, with its config file. */
+      async function refusedFiles(...plugins: Plugin[]) {
+        const { result, dir } = await built(files, { plugins: [app, ...plugins] })
+        expect(existsSync(join(dir, 'dist'))).toBe(false)
+        return { errors: result.diagnostics, config: join(dir, 'lemmon.config.ts') }
+      }
+
+      it('should refuse a url that names no file, at the config’s start', async () => {
+        const { errors, config } = await refusedFiles(
+          shipping({ files: { 'lib/x.js': '' } })
+        )
+
+        expect(errors).toEqual([
+          {
+            path: config,
+            span: START,
+            severity: 'error',
+            message:
+              "the `shipping` plugin's `assets` hook returns a file at the url " +
+              '"lib/x.js", which names no file in the output directory: a file\'s url is ' +
+              'a path from `/`, without an empty, `.` or `..` segment, a percent-encoded ' +
+              '`/` or `\\`, a query, or a fragment',
+            labels: [],
+          },
+        ])
+      })
+
+      it('should refuse a file where a passthrough file is, labelled at it', async () => {
+        const { errors, config } = await refusedFiles(
+          shipping({ files: { '/assets/site.css': '' } })
+        )
+
+        expect(errors).toEqual([
+          {
+            path: config,
+            span: START,
+            severity: 'error',
+            message:
+              "the `shipping` plugin's `assets` hook returns a file at " +
+              '`/assets/site.css`, and `assets/site.css` is written by the passthrough ' +
+              'file `assets/site.css` already',
+            labels: [
+              {
+                path: 'assets/site.css',
+                span: START,
+                message: 'the first to write there, as `assets/site.css`',
+              },
+            ],
+          },
+        ])
+      })
+
+      it('should refuse another plugin’s file at one file but for case', async () => {
+        const { errors, config } = await refusedFiles(
+          shipping({ files: { '/lib/App.1a2b.js': '' } }, 'other')
+        )
+
+        expect(errors).toEqual([
+          {
+            path: config,
+            span: START,
+            severity: 'error',
+            message:
+              "the `other` plugin's `assets` hook returns a file at `/lib/App.1a2b.js`, " +
+              'and `lib/App.1a2b.js` differs from `lib/app.1a2b.js`, which the `shipping` ' +
+              "plugin's `assets` hook writes, only in case or Unicode form, and a file " +
+              'system may hold the two as one file',
+            labels: [
+              {
+                path: config,
+                span: START,
+                message: 'the first to write there, as `lib/app.1a2b.js`',
+              },
+            ],
+          },
+        ])
+      })
+
+      it('should refuse a page where a file is, at the page, labelled at the config', async () => {
+        const { result, dir } = await built(files, {
+          plugins: [app, shipping({ files: { '/notes/loose/': '' } }, 'other')],
+        })
+
+        expect(result.diagnostics).toEqual([
+          {
+            path: 'notes/loose.md',
+            span: at(SITE['notes/loose.md'], 'title: Loose'),
+            severity: 'error',
+            message:
+              "`notes/loose/index.html` is written by the `other` plugin's `assets` hook " +
+              'already',
+            labels: [
+              {
+                path: join(dir, 'lemmon.config.ts'),
+                span: START,
+                message: 'the first to write there, as `notes/loose/index.html`',
+              },
+            ],
+          },
+        ])
+      })
     })
   })
 

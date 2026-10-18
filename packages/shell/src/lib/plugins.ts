@@ -4,6 +4,7 @@ import {
   type Claim,
   type CodePayload,
   type Diagnostic,
+  type JsonValue,
   type Mark,
   type MarkContext,
   type MarkHandler,
@@ -11,20 +12,112 @@ import {
 } from '@limulus/lemmon-core'
 import { strict as assert } from 'node:assert'
 
+import type { Environment } from './load.ts'
+
 /**
- * A plugin, as a site's `lemmon.config.ts` lists it under `plugins`. Its one hook in this
- * shell is {@link marks}; any other field is refused when the config loads, so that a
- * hook nothing runs is never loaded in silence.
+ * A plugin, as a site's `lemmon.config.ts` lists it under `plugins`. Its hooks in this
+ * shell are {@link transformDocument}, {@link assets} and {@link marks} (D44, D42); any
+ * other field is refused when the config loads, so that a hook nothing runs is never
+ * loaded in silence.
  */
 export interface Plugin {
-  /** What a refusal at config load, or a handler's failure, calls this plugin. */
+  /** What a refusal at config load, or a hook's failure, calls this plugin. */
   name: string
+  /**
+   * Its document transform (D44): given each document (`.md`) whose front matter read,
+   * before anything compiles, and returning the body it compiles with — what follows
+   * the front matter, which a transform cannot change. The transforms run in the order
+   * the plugins are listed, each over the body the one before returned, and the text
+   * they leave is what the core compiles and what a diagnostic in the document is
+   * framed against: a transform that appends keeps every position the author's file
+   * has, and one that changes anything earlier moves them. A page template (`.lem`) is
+   * not given to it: it has no markdown, and every layout compiles against what it
+   * defines, so a transform there would reach other files.
+   *
+   * It returns as it runs: an `async` transform is refused when the config loads. One
+   * that throws, or returns anything but a string the core can be sent — or a body that
+   * would give the text other front matter — a `---` first line in a document that had
+   * none, or, where the closing `---` ended the file, a first line that is not a newline
+   * — is an error at the document's front matter, or at its start where it has
+   * none, and stops the build before it compiles.
+   */
+  transformDocument?: (document: DocumentSource) => string
+  /**
+   * Its asset hook (D44, D38): called once per build, after the documents are
+   * transformed and before anything compiles, and returning the manifest `asset("…")`
+   * and `[asset]` fields resolve against, with the files it built. It may be `async`,
+   * and the build waits for it. Each plugin's manifest is declared to the core with
+   * every other's, and a logical path two plugins both map is an error naming both. Its
+   * files are written with the pages, checked first against every passthrough file and
+   * every other plugin's, then each page and produced file against them.
+   *
+   * `lem check` calls it too, and writes none of its files. One that throws, or returns
+   * anything but {@link Assets}, is an error at the start of the config file, which
+   * lists the plugin, and stops the build before it compiles.
+   */
+  assets?: (context: AssetsContext) => Assets | Promise<Assets>
   /**
    * Its mark handlers (D42): what they claim is declared to the core at compile, and a
    * page's marks are resolved by every listed plugin's — each mark's producer, then its
    * decorators in the order the plugins, and their handlers, are listed.
    */
   marks?: PluginHandler[]
+}
+
+/** A document as a {@link Plugin.transformDocument} is given it. */
+export interface DocumentSource {
+  /** Its path, relative to the input directory, with `/` separators: `links/x/index.md`. */
+  path: string
+  /**
+   * Its front matter as the core loads it: `type:` and `for:` read off, and `url` and
+   * `inputPath` derived where it gives neither. Frozen, since what the front matter says
+   * is read before any transform runs: a write to it throws in strict-mode code, as an
+   * ES module is, and is ignored elsewhere.
+   */
+  frontMatter: { readonly [key: string]: JsonValue }
+  /**
+   * Its text after the front matter — the whole of it where there is none — as the
+   * transform before this one returned it.
+   */
+  body: string
+}
+
+/** What an {@link Plugin.assets} hook is given: the build it runs for. */
+export interface AssetsContext {
+  /** The input directory, absolute. */
+  input: string
+  /**
+   * The output directory, absolute: where the build writes the files the hook returns,
+   * each at the file its url names.
+   */
+  output: string
+  /**
+   * Whether the build writes its output: `true` for `lem build` and `lem dev`, `false`
+   * for `lem check`, which checks the hook's files as a build would and writes none.
+   */
+  writes: boolean
+  /**
+   * The environment variables the build reads, the values a site's `env("…")` bindings
+   * load — `process.env`, as `lem` runs — so that a hook and the site see one
+   * environment, and a hook can be given one without touching the process's. A frozen
+   * copy: writing to it changes nothing the build reads, and throws in strict-mode code.
+   */
+  env: Readonly<Environment>
+}
+
+/** What an {@link Plugin.assets} hook returns. */
+export interface Assets {
+  /**
+   * Each asset's logical path — what `asset("…")` names — mapped to the finished URL it
+   * ships at, since the core does no path arithmetic (D38): both non-empty strings. None
+   * where omitted.
+   */
+  manifest?: Record<string, string>
+  /**
+   * Each file the hook built, by its url — a path from `/`, mapped to a file as a page's
+   * url is — as a string, written as UTF-8, or bytes. None where omitted.
+   */
+  files?: Record<string, string | Uint8Array>
 }
 
 /**
@@ -65,16 +158,22 @@ export interface ProducerContext extends MarkContext {
    * It never throws. A url that is not a string, content neither a string nor bytes, a
    * url naming no file, and other content where this producer or another page's wrote
    * already are each an error at this producer's first mark. The file is also checked
-   * against every page, passthrough file and other produced file — the same file, the
-   * same but for case or Unicode form, or a file where the other needs a directory — an
-   * error at the later writer, a page's url or a producer's mark, labelled at the first.
+   * against every page, passthrough file, asset hook's file and other produced file —
+   * the same file, the same but for case or Unicode form, or a file where the other
+   * needs a directory — an error at the later writer, a page's url or a producer's mark,
+   * labelled at the first.
    * Any of these stops the build before it writes. A producer that fails writes nothing,
    * and nothing is said about what it queued.
    */
   write(url: string, content: string | Uint8Array): void
 }
 
-const PLUGIN_FIELDS: readonly string[] = ['name', 'marks'] satisfies (keyof Plugin)[]
+const PLUGIN_FIELDS: readonly string[] = [
+  'name',
+  'transformDocument',
+  'assets',
+  'marks',
+] satisfies (keyof Plugin)[]
 
 const HANDLER_FIELDS: readonly string[] = [
   'name',
@@ -97,7 +196,8 @@ interface Listed {
 
 /**
  * A config's `plugins` as the plugins it lists — none where it is omitted — or a
- * `TypeError` saying why it is not one: the shape of each plugin and handler, and then
+ * `TypeError` saying why it is not one: the shape of each plugin, its hooks and its
+ * handlers — an `async` function where a hook returns as it runs among them — and then
  * the rules across them, each refused here rather than on the first page that meets it,
  * naming the plugins to blame. One name names one plugin; a mark has one producer, so no
  * two producers answer one name and key (D42); every mark of a name carries one payload,
@@ -119,6 +219,7 @@ export function validatePlugins(value: unknown): Plugin[] {
       )
     }
     names.add(name)
+    hooksOf(plugin as Record<string, unknown>, name)
     listed.push(...handlersOf(plugin as Record<string, unknown>, name))
   })
   const overlap = producerOverlap(listed)
@@ -172,6 +273,26 @@ function pluginName(plugin: unknown, at: string): string {
     }
   }
   return name
+}
+
+/**
+ * Checks the hooks of `plugin`, the plugin named `name`, that run before anything
+ * compiles: each a function, and the document transform not `async`, since a document
+ * is transformed as discovery reads it. The asset hook may be.
+ */
+function hooksOf(plugin: Record<string, unknown>, name: string): void {
+  for (const hook of ['transformDocument', 'assets'] as const) {
+    const value = plugin[hook]
+    if (value !== undefined && typeof value !== 'function') {
+      throw new TypeError(`\`${hook}\` of the plugin \`${name}\` must be a function`)
+    }
+  }
+  if (isAsync(plugin.transformDocument)) {
+    throw new TypeError(
+      `\`transformDocument\` of the plugin \`${name}\` is async, and a transform returns ` +
+        "the document's body as it runs: the build waits for no promise from it"
+    )
+  }
 }
 
 /** The handlers of `plugin`, the plugin named `name`, each checked for its shape. */
@@ -243,10 +364,7 @@ function handlerOf(
     }
     // An async handler's content would arrive after the page is written: refused here
     // rather than warned at on every page.
-    if (
-      (value as { [Symbol.toStringTag]?: unknown })?.[Symbol.toStringTag] ===
-      'AsyncFunction'
-    ) {
+    if (isAsync(value)) {
       throw new TypeError(
         `\`${field}\` of ${label} is async, and a handler returns its content as it ` +
           'runs: the build waits for no promise'
@@ -299,17 +417,22 @@ function agree(
   }
 }
 
+/** Whether `value` is an `async` function. */
+const isAsync = (value: unknown): boolean =>
+  (value as { [Symbol.toStringTag]?: unknown } | undefined)?.[Symbol.toStringTag] ===
+  'AsyncFunction'
+
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
 
 /**
  * Whether `value` is a non-empty string the core can be sent: a lone surrogate has no
- * UTF-8 form, and would fail the call that declares the claims.
+ * UTF-8 form, and would fail the call that declares it.
  */
-const isName = (value: unknown): value is string =>
+export const isName = (value: unknown): value is string =>
   typeof value === 'string' && value !== '' && !/\p{Cs}/u.test(value)
 
-const fields = (names: readonly string[]): string =>
+export const fields = (names: readonly string[]): string =>
   names.map((name) => `\`${name}\``).join(', ')
 
 /**
@@ -504,17 +627,22 @@ function filled(mark: Mark, payloads: ReadonlyMap<string, CodePayload>): Mark {
   return { ...mark, payload: { language, info, code } }
 }
 
-const encoder = new TextEncoder()
+export const encoder = new TextEncoder()
 
 /** How `call` failed — the problem it returned, or what it threw — if it did. */
-function failure(call: () => string | undefined): string | undefined {
+export function failure(call: () => string | undefined): string | undefined {
   try {
     return call()
   } catch (error) {
-    const what =
-      error instanceof Error || typeof error === 'string' ? String(error) : shown(error)
-    return `it threw ${what}`
+    return threw(error)
   }
+}
+
+/** What a hook threw, said as its failure: `it threw Error: …`. */
+export function threw(error: unknown): string {
+  const what =
+    error instanceof Error || typeof error === 'string' ? String(error) : shown(error)
+  return `it threw ${what}`
 }
 
 /** What is wrong with `made` as a producer's answer for `marks` marks, if anything. */
@@ -533,14 +661,14 @@ function unproduced(made: unknown, marks: number): string | undefined {
 
 const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`
 
-const isContent = (value: unknown): value is string | Uint8Array =>
+export const isContent = (value: unknown): value is string | Uint8Array =>
   typeof value === 'string' || value instanceof Uint8Array
 
 /**
  * What a handler gave back, said without printing it: a string may be a page long, and
  * an object may not print at all.
  */
-function shown(value: unknown): string {
+export function shown(value: unknown): string {
   if (isThenable(value)) return 'a promise'
   if (typeof value === 'string') return 'a string'
   if (typeof value === 'function') return 'a function'
@@ -559,7 +687,7 @@ const isThenable = (value: unknown): value is PromiseLike<unknown> =>
  * the build has already refused, so that a handler that made promises cannot surface
  * afterwards as an unhandled rejection that ends `lem` with a stack trace.
  */
-function settle(made: unknown): void {
+export function settle(made: unknown): void {
   for (const value of Array.isArray(made) ? made : [made]) {
     if (isThenable(value)) Promise.resolve(value).catch(() => undefined)
   }
