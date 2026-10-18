@@ -45,6 +45,9 @@ Generators land in the core here, needed by exactly two pages; the seven collect
 pages are page templates. Eric opens `dist/` from `/` and reaches every page of the site,
 each comparing clean.
 
+- `∆EEa` `esbuild()` names follow the files they reference
+  - Adopt the naming limulus-dot-net's `11ty/esbuild.ts` moves to, a loader's hash following
+    the workers it names, so parity's byte comparison holds once the port merges main
 - `∆99b` Generators and neighbours
   - A page template whose `for:` key names a field and an `<ambient value>.<field>` list
     becomes one page per item at load, its url from its type's default (D43)

@@ -38,7 +38,9 @@ config unchanged
   year — a browser that cached the loader keeps asking for the old worker; and the wasm
   worker's source map names its module by absolute path (`wasm-module:/…/node_modules/…`),
   so its hash depends on where the site is checked out (stable in CI, not across
-  machines). Once parity no longer binds, rewrite before hashing and strip the path.
+  machines). Once parity no longer binds, rewrite before hashing and strip the path. On
+  2026-10-18 Eric started fixing the first on limulus-dot-net's main instead, with lemmon's
+  plugin following in `∆EEa`.
 - limulus.net's blur-hash script (`www/lib/blur-hash/index.ts`) has two races, live today:
   an element the parser creates after the async `/lib/common` script has defined
   `blur-hash` is connected before its `<img>` exists and throws, and a placeholder whose
