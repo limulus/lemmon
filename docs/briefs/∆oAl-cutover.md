@@ -41,6 +41,11 @@ config unchanged
   machines). Once parity no longer binds, rewrite before hashing and strip the path. On
   2026-10-18 Eric started fixing the first on limulus-dot-net's main instead, with lemmon's
   plugin following in `∆EEa`.
+- Two photo-tooling tasks, from `∆pP5` (closed 2026-10-18): make `@sindresorhus/slugify`
+  a direct dependency, since `bin/process-photos.js` imports it and it arrives today only
+  through `@11ty/eleventy`; and have `process-photos.js` write the alias-keyed records the
+  port reads, EXIF numbers included (`∆hvm`), once Eleventy, the one reader of the id keys
+  in `www/_data/photos.json`, is gone, retiring `bin/lemmon-photos.ts` and its drift spec.
 - limulus.net's blur-hash script (`www/lib/blur-hash/index.ts`) has two races, live today:
   an element the parser creates after the async `/lib/common` script has defined
   `blur-hash` is connected before its `<img>` exists and throws, and a placeholder whose

@@ -42,20 +42,13 @@ each comparing clean.
     becomes one page per item at load, its url from its type's default (D43)
   - needs: `∆Bhz`
 - `∆LsH` Index pages as page templates
-  - Home, the five section indexes, the author page and `404` as `.lem` page templates with
+  - Home, the six section indexes, the author page and `404` as `.lem` page templates with
     front matter (D41) reading their collections through glob bindings
   - needs: `∆tAw`
-- `∆wOn` Plugin data, commands and `.lem`
-  - The `data` and `commands` hooks, and plugin `.lem` bound via `lem-import` in `site.lem`
-    (D23, D06), whose qualified names must first be squared with D34
-- `∆pP5` Photos plugin
-  - `photos.json` as typed data with alias resolution, and `lem photos add` wrapping
-    `bin/process-photos.js`. A photo's URL is its stored `alias`, never `title.slugify()`
-  - needs: `∆wOn`
 - `∆hvm` Photo and TIL topic pages as generators
   - `photos/photo` and `tils/topics`, the two paginated pages, as generator templates whose
     `for:` key names a list (D43), with `prev` and `next` filled by the loader
-  - needs: `∆99b`, `∆pP5`, `∆tAw`
+  - needs: `∆99b`, `∆tAw`
 
 ### 6. Feeds, sitemap, cutover
 
@@ -167,6 +160,13 @@ Standing section for work no initiative needs — ideas kept so they are not los
 serving consumers beyond limulus.net. Nothing here is scheduled; promote an item into an
 initiative before starting it.
 
+- `∆wOn` Plugin data, commands and `.lem`
+  - The `data` and `commands` hooks, and plugin `.lem` bound via `lem-import` in `site.lem`
+    (D23, D06); parked with no consumer in the port, its qualified names a deferred question
+- `∆x1B` `lem photos add`
+  - A `lem` subcommand wrapping `bin/process-photos.js`, which `npm run photos` runs today
+    without Eleventy; the first consumer of the `commands` hook
+  - needs: `∆wOn`
 - `∆SDN` Pure wasm plugin values
   - Revisit D06 ("plugins cannot inject logic") for a plugin-shipped wasm module with no
     imports, for what a template must compute on and a mark cannot carry (D42)

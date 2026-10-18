@@ -11,6 +11,17 @@ and cannot inject build-time JS into the language or the core (D06). A plugin cl
 mark name ships the `lem-fn` wrapping `mark()` for it, so a layout reads `<lem.styles()>`
 (D42).
 
+Parked in Someday/Maybe on 2026-10-18, as slice 5 started, with nothing built. Mapping the
+slice found no consumer for any part, in slice 5 or at the cutover: photos load as a typed
+data file whose derivation `npm run photos` reruns and a spec keeps from drifting (so a
+data hook would only replace that script), `npm run photos` needs no Eleventy (so a
+`lem photos add`, now `∆x1B`, adds a name, not a capability), and the port's components
+are site files, with D42's two mark wrappers written once each. A plugin subcommand would
+also need `lem` to load the config before it dispatches, where `cli.ts` refuses an unknown
+command before reading it. D23's qualified names are now a deferred question in
+`docs/decisions/README.md`, with the options found then. Promote this item when a plugin
+ships values or `.lem` a site cannot write itself.
+
 ## Scope and constraints
 
 - Confirm at planning that `∆pP5` consumes each part. Data already loads as a typed data

@@ -18,4 +18,17 @@ reading other pages' finished output as a string source (D42)
 - The photo pages' `site.lem` types were deferred here from `∆tAw` (2026-10-17), whose
   backlog line named them: nothing before these pages reads them. The TIL chip's `nolink`
   form (`www/_includes/components/til-chip.lem` on the port branch) is first rendered by
-  the topic pages, since no TIL is among the newest five articles a post recommends.
+  the article cards of `/feed/` and `/tils/` (`∆LsH`), and then by the topic pages.
+- A photo page's URL is its stored `alias`, never `title.slugify()` (from `∆pP5`, closed
+  on 2026-10-18): the aliases were minted by `@sindresorhus/slugify`, whose German rule
+  spells `Dürer` `duerer` where the core's Latin fold spells it `durer`.
+- Decided by Eric on 2026-10-18: the three numbers `photo-meta.webc` parses out of EXIF
+  strings with `parseFloat` (focal length `"6.765 mm"`, f-number `"f/1.78"`, and the
+  second time of a composite exposure `"0; 33298/9605; …"`) come from the data, written by
+  the port's `bin/lemmon-photos.ts` with the same `parseFloat`, not from a core builtin;
+  `process-photos.js` writes them itself at the cutover (`∆oAl`).
+- Found mapping the slice: WebC scopes `photo.webc`'s style to every element the template
+  writes (`w3ey9fgef`, 34 elements, the photos sprite's symbols included), which parity's
+  `scoped-class` does not cover, since it handles a component's host element; the photos
+  sprite sits inside `main`; `mapbox-gl.css` (55 KB) joins the page's bundle between
+  `chip-list` and `map-box`; and the photo date is ICU text (`toLocaleDateString`).

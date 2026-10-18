@@ -83,6 +83,13 @@ in the PR when one is load-bearing:
   call-with-body sugar (`lem-with`/`lem-raw`) lowering to capture-then-call. Both are
   additive and are taken up together once the port shows whether the two-tag idiom
   hurts (∆M5x); until then a multi-line source is a fence in a document (D42).
+- Qualified names from a plugin: D23 binds a plugin's `.lem` qualified via `lem-import`
+  (`lem.photos.picture(…)`), but D34 lets `.` ask only the receiver's type, and an import
+  binds no typed value. The options found on 2026-10-18: the import binds a record whose
+  fields hold the plugin's functions (types still flat); the plugin's exports answer
+  `name.x` first, revising D34; promotion only, `{ names } from plugin(…)`, revising D23;
+  or no import tag, a plugin's `.lem` joining the flat namespace as the shell's
+  `ambient.lem` does. Taken up with `∆wOn`, parked until a plugin has values to ship.
 
 ## Chronology
 

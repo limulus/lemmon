@@ -145,8 +145,10 @@ judge (∆Zo7), not these examples'.
   fraction (`.42Z`, not `.420Z`).
 - **Heterogeneous data.** `photos.json` maps aliases to ids as strings beside its records,
   and each photo has keys a `Photo` would have to declare; neither loads as
-  `{string: Photo}`. A photos plugin's data hook (∆wOn) hands the site the declared shape;
-  `{string: any}` loads anything and checks nothing.
+  `{string: Photo}`. A script that writes the declared shape beside it loads typed, as
+  limulus.net's port derives `_lemmon/photos.json` with a spec that fails on drift; a
+  plugin's data hook would do the same (∆wOn, parked). `{string: any}` loads anything and
+  checks nothing.
 - **Combining collections.** There is no list concatenation, so `collections.article` across
   `feed/`, `links/` and `tils/` needs one `from` glob that matches them all, with `type:`
   keys naming the subtypes. The shell matches a glob as passthrough's are matched:
