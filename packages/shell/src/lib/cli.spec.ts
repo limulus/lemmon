@@ -251,7 +251,7 @@ describe('run()', () => {
           { 'site.lem': `${SITE_LEM}<lem-let more: string from plugin("more") />\n` },
           ENV,
           'www/site.lem:19:10: error: `more` loads `plugin("more")`, and plugins are not ' +
-            'supported yet (∆c4j)',
+            'supported yet (∆wOn)',
         ],
         [
           'a render error',

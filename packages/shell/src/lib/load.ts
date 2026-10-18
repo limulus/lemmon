@@ -62,7 +62,7 @@ export async function envelope(
       })
     }
     if (source.kind === 'plugin') {
-      at('and plugins are not supported yet (∆c4j)')
+      at('and plugins are not supported yet (∆wOn)')
     } else if (source.kind === 'env') {
       const value = env[source.literal]
       if (value === undefined) at('which is not set')

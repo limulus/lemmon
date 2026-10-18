@@ -103,7 +103,7 @@ describe('envelope()', () => {
     expect(diagnostics).toEqual([
       expect.objectContaining({
         span: at(site, '<lem-let «more»'),
-        message: '`more` loads `plugin("more")`, and plugins are not supported yet (∆c4j)',
+        message: '`more` loads `plugin("more")`, and plugins are not supported yet (∆wOn)',
       }),
     ])
   })

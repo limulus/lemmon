@@ -45,7 +45,7 @@
   collected CSS, joined by newlines, to `/assets/immutable/bundle/<name>.css`, the name the
   first ten base64url characters of its SHA-256 — Eleventy's bundle form — and links it
   from every `styles` mark; no wrapping `lem-fn` ships with it, since a plugin's `.lem` is
-  ∆c4j's, so a layout writes `mark("styles")`
+  ∆wOn's, so a layout writes `mark("styles")`
 - **Backlog item:** ∆1Hp (the mark, claims by name, the collect tags, the boundary);
   ∆7wK (the `code` mark, keys and payloads, the core's highlighter removed); ∆F4y (the
   shell's plugins, their handlers, and the default plugin)

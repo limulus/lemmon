@@ -60,7 +60,7 @@ language doc is a question for Eric, not a guess. Porting WebC? Read
 | `<lem-style>…</lem-style>`            | Collected under `styles`, deduped; no head     |
 | `<lem-head>…</lem-head>`              | Collected under `head`; never self-closed      |
 | `<lem-script src = asset("x.js") />`  | An `asset` only, never a URL string            |
-| `<lem-import …>`                      | Not yet supported (∆c4j)                       |
+| `<lem-import …>`                      | Not yet supported (∆wOn)                       |
 
 ## Expressions
 
@@ -190,7 +190,7 @@ needs a `site.lem` in its input directory, even an empty one.
 - **`from` sources** stand only at the top level of `site.lem`, with `: T` and a literal: a
   glob, whose list type extends `Page` (`[Page]` itself is an error), collecting the
   documents and page templates it matches; a data-file path, inside the input directory;
-  `env("NAME")`; or `plugin("name")`, not yet supported (∆c4j). A page belongs to one
+  `env("NAME")`; or `plugin("name")`, not yet supported (∆wOn). A page belongs to one
   collection, and two globs matching one page is an error at the page.
 - **Computed bindings** (`name: T = expr`) run at load in dependency order, read siblings by
   bare name and `build`, never `page`. Lists do not concatenate (no `+`, no `concat`), so
@@ -252,7 +252,7 @@ Those three marks are filled by the shell's default plugin, which the site's
 `lemmon.config.ts` lists as `plugins: [bundler()]`: `styles` becomes a `<link>` to the
 page's collected CSS, written as one hashed file under `/assets/immutable/bundle/`. A site
 listing no plugins is warned at every mark. Write the `mark()` call itself: a
-`<lem.styles()>` wrapper is not yet shipped (∆c4j), so that name is undefined.
+`<lem.styles()>` wrapper is not yet shipped (∆wOn), so that name is undefined.
 
 ```lem layouts.lem
 <lem-fn base(title: string, body: html)>

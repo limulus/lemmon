@@ -12,8 +12,12 @@ link/asset integrity check, CloudFront untouched
 
 ## Scope and constraints
 
-- Slice 4's acceptance, which this item serves: Eric builds the branch and all 25 documents,
-  code blocks highlighted and client JavaScript bundled to hashed URLs, compare clean.
+- Moved from slice 4 to slice 6 on 2026-10-17 (`∆c4j`'s journal entry): in slice 4 the
+  port's output links to some twenty pages slices 5 and 6 write (`/`, `/feed/`, `/eric/`,
+  `/photos/…`, `/feed.xml`, `/penumbra/feed.xml`, the TIL topic pages), so the check could
+  pass only with an exception list. After the feeds every page exists.
+- Architecture step 9 puts the check after the write, against the shell's rule that every
+  check runs before anything is written, and `lem check` reporting what a build would.
 - The integrity check from the original output writer item; HTML and passthrough are `∆muD`,
   the `styles` producer is `∆F4y`.
 - A link must match a written file's path exactly, case and Unicode form included. S3

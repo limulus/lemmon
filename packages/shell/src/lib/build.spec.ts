@@ -804,7 +804,7 @@ describe('build()', () => {
           path: 'site.lem',
           span: at(site, '<lem-let «more»'),
           message:
-            '`more` loads `plugin("more")`, and plugins are not supported yet (∆c4j)',
+            '`more` loads `plugin("more")`, and plugins are not supported yet (∆wOn)',
         }),
       ])
     })

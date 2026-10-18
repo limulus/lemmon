@@ -829,7 +829,7 @@ A host that claims a name ships an ordinary `lem-fn` wrapping it —
 `<lem-fn styles(): html = mark("styles") />` — so a layout reads `<lem.styles()>` and a
 site author writes the primitive only where no wrapper exists; a plugin's component
 wraps its own mark the same way. No host ships a wrapper yet, since a plugin's `.lem`
-is not yet bound (∆c4j): the shell's default plugin, `bundler()`, ships none, so
+is not yet bound (∆wOn): the shell's default plugin, `bundler()`, ships none, so
 `<lem.styles()>` is an undefined name and a layout writes `<lem.mark("styles")>`.
 
 A mark travels on the value it was made in: a captured value carrying marks places them

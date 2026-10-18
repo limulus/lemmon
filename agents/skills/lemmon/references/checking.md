@@ -43,7 +43,7 @@ What it reports, in the order it finds them:
   a language warns too (not yet, ∆Nxd).
 - **Sources it cannot fulfil**: an environment variable that is not set, a data file outside
   the input directory or not there, and a `plugin("…")` source, which nothing runs yet
-  (∆c4j) — each at its binding in `site.lem`; and a data file that does not parse, at the
+  (∆wOn) — each at its binding in `site.lem`; and a data file that does not parse, at the
   place in the data file.
 - **Load errors**: a misspelled or missing front-matter key, a `by` reference its map lacks,
   a bad date in YAML, a data file with keys its type does not declare, two pages at one url.

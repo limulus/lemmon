@@ -196,13 +196,13 @@ may hold what was written before it. A site needs a `site.lem` without front mat
 - **Computed mark keys.** A key a template computes and no producer lists keeps the
   default content, unreported: ∆CxX.
 - **Plugins.** A plugin's only hook is `marks`, it ships no `.lem` — so no wrapper such
-  as `<lem.styles()>` — and a `from plugin("…")` binding is an error at the binding: ∆c4j.
+  as `<lem.styles()>` — and a `from plugin("…")` binding is an error at the binding: ∆wOn.
 - **Generators.** A page whose front matter has `for:` is an error at the key: ∆99b.
 - **Drafts.** `draft: true` is built like any page; `--drafts` and leaving drafts out
   are ∆Han, in Someday/Maybe.
 - **Second phase.** A feed renders with the other pages, reading none of their output:
   ∆zu0.
-- **The rest of the pipeline.** No output transform (∆c4j), no integrity check
+- **The rest of the pipeline.** No output transform (∆fwn), no integrity check
   (∆yOJ), and no worker pool or incremental rebuild (∆xBO): every build compiles and
   renders everything in one core, `lem dev`'s rebuilds among them.
 

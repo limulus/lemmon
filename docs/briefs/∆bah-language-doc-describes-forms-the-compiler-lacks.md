@@ -11,7 +11,7 @@ through the staged core. Where the doc and the compiler disagree today:
   placeholder note, so the gate in `crates/lemmon-corpus/tests/placeholders.rs` cannot see
   the gap.
 - **`lem-import`.** Described as working; the compiler refuses it as not supported yet
-  (∆c4j, `tests/corpus/syntax/unsupported/builtins.lem`). Again no note in the doc.
+  (∆wOn, `tests/corpus/syntax/unsupported/builtins.lem`). Again no note in the doc.
 - **`concat(posts, links, tils)`** in §Ambient types' `site.lem` example names a stdlib
   function that does not exist, and `+` on two lists is a type error: nothing concatenates
   lists today, which the port of limulus.net's `collections.article` will want.

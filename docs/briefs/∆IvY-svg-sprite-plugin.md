@@ -15,3 +15,7 @@ splice, so formatted HTML diffs cleanly in the parity harness
   code blocks highlighted and client JavaScript bundled to hashed URLs, compare clean.
 - The sprite half of the original item; the dprint half, `∆Oyi`, was retired (its journal
   entry says why).
+- A mark producer is enough (2026-10-17, `∆c4j`'s journal entry): a layout writes
+  `mark("sprite")` and the producer reads the SVGs, so the need on the plugin host was
+  dropped. The port inlines a hand-copied sprite today (`www/_includes/components/
+  svg-sprite.lem`, from slice 1), which a new icon would have to be pasted into.

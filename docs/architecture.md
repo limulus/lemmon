@@ -281,13 +281,13 @@ becomes a module `<script>` per URL the `lem-script` tags collected; and every `
 mark the `lem-head` fragments, joined by newlines. Pages that collect the same styles
 share one bundle.
 
-- Step 2 is not yet run (∆c4j, ∆d1N): no plugin data hook or document transform, and no
-  manifest on the declaration, so no `asset()` resolves; a `plugin("…")` source is an
+- Step 2 is not yet run (∆wOn, ∆ETy, ∆d1N): no plugin data hook or document transform,
+  and no manifest on the declaration, so no `asset()` resolves; a `plugin("…")` source is an
   error at its binding.
 - No highlighter ships, nor step 7's cache of a code block's output by payload id —
   not yet built (∆Nxd) — so a code block naming a language keeps comrak's plain block
   and is warned at, since no producer claims its language.
-- Step 9 is not yet run: no output transform (∆c4j) and no integrity check (∆yOJ).
+- Step 9 is not yet run: no output transform (∆fwn) and no integrity check (∆yOJ).
 - Step 10 is not yet run (∆zu0): a feed renders with the other pages, reading none of
   their output.
 
@@ -454,14 +454,14 @@ whatever content a mark has, two producers on one name and key is a load error n
 both, and the shell's own `styles`/`scripts`/`head` producers ship as a default plugin
 the site config lists, so a site can produce those names itself. A plugin that claims a
 name ships a `lem-fn` wrapping `mark()` for it in its `.lem`, so a layout reads
-`<lem.styles()>` and a component `<lem.diagram(…)>` (D42) — not yet (∆c4j): no plugin
+`<lem.styles()>` and a component `<lem.diagram(…)>` (D42) — not yet (∆wOn): no plugin
 ships `.lem`, the shell's default plugin included, so a layout writes `mark("styles")`.
 The shell also exposes a content API (`loadSite(config).collection('articles')`) for
 tools like the revisions updater.
 
 As built, a site lists its plugins in `lemmon.config.ts` as `plugins`, and a plugin is
 `{name, marks}`: a plugin with any other hook is refused at config load, since the shell
-does not yet run one (∆c4j). A mark handler, and what a producer is given:
+does not yet run one (∆ETy, ∆wOn, ∆fwn, ∆HzB). A mark handler, and what a producer is given:
 
 ```ts
 interface PluginHandler {

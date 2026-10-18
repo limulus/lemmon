@@ -31,17 +31,17 @@ on both sides until ∆d1N.
 
 ### 4. Every document page
 
-The plugin host in full, and the plugins and types the remaining sections need. Eric builds
-the branch and all 25 documents, code blocks highlighted and client JavaScript bundled to
-hashed URLs, compare clean.
+The plugin hooks the documents and their scripts need, and the plugins and types the
+remaining sections need. Eric builds the branch and all 25 documents, code blocks
+highlighted and client JavaScript bundled to hashed URLs, compare clean.
 
-- `∆c4j` Plugin host
-  - The `Plugin` hooks in full (data, transformDocument, assets, transformOutput, emit,
-    commands, watch), plugin `.lem` via `lem-import` in `site.lem` (D23, D06), a content API
+- `∆ETy` Document and asset hooks
+  - `transformDocument` rewrites a document's text before it compiles, and `assets` hands
+    a plugin's manifest to `compile` with the files it built; `∆c4j`'s journal says why
 - `∆d1N` esbuild asset pipeline
   - Bundle `**/index.ts` + `**/worker.ts` (D09), resolve the `XXXXXXXX` placeholder (D10),
     and hand the manifest to the host declaration at `compile` as compile-time facts
-  - needs: `∆muD`, `∆Q6L`
+  - needs: `∆ETy`, `∆muD`, `∆Q6L`
 - `∆tAw` Remaining schemas and components
   - `site.lem` types for link posts, TILs and photo pages, and the components the first
     slice did not need, so every document page has its types
@@ -49,23 +49,14 @@ hashed URLs, compare clean.
 - `∆ITg` Computed defaults and the link-post appender
   - Typed front matter for links, penumbra and TILs, computed defaults replacing
     `eleventyComputed.js`, the link-post appender, markdown-it's extras in comrak
-  - needs: `∆c4j`, `∆tAw`
+  - needs: `∆ETy`, `∆tAw`
 - `∆Nxd` Default highlighter plugin
   - highlight.js as a `code` producer shipped with the shell, so a new site highlights out
     of the box and limulus.net's `<pre><code class="hljs">` markup is reproduced exactly
-  - needs: `∆c4j`, `∆7wK`
-- `∆shS` Revisions plugin
-  - `revisions.json` as data feeding `lastModified`, plus the `update-revisions` command
-    reimplemented on the content API instead of spinning up Eleventy
-  - needs: `∆c4j`
+  - needs: `∆7wK`
 - `∆IvY` svg-sprite plugin
-  - Inline sprite from `assets/svg/{common,photos}` as an `emit`/data hook replacing
-    `eleventy-plugin-svg-sprite`, run after the side-channel splice
-  - needs: `∆c4j`
-- `∆yOJ` Link and asset integrity check
-  - The link and asset integrity check over `dist/`: links resolve to written pages or
-    passthrough files, and `asset()` URLs to manifest entries, CloudFront untouched
-  - needs: `∆d1N`, `∆muD`
+  - Inline sprite from `assets/svg/{common,photos}` as a mark producer replacing
+    `eleventy-plugin-svg-sprite` and the port's hand-copied `svg-sprite.lem`
 
 ### 5. Index and generated pages
 
@@ -81,10 +72,13 @@ each comparing clean.
   - Home, the five section indexes, the author page and `404` as `.lem` page templates with
     front matter (D41) reading their collections through glob bindings
   - needs: `∆tAw`
+- `∆wOn` Plugin data, commands and `.lem`
+  - The `data` and `commands` hooks, and plugin `.lem` bound via `lem-import` in `site.lem`
+    (D23, D06), whose qualified names must first be squared with D34
 - `∆pP5` Photos plugin
   - `photos.json` as typed data with alias resolution, and `lem photos add` wrapping
     `bin/process-photos.js`. A photo's URL is its stored `alias`, never `title.slugify()`
-  - needs: `∆c4j`
+  - needs: `∆wOn`
 - `∆hvm` Photo and TIL topic pages as generators
   - `photos/photo` and `tils/topics`, the two paginated pages, as generator templates whose
     `for:` key names a list (D43), with `prev` and `next` filled by the loader
@@ -92,14 +86,25 @@ each comparing clean.
 
 ### 6. Feeds, sitemap, cutover
 
-The pages that read other pages' finished output, the whole-site parity run, and the switch.
-Eric sees `npm run parity` report zero unexpected differences over the whole `dist/`, and
+The pages that read other pages' finished output, the link check and the revisions updater
+the deploy runs, the whole-site parity run, and the switch. Eric sees `npm run parity` report zero unexpected differences over the whole `dist/`, and
 limulus.net builds and deploys with `lem` with its CloudFront config untouched.
 
 - `∆zu0` Feeds and sitemap in a second phase
   - The three feeds (rss, two atom, `/feed.xsl`) and `sitemap.xml` with video entries as
     templates rendered after every other page, reading finished output as a string source
   - needs: `∆LsH`, `∆hvm`
+- `∆yOJ` Link and asset integrity check
+  - The link and asset integrity check over `dist/`: links resolve to written pages or
+    passthrough files, and `asset()` URLs to manifest entries, CloudFront untouched
+  - needs: `∆d1N`, `∆muD`, `∆zu0`
+- `∆Gg3` Content API
+  - `loadSite(config)` for out-of-build tools: each document's path, body and loaded record,
+    computed fields included, read back from the core by a new boundary call
+- `∆shS` Revisions plugin
+  - `revisions.json` as data feeding `lastModified`, plus the `update-revisions` command
+    reimplemented on the content API instead of spinning up Eleventy
+  - needs: `∆Gg3`
 - `∆Zg9` Whole-site parity
   - `npm run parity` over the whole `dist/` against the 11ty build, every difference in a
     forgiveness class with its count, at zero unexpected differences; the acceptance bar
@@ -107,7 +112,7 @@ limulus.net builds and deploys with `lem` with its CloudFront config untouched.
 - `∆oAl` Cutover
   - At zero unexpected diffs, replace Eleventy with `lem` in limulus-dot-net, single switch,
     no dual-serving, CloudFront config unchanged
-  - needs: `∆Zg9`, `∆Vhi`
+  - needs: `∆Zg9`, `∆Vhi`, `∆yOJ`, `∆shS`
 
 ## After the cutover
 
@@ -189,7 +194,7 @@ initiative before starting it.
 - `∆SDN` Pure wasm plugin values
   - Revisit D06 ("plugins cannot inject logic") for a plugin-shipped wasm module with no
     imports, for what a template must compute on and a mark cannot carry (D42)
-  - needs: `∆c4j`, `∆7wK`
+  - needs: `∆wOn`, `∆7wK`
 - `∆5pk` `lem` code blocks highlighted by the core's scanner
   - A `code` producer for `lem` built from `lemmon-syntax`'s real scanner, so no
     `.sublime-syntax` Lemmon grammar drifts from the parser and tree-sitter-lemmon
@@ -210,7 +215,13 @@ initiative before starting it.
 - `∆wOb` Formatted HTML for limulus.net
   - Eleventy's dprint transform formats 28 of its 55 pages and fails on the rest; after the
     cutover none would be formatted unless the site adds a `transformOutput` plugin
-  - needs: `∆c4j`
+  - needs: `∆fwn`
+- `∆fwn` The `transformOutput` hook
+  - A plugin rewrites each page's finished bytes before the write; built once for `∆Oyi`
+    and parked on `parked/oyi-transform-output-hook` (`ba9ece6`), its only consumer `∆wOb`
+- `∆HzB` The `watch` and `emit` hooks
+  - A plugin's own change source for `lem dev`, and files it writes after render; in
+    the architecture's plugin sketch, with no consumer in the port
 - `∆v6d` Serialize the linked program
   - `exportModule`/`importModule` serialize the linked program (D14 headroom), deferred from
     `∆TNT` because a fact nothing consumes is a comment

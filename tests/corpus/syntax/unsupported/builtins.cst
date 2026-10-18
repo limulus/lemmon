@@ -18,4 +18,4 @@ Root@0..34
     Text@33..34 "\n"
 
 --- diagnostics
-1:1..1:12: `lem-import` is not supported yet (∆c4j)
+1:1..1:12: `lem-import` is not supported yet (∆wOn)
