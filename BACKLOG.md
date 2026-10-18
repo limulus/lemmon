@@ -35,14 +35,9 @@ everything, and the rebuild time recorded here decides whether the Incrementalit
 opens. Eric runs `lem dev` in the branch, edits a post or a layout and sees the change in
 the browser, and sees `lem check` report a deliberate error with its span.
 
-- `∆Vhi` `lem dev`
-  - Dev server with COOP/COEP headers and live reload; a change rebuilds everything, and the
-    full rebuild time is recorded for the Incrementality epic. Replaces `eleventy --serve`
-  - needs: `∆muD`
-- `∆Uqg` `lem check`
-  - The build without the writing: compile, load and render every page, and print each
-    diagnostic with its span, so an author checks a change without touching the output
-  - needs: `∆muD`
+Built on 2026-10-17 (journal entries for ∆Uqg and ∆Vhi): `npm run lemmon:dev` in the
+branch serves at http://127.0.0.1:8080/, and a full rebuild takes about 250 ms. The run
+above is Eric's to make before slice 4 starts.
 
 ### 4. Every document page
 
@@ -150,7 +145,9 @@ point; this is only its default place.
 ### Incrementality
 
 Opens only if the full rebuild time recorded in the daily-loop slice exceeds one second;
-until then, rebuilding the whole site is the incremental build.
+until then, rebuilding the whole site is the incremental build. Recorded on 2026-10-17: a
+median of 250 ms for the port's 25 documents (∆Vhi's journal), worth taking again at the
+whole-site run.
 
 - `∆xBO` Render-reported deps
   - `render` reports which units and records a page read, so `lem dev` (`∆Vhi`) re-renders
