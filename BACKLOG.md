@@ -26,8 +26,7 @@ green on main, and that branch is where every slice is accepted. A language or c
 lands inside the slice that needs it.
 Slices 1 to 3, a page from `lem build`, styled output, and the daily loop of `lem dev` and
 `lem check`, were accepted on 2026-10-17; their items' journal entries record them, and
-∆Oyi's records why dprint left slice 2. Slice 2's `npm run parity:look` refuses `/lib/**`
-on both sides until ∆d1N.
+∆Oyi's records why dprint left slice 2.
 
 ### 4. Every document page
 
@@ -35,10 +34,10 @@ The plugin hooks the documents and their scripts need, and the plugins and types
 remaining sections need. Eric builds the branch and all 25 documents, code blocks
 highlighted and client JavaScript bundled to hashed URLs, compare clean.
 
-- `∆d1N` esbuild asset pipeline
-  - Bundle `**/index.ts` + `**/worker.ts` (D09), resolve the `XXXXXXXX` placeholder (D10),
-    and hand the manifest to the host declaration at `compile` as compile-time facts
-  - needs: `∆ETy`, `∆muD`, `∆Q6L`
+Built on 2026-10-17 (journal entries for ∆ETy, ∆tAw, ∆Nxd, ∆IvY, ∆ITg and ∆d1N): `npm run
+parity` in the branch compares all 25 documents clean and their 37 script files byte for
+byte, and `npm run parity:look` shows the documents identical with their scripts running.
+The run above is Eric's to make before slice 5 starts.
 
 ### 5. Index and generated pages
 
@@ -123,8 +122,8 @@ point; this is only its default place.
 
 Opens only if the full rebuild time recorded in the daily-loop slice exceeds one second;
 until then, rebuilding the whole site is the incremental build. Recorded on 2026-10-17: a
-median of 250 ms for the port's 25 documents (∆Vhi's journal), worth taking again at the
-whole-site run.
+median of 250 ms for the port's 25 documents (∆Vhi's journal), and 375 ms once slice 4's
+esbuild plugin added its 200 ms (∆d1N's journal); worth taking again at the whole-site run.
 
 - `∆xBO` Render-reported deps
   - `render` reports which units and records a page read, so `lem dev` (`∆Vhi`) re-renders
@@ -166,6 +165,9 @@ so it can be reproduced cold.
 - `∆bah` `docs/language.md` describes three forms the compiler lacks
   - String interpolation, `lem-import` and `concat` read as working there, with no "not yet"
     note; the canonical example writes `[md]` and `size: small`, which do not compile
+- `∆Gsn` An asset's did-you-mean points at the wrong script
+  - `scripts: ./lib/index.js` is offered `/lib/rum/index.js`, the nearest key by edit
+    distance, not the page's own `…/<slug>/lib/index.js`; see `∆d1N`'s journal entry
 
 ## Someday/Maybe
 

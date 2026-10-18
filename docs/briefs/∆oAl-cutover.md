@@ -39,3 +39,9 @@ config unchanged
   worker's source map names its module by absolute path (`wasm-module:/…/node_modules/…`),
   so its hash depends on where the site is checked out (stable in CI, not across
   machines). Once parity no longer binds, rewrite before hashing and strip the path.
+- limulus.net's blur-hash script (`www/lib/blur-hash/index.ts`) has two races, live today:
+  an element the parser creates after the async `/lib/common` script has defined
+  `blur-hash` is connected before its `<img>` exists and throws, and a placeholder whose
+  worker answers after its photo loaded is painted back behind the photo. The port's
+  `npm run parity:look` orders requests around both (its `Gate`, `∆d1N`); fixing the
+  script lets that ordering go.

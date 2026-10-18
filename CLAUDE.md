@@ -13,10 +13,10 @@ page rendering end-to-end from the WASM core) is done, and the rest is cut into 
 each end in software Eric runs. The first three, `lem build` and `npm run parity` over
 limulus.net's feed posts on its `lemmon-port` branch, styled output with `npm run
 parity:look`'s screenshots, and the daily loop of `lem dev` and `lem check`, were
-accepted on 2026-10-17; the fourth, every document page, is under way.
+accepted on 2026-10-17; the fourth, every document page, is built and awaits his run.
 The language runs end to end — scanner → parser → typed AST → compiler → VM, with `.md`
 through document mode — and what each stage settled is the decision index
-(`docs/decisions/README.md`, D01–D43), which is the status. The shape to hold in mind:
+(`docs/decisions/README.md`, D01–D45), which is the status. The shape to hold in mind:
 the checker is the compiler's own walk (D31); a host declares the ambient environment a
 program compiles in, and `loadData` validates the host's data against the declared
 schemas (D30, D36, D37); each file compiles to its own `Unit`, and a link step joins
