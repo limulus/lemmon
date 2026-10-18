@@ -1,8 +1,11 @@
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { setTimeout as sleep } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
-import { describe, expect, it } from 'vitest'
+import { setFlagsFromString } from 'node:v8'
+import { runInNewContext } from 'node:vm'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { WasmBoundary } from './boundary.ts'
 import { createCore, loadCore, stagingDirectory } from './load.ts'
@@ -83,5 +86,38 @@ describe('createCore()', () => {
     expect(core.version).toBe(glue.version())
     expect(core.version).toMatch(/^\d+\.\d+\.\d+/)
     core.free()
+  })
+})
+
+describe('createCore(), in an instance a call has trapped', () => {
+  // A trap poisons the instance the glue module holds; re-evaluating the module gives
+  // whatever runs next a fresh one.
+  afterEach(() => {
+    vi.resetModules()
+  })
+
+  it('should construct no core, leaving the collector none to free in it', async () => {
+    vi.resetModules()
+    const glue = (await import(new URL('lemmon-core.js', stagingDir).href)) as WasmBoundary
+    const bytes = await readFile(new URL('lemmon-core_bg.wasm', stagingDir))
+    const core = createCore(glue, bytes)
+    // An operator chain long enough to overflow the `.wasm` stack (∆ugN).
+    const deep = [{ path: 'deep.lem', text: `<lem.${'1 + '.repeat(2999)}1>\n` }]
+    expect(() => core.compile(deep)).toThrow(WebAssembly.RuntimeError)
+    // The call that trapped still holds the core; freeing it is refused, after the glue
+    // has taken it off its finalization registry.
+    expect(() => {
+      core.free()
+    }).toThrow(/borrowed/)
+
+    expect(() => createCore(glue, bytes)).toThrow(WebAssembly.RuntimeError)
+    // A core constructed before the trap would be freed now, in the trapped instance,
+    // and what that throws would fail the run.
+    setFlagsFromString('--expose-gc')
+    const gc = runInNewContext('gc') as () => void
+    for (let i = 0; i < 3; i++) {
+      gc()
+      await sleep(20)
+    }
   })
 })

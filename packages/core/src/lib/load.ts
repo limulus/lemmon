@@ -44,7 +44,11 @@ export function createCore(
   wasm: BufferSource | WebAssembly.Module
 ): Core {
   glue.initSync({ module: wasm })
-  return new Core(new glue.Core(), glue.version())
+  // Asked before a core is constructed: in an instance an earlier call trapped, this is
+  // the first call to trap again, and a core constructed before it would be left for the
+  // glue's finalizer to free in that instance, a throw no caller could catch.
+  const version = glue.version()
+  return new Core(new glue.Core(), version)
 }
 
 /**
