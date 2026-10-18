@@ -39,10 +39,6 @@ highlighted and client JavaScript bundled to hashed URLs, compare clean.
   - Bundle `**/index.ts` + `**/worker.ts` (D09), resolve the `XXXXXXXX` placeholder (D10),
     and hand the manifest to the host declaration at `compile` as compile-time facts
   - needs: `∆ETy`, `∆muD`, `∆Q6L`
-- `∆ITg` Computed defaults and the link-post appender
-  - The link-post appender as a site `transformDocument`, penumbra's Liquid include as a lem
-    call, and markdown-it's extras; front matter and defaults landed in `∆tAw`
-  - needs: `∆ETy`, `∆tAw`
 
 ### 5. Index and generated pages
 
