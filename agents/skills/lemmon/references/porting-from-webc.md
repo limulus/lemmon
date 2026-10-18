@@ -120,7 +120,7 @@ judge (∆Zo7), not these examples'.
 | `page.url`, `page.inputPath`            | the same fields of `Page`                   |
 | `eleventy.generator`                    | `build.generator`                           |
 | `site.url` (`_data/site.json`)          | a binding not named `url`: `site.siteUrl`   |
-| `this.svg(name)`                        | `<lem.svgUse(name)>`; the sprite is ∆IvY's  |
+| `this.svg(name)`                        | `<lem.svgUse(name)>`; the sprite is a mark  |
 | `<link>` to `getBundleFileUrl('css')`   | `<lem.mark("styles")>`, link and all        |
 | `getBundle('html', 'head')`             | `<lem.mark("head")>`                        |
 | `src="/lib/x/index.XXXXXXXX.js"`        | `<lem-script src = asset("…") />` (∆d1N)    |
@@ -333,8 +333,11 @@ guess (invariant 10).
 
 `this.svg(name)` printed a `<svg>` that `use`s a sprite symbol, with a `desc` id counted per
 page. `uniqueId(prefix)` is that counter: it counts per prefix and restarts every render,
-body and layout in one run. The sprite itself is the svg-sprite plugin's (∆IvY);
-`tests/fidelity/the-rebound/site/sprite.lem` inlines one by hand meanwhile.
+body and layout in one run. The sprite itself is a mark a site plugin produces: limulus.net's
+`lemmon/svg-sprite.ts` builds it from `www/assets/svg/common` with svg-sprite in its
+`assets` hook, so a missing or unreadable icon stops the build, and its producer places it
+where `page.lem` writes `<lem.mark("sprite")>` (∆IvY). `tests/fidelity/the-rebound/site/
+sprite.lem` inlines one by hand.
 
 ```lem components.lem
 <lem-fn svgUse(name: string)>

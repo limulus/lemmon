@@ -43,13 +43,6 @@ highlighted and client JavaScript bundled to hashed URLs, compare clean.
   - The link-post appender as a site `transformDocument`, penumbra's Liquid include as a lem
     call, and markdown-it's extras; front matter and defaults landed in `∆tAw`
   - needs: `∆ETy`, `∆tAw`
-- `∆Nxd` Default highlighter plugin
-  - highlight.js as a `code` producer shipped with the shell, so a new site highlights out
-    of the box and limulus.net's `<pre><code class="hljs">` markup is reproduced exactly
-  - needs: `∆7wK`
-- `∆IvY` svg-sprite plugin
-  - Inline sprite from `assets/svg/{common,photos}` as a mark producer replacing
-    `eleventy-plugin-svg-sprite` and the port's hand-copied `svg-sprite.lem`
 
 ### 5. Index and generated pages
 
