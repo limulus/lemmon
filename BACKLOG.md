@@ -25,19 +25,8 @@ pipeline, §Shell plugin API); the port lives in limulus-dot-net on a branch whi
 green on main, and that branch is where every slice is accepted. A language or core feature
 lands inside the slice that needs it.
 Slices 1 to 3, a page from `lem build`, styled output, and the daily loop of `lem dev` and
-`lem check`, were accepted on 2026-10-17; their items' journal entries record them, and
-∆Oyi's records why dprint left slice 2.
-
-### 4. Every document page
-
-The plugin hooks the documents and their scripts need, and the plugins and types the
-remaining sections need. Eric builds the branch and all 25 documents, code blocks
-highlighted and client JavaScript bundled to hashed URLs, compare clean.
-
-Built on 2026-10-17 (journal entries for ∆ETy, ∆tAw, ∆Nxd, ∆IvY, ∆ITg and ∆d1N): `npm run
-parity` in the branch compares all 25 documents clean and their 37 script files byte for
-byte, and `npm run parity:look` shows the documents identical with their scripts running.
-The run above is Eric's to make before slice 5 starts.
+`lem check`, were accepted on 2026-10-17, and slice 4, every document page, on 2026-10-18;
+their items' journal entries record them, and ∆Oyi's records why dprint left slice 2.
 
 ### 5. Index and generated pages
 
