@@ -35,9 +35,6 @@ The plugin hooks the documents and their scripts need, and the plugins and types
 remaining sections need. Eric builds the branch and all 25 documents, code blocks
 highlighted and client JavaScript bundled to hashed URLs, compare clean.
 
-- `∆ETy` Document and asset hooks
-  - `transformDocument` rewrites a document's text before it compiles, and `assets` hands
-    a plugin's manifest to `compile` with the files it built; `∆c4j`'s journal says why
 - `∆d1N` esbuild asset pipeline
   - Bundle `**/index.ts` + `**/worker.ts` (D09), resolve the `XXXXXXXX` placeholder (D10),
     and hand the manifest to the host declaration at `compile` as compile-time facts
