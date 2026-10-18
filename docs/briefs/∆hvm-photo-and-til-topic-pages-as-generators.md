@@ -18,7 +18,7 @@ reading other pages' finished output as a string source (D42)
 - The photo pages' `site.lem` types were deferred here from `∆tAw` (2026-10-17), whose
   backlog line named them: nothing before these pages reads them. The TIL chip's `nolink`
   form (`www/_includes/components/til-chip.lem` on the port branch) is first rendered by
-  the article cards of `/feed/` and `/tils/` (`∆LsH`), and then by the topic pages.
+  the article cards of `/feed/` and `/tils/` (built in `∆LsH`), and then by the topic pages.
 - A photo page's URL is its stored `alias`, never `title.slugify()` (from `∆pP5`, closed
   on 2026-10-18): the aliases were minted by `@sindresorhus/slugify`, whose German rule
   spells `Dürer` `duerer` where the core's Latin fold spells it `durer`.

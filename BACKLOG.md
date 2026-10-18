@@ -41,10 +41,6 @@ each comparing clean.
   - A page template whose `for:` key names a field and an `<ambient value>.<field>` list
     becomes one page per item at load, its url from its type's default (D43)
   - needs: `∆Bhz`
-- `∆LsH` Index pages as page templates
-  - Home, the six section indexes, the author page and `404` as `.lem` page templates with
-    front matter (D41) reading their collections through glob bindings
-  - needs: `∆tAw`
 - `∆hvm` Photo and TIL topic pages as generators
   - `photos/photo` and `tils/topics`, the two paginated pages, as generator templates whose
     `for:` key names a list (D43), with `prev` and `next` filled by the loader

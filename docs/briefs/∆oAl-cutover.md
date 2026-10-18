@@ -14,10 +14,15 @@ config unchanged
     in-body photo's figure, about 10 px a photo below 600 px wide (`md-photo-wrap`).
   - Revision-history times and date tooltips (`time[title]`) show the offset a date was
     written in, not UTC (D38; `utc-revision-display`, `datetime-text`).
-  - Reading time reads a minute lower on a page near a rounding boundary: Lemmon counts
-    what a reader sees, not the markdown source (D38, accepted by Eric 2026-10-17;
-    `reading-time`).
-  - Photo alt text WebC cut short at a quote comes out whole (`attr-escaping`).
+  - Reading time reads a minute lower on a page near a rounding boundary, in its header
+    and in its card on the lists (the-rebound's on `/feed/`): Lemmon counts what a reader
+    sees, not the markdown source (D38, accepted by Eric 2026-10-17; `reading-time`).
+  - Photo alt text WebC cut short at a quote comes out whole (`attr-escaping`), on
+    `/photos/` and in `/feed/`'s cards too.
+  - `/photos/`'s visually hidden heading on each photo names it, where WebC's `webc:text`
+    left all 19 empty, so a screen reader announces the title (`photo-list-heading`).
+  - The Source link in the header of a page template (the index pages, and the photo and
+    TIL topic pages) names its `.lem` file where it named the `.webc` (`source-pill`).
   - Footnotes are comrak's, not markdown-it-footnote's (`footnote-markup`, which
     `parity:look` neutralizes): the reference reads `1` where it read `[1]`, the back
     link `↩` where it read `↩︎`, and the section loses the `section-separator` class, so
