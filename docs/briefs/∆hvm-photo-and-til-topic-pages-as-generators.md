@@ -15,3 +15,7 @@ reading other pages' finished output as a string source (D42)
 - Slice 5's acceptance, which this item serves: Eric opens `dist/` from `/` and reaches
   every page of the site, each comparing clean.
 - The only two pages of the site that paginate; generators (`∆99b`) exist for them.
+- The photo pages' `site.lem` types were deferred here from `∆tAw` (2026-10-17), whose
+  backlog line named them: nothing before these pages reads them. The TIL chip's `nolink`
+  form (`www/_includes/components/til-chip.lem` on the port branch) is first rendered by
+  the topic pages, since no TIL is among the newest five articles a post recommends.

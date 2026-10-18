@@ -42,13 +42,9 @@ highlighted and client JavaScript bundled to hashed URLs, compare clean.
   - Bundle `**/index.ts` + `**/worker.ts` (D09), resolve the `XXXXXXXX` placeholder (D10),
     and hand the manifest to the host declaration at `compile` as compile-time facts
   - needs: `∆ETy`, `∆muD`, `∆Q6L`
-- `∆tAw` Remaining schemas and components
-  - `site.lem` types for link posts, TILs and photo pages, and the components the first
-    slice did not need, so every document page has its types
-  - needs: `∆foi`
 - `∆ITg` Computed defaults and the link-post appender
-  - Typed front matter for links, penumbra and TILs, computed defaults replacing
-    `eleventyComputed.js`, the link-post appender, markdown-it's extras in comrak
+  - The link-post appender as a site `transformDocument`, penumbra's Liquid include as a lem
+    call, and markdown-it's extras; front matter and defaults landed in `∆tAw`
   - needs: `∆ETy`, `∆tAw`
 - `∆Nxd` Default highlighter plugin
   - highlight.js as a `code` producer shipped with the shell, so a new site highlights out

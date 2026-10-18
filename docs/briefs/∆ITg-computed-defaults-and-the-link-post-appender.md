@@ -17,3 +17,11 @@ and code by the highlight.js producer (`∆Nxd`)
 - The feed posts' front matter landed in `∆foi`; code blocks are `∆Nxd`. Markdown-it's
   footnotes, task lists, attrs and anchors are core work where comrak lacks them, with their
   decision record.
+- Narrowed on 2026-10-17 (`∆tAw`'s journal entry): the typed front matter and the three
+  computed defaults the chips read (`title` from `linkTitle`, `linkDomain`, `tilTopic`)
+  landed in `∆tAw`. What remains: the appender, the Liquid include in four penumbra
+  documents (inside a raw HTML block, where a lem call is refused — the slice-4 plan's
+  amendment says how), and markdown-it's extras. Of those the 25 documents use footnotes,
+  already forgiven by parity's `footnote-markup`, and `{#id}` on three headings, whose
+  `tabindex="-1"` the `heading-id` class forgives only for slug ids; no document uses task
+  lists or attributes beyond `{#id}`.
