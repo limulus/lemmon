@@ -1,0 +1,8 @@
+<lem-type Slide extends Page>
+  title: string
+  prev: Slide?
+  blurb: string = "After " + (self.prev?.title ?? "the start")
+  layout: (Slide, html): html = slide
+</lem-type>
+
+<lem-fn slide(s: Slide, body: html)><main data-url="<lem.s.url>"><lem.body></main></lem-fn>

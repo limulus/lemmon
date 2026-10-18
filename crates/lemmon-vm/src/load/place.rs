@@ -60,9 +60,27 @@ impl Place {
         }
     }
 
+    /// A place in the file at `path`, which the host holds and placed `at`.
+    pub(super) fn hosted(path: &str, at: &HostSpan) -> Self {
+        Self {
+            path: path.to_owned(),
+            span: at.span,
+            range: Some(at.range),
+        }
+    }
+
     /// An error here.
     pub(super) fn error(&self, message: impl Into<String>) -> Diagnostic {
         Diagnostic::error(&self.path, self.span, message).placed_by_host(self.range)
+    }
+
+    /// `diagnostic` with a label here.
+    pub(super) fn label(
+        &self,
+        diagnostic: Diagnostic,
+        message: impl Into<String>,
+    ) -> Diagnostic {
+        diagnostic.with_placed_label(&self.path, self.span, self.range, message)
     }
 }
 
@@ -130,11 +148,7 @@ impl<'a> At<'a> {
             let mut key = self.key.as_str();
             loop {
                 if let Some(found) = spans.get(key) {
-                    return Place {
-                        path: path.to_owned(),
-                        span: found.span,
-                        range: Some(found.range),
-                    };
+                    return Place::hosted(path, found);
                 }
                 if key.is_empty() {
                     break;

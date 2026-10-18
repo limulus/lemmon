@@ -1,0 +1,6 @@
+<lem-type Slide extends Page>
+  prev: Slide? = null
+  layout: (Slide, html): html = slide
+</lem-type>
+
+<lem-fn slide(s: Slide, body: html)><main data-url="<lem.s.url>"><lem.body></main></lem-fn>

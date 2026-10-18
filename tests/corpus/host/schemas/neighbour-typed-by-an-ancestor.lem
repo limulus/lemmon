@@ -1,0 +1,10 @@
+<lem-type Slide extends Page>
+  prev: Page?
+  next: Page?
+  layout: (Slide, html): html = slide
+</lem-type>
+
+<lem-fn slide(s: Slide, body: html)>
+  <lem.body>
+  <lem-if s.next><a href="<lem.s.next.url>">next</a></lem-if>
+</lem-fn>

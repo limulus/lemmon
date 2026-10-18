@@ -8,9 +8,10 @@
 //! sends. A [`Host`] is that declaration as the compiler reads it, and it carries three
 //! things:
 //!
-//! - The ambient bindings: names to [`Ambient`]s, plus the three names a host that
+//! - The ambient bindings: names to [`Ambient`]s, plus the four names a host that
 //!   renders documents adds — which ambient value a file's record retypes, the field a
-//!   page is rendered through, and the field its url is read from (D43).
+//!   page is rendered through, the field its url is read from, and the two fields a
+//!   generated page's neighbours are filled into (D43).
 //! - The asset manifest (D38): every asset the host's build produced, with the URL it
 //!   shipped at. It is declared rather than sent with the data because `asset("…")` is
 //!   folded while compiling (D10), so the entry it was folded from is a compile-time
@@ -103,6 +104,10 @@ pub struct Host {
     /// document value's type declares as `url` (D43). A host that names none has its
     /// pages placed nowhere: no url is reported, and none checked against another's.
     url: Option<Rc<str>>,
+    /// The two fields a generated page's neighbours fill — `prev` and `next` in the
+    /// standard shell, in that order — which only a page type whose pages are generated
+    /// declares (D43). A host that names none has no page's neighbours filled.
+    neighbours: Option<(Rc<str>, Rc<str>)>,
     /// What the document value is in the file this is a view of: that file's record, or
     /// the unknown type for a document the host matched to nothing. Never set in the
     /// declaration itself, which is why the type a page schema extends stays the
@@ -314,6 +319,13 @@ impl Host {
         self
     }
 
+    /// Names the fields a generated page's previous and next pages fill, in that order.
+    #[must_use]
+    pub fn neighboured_by(mut self, previous: &str, next: &str) -> Self {
+        self.neighbours = Some((Rc::from(previous), Rc::from(next)));
+        self
+    }
+
     /// Declares the assets the host's build produced, as `(logical path, URL)` pairs.
     ///
     /// Replaces any already declared rather than adding to them: a manifest is one
@@ -449,6 +461,22 @@ impl Host {
         self.url.as_deref()
     }
 
+    /// The fields a generated page's previous and next pages fill, if the host names
+    /// them.
+    #[must_use]
+    pub fn neighbours(&self) -> Option<(&str, &str)> {
+        self.neighbours
+            .as_ref()
+            .map(|(previous, next)| (&**previous, &**next))
+    }
+
+    /// Whether `field` is one of the two neighbour fields the host names.
+    #[must_use]
+    pub fn is_neighbour(&self, field: &str) -> bool {
+        self.neighbours()
+            .is_some_and(|(previous, next)| previous == field || next == field)
+    }
+
     /// Every name the host binds, in declaration order.
     pub fn names(&self) -> impl Iterator<Item = &str> {
         self.ambient.iter().map(|(name, _)| &**name)
@@ -575,6 +603,21 @@ mod tests {
         let rebuilt = built().with_assets([("styles/site.css", "/site.999.css")]);
         assert_eq!(rebuilt.asset("styles/site.css"), Some("/site.999.css"));
         assert_eq!(rebuilt.asset("scripts/gallery.js"), None);
+    }
+
+    #[test]
+    fn names_the_neighbour_fields_in_order_and_answers_for_each() {
+        let host = shell().neighboured_by("prev", "next");
+        assert_eq!(host.neighbours(), Some(("prev", "next")));
+        assert!(host.is_neighbour("prev"));
+        assert!(host.is_neighbour("next"));
+        assert!(!host.is_neighbour("url"));
+        // A host that names none has no neighbour at all, and a change of names is a
+        // change of declaration, which the resident `Core` compares at `loadData`.
+        assert_eq!(shell().neighbours(), None);
+        assert!(!shell().is_neighbour("prev"));
+        assert_ne!(host, shell());
+        assert_ne!(host, shell().neighboured_by("next", "prev"));
     }
 
     #[test]

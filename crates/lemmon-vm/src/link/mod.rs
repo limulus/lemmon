@@ -2,9 +2,10 @@
 //!
 //! [`link`] checks each unit's compile-time facts against what the index and the host
 //! say now: a unit whose facts have moved under it is stale rather than relinkable, and
-//! the error names the file to recompile. It also checks the two fields the host
-//! declaration names — where a page goes and what renders it — against what the project
-//! declares, since neither is a fact of any unit (D43). With every check passed it
+//! the error names the file to recompile. It also checks the fields the host
+//! declaration names — where a page goes, what renders it, and a generated page's
+//! neighbours — against what the project declares, since none is a fact of any unit
+//! (D43). With every check passed it
 //! concatenates the constant pools, rebases the operands that index them, resolves each
 //! import to the function the index says defines it, and asks [`plans`](plans()) for the
 //! tables the loader runs. Building those can fail the link too: a cycle among what the
@@ -21,8 +22,8 @@ use lemmon_syntax::Span;
 use crate::bytecode::{Declared, Document, Exported, MarkKey, MarkPayload, Module, Op};
 use crate::compile::index_u32;
 use crate::decls::{
-    Declaration, Decls, EntryFault, TypeFact, entry_fault, misshaped_entry_field,
-    no_entry_field,
+    Declaration, Decls, EntryFault, TypeFact, entry_fault, misdeclared_neighbour,
+    misshaped_entry_field, neighbour_default, neighbour_fits, no_entry_field,
 };
 use crate::diagnostics::{Compiled, Diagnostic};
 use crate::exports::ExportIndex;
@@ -369,13 +370,15 @@ fn add_u32(a: u32, b: u32) -> u32 {
     a.checked_add(b).expect("fewer than 2^32 items")
 }
 
-/// The two fields the host declaration names, against what the project declares
-/// (D43): the document type declares the url field as `url`, and the record of every
-/// page declares the entry field as a layout of it. Neither name is a fact of any unit,
-/// so a compile that changes only the declaration relinks every unit as it is, and
-/// only here — with the index and the host in hand on every link — is the new name
-/// seen. Reported where the compiler would report the same thing: at the type that
-/// lacks the field, or at the field declared with the wrong type.
+/// The three kinds of field the host declaration names, against what the project
+/// declares (D43): the document type declares the url field as `url`, the record of
+/// every page declares the entry field as a layout of it, and a neighbour field a page
+/// record has is an optional of the record that declares it, or of one it extends, with
+/// no default. None of the names is a fact of any unit, so a compile that changes only
+/// the declaration relinks every unit as it is, and only here — with the index and the
+/// host in hand on every link — is the new name seen. Reported where the compiler would
+/// report the same thing: at the type that lacks the field, at the field declared with
+/// the wrong type, or at the field whose default the loader would overwrite.
 fn check_host_fields(units: &[Unit], index: &ExportIndex, host: &Host) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     // A document type no file declares is the compiler's to report, at the first read
@@ -440,6 +443,49 @@ fn check_host_fields(units: &[Unit], index: &ExportIndex, host: &Host) -> Vec<Di
                     ));
                 }
                 None => {}
+            }
+        }
+    }
+    if let Some((previous, next)) = host.neighbours() {
+        // Every page record — the document type and each record extending it — with
+        // each neighbour field it has judged where that field is declared, once, and
+        // each default given to one where it is written.
+        let pages: Vec<&Rc<str>> = index
+            .types()
+            .map(|export| &export.decl.name)
+            .filter(|name| ***name == *document || index.extends(name, &document))
+            .collect();
+        let mut judged: Vec<(&Rc<str>, &str)> = Vec::new();
+        for page in &pages {
+            for field in [previous, next] {
+                let Some((owner, declared)) = index.field_in(page, field) else {
+                    continue;
+                };
+                if judged.contains(&(&owner.name, field)) {
+                    continue;
+                }
+                judged.push((&owner.name, field));
+                if !neighbour_fits(index, &owner.name, &declared.ty) {
+                    diagnostics.push(Diagnostic::error(
+                        file_of(owner),
+                        declared.span,
+                        misdeclared_neighbour(&owner.name, field),
+                    ));
+                }
+            }
+        }
+        for unit in units {
+            for row in &unit.defaults {
+                let inherited = |page: &&Rc<str>| {
+                    **page == row.record || index.extends(page, &row.record)
+                };
+                if host.is_neighbour(&row.field) && pages.iter().any(inherited) {
+                    diagnostics.push(Diagnostic::error(
+                        &unit.path,
+                        row.span,
+                        neighbour_default(&row.field),
+                    ));
+                }
             }
         }
     }
@@ -1083,6 +1129,126 @@ mod tests {
                  `title: (Post, html): html`",
                 at(POST, "«title»: string")
             )]
+        );
+    }
+
+    /// `files` compiled as units against `compiled_with` and linked against
+    /// `linked_with`, as strings — a relink that recompiles nothing, as a compile that
+    /// changes only the declaration is.
+    fn relinked_files(
+        compiled_with: &Host,
+        linked_with: &Host,
+        files: &[(&str, &str)],
+    ) -> Vec<String> {
+        let units: Vec<Unit> = files
+            .iter()
+            .map(|(path, _)| unit_against(compiled_with, path, files))
+            .collect();
+        shown(&link(&units, &ExportIndex::of(&units), linked_with).diagnostics)
+    }
+
+    fn neighboured() -> Host {
+        addressed_host().neighboured_by("prev", "next")
+    }
+
+    /// A page schema whose `prev` is no optional, whose `next` has a default, and a
+    /// record that is no page's with fields of the same names — clean under a host that
+    /// names no neighbours.
+    const SLIDES: &str = "<lem-type Slide extends Post>\n  prev: Post\n  \
+         next: Slide? = null\n</lem-type>\n\
+         <lem-type Revision>\n  prev: string?\n  next: string? = null\n  \
+         text: string = self.prev ?? \"\"\n</lem-type>";
+
+    #[test]
+    fn judges_the_neighbour_fields_on_a_relink_that_recompiled_nothing() {
+        let files = [
+            ("ambient.lem", AMBIENT),
+            ("site.lem", POST),
+            ("slides.lem", SLIDES),
+        ];
+        assert_eq!(
+            relinked_files(&addressed_host(), &addressed_host(), &files),
+            Vec::<String>::new()
+        );
+        // `Revision` is no page's record, so its fields of the same names are its own.
+        assert_eq!(
+            relinked_files(&addressed_host(), &neighboured(), &files),
+            [
+                format!(
+                    "slides.lem:{}: `prev` holds a generated page's neighbour, a page of \
+                     its own type: declare it `prev: Slide?`, or an optional of a type \
+                     `Slide` extends",
+                    at(SLIDES, "«prev»: Post")
+                ),
+                format!(
+                    "slides.lem:{}: `next` is a page's neighbour, which the loader fills, \
+                     so it takes no default",
+                    at(SLIDES, "«next»: Slide? = null")
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn judges_a_neighbour_the_document_type_declares_where_it_declares_it() {
+        // The document type has no base, so no compile judges its field's type; every
+        // page record inherits it, and the link step judges it once, where it stands.
+        let ambient = "<lem-type Page>\n  url: url\n  prev: Page\n  next: Page? = null\n\
+                       </lem-type>";
+        let files = [("ambient.lem", ambient), ("site.lem", POST)];
+        assert_eq!(
+            relinked_files(&addressed_host(), &neighboured(), &files),
+            [
+                format!(
+                    "ambient.lem:{}: `prev` holds a generated page's neighbour, a page of \
+                     its own type: declare it `prev: Page?`, or an optional of a type \
+                     `Page` extends",
+                    at(ambient, "«prev»: Page")
+                ),
+                format!(
+                    "ambient.lem:{}: `next` is a page's neighbour, which the loader fills, \
+                     so it takes no default",
+                    at(ambient, "«next»: Page?")
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn refuses_a_default_that_reads_a_neighbour_on_a_relink_that_recompiled_nothing() {
+        // Compiled clean while the host named no neighbours: the direct read stands
+        // where the compiler would have refused it, and the read through a call is the
+        // link step's in any case. A record that is no page's reads its own `prev`.
+        let slides = "<lem-type Slide extends Post>\n  prev: Slide?\n  next: Slide?\n  \
+             blurb: string = self.prev?.title ?? \"\"\n  \
+             teaser: string = following(self)\n</lem-type>\n\
+             <lem-fn following(s: Slide): string = s.next?.title ?? \"\" />\n\
+             <lem-type Revision>\n  prev: string?\n  \
+             text: string = self.prev ?? \"\"\n</lem-type>";
+        let files = [
+            ("ambient.lem", AMBIENT),
+            ("site.lem", POST),
+            ("slides.lem", slides),
+        ];
+        assert_eq!(
+            relinked_files(&addressed_host(), &addressed_host(), &files),
+            Vec::<String>::new()
+        );
+        let why = "is out of reach of a default: the loader fills a page's neighbours once \
+                   every page of its generator is built";
+        assert_eq!(
+            relinked_files(&addressed_host(), &neighboured(), &files),
+            [
+                format!(
+                    "slides.lem:{}: `blurb` reads `prev`, but `prev` {why}",
+                    at(slides, "«blurb»: string")
+                ),
+                format!(
+                    "slides.lem:{}: `teaser` reaches `next` through `following`, but \
+                     `next` {why}",
+                    at(slides, "«teaser»: string")
+                ),
+            ]
         );
     }
 

@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
 import { contains } from './config.ts'
-import type { Program } from './program.ts'
+import type { CompiledPage, Program } from './program.ts'
 import { readData } from './yaml-values.ts'
 
 /** What a build knows about itself: the value `build` is bound to. */
@@ -26,7 +26,8 @@ export interface Envelope {
 /**
  * The envelope that loads `program` (step 4 of the build pipeline, D37): `build` as the
  * shell's own value, every `from` binding fulfilled by its kind, and in `pages` every
- * page no glob holds whose `type:` named its record.
+ * page no glob holds whose `type:` named its record — a generator with its `for:` key,
+ * which the core expands into its pages (D43).
  *
  * A glob's binding is the front matter of the pages it holds, in path order; a data
  * file is read from the input directory and parsed with positions; an environment
@@ -70,7 +71,7 @@ export async function envelope(
     } else if (source.collects !== undefined) {
       sources[source.name] = compiled
         .filter((page) => page.binding === source.name)
-        .map((page) => page.page.loaded)
+        .map(entryOf)
     } else {
       const file = join(input, ...source.literal.split('/'))
       // Like a glob, a data file's path is from the input directory, and stays in it.
@@ -103,11 +104,20 @@ export async function envelope(
   }
   const pages = compiled
     .filter((page) => page.record !== undefined && page.binding === undefined)
-    .map((page) => page.page.loaded)
+    .map(entryOf)
   const ambient = {
     build: { time: build.time.toISOString(), generator: build.generator },
   }
   return { data: { ambient, sources, pages }, diagnostics }
+}
+
+/**
+ * A compiled page's entry in the envelope: its front matter as loaded, with its `for:`
+ * key beside it where it has one (D43) — a glob's member too, which the core refuses at
+ * the key, since no glob can hold a generator.
+ */
+function entryOf({ page }: CompiledPage): LoadedValue {
+  return page.for === undefined ? page.loaded : { ...page.loaded, for: page.for }
 }
 
 /** What a binding loads, as its `from` source is written. */

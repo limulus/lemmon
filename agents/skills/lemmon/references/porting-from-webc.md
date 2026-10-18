@@ -115,6 +115,9 @@ judge (∆Zo7), not these examples'.
 | `$data.authors[id]`                     | `site.authors[id]`                          |
 | `this.getPhoto(id)`                     | `by site.photos`, or `site.photos[id]`      |
 | `collections.article`                   | a `from` glob binding in `site.lem`         |
+| `---js pagination`, `size: 1`, `alias`  | `type:` and `for: alias: site.list`         |
+| `pagination.href.previous`              | `page.prev.url`, declared `prev: T?`        |
+| `pagination.page.previous.title`        | `page.prev.title` in `<lem-if page.prev>`   |
 | `eleventyComputed.js`                   | schema defaults, reading `self`             |
 | `layout: page` in a layout              | the layout calls the next layout itself     |
 | `page.url`, `page.inputPath`            | the same fields of `Page`                   |

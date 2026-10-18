@@ -462,6 +462,26 @@ export function claimsOf(plugins: readonly Plugin[]): Claim[] {
   )
 }
 
+/**
+ * Which of a generator's pages one is (D43): its index among them, and the list they
+ * were made from, as its `for:` key names it — `site.gallery`.
+ */
+export interface Generated {
+  index: number
+  list: string
+}
+
+/**
+ * How a message names the page at `path`: `` `about.md` ``, and a page a generator made
+ * by the item it was made from, in the language's own index syntax —
+ * `` `photos/photo.lem` for `site.gallery[3]` `` — as the core names it, since every page
+ * of a generator shares its path (D43).
+ */
+export function pageName(path: string, generated?: Generated): string {
+  if (generated === undefined) return `\`${path}\``
+  return `\`${path}\` for \`${generated.list}[${generated.index}]\``
+}
+
 /** What resolving one page's marks takes beside its render. */
 export interface PageMarks {
   /**
@@ -469,6 +489,8 @@ export interface PageMarks {
    * marks stand in its layouts as often as in the page itself.
    */
   path: string
+  /** Which of its generator's pages it is, where a generator made it. */
+  generated?: Generated
   plugins: readonly Plugin[]
   /** Every code block's payload the compile reported, by id. */
   payloads: ReadonlyMap<string, CodePayload>
@@ -524,8 +546,8 @@ export function resolvePage(rendered: RenderResult, page: PageMarks): ResolvedPa
       span: first.span,
       severity: 'warning',
       message:
-        `\`${page.path}\` collects \`${name}\` here, and nothing on that page places ` +
-        `\`mark("${name}")\`, so what it collected is not written`,
+        `${pageName(page.path, page.generated)} collects \`${name}\` here, and nothing ` +
+        `on that page places \`mark("${name}")\`, so what it collected is not written`,
       labels: [],
     })
   }
@@ -552,8 +574,8 @@ function wrapped(
       span: mark.span,
       severity: 'warning',
       message:
-        `the \`${plugin}\` plugin's ${role} for \`${name}\` failed on \`${page.path}\`, ` +
-        `so ${kept}: ${problem}`,
+        `the \`${plugin}\` plugin's ${role} for \`${name}\` failed on ` +
+        `${pageName(page.path, page.generated)}, so ${kept}: ${problem}`,
       labels: [],
     })
   }
@@ -587,8 +609,8 @@ function wrapped(
             severity: 'error',
             message:
               `the \`${plugin}\` plugin's producer for \`${name}\` called \`write\` on ` +
-              `\`${page.path}\` with ${shown(url)} and ${shown(content)}, where it takes a ` +
-              'url and a string or bytes',
+              `${pageName(page.path, page.generated)} with ${shown(url)} and ` +
+              `${shown(content)}, where it takes a url and a string or bytes`,
             labels: [],
           })
         }

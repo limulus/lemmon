@@ -22,8 +22,8 @@ use std::collections::{BTreeMap, HashSet};
 use std::rc::Rc;
 
 use lemmon_vm::{
-    ExportIndex, Host, LineIndex, Module, SourceFile, Store, Unit, Value, compile_unit,
-    from_bindings, link, load, prepare, render, render_page, repeated_path,
+    ExportIndex, Host, LineIndex, LoadedPage, Module, SourceFile, Store, Unit, Value,
+    compile_unit, from_bindings, link, load, prepare, render, render_page, repeated_path,
 };
 use wasm_bindgen::JsError;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -119,9 +119,9 @@ impl Core {
     /// when the call installed no program.
     ///
     /// `host` is the ambient declaration, JSON `{ambient, document?, entry?, url?,
-    /// assets?, marks?}`: it is resident too, so a call that changes nothing about the
-    /// environment omits it, and one that carries it replaces what the core holds. A
-    /// core given none has no ambient values at all.
+    /// neighbours?, assets?, marks?}`: it is resident too, so a call that changes
+    /// nothing about the environment omits it, and one that carries it replaces what the
+    /// core holds. A core given none has no ambient values at all.
     ///
     /// A compile that installs a new program drops the data loaded against the old
     /// one: `loadData` again before `render`, or an ambient read fails as not bound.
@@ -143,11 +143,12 @@ impl Core {
     /// Loads the data every render binds, validating it against the program (D37).
     /// `input` is JSON `{ambient?, sources?, pages?}` — the envelope `DataInput` in
     /// `wire.rs` defines and D37 §"The envelope grows additively" settles, `pages`
-    /// carrying every page no glob holds (D41). The result is the JSON array of load
-    /// diagnostics, each placed by the positions the host sent or at the declaration
-    /// that expected the value. On an error the previous data stays bound, stale until
-    /// fixed. A page the envelope does not carry is not loaded: `plan` omits it, and
-    /// `render` of it is refused.
+    /// carrying every page no glob holds (D41), and any page's entry a generator's
+    /// `for:` pair as the host parsed it, which the load expands into the generator's
+    /// pages (D43). The result is the JSON array of load diagnostics, each placed by the
+    /// positions the host sent or at the declaration that expected the value. On an
+    /// error the previous data stays bound, stale until fixed. A page the envelope does
+    /// not carry is not loaded: `plan` omits it, and `render` of it is refused.
     ///
     /// # Errors
     ///
@@ -162,10 +163,11 @@ impl Core {
     }
 
     /// Lists every page the last successful load built, in load order (D43): JSON
-    /// `[{path, url?}]`, each collection's pages as its binding loaded them, then the
-    /// envelope's `pages` in their order, with the url the host-named field holds.
-    /// After a load that reported an error it lists the stale data, as `render` binds
-    /// it.
+    /// `[{path, index?, url?}]`, each collection's pages as its binding loaded them,
+    /// then the envelope's `pages` in their order, a generator's pages where it stood
+    /// with their `index` in its list's order, each with the url the host-named field
+    /// holds. After a load that reported an error it lists the stale data, as `render`
+    /// binds it.
     ///
     /// # Errors
     ///
@@ -176,9 +178,10 @@ impl Core {
         self.plan_json().map_err(|m| JsError::new(&m))
     }
 
-    /// Renders one page. `page` is JSON `{path}`; the result is bytes — a four-byte
-    /// little-endian length, that many bytes of JSON
-    /// `{marks, fragments, diagnostics}`, then the page's UTF-8 bytes.
+    /// Renders one page. `page` is JSON `{path, index?}`, `index` naming one page of a
+    /// generator as `plan()` lists it; the result is bytes — a four-byte little-endian
+    /// length, that many bytes of JSON `{marks, fragments, diagnostics}`, then the
+    /// page's UTF-8 bytes.
     ///
     /// The page crosses as bytes rather than inside the JSON because escaping and
     /// parsing it there costs more than the render, and because a mark's offsets name
@@ -195,7 +198,9 @@ impl Core {
     ///
     /// A malformed `page` payload, rendering before any compile has succeeded, a path
     /// the program has no file for, or a page — a file compiled with a record — that
-    /// the last load did not carry: caller bugs with no source span to carry.
+    /// the last load did not make; a generator's path with no `index`, an `index` past
+    /// the pages it made, or one for a file that is no generator: caller bugs with no
+    /// source span to carry.
     pub fn render(&self, page: &str) -> Result<Vec<u8>, JsError> {
         self.render_bytes(page).map_err(|m| JsError::new(&m))
     }
@@ -422,33 +427,40 @@ impl Core {
         if linked.module.entry(&page.path).is_none() {
             return Err(format!("no compiled file at `{}`", page.path));
         }
-        let store = linked.store.as_ref();
-        let loaded = store.and_then(|store| store.page(&page.path));
+        let path = &page.path;
         // A page — a file compiled with a record — renders bound to the record the
         // load built for it. With none, the envelope's value would stand in, typed by
         // the checker as a record it is not (invariant 10): that is a caller bug, not
         // a render that happens to read nothing.
-        if loaded.is_none()
-            && linked
-                .module
-                .document(&page.path)
-                .is_some_and(|source| source.record.is_some())
-        {
-            return Err(match store {
-                Some(_) => format!("`{}` is a page the last load did not carry", page.path),
-                None => format!(
-                    "`{}` is a page, and nothing is loaded for it to bind: `loadData` first",
-                    page.path
-                ),
-            });
+        let is_page = linked
+            .module
+            .document(path)
+            .is_some_and(|source| source.record.is_some());
+        if page.index.is_some() && !is_page {
+            return Err(no_generator(path));
         }
-        let globals: Vec<(&str, Value)> = store
-            .map(|store| store.globals(&linked.host, &page.path))
-            .unwrap_or_default();
-        let rendered = match loaded {
-            Some(loaded) => {
-                render_page(&linked.module, loaded, linked.host.entry(), &globals)
+        let store = linked.store.as_ref();
+        let loaded = match store {
+            Some(store) => loaded_page(store, path, page.index, is_page)?,
+            None if is_page => {
+                return Err(format!(
+                    "`{path}` is a page, and nothing is loaded for it to bind: `loadData` \
+                     first"
+                ));
             }
+            None => None,
+        };
+        let globals: Vec<(&str, Value)> = store
+            .map(|store| store.globals(&linked.host, path, page.index))
+            .unwrap_or_default();
+        let rendered = match store.zip(loaded) {
+            Some((store, loaded)) => render_page(
+                &linked.module,
+                loaded,
+                &store.pages,
+                linked.host.entry(),
+                &globals,
+            ),
             None => render(&linked.module, &page.path, &globals),
         };
         match rendered {
@@ -462,6 +474,47 @@ impl Core {
                 encode_render(&RenderMeta::failed(diagnostic), None)
             }
         }
+    }
+}
+
+/// The refusal of an `index` for a file that is no generator.
+fn no_generator(path: &str) -> String {
+    format!("`{path}` is no generator, so `render` takes no `index` for it")
+}
+
+/// The page `store` holds at `path` and `index`, for a render of it — `None` for a file
+/// that is no page, `is_page` saying whether it is one — or why the reference names no
+/// page the last load made: a generator's path with no index, an index past the pages
+/// it made, an index for a page that is no generator's, or a page the load did not
+/// make. The store keeps no count of what a generator made; it is counted here, from
+/// the pages that share the path.
+fn loaded_page<'s>(
+    store: &'s Store,
+    path: &str,
+    index: Option<u32>,
+    is_page: bool,
+) -> Result<Option<&'s LoadedPage>, String> {
+    if let Some(found) = store.page(path, index) {
+        return Ok(Some(found));
+    }
+    let made = store
+        .pages
+        .iter()
+        .filter(|page| page.path == path && page.generated.is_some())
+        .count();
+    match index {
+        None if made > 0 => Err(format!(
+            "`{path}` is a generator: `render` takes the `index` of one of its pages, as \
+             `plan()` lists them"
+        )),
+        Some(index) if made > 0 => Err(format!(
+            "`{path}` has no page {index}: the last load made {made} from its `for:`"
+        )),
+        Some(_) if store.page(path, None).is_some() => Err(no_generator(path)),
+        _ if is_page => Err(format!(
+            "`{path}` is a page the last load did not make: `plan()` lists the pages it did"
+        )),
+        _ => Ok(None),
     }
 }
 
@@ -1519,13 +1572,309 @@ mod tests {
         assert_eq!(planned(&core).len(), 1);
         assert_eq!(
             core.render_bytes(r#"{"path": "home.lem"}"#).unwrap_err(),
-            "`home.lem` is a page the last load did not carry"
+            "`home.lem` is a page the last load did not make: `plan()` lists the pages it \
+             did"
         );
         // A file compiled with no record is no page, and renders as before.
         assert_eq!(
             html_of(&core, "posts/a.md"),
             "<h1>A</h1>A\nposts/a.md\nhi\n"
         );
+    }
+
+    /// A generator over a list `site.lem` computes, whose pages take their title and
+    /// url from their type's defaults, written so that each of its pages prints its
+    /// own item.
+    const TOPICS_LEM: &str =
+        "---\ntype: Topic\nfor:\n  topic: site.topics\n---\n<lem.page.topic>";
+
+    /// The typed site with a topic type, the lists a generator pages over, and the
+    /// generator `topics.lem` compiled beside it; and the envelope carrying the
+    /// generator in `pages` with its `for:` pair as a host parses it, placed in
+    /// `TOPICS_LEM`.
+    fn generator_core() -> (Core, serde_json::Value) {
+        let site = format!(
+            "{SITE_LEM}\n<lem-type Topic extends Page>\n  topic: string\n  \
+             url: url = url(\"/t/\" + self.topic + \"/\")\n  \
+             layout: (Topic, html): html = topical\n</lem-type>\n\
+             <lem-fn topical(t: Topic, body: html)><lem.t.url>:<lem.body></lem-fn>\n\
+             <lem-let topics: [string] = [\"git\", \"node\", \"rust\"] />\n\
+             <lem-let none: [string] = [] />"
+        );
+        let mut core = Core::new();
+        let files = serde_json::json!([
+            {"path": "ambient.lem", "text": AMBIENT_LEM},
+            {"path": "site.lem", "text": site},
+            {"path": "posts/a.md", "text": POST_MD, "record": "Post"},
+            {"path": "topics.lem", "text": TOPICS_LEM, "record": "Topic"},
+            {"path": "plain.lem", "text": "<lem-fn plain()>x</lem-fn>"},
+        ]);
+        compile_clean_with(&mut core, &files.to_string(), Some(SITE_HOST));
+        let mut envelope = loaded();
+        envelope["pages"] = serde_json::json!([{"path": "topics.lem", "value": {}, "for": {
+            "value": {"topic": "site.topics"},
+            "spans": {
+                "": span(23, 41, (3, 2), (3, 20)),
+                "topic": span(23, 41, (3, 2), (3, 20)),
+            },
+            "valueSpans": {"topic": span(30, 41, (3, 9), (3, 20))},
+        }}]);
+        (core, envelope)
+    }
+
+    fn rendered_at(core: &Core, page: &serde_json::Value) -> String {
+        let (meta, html) = decode(&core.render_bytes(&page.to_string()).unwrap());
+        assert_eq!(meta["diagnostics"], serde_json::json!([]));
+        html.expect("html on success")
+    }
+
+    #[test]
+    fn plans_and_renders_each_page_a_generator_made_by_its_index() {
+        let (mut core, envelope) = generator_core();
+        assert_eq!(load(&mut core, &envelope), serde_json::json!([]));
+        let plan: serde_json::Value =
+            serde_json::from_str(&core.plan_json().unwrap()).unwrap();
+        assert_eq!(
+            plan,
+            serde_json::json!([
+                {"path": "posts/a.md", "url": "/a/"},
+                {"path": "topics.lem", "index": 0, "url": "/t/git/"},
+                {"path": "topics.lem", "index": 1, "url": "/t/node/"},
+                {"path": "topics.lem", "index": 2, "url": "/t/rust/"},
+            ])
+        );
+        let page = |index: u32| serde_json::json!({"path": "topics.lem", "index": index});
+        assert_eq!(rendered_at(&core, &page(0)), "/t/git/:git");
+        assert_eq!(rendered_at(&core, &page(1)), "/t/node/:node");
+        assert_eq!(rendered_at(&core, &page(2)), "/t/rust/:rust");
+    }
+
+    #[test]
+    fn refuses_a_reference_to_a_page_the_last_load_did_not_make() {
+        let (mut core, mut envelope) = generator_core();
+        assert_eq!(load(&mut core, &envelope), serde_json::json!([]));
+        let refused = |core: &Core, page: serde_json::Value| {
+            core.render_bytes(&page.to_string()).unwrap_err()
+        };
+        assert_eq!(
+            refused(&core, serde_json::json!({"path": "topics.lem"})),
+            "`topics.lem` is a generator: `render` takes the `index` of one of its pages, \
+             as `plan()` lists them"
+        );
+        assert_eq!(
+            refused(&core, serde_json::json!({"path": "topics.lem", "index": 3})),
+            "`topics.lem` has no page 3: the last load made 3 from its `for:`"
+        );
+        for path in ["posts/a.md", "plain.lem"] {
+            assert_eq!(
+                refused(&core, serde_json::json!({"path": path, "index": 0})),
+                format!("`{path}` is no generator, so `render` takes no `index` for it")
+            );
+        }
+        // An empty list makes no page: the generator is then a page the load did not
+        // make, with an index or without.
+        envelope["pages"][0]["for"]["value"]["topic"] = serde_json::json!("site.none");
+        assert_eq!(load(&mut core, &envelope), serde_json::json!([]));
+        for page in [
+            serde_json::json!({"path": "topics.lem"}),
+            serde_json::json!({"path": "topics.lem", "index": 0}),
+        ] {
+            assert_eq!(
+                refused(&core, page),
+                "`topics.lem` is a page the last load did not make: `plan()` lists the \
+                 pages it did"
+            );
+        }
+        // With nothing loaded, a file that is no page still takes no index.
+        let (fresh, _) = generator_core();
+        assert_eq!(
+            fresh
+                .render_bytes(r#"{"path": "plain.lem", "index": 0}"#)
+                .unwrap_err(),
+            "`plain.lem` is no generator, so `render` takes no `index` for it"
+        );
+        assert!(
+            fresh
+                .render_bytes(r#"{"path": "topics.lem", "index": 0}"#)
+                .unwrap_err()
+                .contains("`loadData` first")
+        );
+    }
+
+    #[test]
+    fn places_a_generators_load_diagnostic_at_the_part_of_the_pair_it_is_about() {
+        // The list alone for a list the site lacks; the entry for a field the type
+        // lacks.
+        let (mut core, mut envelope) = generator_core();
+        envelope["pages"][0]["for"]["value"]["topic"] = serde_json::json!("site.topic");
+        let reported = load(&mut core, &envelope);
+        assert_eq!(
+            reported[0]["message"],
+            "`site.lem` has no field `topic`; did you mean `topics`?"
+        );
+        assert_eq!(reported[0]["span"], span(30, 41, (3, 9), (3, 20)));
+        let (mut core, mut envelope) = generator_core();
+        envelope["pages"][0]["for"]["value"] = serde_json::json!({"topik": "site.topics"});
+        let pair = &mut envelope["pages"][0]["for"];
+        pair["spans"]["topik"] = pair["spans"]["topic"].clone();
+        let reported = load(&mut core, &envelope);
+        assert_eq!(
+            reported[0]["message"],
+            "`Topic` has no field `topik`; did you mean `topic`?"
+        );
+        assert_eq!(reported[0]["span"], span(23, 41, (3, 2), (3, 20)));
+    }
+
+    #[test]
+    fn refuses_a_for_pair_or_an_index_the_wire_cannot_take() {
+        let (mut core, envelope) = generator_core();
+        let mut unknown = envelope.clone();
+        unknown["pages"][0]["for"]["list"] = serde_json::json!("site.topics");
+        let error = core.load_data_json(&unknown.to_string()).unwrap_err();
+        assert!(error.starts_with("malformed `loadData` input:"), "{error}");
+        assert!(error.contains("unknown field `list`"), "{error}");
+        let inverted = span(41, 23, (3, 20), (3, 2));
+        for (table, field, named) in [
+            ("spans", "topic", "`for.topic`"),
+            ("spans", "", "`for` as a whole"),
+            ("valueSpans", "topic", "the value of `for.topic`"),
+        ] {
+            let mut backwards = envelope.clone();
+            backwards["pages"][0]["for"][table][field] = inverted.clone();
+            assert_eq!(
+                core.load_data_json(&backwards.to_string()).unwrap_err(),
+                format!(
+                    "malformed `loadData` input: page `topics.lem`: the span for {named} \
+                     ends before it starts"
+                )
+            );
+        }
+        assert_eq!(load(&mut core, &envelope), serde_json::json!([]));
+        for index in ["-1", "1.5", "\"1\""] {
+            let error = core
+                .render_bytes(&format!(r#"{{"path": "topics.lem", "index": {index}}}"#))
+                .unwrap_err();
+            assert!(error.starts_with("malformed `render` input:"), "{error}");
+        }
+    }
+
+    /// [`SITE_HOST`] with a generated page's neighbours named.
+    fn neighboured_host() -> String {
+        SITE_HOST.replace(
+            r#""url": "url""#,
+            r#""url": "url", "neighbours": ["prev", "next"]"#,
+        )
+    }
+
+    #[test]
+    fn checks_the_neighbour_fields_on_a_compile_that_only_changed_the_declaration() {
+        // Compiled clean while the host named no neighbours; the declaration that names
+        // them recompiles nothing, and the relink alone judges the fields and the
+        // defaults that read them.
+        let (mut core, _) = generator_core();
+        let files = serde_json::json!([{"path": "slides.lem", "text":
+            "<lem-type Slide extends Page>\n  title: string\n  prev: Slide\n  \
+             layout: (Slide, html): html = slid\n</lem-type>\n\
+             <lem-fn slid(s: Slide, body: html)><lem.s.title><lem.body></lem-fn>"}]);
+        compile_clean_with(&mut core, &files.to_string(), None);
+        let reported =
+            diagnostics(&core.compile_json("[]", Some(&neighboured_host())).unwrap());
+        assert_eq!(reported.as_array().map(Vec::len), Some(1), "{reported:?}");
+        assert_eq!(reported[0]["path"], "slides.lem");
+        assert_eq!(
+            reported[0]["message"],
+            "`prev` holds a generated page's neighbour, a page of its own type: declare it \
+             `prev: Slide?`, or an optional of a type `Slide` extends"
+        );
+        let (mut core, _) = generator_core();
+        let files = serde_json::json!([{"path": "slides.lem", "text":
+            "<lem-type Slide extends Page>\n  title: string\n  prev: Slide?\n  \
+             blurb: string = self.prev?.title ?? \"\"\n  \
+             layout: (Slide, html): html = slid\n</lem-type>\n\
+             <lem-fn slid(s: Slide, body: html)><lem.s.blurb><lem.body></lem-fn>"}]);
+        compile_clean_with(&mut core, &files.to_string(), None);
+        let reported =
+            diagnostics(&core.compile_json("[]", Some(&neighboured_host())).unwrap());
+        assert_eq!(
+            reported[0]["message"],
+            "`blurb` reads `prev`, but `prev` is out of reach of a default: the loader \
+             fills a page's neighbours once every page of its generator is built"
+        );
+    }
+
+    #[test]
+    fn renders_a_generated_page_reading_its_neighbours_through_the_table() {
+        let (_, envelope) = generator_core();
+        let site = format!(
+            "{SITE_LEM}\n<lem-type Topic extends Page>\n  topic: string\n  \
+             prev: Topic?\n  next: Topic?\n  \
+             url: url = url(\"/t/\" + self.topic + \"/\")\n  \
+             layout: (Topic, html): html = topical\n</lem-type>\n\
+             <lem-fn topical(t: Topic, body: html)><lem.t.url>:<lem.body></lem-fn>\n\
+             <lem-let topics: [string] = [\"git\", \"node\", \"rust\"] />"
+        );
+        let files = serde_json::json!([
+            {"path": "ambient.lem", "text": AMBIENT_LEM},
+            {"path": "site.lem", "text": site},
+            {"path": "posts/a.md", "text": POST_MD, "record": "Post"},
+            {"path": "topics.lem", "record": "Topic", "text":
+             "---\ntype: Topic\nfor:\n  topic: site.topics\n---\n\
+              <lem.page.prev?.topic ?? \"-\">|<lem.page.next?.topic ?? \"-\">"},
+        ]);
+        let mut core = Core::new();
+        compile_clean_with(&mut core, &files.to_string(), Some(&neighboured_host()));
+        assert_eq!(load(&mut core, &envelope), serde_json::json!([]));
+        let page = |index: u32| serde_json::json!({"path": "topics.lem", "index": index});
+        assert_eq!(rendered_at(&core, &page(0)), "/t/git/:-|node");
+        assert_eq!(rendered_at(&core, &page(1)), "/t/node/:git|rust");
+        assert_eq!(rendered_at(&core, &page(2)), "/t/rust/:node|-");
+    }
+
+    #[test]
+    fn refuses_a_generated_page_as_a_payload_and_renders_on_after_it() {
+        // With no entry field a page record holds no function, so the compiler lets a
+        // page through as a payload; the reference its neighbour field holds is what
+        // the VM refuses, at the call, rather than a trap the boundary cannot survive.
+        let host = r#"{"ambient": {"page": "Page", "site": {"bindingsOf": "site.lem"}},
+            "document": "page", "url": "url", "neighbours": ["prev", "next"]}"#;
+        let site = "<lem-type Topic extends Page>\n  topic: string\n  prev: Topic?\n  \
+             next: Topic?\n  url: url = url(\"/t/\" + self.topic + \"/\")\n</lem-type>\n\
+             <lem-let topics: [string] = [\"git\", \"node\"] />";
+        let mut core = Core::new();
+        let files = serde_json::json!([
+            {"path": "ambient.lem", "text": AMBIENT_LEM},
+            {"path": "site.lem", "text": site},
+            {"path": "topics.lem", "record": "Topic", "text":
+             "---\ntype: Topic\nfor:\n  topic: site.topics\n---\n\
+              <lem.mark(\"card\", page)>"},
+            {"path": "plain.lem", "text": "plain"},
+        ]);
+        let reply = core.compile_json(&files.to_string(), Some(host)).unwrap();
+        // `plain.lem` warns that its output never renders as a page; it renders as a
+        // file all the same, which is all this needs of it.
+        let reported = diagnostics(&reply);
+        assert!(
+            reported
+                .as_array()
+                .is_some_and(|all| all.iter().all(|d| d["severity"] == "warning")),
+            "{reported:?}"
+        );
+        let envelope = serde_json::json!({"ambient": {}, "pages": [{"path": "topics.lem",
+            "value": {}, "for": {"value": {"topic": "site.topics"}}}]});
+        assert_eq!(load(&mut core, &envelope), serde_json::json!([]));
+        let (meta, html) = decode(
+            &core
+                .render_bytes(r#"{"path": "topics.lem", "index": 0}"#)
+                .unwrap(),
+        );
+        assert_eq!(html, None);
+        assert_eq!(
+            meta["diagnostics"][0]["message"],
+            "a payload crosses to the handler as data, and a generated page's neighbours \
+             have no form there"
+        );
+        // The instance survived it: another render runs.
+        assert_eq!(html_of(&core, "plain.lem"), "plain");
     }
 
     #[test]

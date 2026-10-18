@@ -8,18 +8,19 @@
 //! look a string up in while they load — and the loader then runs it front to back.
 //!
 //! What no order would satisfy is refused here, and the link fails with it: a field or
-//! binding that needs itself, reported at the first one on the cycle. Two rules about
+//! binding that needs itself, reported at the first one on the cycle. Three rules about
 //! what a loader-run function may read are enforced here as well, because only the link
 //! step has a function's reads followed through the calls it makes: a default or a
-//! computed binding that reaches an ambient value it may not read (∆eag), and a page
-//! template whose record's plan reads `body` (D43).
+//! computed binding that reaches an ambient value it may not read (∆eag), a default of
+//! a page record that reaches one of its neighbour fields, and a page template whose
+//! record's plan reads `body` (D43).
 
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
 use lemmon_syntax::Span;
 
-use crate::compile::{Runs, index_u32, refused_at_load};
+use crate::compile::{Runs, index_u32, neighbour_out_of_reach, refused_at_load};
 use crate::decls::{DeclKind, Decls, Shape};
 use crate::diagnostics::Diagnostic;
 use crate::exports::ExportIndex;
@@ -147,6 +148,11 @@ impl Places<'_> {
                                 row.span,
                                 &row.field,
                                 Runs::Default { page_backed },
+                            ));
+                        }
+                        if refuse && page_backed {
+                            diagnostics.extend(self.refuse_neighbours(
+                                &closed, &unit.path, row.span, &row.field, name,
                             ));
                         }
                         steps.push(Planned {
@@ -296,6 +302,49 @@ impl Places<'_> {
                     path,
                     span,
                     format!("`{subject}` {how}, but {why}"),
+                ))
+            })
+            .collect()
+    }
+
+    /// The refusals of a default of the page record `record` that reaches one of the
+    /// record's neighbour fields, which the loader fills only once every page of a
+    /// generator is built (D43) — one per field, at `span` in `path`, for the field
+    /// `subject`. Through a call, only the link step can see it, and names the call;
+    /// read directly, the compiler refused it where it stood, so only a relink under a
+    /// declaration that newly names the field arrives here with it. Neither is a fact of
+    /// the unit: the host's names are asked anew on every link, as the url and entry
+    /// fields are.
+    fn refuse_neighbours(
+        &self,
+        closed: &[Closed],
+        path: &str,
+        span: Span,
+        subject: &str,
+        record: &str,
+    ) -> Vec<Diagnostic> {
+        let mut refused: Vec<&Rc<str>> = Vec::new();
+        closed
+            .iter()
+            .filter_map(|closed| {
+                let Access::Own(field) = &closed.access else {
+                    return None;
+                };
+                if !self.host.is_neighbour(field)
+                    || self.index.field(record, field).is_none()
+                    || refused.contains(&field)
+                {
+                    return None;
+                }
+                refused.push(field);
+                let how = match &closed.via {
+                    Some(via) => format!("reaches `{field}` through `{via}`"),
+                    None => format!("reads `{field}`"),
+                };
+                Some(Diagnostic::error(
+                    path,
+                    span,
+                    format!("`{subject}` {how}, but {}", neighbour_out_of_reach(field)),
                 ))
             })
             .collect()

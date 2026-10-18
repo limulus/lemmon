@@ -1,0 +1,10 @@
+<lem-type Chapter extends Page>
+  title: string
+  next: Chapter?
+  layout: (Chapter, html): html = chapter
+</lem-type>
+
+<lem-fn chapter(c: Chapter, body: html)>
+  <lem.body>
+  <lem-if c.next><a href="<lem.c.next.url>"><lem.c.next.title></a></lem-if>
+</lem-fn>

@@ -2,21 +2,21 @@
 //!
 //! [`Loader::page`] loads one page's front matter as the record its file was compiled
 //! as (D41), keeping it with the positions the host sent for it, and [`Store::page`]
-//! reads it back by path for the render that binds it. Where a page stands is the url
-//! field the host declaration names (D43): a load reports a page whose record holds no
-//! url there, and two pages that hold the same one, and [`Store::plan`] lists every
-//! loaded page with the url it holds.
+//! reads it back by path — and, for a generator's, by index — for the render that
+//! binds it. Where a page stands is the url field the host declaration names (D43): a
+//! load reports a page whose record holds no url there, and two pages that hold the
+//! same one, and [`Store::plan`] lists every loaded page with the url it holds.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 
 use lemmon_syntax::Span;
 
 use crate::diagnostics::Diagnostic;
 use crate::host::Host;
-use crate::value::Value;
+use crate::value::{Map, Value};
 
-use super::place::{At, Place};
+use super::place::{At, HostSpan, Place};
 use super::{Doc, Loaded, Loader, Spans, Store};
 
 /// One page as loaded: its path, the record its front matter was loaded as — what a
@@ -31,21 +31,65 @@ pub struct LoadedPage {
     /// Where its record was named, for what the table cannot place — a field a default
     /// derived.
     pub record_span: Span,
+    /// Which of its generator's pages this is, for a page a generator made (D43).
+    pub generated: Option<Generated>,
 }
 
-/// One page as `plan()` lists it (D43): its path, and its url where the host names the
-/// field it is read from.
+/// Where a generated page came from (D43): its place among its generator's pages, the
+/// list they were made from, and where the `for:` key that named it stands.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Generated {
+    /// Its position among its generator's pages, from zero, in the list's order.
+    pub index: u32,
+    /// The list it was made from, as `for:` names it: `site.gallery`.
+    pub list: Rc<str>,
+    /// Where the `for:` entry stands in the file, field through list — what a
+    /// diagnostic about this page rather than its siblings points at. `None` where the
+    /// host sent no position for it, and a diagnostic falls back to the record's.
+    pub entry: Option<HostSpan>,
+}
+
+impl LoadedPage {
+    /// Which of its generator's pages this is, if a generator made it.
+    #[must_use]
+    pub fn index(&self) -> Option<u32> {
+        self.generated.as_ref().map(|generated| generated.index)
+    }
+
+    /// How a message names this page: `` `about.md` ``, and a generated page by the
+    /// item it was made from, in the language's own index syntax —
+    /// `` `photos/photo.lem` for `site.gallery[3]` `` — since every page of a generator
+    /// shares its path.
+    #[must_use]
+    pub fn name(&self) -> String {
+        match &self.generated {
+            None => format!("`{}`", self.path),
+            Some(generated) => format!(
+                "`{}` for `{}[{}]`",
+                self.path, generated.list, generated.index
+            ),
+        }
+    }
+}
+
+/// One page as `plan()` lists it (D43): its path, which of its generator's pages it is
+/// where a generator made it, and its url where the host names the field it is read
+/// from.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PlannedPage {
     pub path: String,
+    pub index: Option<u32>,
     pub url: Option<String>,
 }
 
 impl Store {
-    /// The loaded page at `path`, if one is.
+    /// The loaded page at `path` — its page `index`, for a generator, whose pages share
+    /// the path; `None` for any other page — if one is.
     #[must_use]
-    pub fn page(&self, path: &str) -> Option<&LoadedPage> {
-        self.pages.iter().find(|page| page.path == path)
+    pub fn page(&self, path: &str, index: Option<u32>) -> Option<&LoadedPage> {
+        self.pages
+            .iter()
+            .find(|page| page.path == path && page.index() == index)
     }
 
     /// Every loaded page in load order, each with the url its record holds in the
@@ -56,6 +100,7 @@ impl Store {
             .iter()
             .map(|page| PlannedPage {
                 path: page.path.clone(),
+                index: page.index(),
                 url: host
                     .url()
                     .and_then(|field| page_url(page, field))
@@ -80,66 +125,94 @@ fn page_url<'a>(page: &'a LoadedPage, field: &str) -> Option<&'a Rc<str>> {
     }
 }
 
-/// Where a diagnostic about the url of `page` goes: the table's entry for `field`,
-/// else the page's own value, else where its record was named — as for a url a
-/// default derived, which no key in the file gave.
+/// Where a diagnostic about the url of `page` goes: a generated page's `for:` entry,
+/// since every page of its generator shares the front matter; else the table's entry
+/// for `field`, else the page's own value, else where its record was named — as for a
+/// url a default derived, which no key in the file gave.
 fn url_place(page: &LoadedPage, field: &str) -> Place {
     let declared = Place::resident(&page.path, page.record_span);
-    At::root(Some((&page.path, &page.spans)), "", declared.clone())
-        .child(field, declared)
-        .place()
+    match &page.generated {
+        Some(generated) => generated
+            .entry
+            .as_ref()
+            .map_or(declared, |entry| Place::hosted(&page.path, entry)),
+        None => At::root(Some((&page.path, &page.spans)), "", declared.clone())
+            .child(field, declared)
+            .place(),
+    }
 }
 
 /// Every loaded page checked against the others for the url in `field` (D43): one url
 /// is one page, so two at one url is an error at the second page's url, labelled at
-/// the first's. A page whose record holds no url is an error too, at the same place.
+/// the first's where that is another place. A page whose record holds no url is an
+/// error too, at the same place. Two pages of one generator at one url are its url
+/// default's one mistake, however many items it gave the same url: said once, of the
+/// first two, and not again for that generator.
 pub(super) fn url_diagnostics(pages: &[LoadedPage], field: &str) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     let mut first: BTreeMap<&str, &LoadedPage> = BTreeMap::new();
+    let mut defaults: BTreeSet<&str> = BTreeSet::new();
     for page in pages {
         let Some(url) = page_url(page, field) else {
             diagnostics.push(url_place(page, field).error(format!(
-                "`{}` holds no url in `{field}`, so it stands nowhere",
-                page.path
+                "{} holds no url in `{field}`, so it stands nowhere",
+                page.name()
             )));
             continue;
         };
-        match first.get(&**url) {
-            None => {
-                first.insert(url, page);
+        let Some(taken) = first.get(&**url) else {
+            first.insert(url, page);
+            continue;
+        };
+        let here = url_place(page, field);
+        let message = match (&page.generated, &taken.generated) {
+            (Some(_), Some(earlier)) if page.path == taken.path => {
+                if !defaults.insert(&page.path) {
+                    continue;
+                }
+                format!(
+                    "{} is at `{url}`, as `{}[{}]` is: the url default gives two of its \
+                     items one url",
+                    page.name(),
+                    earlier.list,
+                    earlier.index
+                )
             }
-            Some(taken) => {
-                let there = url_place(taken, field);
-                diagnostics.push(
-                    url_place(page, field)
-                        .error(format!(
-                            "`{}` and `{}` are both at `{url}`",
-                            page.path, taken.path
-                        ))
-                        .with_placed_label(
-                            there.path,
-                            there.span,
-                            there.range,
-                            "the first page at this url",
-                        ),
-                );
-            }
-        }
+            _ => format!("{} and {} are both at `{url}`", page.name(), taken.name()),
+        };
+        let error = here.error(message);
+        let there = url_place(taken, field);
+        diagnostics.push(if there == here {
+            error
+        } else {
+            there.label(error, "the first page at this url")
+        });
     }
     diagnostics
+}
+
+/// The glob binding a page is loaded as a member of: the element type it collects,
+/// its name, and where it is declared.
+pub(super) struct Collection<'a> {
+    pub(super) element: &'a Rc<str>,
+    pub(super) binding: &'a str,
+    pub(super) declared: &'a Place,
 }
 
 impl Loader<'_> {
     /// Loads one page: its front matter as the record it was compiled as, with its
     /// path and, for a document, its rendered prose in reach of the record's defaults.
-    /// A member of a glob binding's `collection` — the element type it collects and
-    /// the binding's name — must be of a record extending that type. The record is
-    /// kept, in load order, for the render that binds it, with the positions the host
-    /// sent for what is said about the page after it loaded.
+    /// A member of a glob binding's `collection` must be of a record extending the
+    /// type it collects. The record is kept, in load order, for the render that binds
+    /// it, with the positions the host sent for what is said about the page after it
+    /// loaded. A page carrying a `for:` pair is a generator, which makes its pages
+    /// where it stands, and returns no record of its own (D43) — unless it cannot be
+    /// one: a document is one page of its own prose, and a generator's pages are made
+    /// after every binding, so no glob can hold one.
     pub(super) fn page(
         &mut self,
         loaded: Loaded,
-        collection: Option<(&Rc<str>, &str)>,
+        collection: Option<Collection<'_>>,
     ) -> Option<Value> {
         let path = loaded.path.as_deref().expect("checked by `check_envelope`");
         let compiled = self.files[path];
@@ -150,23 +223,39 @@ impl Loader<'_> {
             .record
             .clone()
             .expect("checked by `check_envelope`");
-        if let Some((element, binding)) = collection
-            && !self.module.is_a(&record, element)
+        if let Some(key) = &loaded.generator {
+            let whole = key.whole(path, compiled.record_span);
+            if compiled.body.is_some() {
+                self.diagnostics.push(whole.error(
+                    "a document is one page, of its own prose, so it takes no `for:` key: \
+                     a generator is a page template",
+                ));
+            } else if let Some(collection) = collection {
+                let error = whole.error(
+                    "`for:` makes this page a generator, whose pages are made once every \
+                     binding has loaded, so no `from` glob can hold it",
+                );
+                self.diagnostics.push(collection.declared.label(
+                    error,
+                    format!("the glob of `{}` matches it", collection.binding),
+                ));
+            } else {
+                self.generate(&loaded, key, &record, compiled.record_span);
+            }
+            return None;
+        }
+        if let Some(collection) = collection
+            && !self.module.is_a(&record, collection.element)
         {
             self.diagnostics
                 .push(Place::resident(path, compiled.record_span).error(format!(
-                    "`{record}` does not extend `{element}`, the type `{binding}` collects"
+                    "`{record}` does not extend `{}`, the type `{}` collects",
+                    collection.element, collection.binding
                 )));
             return None;
         }
         let at = At::root(Some((path, &loaded.spans)), "", self.type_place(&record));
-        let Value::Map(given) = &loaded.value else {
-            self.diagnostics.push(at.error(format!(
-                "expected the front matter as a mapping of `{record}` fields, got `{}`",
-                loaded.value.type_name()
-            )));
-            return None;
-        };
+        let given = self.front_matter(&loaded, &record, &at)?;
         let doc = Doc {
             path,
             body: compiled.body.as_ref(),
@@ -177,8 +266,27 @@ impl Loader<'_> {
             record: value.clone(),
             spans: loaded.spans,
             record_span: compiled.record_span,
+            generated: None,
         });
         Some(value)
+    }
+
+    /// The front matter `loaded` carries, as the mapping of `record` fields at `at` it
+    /// must be, or `None` once its not being one is reported.
+    pub(super) fn front_matter<'v>(
+        &mut self,
+        loaded: &'v Loaded,
+        record: &str,
+        at: &At<'_>,
+    ) -> Option<&'v Map> {
+        if let Value::Map(given) = &loaded.value {
+            return Some(given);
+        }
+        self.diagnostics.push(at.error(format!(
+            "expected the front matter as a mapping of `{record}` fields, got `{}`",
+            loaded.value.type_name()
+        )));
+        None
     }
 }
 
@@ -242,6 +350,7 @@ mod tests {
             value: object(front),
             path: Some(path.to_owned()),
             spans: spans(text, &[("url", at(text, "url: «/a/»"))]),
+            generator: None,
         }
     }
 
@@ -416,6 +525,7 @@ mod tests {
             record: Value::record("Article", Map::default()),
             spans: Spans::new(),
             record_span: Span::new(4, 11),
+            generated: None,
         };
         let shown: Vec<String> = url_diagnostics(&[unplaced], "url")
             .iter()

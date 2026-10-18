@@ -89,7 +89,8 @@ impl ReceiverKind {
             Value::Asset(_) => Some(Self::Asset),
             Value::List(_) => Some(Self::List),
             Value::Map(_) => Some(Self::Map),
-            Value::Null | Value::Fn(_) | Value::Record(_) => None,
+            // A neighbour is resolved where it is read, so nothing calls a method on one.
+            Value::Null | Value::Fn(_) | Value::Record(_) | Value::Neighbour(_) => None,
         }
     }
 }

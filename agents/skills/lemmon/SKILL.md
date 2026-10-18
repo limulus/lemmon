@@ -201,7 +201,7 @@ needs a `site.lem` in its input directory, even an empty one.
 - **Front matter the shell reads itself:** `type:` names the record (a subtype of the
   collection's element type, or any `Page` type where no glob matched); `url:` is the one
   `Page` field a page may give (else the shell derives it, and `inputPath` always); `for:`
-  makes a generator (D43; not yet expanded by anything, ∆99b).
+  makes a generator (below, D43).
 
 ## Functions & components
 
@@ -319,6 +319,48 @@ title: Home
   </lem-for>
 </ul>
 ```
+
+A **generator** is a page template whose `for:` names a field of its type and the list
+whose items fill it, one page per item (D43). Its type gives each page its url and title
+from the item; `prev` and `next`, where the type declares them, are the pages either side
+in the list, read through as pages.
+
+```lem site.lem
+<lem-type PhotoPage extends Page>
+  photo: Photo
+  title: string = self.photo.title
+  url: url = url("/photos/" + self.photo.title.slugify() + "/")
+  prev: PhotoPage?
+  next: PhotoPage?
+  layout: (PhotoPage, html): html = photoPage
+</lem-type>
+
+<lem-let gallery: [Photo] = photos.values() />
+```
+
+```lem photos/photo.lem
+---
+type: PhotoPage
+for:
+  photo: site.gallery
+---
+<lem-if page.prev>
+  <a rel="prev" href="<lem.page.prev.url>"><lem.page.prev.title></a>
+</lem-if>
+<img src="<lem.page.photo.src>" alt="<lem.page.photo.alt>">
+```
+
+- **`for:` has one entry**, `field: value.list`, and the list is declared `[T]` on a value
+  the host types — `site.photos`, a map, takes a `photos.values()` binding first; filter
+  and sort there too. Name the type with `type:` (no glob may hold a generator, and a
+  document is never one), and give neither the field nor `url` in front matter: the
+  type's defaults compute the url, so a generator's type needs a `url` default.
+- **Neighbours** are declared `T?` of the type or an ancestor, with no default: the first
+  page has no `prev`, the last no `next`, a page no generator made has neither, and
+  `page.prev.next` is the page itself. No default may read one, and front matter never
+  gives one.
+- **A diagnostic names a generated page by its item:** `` `photos/photo.lem` for
+  `site.gallery[3]` ``.
 
 A `.md` document is markdown with lem blocks (D07, D39). Its front matter is its record — a
 `Post` here, typed by the `feed/*/index.md` glob — and `page` and `site` are in scope.

@@ -53,7 +53,7 @@ use crate::host::Host;
 use crate::types::Type;
 use crate::unit::{ImportRef, ImportedSignature, Unit};
 
-pub(crate) use load_time::{Runs, refused_at_load};
+pub(crate) use load_time::{Runs, neighbour_out_of_reach, refused_at_load};
 pub(crate) use names::duplicate_named;
 use names::{BindingKind, Frame, Names, Resolved};
 pub(crate) use rules::omittable;

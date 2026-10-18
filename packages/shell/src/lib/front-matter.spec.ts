@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 import {
   derivedUrl,
   findFrontMatter,
+  forEntry,
   opensFrontMatter,
   readPage,
   type Page,
@@ -330,8 +331,32 @@ describe('readPage()', () => {
           '': at(text, 'topic: site.tilTopics'),
           topic: at(text, 'topic: site.tilTopics'),
         },
+        valueSpans: { topic: at(text, 'topic: «site.tilTopics»') },
       })
       expect(read.loaded.value).not.toHaveProperty('for')
+    })
+
+    it('should span the list alone, and nothing for an entry with no value', () => {
+      const lists = '---\nfor:\n  topic: [a, b]\n  title:\n  ? teaser\n---\n'
+
+      expect(page(lists).for?.valueSpans).toEqual({ topic: at(lists, '«[a, b]»') })
+      expect(page('---\nfor: site.tilTopics\n---\n').for?.valueSpans).toEqual({})
+    })
+
+    it('should span nothing for a key that is no string, which leaves no page', () => {
+      for (const text of [
+        '---\nfor:\n  1: site.tilTopics\n---\n',
+        '---\nfor:\n  ? [topic]\n  : site.tilTopics\n---\n',
+      ]) {
+        expect(refused(text).message).toBe('a front-matter key must be a string')
+      }
+    })
+
+    it('should name its list and place its entry once the core has accepted it', () => {
+      expect(forEntry(page(text, 'tils/topic.lem').for!)).toEqual({
+        list: 'site.tilTopics',
+        span: at(text, 'topic: site.tilTopics'),
+      })
     })
 
     it('should leave the url to the generator’s type', () => {
@@ -343,7 +368,11 @@ describe('readPage()', () => {
     it('should span the key when it has no value', () => {
       const bare = '---\n? for\n---\n'
 
-      expect(page(bare).for).toEqual({ value: null, spans: { '': at(bare, '«for»\n') } })
+      expect(page(bare).for).toEqual({
+        value: null,
+        spans: { '': at(bare, '«for»\n') },
+        valueSpans: {},
+      })
     })
   })
 

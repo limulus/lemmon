@@ -30,10 +30,10 @@ use lemmon_corpus::Case;
 use lemmon_syntax::spans::at;
 use lemmon_syntax::{DIAGNOSTICS_TRAILER, FrontMatter};
 use lemmon_vm::{
-    Ambient, Claim, Data, FromBinding, Host, HostSpan, LineIndex, Loaded, Map, Mark,
-    Module, Op, Payload, Rendered, RuntimeError, Source, SourceFile, SourceKind, Span,
-    Spans, Value, compile, field_path, from_bindings, is_document, load, render,
-    render_page,
+    Ambient, Claim, Data, FromBinding, GeneratorKey, Host, HostSpan, LineIndex, Loaded,
+    Map, Mark, Module, Op, Payload, Rendered, RuntimeError, Source, SourceFile, SourceKind,
+    Span, Spans, Store, Value, compile, field_path, from_bindings, is_document, load,
+    render, render_page,
 };
 use saphyr::{LoadableYamlNode, MarkedYaml, Scalar, YamlData};
 
@@ -65,7 +65,8 @@ fn untyped_host() -> Host {
 
 /// The declaration the `host/` group's environment files back: `page` a `Page`, `build`
 /// a `Build`, `site` the record of the bindings `site.lem` declares, every page
-/// rendered through its `layout` field and placed by its `url`.
+/// rendered through its `layout` field and placed by its `url`, and a generated page's
+/// neighbours filled into its `prev` and `next`.
 fn declared_host() -> Host {
     declared_host_reading(SITE)
 }
@@ -79,6 +80,7 @@ fn declared_host_reading(bindings: &str) -> Host {
         .documents("page")
         .rendered_through("layout")
         .addressed_by("url")
+        .neighboured_by("prev", "next")
         // The harness plays esbuild: a real shell bundles, hashes, and hands the map
         // over at `compile` (D38). Two entries are enough to show a hit, a near miss,
         // and that the URL a page carries is the hashed one and not the path asked for.
@@ -153,7 +155,8 @@ const BUILD: &str = r#"{"time": "2026-09-08T12:00:00Z", "generator": "lemmon"}"#
 /// The data file `site.lem` loads its photo index from, as the shell would read it.
 const PHOTOS: &str = r#"{
   "sunset": {"caption": "A horseshoe crab at sunset", "placement": "hero"},
-  "molt": {"caption": "A shed exoskeleton", "placement": "left"}
+  "molt": {"caption": "A shed exoskeleton", "placement": "left"},
+  "tide": {"caption": "Low tide at dawn", "placement": "right"}
 }"#;
 const PHOTOS_PATH: &str = "_data/photos.json";
 
@@ -299,9 +302,12 @@ fn shown_value(value: &Value) -> String {
         Value::Record(record) => {
             format!("{} {{{}}}", record.name, entries(&record.fields))
         }
-        // Neither can be a payload: the compiler refuses a function field and the VM a
-        // mark inside one, so a case that reaches here is a case about that refusal.
-        Value::Marked(_) | Value::Fn(_) => format!("<{}>", value.type_name()),
+        // None can be a payload: the compiler refuses a function field, and the VM a
+        // mark or a generated page's neighbour inside one, so a case that reaches here is
+        // a case about that refusal.
+        Value::Marked(_) | Value::Fn(_) | Value::Neighbour(_) => {
+            format!("<{}>", value.type_name())
+        }
     }
 }
 
@@ -346,6 +352,8 @@ fn html(case: &Case) -> String {
 /// which is what a page no collection matched renders with. A `.lem` is a page when it
 /// opens with front matter (D41), a `.md` always. A loaded page renders through its
 /// record's `layout`, with its own output as the body; anything else as its own output.
+/// A generator renders each page it made, in the plan's order, each under a header
+/// naming it and the url it stands at (D43).
 fn typed_html(case: &Case) -> String {
     let path = case.path();
     let own_bindings = path.starts_with(BINDINGS_CASES);
@@ -379,23 +387,73 @@ fn typed_html(case: &Case) -> String {
             load(&module, &host, data).unwrap_or_else(|bug| panic!("{path}: {bug}"));
         diagnostics.extend(loaded.diagnostics.iter().map(ToString::to_string));
         if let Some(store) = loaded.output {
-            let globals = store.globals(&host, &path);
-            let result = match store.page(&path) {
-                Some(page) => render_page(&module, page, host.entry(), &globals),
-                None => render(&module, &path, &globals),
-            };
-            let (html, error) = rendered(&module, result);
-            out = html;
-            diagnostics.extend(error);
+            let generates = document.as_ref().is_some_and(|d| d.generator.is_some());
+            if generates {
+                out = generated_html(&module, &host, &store, &path, &mut diagnostics);
+            } else {
+                let globals = store.globals(&host, &path, None);
+                let result = match store.page(&path, None) {
+                    Some(page) => {
+                        render_page(&module, page, &store.pages, host.entry(), &globals)
+                    }
+                    None => render(&module, &path, &globals),
+                };
+                let (html, error) = rendered(&module, result);
+                out = html;
+                diagnostics.extend(error);
+            }
         }
     }
     shown(&out, &diagnostics)
+}
+
+/// Every page the generator at `path` made, rendered in the plan's order: each under a
+/// `===` line naming it as a diagnostic would and giving its url, which neither a
+/// fragment's `---` line nor the diagnostics trailer can be mistaken for. A page whose
+/// render fails shows its header alone, and its error joins the trailer. An empty list
+/// makes no page, and shows nothing.
+fn generated_html(
+    module: &Module,
+    host: &Host,
+    store: &Store,
+    path: &str,
+    diagnostics: &mut Vec<String>,
+) -> String {
+    let mut out = String::new();
+    for planned in store
+        .plan(host)
+        .iter()
+        .filter(|planned| planned.path == path)
+    {
+        let page = store
+            .page(path, planned.index)
+            .expect("the plan lists loaded pages");
+        let url = planned.url.as_deref().unwrap_or("nowhere");
+        if !out.is_empty() {
+            out.push('\n');
+        }
+        let _ = writeln!(out, "=== {} at {url}", page.name());
+        let globals = store.globals(host, path, planned.index);
+        let (html, error) = rendered(
+            module,
+            render_page(module, page, &store.pages, host.entry(), &globals),
+        );
+        out.push_str(&html);
+        diagnostics.extend(error);
+    }
+    out
 }
 
 /// What the shell hands `loadData` for one case: `build` and an untyped `page` as its
 /// own values, every `from` binding of the environment fulfilled — the case's page as
 /// the one member of the glob that matched it, the fixtures above for the rest — and,
 /// in `pages`, the case's page when it has a record and no glob matched it.
+///
+/// # Panics
+///
+/// On a generator no `type:` names and no glob holds: the shell refuses it before
+/// anything compiles (D43), so no expectation could be blessed from what the core
+/// makes of it.
 fn envelope(
     module: &Module,
     host: &Host,
@@ -423,6 +481,7 @@ fn envelope(
                     value: parsed.value,
                     path: Some(PHOTOS_PATH.to_owned()),
                     spans: parsed.spans,
+                    generator: None,
                 })
             }
             (SourceKind::Env(name), _) => {
@@ -437,11 +496,19 @@ fn envelope(
                     value: Value::str(value),
                     path: None,
                     spans: Spans::new(),
+                    generator: None,
                 })
             }
             (SourceKind::Plugin(name), _) => panic!("no fixture for the plugin `{name}`"),
         };
         sources.push((binding.name.to_string(), source));
+    }
+    if let Some(document) = document {
+        assert!(
+            in_glob || document.record.is_some() || document.generator.is_none(),
+            "{path}: a generator with no `type:` that no glob holds — the shell refuses \
+             this, so the core never sees it"
+        );
     }
     Data {
         ambient: vec![
@@ -474,24 +541,27 @@ fn matches(pattern: &str, path: &str) -> bool {
 /// it over: its front matter as a value with positions, the record it is compiled as,
 /// and where that was named.
 struct PageInput {
-    /// The front matter with the `type:` key stripped; an empty mapping without one.
+    /// The front matter with the `type:` and `for:` keys stripped; an empty mapping
+    /// without one.
     value: Value,
     spans: Spans,
     /// The record, from the `type:` key — the one raw key a host reads before a document
     /// has a type (D30), with the span of its value — or from the collection whose
     /// glob matched, which names no place in the file; else none.
     record: Option<(String, Option<Span>)>,
+    /// The `for:` key, read and stripped as the shell reads it (D43).
+    generator: Option<GeneratorKey>,
 }
 
 impl PageInput {
     fn of(case: &Case) -> Self {
         let path = case.path();
         let parsed = front_matter(&case.source);
-        let (value, spans, mut record) = parsed.map_or_else(
-            || (Value::map(Map::default()), Spans::new(), None),
+        let (value, spans, mut record, generator) = parsed.map_or_else(
+            || (Value::map(Map::default()), Spans::new(), None, None),
             |parsed| {
                 let record = parsed.record.map(|(record, span)| (record, Some(span)));
-                (parsed.value, parsed.spans, record)
+                (parsed.value, parsed.spans, record, parsed.generator)
             },
         );
         if record.is_none() {
@@ -504,18 +574,21 @@ impl PageInput {
             value,
             spans,
             record,
+            generator,
         }
     }
 
     /// The page as loaded: its front matter with the values the shell derives — `url`
-    /// from the path without its extension, `inputPath` the path itself — added where
-    /// the front matter gave none.
+    /// from the path without its extension, though not for a generator, whose pages
+    /// would all derive the one url; `inputPath` the path itself — added where the
+    /// front matter gave none, and the `for:` pair beside it.
     fn loaded(&self, path: &str) -> Loaded {
         let Value::Map(front) = &self.value else {
             return Loaded {
                 value: self.value.clone(),
                 path: Some(path.to_owned()),
                 spans: self.spans.clone(),
+                generator: self.generator.clone(),
             };
         };
         let mut entries: Vec<(Rc<str>, Value)> = front
@@ -530,7 +603,7 @@ impl PageInput {
             ("url", Value::str(format!("/{stem}/"))),
             ("inputPath", Value::str(path)),
         ] {
-            if front.get(key).is_none() {
+            if front.get(key).is_none() && (key != "url" || self.generator.is_none()) {
                 entries.push((Rc::from(key), derived));
             }
         }
@@ -538,6 +611,7 @@ impl PageInput {
             value: Value::map(entries.into_iter().collect()),
             path: Some(path.to_owned()),
             spans: self.spans.clone(),
+            generator: self.generator.clone(),
         }
     }
 }
@@ -565,6 +639,10 @@ struct Parsed {
     /// The `type:` key's value and the span of that value, when the text is front
     /// matter and names one — read and stripped here, as the shell reads it (D30).
     record: Option<(String, Span)>,
+    /// The `for:` key, when the text is front matter and has one — read and stripped as
+    /// the shell reads it, and handed over as parsed, since the core words every way it
+    /// can be malformed (D43).
+    generator: Option<GeneratorKey>,
 }
 
 impl Parsed {
@@ -587,6 +665,7 @@ impl Parsed {
                 .collect(),
             spans: Spans::new(),
             record: None,
+            generator: None,
             front_matter,
         };
         let value = documents.first().map_or_else(
@@ -597,6 +676,7 @@ impl Parsed {
             value,
             spans: converter.spans,
             record: converter.record,
+            generator: converter.generator,
         }
     }
 }
@@ -609,10 +689,41 @@ struct Converter {
     bytes: Vec<u32>,
     spans: Spans,
     record: Option<(String, Span)>,
+    generator: Option<GeneratorKey>,
     front_matter: bool,
 }
 
 impl Converter {
+    /// The `for:` pair whose key is `key` and value `value`, as the shell reads it:
+    /// converted in a table of its own, with each entry's value placed alone beside it.
+    fn generator_key(
+        &mut self,
+        key: &MarkedYaml<'_>,
+        value: &MarkedYaml<'_>,
+    ) -> GeneratorKey {
+        let outer = std::mem::take(&mut self.spans);
+        let converted = self.convert(value, "");
+        if value.span.start.index() == value.span.end.index() {
+            self.place("", key.span.start.index(), key.span.end.index());
+        }
+        let spans = std::mem::replace(&mut self.spans, outer);
+        let mut value_spans = Spans::new();
+        if let YamlData::Mapping(entries) = &value.data {
+            for (entry, list) in entries {
+                if let YamlData::Value(Scalar::String(field)) = &entry.data {
+                    let span = self.span(list.span.start.index(), list.span.end.index());
+                    let range = self.index.range(span);
+                    value_spans.insert(field.to_string(), HostSpan { span, range });
+                }
+            }
+        }
+        GeneratorKey {
+            value: converted,
+            spans,
+            value_spans,
+        }
+    }
+
     /// The file span of the characters `start..end` of the parsed text.
     fn span(&self, start: usize, end: usize) -> Span {
         Span::new(self.bytes[start], self.bytes[end])
@@ -668,6 +779,13 @@ impl Converter {
                         let span =
                             self.span(value.span.start.index(), value.span.end.index());
                         self.record = Some((record.to_string(), span));
+                        continue;
+                    }
+                    // `for:` is the shell's too (D43), read with a table of its own:
+                    // the value as a whole — the key, where it has none — each entry
+                    // from its key through its value, and each entry's value alone.
+                    if self.front_matter && path.is_empty() && &**name == "for" {
+                        self.generator = Some(self.generator_key(key, value));
                         continue;
                     }
                     let field = join(name);

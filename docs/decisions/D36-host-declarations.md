@@ -3,7 +3,9 @@
 - **Status:** Accepted 2026-09-07 (∆Iau); revised 2026-09-14 (D43) — the declaration
   also names the field a page's url is in and the two neighbour fields. As built
   (∆Bhz, 2026-09-18): `url` is checked at link, with the entry field, so a
-  declaration-only change is caught on the relink that recompiles nothing
+  declaration-only change is caught on the relink that recompiles nothing. As built
+  (∆99b, 2026-10-18): `neighbours` likewise — each field's type and default, and a
+  default's read of one, are checked at link on every link, with no fact recorded
 - **Backlog item:** ∆Iau
 - **Normative text:** `docs/language.md` § Ambient types (including **Declared, not
   inferred**), § Tags (`lem-let` row); `docs/architecture.md` § WASM API

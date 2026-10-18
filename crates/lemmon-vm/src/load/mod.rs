@@ -16,11 +16,13 @@
 //! (invariant 8). A caller bug — a source no binding asked for, a page the program
 //! never compiled — is an `Err`, since it has no data to point at.
 //!
-//! Four parts have a module: [`validate`] checks a value against its declared type,
+//! Five parts have a module: [`validate`] checks a value against its declared type,
 //! [`place`] says where a diagnostic about it points, [`pages`] is the page table —
-//! each loaded page, where it stands, and the urls two pages may not share — and
+//! each loaded page, where it stands, and the urls two pages may not share —
+//! [`generators`] makes a generator's pages from the list its `for:` pair names, and
 //! [`sources`] says what a host loads for each `from` binding.
 
+mod generators;
 mod pages;
 mod place;
 mod sources;
@@ -39,8 +41,9 @@ use crate::types::Type;
 use crate::value::{Map, Value};
 use crate::vm::invoke;
 
-use pages::url_diagnostics;
-pub use pages::{LoadedPage, PlannedPage};
+pub use generators::GeneratorKey;
+use pages::{Collection, url_diagnostics};
+pub use pages::{Generated, LoadedPage, PlannedPage};
 use place::{At, Place};
 pub use place::{HostSpan, Spans, field_path};
 use sources::collects;
@@ -59,6 +62,9 @@ pub struct Loaded {
     pub path: Option<String>,
     /// Where each field path stands in that file. Empty when there is no file.
     pub spans: Spans,
+    /// A page's `for:` pair, which the host read and stripped as it strips `type:`
+    /// (D43): what makes the page a generator. Only a page carries one.
+    pub generator: Option<GeneratorKey>,
 }
 
 /// What fulfils one `from` binding: one value for a data file, plugin, or environment
@@ -81,7 +87,8 @@ pub struct Data {
     pub sources: Vec<(String, Source)>,
     /// The front matter of every page no glob holds — a document or template whose
     /// `type:` key named its record — each with its path. Loaded after every binding,
-    /// in this order, so a `by` index in one may read a map the site loaded.
+    /// in this order, so a `by` index in one may read a map the site loaded, and a
+    /// generator may page over a list it built.
     pub pages: Vec<Loaded>,
 }
 
@@ -94,23 +101,29 @@ pub struct Store {
     pub ambient: Vec<(Rc<str>, Value)>,
     /// Every loaded page, in load order: each collection's members as its binding
     /// loaded them, the bindings in their link order, then the pages the envelope
-    /// carried on their own, in its order.
+    /// carried on their own, in its order — a generator's where it stood, in the order
+    /// of its list.
     pub pages: Vec<LoadedPage>,
 }
 
 impl Store {
-    /// What a render of the file at `path` binds: every ambient value, with the host's
-    /// document value replaced by the file's own record when the file is a loaded
-    /// page. The value the envelope carried under that name, if any, stands only
-    /// where no loaded page does (D37).
+    /// What a render of the file at `path` binds — of its page `index`, for a
+    /// generator: every ambient value, with the host's document value replaced by the
+    /// page's own record when the file is a loaded page. The value the envelope carried
+    /// under that name, if any, stands only where no loaded page does (D37).
     #[must_use]
-    pub fn globals<'a>(&'a self, host: &'a Host, path: &str) -> Vec<(&'a str, Value)> {
+    pub fn globals<'a>(
+        &'a self,
+        host: &'a Host,
+        path: &str,
+        index: Option<u32>,
+    ) -> Vec<(&'a str, Value)> {
         let mut globals: Vec<(&str, Value)> = self
             .ambient
             .iter()
             .map(|(name, value)| (&**name, value.clone()))
             .collect();
-        if let Some((document, page)) = host.document().zip(self.page(path)) {
+        if let Some((document, page)) = host.document().zip(self.page(path, index)) {
             match globals.iter_mut().find(|(name, _)| *name == document) {
                 Some(slot) => slot.1 = page.record.clone(),
                 None => globals.push((document, page.record.clone())),
@@ -129,8 +142,8 @@ impl Store {
 ///
 /// A caller bug, with no data to point at: an ambient name the host does not bind, or
 /// one the host builds from a file; a source no `from` binding asked for, or one
-/// fulfilled in the wrong shape; a page the program never compiled, or compiled with
-/// no record, or carried twice.
+/// fulfilled in the wrong shape, or a value that is no page carrying a `for:` pair; a
+/// page the program never compiled, or compiled with no record, or carried twice.
 pub fn load(module: &Module, host: &Host, data: Data) -> Result<Compiled<Store>, String> {
     let Data {
         mut ambient,
@@ -262,6 +275,11 @@ fn check_envelope(
                 if loaded.path.is_none() && !loaded.spans.is_empty() {
                     return Err(format!(
                         "`{name}` carries positions and no path to place them in"
+                    ));
+                }
+                if loaded.generator.is_some() {
+                    return Err(format!(
+                        "`{name}` is no page, so it carries no `for:` key"
                     ));
                 }
             }
@@ -429,7 +447,12 @@ impl Loader<'_> {
                             let mut records = Vec::with_capacity(members.len());
                             let mut failed = false;
                             for member in members {
-                                match self.page(member, Some((&element, &step.name))) {
+                                let collection = Collection {
+                                    element: &element,
+                                    binding: &step.name,
+                                    declared: &declared,
+                                };
+                                match self.page(member, Some(collection)) {
                                     Some(record) => records.push(record),
                                     None => failed = true,
                                 }
@@ -608,6 +631,7 @@ pub(crate) mod tests {
             value,
             path: None,
             spans: Spans::new(),
+            generator: None,
         })
     }
 
@@ -792,6 +816,7 @@ pub(crate) mod tests {
             value,
             path: Some(path.to_owned()),
             spans: Spans::new(),
+            generator: None,
         }
     }
 
@@ -807,18 +832,19 @@ pub(crate) mod tests {
                 record: Value::str("record"),
                 spans: Spans::new(),
                 record_span: Span::new(0, 0),
+                generated: None,
             }],
         };
         // The name is the host's, not `page`: the record replaces the envelope's value
         // in place, keeping the host's order.
         let host = Host::untyped(["build", "entry"]).documents("entry");
         assert_eq!(
-            store.globals(&host, "pages/a.md"),
+            store.globals(&host, "pages/a.md", None),
             vec![("build", Value::Int(1)), ("entry", Value::str("record"))]
         );
         // No loaded page at the path: the envelope's value stands.
         assert_eq!(
-            store.globals(&host, "pages/b.md")[1],
+            store.globals(&host, "pages/b.md", None)[1],
             ("entry", Value::str("sent"))
         );
         // The envelope carried no document value: the record is bound anyway.
@@ -827,12 +853,12 @@ pub(crate) mod tests {
             pages: store.pages.clone(),
         };
         assert_eq!(
-            uncarried.globals(&host, "pages/a.md"),
+            uncarried.globals(&host, "pages/a.md", None),
             vec![("build", Value::Int(1)), ("entry", Value::str("record"))]
         );
         // A host that names no document value binds what was loaded and nothing else.
         assert_eq!(
-            store.globals(&Host::untyped(["build", "entry"]), "pages/a.md")[1],
+            store.globals(&Host::untyped(["build", "entry"]), "pages/a.md", None)[1],
             ("entry", Value::str("sent"))
         );
     }
@@ -889,6 +915,7 @@ pub(crate) mod tests {
             value: Value::str("m"),
             path: None,
             spans: spans("m", &[("", all_of("m"))]),
+            generator: None,
         };
         assert_eq!(
             refused(vec![
@@ -973,6 +1000,7 @@ pub(crate) mod tests {
                         value: front,
                         path: Some("pages/a.md".to_owned()),
                         spans: spans(text, &[("", at(text, "title: A"))]),
+                        generator: None,
                     }]),
                 ),
             ],
@@ -993,7 +1021,7 @@ pub(crate) mod tests {
         };
         assert_eq!(posts.len(), 1);
         assert_eq!(
-            store.page("pages/a.md").map(|page| &page.record),
+            store.page("pages/a.md", None).map(|page| &page.record),
             Some(&posts[0])
         );
         let Value::Record(article) = &posts[0] else {
@@ -1107,6 +1135,7 @@ pub(crate) mod tests {
                             ("sunset.caption", at(json, "\"caption\": 3")),
                         ],
                     ),
+                    generator: None,
                 }),
             )],
             pages: Vec::new(),
@@ -1240,7 +1269,8 @@ pub(crate) mod tests {
             pages: Vec::new(),
         };
         let store = load(&module, &shell(), data).unwrap().expect_output();
-        let Some(Value::Record(home)) = store.page("home.lem").map(|page| &page.record)
+        let Some(Value::Record(home)) =
+            store.page("home.lem", None).map(|page| &page.record)
         else {
             panic!("a tagged record");
         };
@@ -1248,11 +1278,11 @@ pub(crate) mod tests {
         assert_eq!(home.fields.get("title"), Some(&Value::str("Home")));
         assert_eq!(home.fields.get("draft"), Some(&Value::Bool(false)));
         let host = shell();
-        let globals = store.globals(&host, "home.lem");
+        let globals = store.globals(&host, "home.lem", None);
         assert_eq!(globals.last().map(|(name, _)| *name), Some("page"));
         assert_eq!(
             globals.last().map(|(_, v)| v),
-            store.page("home.lem").map(|page| &page.record)
+            store.page("home.lem", None).map(|page| &page.record)
         );
     }
 
@@ -1284,7 +1314,8 @@ pub(crate) mod tests {
         };
         let store = load(&module, &shell(), data).unwrap().expect_output();
         assert_eq!(paths(&store), ["pages/a.md", "about.md"]);
-        let Some(Value::Record(about)) = store.page("about.md").map(|page| &page.record)
+        let Some(Value::Record(about)) =
+            store.page("about.md", None).map(|page| &page.record)
         else {
             panic!("a tagged record");
         };
@@ -1308,6 +1339,7 @@ pub(crate) mod tests {
                 value: object(&[("title", Value::Int(3)), ("url", Value::str("/about/"))]),
                 path: Some("about.md".to_owned()),
                 spans: spans(text, &[("title", at(text, "title: 3"))]),
+                generator: None,
             }],
         };
         assert_eq!(
@@ -1390,10 +1422,10 @@ pub(crate) mod tests {
             pages: Vec::new(),
         };
         let store = load(&module, &shell(), data).unwrap().expect_output();
-        assert_eq!(store.page("pages/a.md"), None);
+        assert_eq!(store.page("pages/a.md", None), None);
         assert!(
             store
-                .globals(&shell(), "pages/a.md")
+                .globals(&shell(), "pages/a.md", None)
                 .iter()
                 .all(|(name, _)| *name != "page")
         );

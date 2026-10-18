@@ -19,8 +19,8 @@ use lemmon_syntax::ast::TypeExpr;
 use lemmon_syntax::{Span, nearest};
 
 use crate::decls::{
-    DeclKind, Declaration, Decls, EntryFault, Shape, entry_fault, misshaped_entry_field,
-    no_entry_field,
+    DeclKind, Declaration, Decls, EntryFault, FieldDecl, Shape, entry_fault,
+    misdeclared_neighbour, misshaped_entry_field, neighbour_fits, no_entry_field,
 };
 use crate::diagnostics::Diagnostic;
 use crate::host::{ClaimAnswer, no_asset};
@@ -234,6 +234,30 @@ impl Compiler<'_> {
         }
     }
 
+    /// The neighbour fields a page schema declares (D43): each the host names, on a
+    /// record that extends the document type, is an optional of that record or of one
+    /// it extends ([`neighbour_fits`]). Only this file's own fields are judged, as the
+    /// entry field's are; the document type itself, which has no base, is the link
+    /// step's to judge, which asks of every page record on every link. A field of a
+    /// record that is no page is no neighbour, whatever it is called. A type nothing
+    /// declares was reported where it was written, and is not a second mistake here.
+    fn check_neighbour_fields(&mut self, decl: &Declaration, fields: &[FieldDecl]) {
+        let Some(document) = self.host.document_type() else {
+            return;
+        };
+        if !self.index.extends(&decl.name, &document) {
+            return;
+        }
+        for field in fields {
+            if self.host.is_neighbour(&field.name)
+                && self.known(field.ty.clone()) == field.ty
+                && !neighbour_fits(self.index, &decl.name, &field.ty)
+            {
+                self.error(field.span, misdeclared_neighbour(&decl.name, &field.name));
+            }
+        }
+    }
+
     /// The record the host compiled this file as, against what the project declares
     /// (D30). The binding it makes is recorded here, where the record is, so that the
     /// first read of the document value finds the fact already made and says nothing
@@ -356,6 +380,7 @@ impl Compiler<'_> {
                 continue;
             }
             self.check_entry_field(decl, base);
+            self.check_neighbour_fields(decl, fields);
             for field in fields {
                 let redeclared = chain.iter().find_map(|ancestor| match &ancestor.shape {
                     Shape::Record { fields, .. } => fields
@@ -742,6 +767,112 @@ mod tests {
                 "post.md:{}: this file is compiled as `Post`, and the host binds no \
                  document value to be one",
                 at(POST, "«»hello")
+            )]
+        );
+    }
+
+    /// The shell's host, with a generated page's neighbours named.
+    fn neighboured() -> Host {
+        shell_host().neighboured_by("prev", "next")
+    }
+
+    /// `schema` compiled beside the document type under `host`.
+    fn schema_with(host: &Host, schema: &str) -> Vec<String> {
+        diagnostics_with(
+            host,
+            &[
+                SourceFile::new("ambient.lem", AMBIENT),
+                SourceFile::new("schema.lem", schema),
+            ],
+        )
+    }
+
+    const SLIDE: &str = "<lem-type Slide extends Page>\n  prev: Page\n  \
+         next: Slide? = null\n  layout: (Slide, html): html\n</lem-type>";
+
+    #[test]
+    fn refuses_a_neighbour_a_page_schema_declares_as_no_optional_of_itself_or_default() {
+        assert_eq!(
+            schema_with(&neighboured(), SLIDE),
+            [
+                format!(
+                    "schema.lem:{}: `prev` holds a generated page's neighbour, a page of \
+                     its own type: declare it `prev: Slide?`, or an optional of a type \
+                     `Slide` extends",
+                    at(SLIDE, "«prev»: Page")
+                ),
+                format!(
+                    "schema.lem:{}: `next` is a page's neighbour, which the loader fills, \
+                     so it takes no default",
+                    at(SLIDE, "«next»: Slide?")
+                ),
+            ]
+        );
+        // The same fields are ordinary ones under a host that names no neighbours.
+        assert_eq!(schema_with(&shell_host(), SLIDE), Vec::<String>::new());
+    }
+
+    #[test]
+    fn leaves_fields_of_neighbour_names_alone_on_a_record_that_is_no_page() {
+        // Nothing reserves the names: a record no page has is its own business, and
+        // its default may read the field.
+        let revision = "<lem-type Revision>\n  prev: string?\n  next: string? = null\n  \
+             text: string = self.prev ?? \"first\"\n</lem-type>";
+        assert_eq!(schema_with(&neighboured(), revision), Vec::<String>::new());
+        // A page schema declaring one of the two, as an optional of an ancestor.
+        let chapter = "<lem-type Chapter extends Page>\n  next: Page?\n  \
+             layout: (Chapter, html): html\n</lem-type>";
+        assert_eq!(schema_with(&neighboured(), chapter), Vec::<String>::new());
+    }
+
+    #[test]
+    fn says_nothing_more_of_a_neighbour_whose_type_is_not_declared() {
+        let typo = "<lem-type Slide extends Page>\n  prev: Slid?\n  \
+             layout: (Slide, html): html\n</lem-type>";
+        assert_eq!(
+            schema_with(&neighboured(), typo),
+            [format!(
+                "schema.lem:{}: unknown type `Slid`",
+                at(typo, "«Slid»?")
+            )]
+        );
+    }
+
+    #[test]
+    fn refuses_a_default_that_reads_its_pages_neighbour_where_the_read_stands() {
+        let reads = "<lem-type Slide extends Page>\n  title: string\n  prev: Slide?\n  \
+             blurb: string = self.prev?.title ?? \"\"\n  \
+             tease: [string] = [\"x\"].map(|x| self.prev?.title ?? x)\n  \
+             layout: (Slide, html): html\n</lem-type>";
+        let why = "is out of reach of a default: the loader fills a page's neighbours once \
+                   every page of its generator is built";
+        assert_eq!(
+            schema_with(&neighboured(), reads),
+            [
+                format!(
+                    "schema.lem:{}: `prev` {why}",
+                    at(reads, "«self.prev»?.title ?? \"\"")
+                ),
+                // Inside a lambda, `self` is still the page being built.
+                format!(
+                    "schema.lem:{}: `prev` {why}",
+                    at(reads, "«self.prev»?.title ?? x")
+                ),
+            ]
+        );
+        assert_eq!(schema_with(&shell_host(), reads), Vec::<String>::new());
+    }
+
+    #[test]
+    fn says_only_that_a_page_has_no_neighbour_field_it_does_not_declare() {
+        let undeclared = "<lem-type Slide extends Page>\n  title: string\n  \
+             blurb: string = self.prev?.title ?? \"\"\n  \
+             layout: (Slide, html): html\n</lem-type>";
+        assert_eq!(
+            schema_with(&neighboured(), undeclared),
+            [format!(
+                "schema.lem:{}: `Slide` has no field `prev`",
+                at(undeclared, "self.prev")
             )]
         );
     }

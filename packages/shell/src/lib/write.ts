@@ -2,6 +2,8 @@ import type { Span } from '@limulus/lemmon-core'
 import { copyFile, mkdir, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 
+import type { Generated } from './plugins.ts'
+
 /**
  * The file a page at `url` is written to, relative to the output directory and with
  * `/` separators — a url ending in `/` is a directory, written as its `index.html`
@@ -50,10 +52,15 @@ export interface Writer {
    * an asset hook's, which are placed at the file's start.
    */
   span?: Span
+  /** Which of its generator's pages the page is, where a generator made it (D43). */
+  generated?: Generated
   /** The plugin whose asset hook built the file. */
   assets?: { plugin: string }
-  /** The plugin whose producer wrote the file, and the page it was written for. */
-  producer?: { plugin: string; page: string }
+  /**
+   * The plugin whose producer wrote the file, and the page it was written for — which of
+   * a generator's pages, where a generator made it.
+   */
+  producer?: { plugin: string; page: string; generated?: Generated }
 }
 
 /** An output file another writer has claimed in a way that rules this one out. */

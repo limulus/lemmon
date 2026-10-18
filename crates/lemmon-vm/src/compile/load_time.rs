@@ -7,7 +7,9 @@
 //! ([`uses`](super::uses)) — and the bindings file's computed bindings take it too, from
 //! [`items`](super::items). Which ambient values one of them may read is
 //! [`refused_at_load`]'s one rule, asked by the walk where a read stands
-//! ([`expr`](super::expr)) and again by the link step when a call reaches one (∆HF0).
+//! ([`expr`](super::expr)) and again by the link step when a call reaches one (∆HF0);
+//! that a page's default reads none of its neighbour fields is
+//! [`neighbour_out_of_reach`]'s, asked the same two ways (D43).
 
 use std::rc::Rc;
 
@@ -18,7 +20,7 @@ use super::names::{BindingKind, Resolved};
 use super::uses::Implicit;
 use super::{Compiler, TokenSpan, required, rules};
 use crate::bytecode::Op;
-use crate::decls::{DeclKind, Decls, Shape};
+use crate::decls::{DeclKind, Decls, Shape, neighbour_default};
 use crate::types::Type;
 use crate::unit::{DefaultFn, IndexDecl};
 
@@ -77,6 +79,11 @@ impl Compiler<'_> {
                 let span = field_name.span();
                 let name = format!("{}.{}", declared.name, field_decl.name);
                 if let Some(default) = field.default() {
+                    // The loader fills a page's neighbours itself, once every page of
+                    // the generator is built, over whatever a default had made (D43).
+                    if page_backed && self.host.is_neighbour(&field_decl.name) {
+                        self.error(span, neighbour_default(&field_decl.name));
+                    }
                     let (func, reads_body) =
                         self.compile_step(&name, &declared.name, page_backed, span, |c| {
                             c.check(&default, &ty);
@@ -295,6 +302,18 @@ pub(crate) fn refused_at_load(
             )
         }),
     }
+}
+
+/// Why a default may not read the neighbour field `field` of the page it builds (D43):
+/// the loader fills a page's neighbours only once every page of its generator is built,
+/// so no default could see one. One sentence, said by the compiler where the read
+/// stands and by the link step when a call reaches it, or a relink that changed only
+/// the declaration finds one.
+pub(crate) fn neighbour_out_of_reach(field: &str) -> String {
+    format!(
+        "`{field}` is out of reach of a default: the loader fills a page's neighbours once \
+         every page of its generator is built"
+    )
 }
 
 #[cfg(test)]

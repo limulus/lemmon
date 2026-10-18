@@ -10,10 +10,12 @@
 //! it has, what it extends — comes from here.
 //!
 //! [`no_field`], [`no_entry_field`] and [`misshaped_entry_field`] are messages rather
-//! than facts, and [`entry_fault`] is the judgement the last two report. They are here
-//! for the same reason: refusing a field name, or judging the field a page renders
-//! through, means knowing every field the record has, so the refusals their several
-//! sites share are built where that knowledge already lives.
+//! than facts, and [`entry_fault`] is the judgement the last two report; so are
+//! [`misdeclared_neighbour`] and [`neighbour_default`], beside [`neighbour_fits`], the
+//! judgement of a generated page's neighbour field (D43). They are here for the same
+//! reason: refusing a field name, or judging a field the host names, means knowing every
+//! field the record has and what it extends, so the refusals their several sites share
+//! are built where that knowledge already lives.
 
 use std::rc::Rc;
 
@@ -301,6 +303,39 @@ pub(crate) fn misshaped_entry_field(record: &str, entry: &str) -> String {
     )
 }
 
+/// Whether a field the host names as a neighbour may be declared `ty` on the record
+/// `record` (D43): an optional of `record` itself or of a record it extends — what a
+/// page of the same generator is, since every page of one generator has its type. One
+/// predicate for the compiler, which asks it where the field is declared, and for the
+/// link step, which asks it of every page record on a relink the declaration alone
+/// changed.
+pub(crate) fn neighbour_fits(decls: &dyn Decls, record: &str, ty: &Type) -> bool {
+    let Type::Optional(inner) = ty else {
+        return false;
+    };
+    match &**inner {
+        Type::Named(page) => **page == *record || decls.extends(record, page),
+        _ => false,
+    }
+}
+
+/// The refusal of a neighbour field declared as anything but what [`neighbour_fits`]
+/// takes.
+pub(crate) fn misdeclared_neighbour(record: &str, field: &str) -> String {
+    format!(
+        "`{field}` holds a generated page's neighbour, a page of its own type: declare \
+         it `{field}: {record}?`, or an optional of a type `{record}` extends"
+    )
+}
+
+/// The refusal of a default on a neighbour field, which the loader fills once every
+/// page of a generator is built: a default would be overwritten by the fill.
+pub(crate) fn neighbour_default(field: &str) -> String {
+    format!(
+        "`{field}` is a page's neighbour, which the loader fills, so it takes no default"
+    )
+}
+
 /// A table with nothing in it — what the rules are tested against.
 impl Decls for () {
     fn declaration(&self, _name: &str) -> Option<&Declaration> {
@@ -365,6 +400,29 @@ pub(crate) mod tests {
             record("LinkPost", Some("Article"), &[("link", Type::Url)]),
             enumeration("Placement", &["hero", "left"]),
         ])
+    }
+
+    #[test]
+    fn fits_a_neighbour_typed_as_an_optional_of_its_record_or_an_ancestor() {
+        let table = table();
+        let optional = |name: &str| Type::optional(Type::Named(Rc::from(name)));
+        assert!(neighbour_fits(&table, "Article", &optional("Article")));
+        assert!(neighbour_fits(&table, "LinkPost", &optional("Page")));
+        // Not a subtype, an unrelated record, a type that is no optional, or anything
+        // else at all.
+        assert!(!neighbour_fits(&table, "Article", &optional("LinkPost")));
+        assert!(!neighbour_fits(&table, "Article", &optional("Placement")));
+        assert!(!neighbour_fits(
+            &table,
+            "Article",
+            &Type::Named(Rc::from("Article"))
+        ));
+        assert!(!neighbour_fits(
+            &table,
+            "Article",
+            &Type::optional(Type::String)
+        ));
+        assert!(!neighbour_fits(&table, "Article", &Type::Any));
     }
 
     #[test]

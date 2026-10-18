@@ -5,14 +5,22 @@ import {
   type JsonValue,
   type Label,
   type Mark,
+  type PageRef,
   type Span,
 } from '@limulus/lemmon-core'
 import { strict as assert } from 'node:assert'
 import { Buffer } from 'node:buffer'
 
 import type { LoadedConfig } from './config.ts'
+import { forEntry } from './front-matter.ts'
 import { envelope, type Environment } from './load.ts'
-import { resolvePage, type Plugin, type ProducedFile } from './plugins.ts'
+import {
+  pageName,
+  resolvePage,
+  type Generated,
+  type Plugin,
+  type ProducedFile,
+} from './plugins.ts'
 import { compileSite, FILE_START, hasError, pageSpan, type Program } from './program.ts'
 import { provided, type AssetFile } from './providers.ts'
 import { discover } from './site.ts'
@@ -224,14 +232,14 @@ async function renderSite(
     const renderer = new Renderer(core, program, config.plugins, files, diagnostics)
     for (const planned of core.plan()) {
       assert(planned.url !== undefined, 'the shell’s host names the url field')
-      renderer.render(planned.path, planned.url)
+      renderer.render({ ...planned, url: planned.url })
     }
     for (const [path, compiledPage] of program.pages) {
       if (compiledPage.record !== undefined) continue
       const { value } = compiledPage.page.loaded
       const ambient = { ...data.ambient, page: value }
       diagnostics.push(...core.loadData({ ...data, ambient }))
-      renderer.render(path, value.url)
+      renderer.render({ path, url: value.url })
     }
     if (hasError(diagnostics)) return failed
     const result = {
@@ -343,45 +351,69 @@ class Renderer {
   }
 
   /**
-   * Renders the page at `path` to the file its `url` names, its marks resolved, or
-   * reports why it cannot be written: a url that names no file, or a file another page,
-   * a passthrough file or an asset hook writes, or one that cannot stand beside it on
-   * disk. A failed render reports its runtime diagnostic, resolving reports what the
-   * handlers did wrong, and each file its producers wrote is checked as the page's own
-   * file is.
+   * Renders the page at `path` — its page `index`, for a generator's — to the file its
+   * `url` names, its marks resolved, or reports why it cannot be written: a url that
+   * names no file, or a file another page, a passthrough file or an asset hook writes,
+   * or one that cannot stand beside it on disk. A failed render reports its runtime
+   * diagnostic, resolving reports what the handlers did wrong, and each file its
+   * producers wrote is checked as the page's own file is. A generated page is placed at
+   * its generator's `for:` entry, which gives every page of it its url, and a runtime
+   * diagnostic of its render is labelled there with the item it was made from, so that
+   * a fault every page shares is told apart page by page (D43).
    */
-  render(path: string, url: JsonValue): void {
+  render({ path, index, url }: PageRef & { url: JsonValue }): void {
     const page = this.#program.pages.get(path)
     assert(page !== undefined, 'every planned page was compiled by this build')
-    const at = page.page.loaded.spans.url ?? pageSpan(page.page)
+    let generated: Generated | undefined
+    let at = page.page.loaded.spans.url ?? pageSpan(page.page)
+    if (index !== undefined) {
+      assert(page.page.for !== undefined, 'a generated page has its generator’s key')
+      const { list, span } = forEntry(page.page.for)
+      generated = { index, list }
+      at = span
+    }
     const file = typeof url === 'string' ? outputFile(url) : undefined
     if (file === undefined) {
+      const of = generated === undefined ? '' : ` of ${pageName(path, generated)}`
       this.#diagnostics.push({
         path,
         span: at,
         severity: 'error',
         message:
-          `the url ${JSON.stringify(url)} names no file in the output directory: a ` +
-          `page's url ${URL_RULE}`,
+          `the url ${JSON.stringify(url)}${of} names no file in the output directory: ` +
+          `a page's url ${URL_RULE}`,
         labels: [],
       })
       return
     }
-    const collision = this.#files.claim(file, { path, span: at })
+    const collision = this.#files.claim(file, { path, span: at, generated })
     if (collision !== undefined) {
-      this.#diagnostics.push(collided(path, at, file, collision))
+      // Every page of a generator stands at one place, so the message says which.
+      const lead =
+        generated === undefined
+          ? undefined
+          : `${pageName(path, generated)} is at the url ${JSON.stringify(url)}`
+      this.#diagnostics.push(collided(path, at, file, collision, lead))
       return
     }
-    const rendered = this.#core.render({ path })
-    this.#diagnostics.push(...rendered.diagnostics)
+    const rendered = this.#core.render({ path, index })
+    for (const diagnostic of rendered.diagnostics) {
+      if (generated === undefined) {
+        this.#diagnostics.push(diagnostic)
+        continue
+      }
+      const label = { path, span: at, message: `rendering ${pageName(path, generated)}` }
+      this.#diagnostics.push({ ...diagnostic, labels: [...diagnostic.labels, label] })
+    }
     if (rendered.html === null) return
     // Resolved as soon as it renders, before any output transform could see the page
     // (D42).
     const { payloads } = this.#program
-    const resolved = resolvePage(rendered, { path, plugins: this.#plugins, payloads })
+    const marks = { path, generated, plugins: this.#plugins, payloads }
+    const resolved = resolvePage(rendered, marks)
     this.#diagnostics.push(...resolved.diagnostics)
     this.outputs.push({ file, bytes: resolved.bytes })
-    for (const produced of resolved.files) this.#produce(path, produced)
+    for (const produced of resolved.files) this.#produce(path, generated, produced)
   }
 
   /**
@@ -393,9 +425,14 @@ class Renderer {
    * pages share — and other bytes from the same call are the producer writing the file
    * twice.
    */
-  #produce(page: string, { url, bytes, plugin, mark }: ProducedFile): void {
+  #produce(
+    page: string,
+    generated: Generated | undefined,
+    { url, bytes, plugin, mark }: ProducedFile
+  ): void {
     const { path, span } = mark
-    const lead = `the \`${plugin}\` plugin writes a file for this mark on \`${page}\``
+    const named = pageName(page, generated)
+    const lead = `the \`${plugin}\` plugin writes a file for this mark on ${named}`
     const file = outputFile(url)
     if (file === undefined) {
       this.#diagnostics.push({
@@ -409,7 +446,7 @@ class Renderer {
       })
       return
     }
-    const writer: Writer = { path, span, producer: { plugin, page } }
+    const writer: Writer = { path, span, producer: { plugin, page, generated } }
     const first = this.#written.get(file)
     if (first !== undefined) {
       if (Buffer.compare(first.bytes, bytes) === 0) return
@@ -421,7 +458,7 @@ class Renderer {
         severity: 'error',
         message: twice
           ? `the \`${plugin}\` plugin writes \`${file}\` twice with different content ` +
-            `for this mark on \`${page}\``
+            `for this mark on ${named}`
           : `${lead}, and ${who(first.writer)} writes other content to \`${file}\``,
         labels: twice ? [] : [label(first.writer, file)],
       })
@@ -443,21 +480,21 @@ const URL_RULE =
   '`\\`, a query, or a fragment'
 
 /**
- * How a message names `writer`: a page by its path, a passthrough file as one, an asset
- * hook's file by its plugin, and a producer's file by its plugin and the page it was
- * written for.
+ * How a message names `writer`: a page by its path — a generated one by its item too —
+ * a passthrough file as one, an asset hook's file by its plugin, and a producer's file
+ * by its plugin and the page it was written for.
  */
 function who(writer: Writer): string {
   if (writer.producer !== undefined) {
-    const { plugin, page } = writer.producer
-    return `the \`${plugin}\` plugin, for \`${page}\`,`
+    const { plugin, page, generated } = writer.producer
+    return `the \`${plugin}\` plugin, for ${pageName(page, generated)},`
   }
   if (writer.assets !== undefined) {
     return `the \`${writer.assets.plugin}\` plugin's \`assets\` hook`
   }
   return writer.span === undefined
     ? `the passthrough file \`${writer.path}\``
-    : `\`${writer.path}\``
+    : pageName(writer.path, writer.generated)
 }
 
 /**

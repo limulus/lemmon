@@ -96,7 +96,8 @@ export class Core {
   /**
    * Every page the last successful load built, in load order (D43): each
    * collection's pages as its binding loaded them, then the envelope's `pages` in
-   * their order, each with the url the host-named field holds. After a load that
+   * their order — a generator's pages where it stood, numbered by `index` in its
+   * list's order — each with the url the host-named field holds. After a load that
    * reported an error it lists the stale data, as {@link render} binds it. A page the
    * envelope did not carry is not listed.
    *
@@ -121,11 +122,13 @@ export class Core {
    * an empty view.
    *
    * A throw is a caller bug: a render before any compile has succeeded, a path the
-   * program has no file for, or a page the last load did not carry.
+   * program has no file for, or a page the last load did not make — a generator's
+   * path with no `index` among them, or an `index` it did not make.
    */
   render(page: PageRef): RenderResult {
-    // A `PlannedPage` is a `PageRef` with more, and the wire takes exactly a `PageRef`.
-    const reply = this.#core.render(JSON.stringify({ path: page.path }))
+    // A `PlannedPage` is a `PageRef` with more, and the wire takes exactly a `PageRef`;
+    // an `index` left undefined is left out.
+    const reply = this.#core.render(JSON.stringify({ path: page.path, index: page.index }))
     const length = new DataView(reply.buffer, reply.byteOffset, 4).getUint32(0, true)
     const meta = JSON.parse(decoder.decode(reply.subarray(4, 4 + length))) as RenderMeta
     return {

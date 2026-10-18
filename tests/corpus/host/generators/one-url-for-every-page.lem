@@ -1,0 +1,12 @@
+---
+type: FixedTopicPage
+for:
+  topic: site.topics
+---
+<p>Every TIL about <lem.page.topic></p>
+
+<lem-type FixedTopicPage extends SitePage>
+  topic: string
+  title: string = "TILs: " + self.topic
+  url: url = url("/tils/")
+</lem-type>

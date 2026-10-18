@@ -1,0 +1,7 @@
+---
+type: PhotoPage
+photo:
+  caption: A photo no generator made
+  placement: left
+---
+<p><lem.page.prev?.title ?? "no previous page"></p>

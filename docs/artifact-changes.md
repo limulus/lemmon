@@ -220,10 +220,21 @@ moved it. Newest last. An entry is removed when its change has been applied.
   bindings (D41, ∆RGQ). Give the generator its key: `for:` with one entry, a field the
   page type declares and an `<ambient value>.<field>` list, read and stripped by the
   shell as `type:` is and checked at load; a generator's front matter gives neither that
-  field nor `url`, and no `from` glob holds its pages. Remove `prev`/`next` from the
+  field nor `url`, and no `from` glob holds its pages. The loader words a malformed pair,
+  refuses a list whose items it cannot check — of a value the host binds untyped, a list
+  of `any` — or that is a field of the document value, refuses a map with the hint of a
+  `.values()` binding, and refuses the url field or a neighbour as the named one and a
+  document with the key; a type with no url default is one error at the pair, however
+  long the list; and a message names a generated page by its item, `` `tils/topics.lem`
+  for `site.tilTopics[2]` `` (∆99b). Remove `prev`/`next` from the
   shell's `Page` and from the sentence calling them a page's neighbours in its
   collection: a generated page's type declares them as optionals of itself or an
-  ancestor, the loader fills them in list order, and every other page has neither. Where
+  ancestor, the loader fills them in list order, and every other page has neither. The
+  rule is a page type's alone, each field on its own, and a neighbour takes no default;
+  a default's read of one is refused where it stands or at link through a call, judged
+  anew on every link rather than recorded as a fact of the unit; the fields are absent
+  from a page's record while its defaults run, so a read neither can see faults at the
+  read; and front matter never gives one, `null` included (∆99b). Where
   the text says the shell reads two names of its own, list the keys `type` and `for` and
   the declared fields `layout`, `url`, `prev`, and `next`. A page template has no `body`
   before it renders, so a record whose default reads `body` cannot type one: the link
@@ -525,23 +536,28 @@ moved it. Newest last. An entry is removed when its change has been applied.
   every loaded page: each collection's in the order the loader builds them, then the
   envelope's `pages` in order, a generator expanded where it stands, the url read from the
   field the host names, and two pages at one url a load error. `PageRef` is `{path,
-  index?}`, `index` numbering a generator's pages. `HostDecl` gains `url?` and
-  `neighbours?`, two field names; `DataInput` gains `pages`, the front matter of every page
-  no glob holds, a generator's with its `for:` pair. `render` renders a loaded page through
+  index?}`, `index` numbering a generator's pages, and `render` refuses a generator's
+  path with no `index`, an `index` past its pages, and one for a file that is no
+  generator. `HostDecl` gains `url?` and `neighbours?`, two field names; `DataInput` gains
+  `pages`, the front matter of every page no glob holds, and any page's entry may carry
+  its `for:` pair as the shell parsed it, `{value, spans, valueSpans}`, a glob's member
+  too, which the load refuses at the key (∆99b). `render` renders a loaded page through
   its entry — the file's output passed as `body` to the entry field's function in one VM run
   — and any other file as its own output. In the pipeline, Plan lists loaded pages rather
   than expanding generators, which Load does (D43). Two pages at one url is a load error
-  at the second page's `url` key — else at its record, as for a url a default derived —
-  labelled at the first. The document type declares the url field as `url` and every
-  page's record the entry field as a layout of it, checked at link rather than while a
-  file compiles, since neither name is a fact of any unit: a declaration that only
-  renames a field relinks every unit as it is, and only the link step sees the new name
-  (∆Bhz).
+  at the second page's `url` key — else at its record, as for a url a default derived,
+  or at a generated page's `for:` entry — labelled at the first; two pages of one
+  generator at one url are said once, as its url default's mistake (∆99b). The document
+  type declares the url field as `url` and every page's record the entry field as a
+  layout of it, checked at link rather than while a file compiles, since neither name is
+  a fact of any unit: a declaration that only renames a field relinks every unit as it
+  is, and only the link step sees the new name (∆Bhz).
 
 - **VM, neighbour references** — where the text lists the value set, say a neighbour
   field holds a reference into the store's page table that a field read resolves to the
   page's record, so no record holds another, and `render` takes the page table beside the
-  globals (D43).
+  globals (D43). Only a page render is given the table; a reference is equal to another
+  by position, and refused in a mark's payload at the call (∆99b).
 
 - **Build pipeline, step 1; the standard shell's `Page`** — where the text describes
   discovery, the walk classifies each file as a document, a template, passthrough, or
@@ -613,7 +629,8 @@ moved it. Newest last. An entry is removed when its change has been applied.
   (`type: PhotoPage` and `for:` naming the list it pages over, `photo: site.gallery`), and
   `title`, `image` and the url move to defaults on `PhotoPage`, which also declares
   `prev: PhotoPage?` and `next: PhotoPage?`; the `lem-head` prev/next links and the body
-  are unchanged, and `page.prev.title` needs no narrowing (D41, D43).
+  are unchanged, and `page.prev.title` needs no type test, `lem-if page.prev` narrowing
+  the null (D41, D43).
 
 - **Feeds and code blocks** — where the text maps `eleventy-plugin-rss` and the
   markdown-it highlight function: the three feeds are Lemmon templates rendered in a

@@ -1,0 +1,6 @@
+---
+type: SitePage
+for:
+  title: site.topics
+---
+<h2><lem.page.title></h2>

@@ -27,14 +27,16 @@ export const BINDINGS_FILE = 'site.lem'
  * The environment the standard shell declares (D30): `site` the bindings of
  * {@link BINDINGS_FILE}, `page` a `Page` and `build` a `Build` — both declared by
  * {@link AMBIENT_FILE} — every page rendered through its `layout` field and placed by
- * its `url` (D43). It is the ambient part alone: the mark claims and the asset manifest
- * are a site's plugins', which {@link hostFor} adds.
+ * its `url`, and a generated page's neighbours filled into its `prev` and `next` where
+ * its type declares them (D43). It is the ambient part alone: the mark claims and the
+ * asset manifest are a site's plugins', which {@link hostFor} adds.
  */
 export const HOST: HostDecl = {
   ambient: { site: { bindingsOf: BINDINGS_FILE }, page: 'Page', build: 'Build' },
   document: 'page',
   entry: 'layout',
   url: 'url',
+  neighbours: ['prev', 'next'],
 }
 
 /**
@@ -131,7 +133,8 @@ export interface Compiled {
  * bindings and the record each glob collects. The second compiles every page —
  * documents and page templates — matched against the collecting globs, as its record.
  * An error in the first call stops the second, since no page can be typed without the
- * globs; a warning does not.
+ * globs; a warning does not. A page whose front matter has `for:` and that no `type:`
+ * and no glob types is an error at the key, and is not compiled as a page (D43).
  *
  * Documents compile only in the second call, so what a document (`.md`) defines is
  * invisible to every template, with front matter or without: the first call is where
@@ -187,10 +190,6 @@ export async function compileSite(
     if (entry.kind !== 'document' && entry.kind !== 'template') continue
     const page = site.pages.get(entry.path)
     if (page === undefined) continue
-    if (page.for !== undefined) {
-      diagnostics.push(generator(entry.path, page.for.spans['']))
-      continue
-    }
     const holders = globs.filter(({ matches }) => matches(entry.path))
     if (holders.length > 1) {
       diagnostics.push(
@@ -204,6 +203,13 @@ export async function compileSite(
     }
     const binding = holders.at(0)?.source
     const record = page.record?.name ?? binding?.collects
+    // A generator with a record goes to the core, which checks its `for:` key at load
+    // and refuses one a glob holds; one with none has no type to make its pages of, and
+    // no record to compile it as, so the core would never see it (D43).
+    if (page.for !== undefined && record === undefined) {
+      diagnostics.push(untyped(entry.path, entry.kind, page.for.spans['']))
+      continue
+    }
     pages.set(entry.path, { page, record, binding: binding?.name })
     const file: SourceFileInput = { path: entry.path, text: entry.text }
     if (record !== undefined) file.record = record
@@ -251,13 +257,23 @@ function heldTwice(path: string, page: Page, holders: FromBinding[]): Diagnostic
 /** How a message lists names: `a and b`, `a, b, and c`. */
 const LIST = new Intl.ListFormat('en', { type: 'conjunction' })
 
-/** A generator's front matter, which nothing expands yet. */
-function generator(path: string, span: Span): Diagnostic {
+/**
+ * The refusal of a `for:` key on a page no `type:` and no glob types: a template's
+ * generator has to name its pages' type, and a document is no generator at all — said
+ * in the core's words for a document it is given with the key, since the mistake is the
+ * same whether or not the page has a type (D43).
+ */
+function untyped(path: string, kind: 'document' | 'template', span: Span): Diagnostic {
   return {
     path,
     span,
     severity: 'error',
-    message: '`for:` makes this page a generator, and `lem build` expands none yet (∆99b)',
+    message:
+      kind === 'document'
+        ? 'a document is one page, of its own prose, so it takes no `for:` key: a ' +
+          'generator is a page template'
+        : '`for:` makes this page a generator, and a generator names the type of its ' +
+          'pages with `type:`',
     labels: [],
   }
 }

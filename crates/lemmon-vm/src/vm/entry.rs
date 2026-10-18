@@ -14,7 +14,9 @@ use super::Vm;
 
 /// Renders the file at `path` from `module`, with `globals` bound to the ambient names
 /// (`page`, `site`, `build`) the templates may read, and returns the page with the
-/// fragments its collect blocks gathered.
+/// fragments its collect blocks gathered. It takes no page table: a file that is no
+/// loaded page binds no record a neighbour stands in, and a collection's members hold
+/// none.
 ///
 /// # Errors
 ///
@@ -35,12 +37,14 @@ pub fn render(
 }
 
 /// Renders the loaded page `page` from `module` through its record's entry field
-/// `entry` (D43), with `globals` as [`render`] takes them. The file's own output is
-/// captured as the body, and the function the field holds is called with the record
-/// and that body in the same run: `uniqueId` counts on from the body into the layout,
-/// the collect blocks of both land in one collection, and the marks of both stand in
-/// one page in print order. With no `entry` — a host that renders pages through no
-/// field — the page is its own output, as a file that is no page is.
+/// `entry` (D43), with `globals` as [`render`] takes them, and `pages` the store's
+/// page table, which a generated page's neighbour fields name pages of and a read of
+/// one resolves through. The file's own output is captured as the body, and the
+/// function the field holds is called with the record and that body in the same run:
+/// `uniqueId` counts on from the body into the layout, the collect blocks of both land
+/// in one collection, and the marks of both stand in one page in print order. With no
+/// `entry` — a host that renders pages through no field — the page is its own output,
+/// as a file that is no page is.
 ///
 /// # Errors
 ///
@@ -54,12 +58,16 @@ pub fn render(
 pub fn render_page(
     module: &Module,
     page: &LoadedPage,
+    pages: &[LoadedPage],
     entry: Option<&str>,
     globals: &[(&str, Value)],
 ) -> Result<Rendered, RuntimeError> {
     let path = page.path.as_str();
     let at_record = |message: String| RuntimeError::new(path, page.record_span, message);
-    let mut vm = Vm::new(module, globals);
+    let mut vm = Vm {
+        pages,
+        ..Vm::new(module, globals)
+    };
     vm.out.push(Buffer::default());
     vm.run_entry(entry_of(module, path))?;
     let body = vm.out.pop().expect("the body's buffer").into_value();
@@ -105,7 +113,9 @@ fn entry_of(module: &Module, path: &str) -> u32 {
 /// Calls `functions[func]` of `module` with `args`, `globals` bound to the ambient
 /// names, and returns what it returned. How the loader runs a default or a computed
 /// binding (D37): a loader-run function is an ordinary function, and this is a
-/// render's machinery with a call in place of an entry.
+/// render's machinery with a call in place of an entry. It takes no page table: a
+/// page's neighbours are filled once every default has run, and the records the
+/// bindings hold have none.
 ///
 /// # Errors
 ///
@@ -225,6 +235,7 @@ mod pages {
                 value: object(&[("title", Value::str("Home")), ("url", Value::str("/"))]),
                 path: Some("home.lem".to_owned()),
                 spans: Spans::new(),
+                generator: None,
             }],
         };
         let store = load(&module, &shell(), data).unwrap().expect_output();
@@ -233,10 +244,10 @@ mod pages {
 
     fn rendered(site: &str, entry: Option<&str>) -> Result<Rendered, RuntimeError> {
         let (module, store) = loaded(site);
-        let page = store.page("home.lem").expect("a loaded page");
+        let page = store.page("home.lem", None).expect("a loaded page");
         let host = shell();
-        let globals = store.globals(&host, "home.lem");
-        render_page(&module, page, entry, &globals)
+        let globals = store.globals(&host, "home.lem", None);
+        render_page(&module, page, &store.pages, entry, &globals)
     }
 
     fn texts(fragments: &Fragments, name: &str) -> Vec<String> {
@@ -318,8 +329,9 @@ mod pages {
             record: Value::Null,
             spans: Spans::new(),
             record_span: Span::new(4, 11),
+            generated: None,
         };
-        let error = render_page(&module, &unloaded, Some("layout"), &[]).unwrap_err();
+        let error = render_page(&module, &unloaded, &[], Some("layout"), &[]).unwrap_err();
         assert_eq!(
             (error.path.as_str(), error.span, error.message.as_str()),
             (
@@ -328,5 +340,105 @@ mod pages {
                 "`home.lem` was loaded as a null, not a record"
             )
         );
+    }
+
+    /// A page whose neighbours are references into a table built by hand, as a
+    /// generator's loader would fill them (D43): `home.lem` at position 0, its `prev`
+    /// position 1, and that page's `next` position 0 again.
+    mod neighbours {
+        use std::rc::Rc;
+
+        use super::*;
+        use crate::value::Map;
+
+        const SITE: &str = "<lem-type Article extends Page>\n  title: string\n  \
+             prev: Article?\n  next: Article?\n  \
+             layout: (Article, html): html = article\n</lem-type>\n\
+             <lem-fn article(a: Article, body: html)><lem.body></lem-fn>\n\
+             <lem-let posts: [Article] from \"pages/*.md\" />";
+
+        fn article(title: &str, prev: Value, next: Value) -> Value {
+            Value::record(
+                "Article",
+                Map::from_unique([
+                    (Rc::from("title"), Value::str(title)),
+                    (Rc::from("prev"), prev),
+                    (Rc::from("next"), next),
+                    (Rc::from("url"), Value::url("/")),
+                ]),
+            )
+        }
+
+        fn table() -> Vec<LoadedPage> {
+            let page = |record: Value| LoadedPage {
+                path: "home.lem".to_owned(),
+                record,
+                spans: Spans::new(),
+                record_span: Span::new(4, 11),
+                generated: None,
+            };
+            vec![
+                page(article("Home", Value::Neighbour(1), Value::Null)),
+                page(article("Before", Value::Null, Value::Neighbour(0))),
+            ]
+        }
+
+        /// `home.lem` with `body`, rendered as the first page of `pages`.
+        fn rendered(body: &str, pages: &[LoadedPage]) -> Result<String, RuntimeError> {
+            let text = format!("---\ntype: Article\ntitle: x\n---\n{body}");
+            let files = [
+                SourceFile::new("ambient.lem", AMBIENT),
+                SourceFile::new("site.lem", SITE),
+                SourceFile::new("home.lem", &text)
+                    .with_record("Article")
+                    .named_at(at(&text, "Article")),
+            ];
+            let module = compile(&files, &shell()).expect_output();
+            let globals = [("page", pages[0].record.clone())];
+            render_page(&module, &pages[0], pages, None, &globals).map(|r| r.html)
+        }
+
+        #[test]
+        fn reads_a_neighbours_fields_through_the_page_table() {
+            assert_eq!(
+                rendered("<lem.page.prev?.title ?? \"none\">", &table()),
+                Ok("Before".to_owned())
+            );
+            assert_eq!(
+                rendered("<lem.page.next?.title ?? \"none\">", &table()),
+                Ok("none".to_owned())
+            );
+        }
+
+        #[test]
+        fn reads_a_neighbours_neighbour_as_the_page_itself() {
+            // Not a record one level deep whose own neighbours are null (D43).
+            assert_eq!(
+                rendered(
+                    "<lem-if page.prev><lem.page.prev.next?.title ?? \"none\"></lem-if>",
+                    &table()
+                ),
+                Ok("Home".to_owned())
+            );
+        }
+
+        #[test]
+        fn faults_at_a_reference_the_table_it_was_given_does_not_hold() {
+            let error =
+                rendered("<lem.page.prev?.title ?? \"none\">", &table()[..1]).unwrap_err();
+            assert_eq!(
+                error.message,
+                "a neighbour names page 1 of the page table, and this render was given 1"
+            );
+        }
+
+        #[test]
+        fn resolves_a_reference_a_call_through_any_finds_in_a_field() {
+            // The field is read for the call as any field is, so the error is about the
+            // record it names, not the reference.
+            let error =
+                rendered("<lem-let x: any = page /><lem.x.prev()>", &table()).unwrap_err();
+            assert_eq!(error.message, "cannot call a `Article` record");
+        }
     }
 }

@@ -82,13 +82,33 @@ export interface Page {
    * and TypeScript lets the whole span through where it is not a literal.
    */
   record?: { name: string; span: Span }
-  /**
-   * A generator's `for:` key (D43), read and stripped as `type:` is: its value, with
-   * spans keyed from that value — `''` for the whole of it, `topic` for its entry.
-   */
-  for?: { value: JsonValue; spans: Spans }
+  /** A generator's `for:` key (D43), read and stripped as `type:` is. */
+  for?: ForKey
   /** The byte offset the body starts at: past the closing `---` line, or 0. */
   body: number
+}
+
+/**
+ * A generator's `for:` key as the shell reads it and the core takes it (D43): its value
+ * as parsed, which the core checks; spans keyed from that value — `''` for the whole of
+ * it, `topic` for its entry from key through value — and each entry's value spanned
+ * alone, by its key, so that an error about the list underlines the list.
+ */
+export interface ForKey {
+  value: JsonValue
+  spans: Spans
+  valueSpans: Spans
+}
+
+/**
+ * The one entry of a `for:` key the core accepted: the list it names — `site.gallery` —
+ * and where the entry stands, which a diagnostic about one of the generator's pages
+ * points at. The core refuses a malformed key before it makes any page from it, so a
+ * generator with a planned page has one.
+ */
+export function forEntry(key: ForKey): { list: string; span: Span } {
+  const [[field, list]] = Object.entries(key.value as Record<string, JsonValue>)
+  return { list: String(list), span: key.spans[field] }
 }
 
 /** What reading a page found: the page, unless an error stopped it, and why. */
@@ -223,12 +243,24 @@ class Reader {
     return undefined
   }
 
-  /** The `for:` key's value, with a table of its own. */
-  #for(pair: Pair<ParsedNode, ParsedNode | null>): Page['for'] {
+  /** The `for:` key's value, with tables of its own. */
+  #for(pair: Pair<ParsedNode, ParsedNode | null>): ForKey {
     const spans: Spans = {}
+    const valueSpans: Spans = {}
     const node = pair.value ?? pair.key
     spans[''] = this.#walk.nodeSpan(node.range)
     const value = pair.value === null ? null : this.#walk.value(pair.value, '', spans)
-    return { value, spans }
+    // An entry with no value has nothing to span alone, and one whose key is no string
+    // was reported, leaving no page; neither is the core's to see.
+    if (pair.value !== null && isMap(pair.value)) {
+      for (const item of pair.value.items) {
+        const key = isScalar(item.key) ? item.key.value : undefined
+        const range = item.value?.range
+        if (typeof key === 'string' && range !== undefined && range[1] > range[0]) {
+          valueSpans[key] = this.#walk.nodeSpan(range)
+        }
+      }
+    }
+    return { value, spans, valueSpans }
   }
 }

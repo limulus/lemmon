@@ -6,7 +6,8 @@
   block that never closes is an error at its opening line rather than a rule and
   prose, in a `.md` too; a page template renders through its layout with its output
   as the body, in one VM run with the layout —
-  settled with Eric 2026-09-17
+  settled with Eric 2026-09-17. As built (∆99b, 2026-10-18): generators, with the
+  refinements D43 records
 - **Backlog item:** ∆RGQ (settled it); ∆Bhz (page templates) and ∆99b (generators) build
   it
 - **Normative text:** `docs/language.md` § Types › Ambient types
@@ -85,6 +86,6 @@ provisionally.
   their pages.
 - A page with several items, such as ten posts per archive page, is additive later; both
   limulus.net generators make one page per item.
-- ∆ePP ports the photo and TIL topic pages as generator templates.
+- ∆ePP ports the photo and TIL topic pages as generator templates _(∆ePP is now ∆hvm)_.
 - `docs/artifact-changes.md` records what the three artifacts must say about page
   templates and generators.

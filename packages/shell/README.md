@@ -334,8 +334,11 @@ promise, and a function where a plugin belongs, a plugin factory not called.
 3. **Compile**, in two calls. First the shell's own `ambient.lem` — `Page`, `Build` and
    `Code` (docs/language.md §Ambient types) — and every template, under the declaration
    `site` → the bindings of `site.lem`, `page` → `Page`, `build` → `Build`, pages
-   rendered through `layout` and placed by `url`. Page templates are in this call too,
-   without their records, so that what one defines is in sight of the layouts. The core
+   rendered through `layout` and placed by `url`, and a generated page's neighbours
+   filled into `prev` and `next` — so a page type that declares either declares it as
+   an optional of itself or a type it extends, with no default. Page templates are in
+   this call too, without their records, so that what one defines is in sight of the
+   layouts. The core
    reports the program's `from` bindings and the record each glob collects; every page
    is matched against those globs (with the passthrough glob semantics, so case aside),
    and then all pages — documents and page templates — compile in one call, each as its
@@ -347,8 +350,19 @@ promise, and a function where a plugin belongs, a plugin factory not called.
    with the core's version. A glob's binding is the front matter of the pages it holds;
    a data file (JSON or YAML) is read from `input` with positions, and one whose path
    leads outside `input` is an error at its binding; `env("X")` is the variable's text.
-   Every page no glob holds whose `type:` named its record is carried on its own.
-5. **Plan and render.** Every loaded page renders through its layout. A page no glob
+   Every page no glob holds whose `type:` named its record is carried on its own, a
+   generator with its `for:` key beside its front matter — the value as read, with
+   spans for the whole of it, its entry, and the list alone — which the core checks and
+   expands into one page per item (D43). A glob's member carries its key too, which the
+   core refuses, since no glob can hold a generator. A page with `for:` and no `type:`,
+   which no glob holds, is an error at the key, and is not compiled as a page: a
+   template's generator has no type to make its pages of, and a document is no
+   generator at all.
+5. **Plan and render.** Every loaded page renders through its layout, in the plan's
+   order: a generator's pages each by its index, at the url its type's default gave it.
+   A diagnostic names a generated page by its item — `` `photos/photo.lem` for
+   `site.gallery[3]` `` — and a render's runtime error on one is labelled so at the
+   generator's `for:` entry. A page no glob
    holds and no `type:` names has no schema: it renders its own output, with `page` its
    front matter as read, loaded on its own before it renders. Each of those loads
    re-sends and re-validates the whole envelope, so the cost grows with the untyped
@@ -399,7 +413,6 @@ it no glob matches anything.
 - **Plugins.** A plugin has no data hook and no `lem` command, it ships no `.lem` — so
   no wrapper such as `<lem.styles()>` — and a `from plugin("…")` binding is an error at
   the binding: ∆wOn.
-- **Generators.** A page whose front matter has `for:` is an error at the key: ∆99b.
 - **Drafts.** `draft: true` is built like any page; `--drafts` and leaving drafts out
   are ∆Han, in Someday/Maybe.
 - **Second phase.** A feed renders with the other pages, reading none of their output:

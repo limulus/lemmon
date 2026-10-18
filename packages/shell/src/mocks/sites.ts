@@ -120,6 +120,44 @@ export const SITE: Record<string, string> = {
   'components/old.webc': '<p>old</p>\n',
 }
 
+/**
+ * What a site that generates pages adds to its bindings file (D43): a topic page type
+ * whose defaults give each page its title and url from its item, and which declares its
+ * neighbours; its layout; and the list a generator pages over.
+ */
+export const TOPICS_LEM = `<lem-type Topic extends Page>
+  topic: string
+  title: string = "TILs: " + self.topic
+  url: url = url("/tils/" + self.topic + "/")
+  prev: Topic?
+  next: Topic?
+  layout: (Topic, html): html = topical
+</lem-type>
+
+<lem-fn topical(t: Topic, body: html)>
+  <lem.base(t.title, body)>
+</lem-fn>
+
+<lem-let topics: [string] = ["git", "nodejs", "rust"] />
+`
+
+/** A generator of a page per item of {@link TOPICS_LEM}'s list, linking to its neighbours. */
+export const TOPIC_LEM = `---
+type: Topic
+for:
+  topic: site.topics
+---
+<lem-if page.prev><a rel="prev" href="<lem.page.prev.url>"><lem.page.prev.title></a></lem-if>
+<lem-if page.next><a rel="next" href="<lem.page.next.url>"><lem.page.next.title></a></lem-if>
+`
+
+/** {@link SITE} with the generator `topics.lem` over {@link TOPICS_LEM}'s list. */
+export const GENERATING: Record<string, string> = {
+  ...SITE,
+  'site.lem': SITE_LEM + TOPICS_LEM,
+  'topics.lem': TOPIC_LEM,
+}
+
 /** The passthrough globs {@link SITE} is built with. */
 export const PASSTHROUGH = ['assets/**']
 

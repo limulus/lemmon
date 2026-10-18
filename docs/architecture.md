@@ -63,8 +63,9 @@ ambient value name to a declared type, to the top-level bindings of a file (`sit
 `site.lem`), or to nothing at all, which names the value without typing it. `document` says which of them
 a file's `record` retypes, and `entry` names the field a page is rendered through
 (`layout`). `url` names the field `plan()` reports a page's url from, and `neighbours`
-the two fields the loader fills on a generated page with the pages beside it (D43; not
-yet: `neighbours` ∆99b). The declaration is resident like the units, so a
+the two fields the loader fills on a generated page with the pages beside it (D43): each
+is checked at link, with the url and entry fields, since none of those field names is a
+fact of any unit. The declaration is resident like the units, so a
 call that changes nothing about the environment omits it, and what each unit was
 compiled against is one of its facts: a host that rebinds a name leaves the units that
 read it stale, named for recompiling, as a changed signature does (D25). A core given no
@@ -138,10 +139,17 @@ not a break:
   one page of a generator, counted from zero in its list's order. `plan()` lists every
   loaded page with the url the host-named field holds (D43): each collection's in the
   order the loader builds them, then the envelope's `pages` in their order, a generator
-  expanded where it stands. `DataInput` gains `pages`, `{path, value, spans}` for every
-  page no glob holds, a generator's carrying its `for:` pair. A page the envelope did not
-  carry is not loaded: `plan()` omits it, and rendering it is a thrown caller bug.
-  Not yet (∆99b): `PageRef` is `{path}`, and no page carries a `for:` pair.
+  expanded where it stands, `index` present exactly on a generated page. `DataInput`
+  gains `pages`, `{path, value, spans}` for every page no glob holds, and any page's
+  entry may carry its `for:` pair as the shell parsed it, `for: {value, spans,
+  valueSpans}` — `spans` keyed from the value as any table is, and `valueSpans` each
+  entry's value alone, so a diagnostic about the list underlines the list. A glob's
+  member may carry one too, which the load refuses at the key. A page the envelope did
+  not carry is not loaded: `plan()` omits it, and rendering it is a thrown caller bug, as
+  is rendering a generator's path with no `index`, an `index` past the pages it made, or
+  an `index` for a file that is no generator. A message names a generated page by its
+  item, in the language's own index syntax — `` `photos/photo.lem` for
+  `site.gallery[3]` `` — in the core and the shell alike.
 - `render` returns a four-byte little-endian length, that many bytes of
   `{marks, fragments, diagnostics}` as JSON, then the page's UTF-8 bytes. A failed render
   sends the diagnostic, null marks and fragments, and no page section at all, which is
@@ -218,9 +226,11 @@ not a break:
 4. **Load** (core) — validate records against schemas, run the defaults and computed
    bindings, resolve reference fields (D37) and `[asset]` fields, the latter against the
    manifest the declaration carried into step 3; then load the pages no glob holds,
-   expand each generator into one page per item with its neighbours filled, and refuse
-   two pages at one url (D43; not yet: generators, ∆99b). Failures point at the YAML
-   positions the shell sent with the data.
+   expand each generator where it stands into one page per item of the list its `for:`
+   pair names — the pair checked against the program, the front matter validated once,
+   the item preset into its field and the type's defaults run for each — with its
+   neighbours filled once every page of it is built, and refuse two pages at one url
+   (D43). Failures point at the YAML positions the shell sent with the data.
 5. **Plan** (core) — list every loaded page with its url, from the field the host named
    (D43); deps come with ∆xBO. A file with no record — a document or
    page template no glob matched and no `type:` named — is no page: `plan()` omits it,
@@ -407,10 +417,12 @@ bindings, in the order their recorded reads, closed through calls, dictate (D37,
 ∆HF0), and each record's `by` indexes, the ambient fields its strings resolve through
 (∆eag) — linked from
 per-file units (above). Values are immutable and Rc'd:
-`Null | Bool | Int | Float | Str | Html | DateTime | Duration | Url | Asset | List | Map | Fn | Record`.
-A neighbour field holds a reference into the store's page table, which a field read
-resolves to that page's record, so no record holds another and `render` takes the table
-beside the globals (D43); not yet (∆99b).
+`Null | Bool | Int | Float | Str | Html | DateTime | Duration | Url | Asset | List | Map | Fn | Record | Neighbour`.
+A neighbour field holds a `Neighbour`, a reference into the store's page table by
+position, which a field read resolves to that page's record, so no record holds another
+and a page's render takes the table beside the globals (D43); nothing else is given it,
+since only a generated page's own record holds a reference. A payload holding one is
+refused at the call that made it.
 Records carry their declared name, and the module the declaration table that
 `TypeTest` walks and the loader validates against, so the two cannot disagree about
 what a name is; fields are read by name (by index is an optimisation nothing needs,

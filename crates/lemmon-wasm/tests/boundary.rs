@@ -248,6 +248,49 @@ fn plans_and_renders_loaded_pages_through_the_abi() {
     assert_eq!(page, "<h1>Home</h1>hi");
 }
 
+/// A generator's `for:` pair crosses on its page's entry, the plan lists each page it
+/// made with its index, `render` takes the index of one, and a generated page reads its
+/// neighbours through the page table the render was given (D43).
+#[wasm_bindgen_test]
+fn plans_and_renders_a_generators_pages_by_index_through_the_abi() {
+    let mut core = Core::new();
+    let files = serde_json::json!([
+        {"path": "ambient.lem", "text": "<lem-type Page>\n  url: url\n</lem-type>"},
+        {
+            "path": "site.lem",
+            "text": "<lem-type Topic extends Page>\n  topic: string\n  prev: Topic?\n  next: Topic?\n  url: url = url(\"/t/\" + self.topic + \"/\")\n  layout: (Topic, html): html = topical\n</lem-type>\n<lem-fn topical(t: Topic, body: html)><h1><lem.t.topic></h1><lem.body></lem-fn>\n<lem-let topics: [string] = [\"git\", \"node\"] />",
+        },
+        {"path": "topics.lem", "text": "---\ntype: Topic\nfor:\n  topic: site.topics\n---\nafter <lem.page.prev?.topic ?? \"nothing\">", "record": "Topic"},
+    ])
+    .to_string();
+    let host = r#"{"ambient": {"page": "Page", "site": {"bindingsOf": "site.lem"}}, "document": "page", "entry": "layout", "url": "url", "neighbours": ["prev", "next"]}"#;
+    let reply = core
+        .compile(&files, Some(host.to_owned()))
+        .expect("a well-formed compile payload");
+    assert_eq!(diagnostics_of(&reply), serde_json::json!([]));
+    let reported = core
+        .load_data(
+            r#"{"ambient": {}, "pages": [{"path": "topics.lem", "value": {},
+                "for": {"value": {"topic": "site.topics"}}}]}"#,
+        )
+        .expect("a well-formed loadData payload");
+    assert_eq!(reported, "[]");
+    assert_eq!(
+        core.plan().expect("a plan after a load"),
+        r#"[{"path":"topics.lem","index":0,"url":"/t/git/"},{"path":"topics.lem","index":1,"url":"/t/node/"}]"#
+    );
+    let (_, page) = decode(
+        &core
+            .render(r#"{"path": "topics.lem", "index": 1}"#)
+            .expect("a generated page renders"),
+    );
+    assert_eq!(page, "<h1>node</h1>after git");
+    assert!(
+        core.render(r#"{"path": "topics.lem"}"#).is_err(),
+        "a generator's path alone names none of its pages"
+    );
+}
+
 /// A load crosses with the host's positions and its diagnostics come back placed by
 /// them: the data file was never compiled, so nothing but the carried range could
 /// place an error in it (D37). An envelope the program cannot be loaded from throws.

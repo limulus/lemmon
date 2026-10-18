@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest'
 import { envelope, type Envelope } from './load.ts'
 import { compileSite } from './program.ts'
 import { discover } from './site.ts'
-import { configOf, ENV, project, SITE, SITE_LEM } from '../mocks/sites.ts'
+import { configOf, ENV, GENERATING, project, SITE, SITE_LEM } from '../mocks/sites.ts'
 import { at } from '../mocks/spans.ts'
 
 const BUILD = { time: new Date('2026-10-15T12:00:00Z'), generator: 'Lemmon 0.0.0' }
@@ -78,6 +78,41 @@ describe('envelope()', () => {
     expect(data?.sources?.motto).toEqual({ value: 'hi' })
     // The home page its own `type:` named; the untyped note is no page to load.
     expect(data?.pages?.map((page) => page.path)).toEqual(['index.lem'])
+  })
+
+  it('should carry a generator’s `for:` key beside its front matter, a glob’s member’s too', async () => {
+    // The core expands the one in `pages`, and refuses the one a glob holds at its key.
+    const site = `${GENERATING['site.lem']}<lem-let sections: [Home] from "sections/*.lem" />\n`
+    const held = '---\nfor:\n  title: site.topics\n---\n<p><lem.page.title></p>\n'
+    const { data, diagnostics } = await enveloped({
+      ...GENERATING,
+      'site.lem': site,
+      'sections/t.lem': held,
+    })
+    const topics = GENERATING['topics.lem']
+
+    expect(diagnostics).toEqual([])
+    expect(data?.pages).toContainEqual({
+      path: 'topics.lem',
+      value: { inputPath: 'www/topics.lem' },
+      spans: { '': at(topics, 'type: Topic\nfor:\n  topic: site.topics') },
+      for: {
+        value: { topic: 'site.topics' },
+        spans: {
+          '': at(topics, 'topic: site.topics'),
+          topic: at(topics, 'topic: site.topics'),
+        },
+        valueSpans: { topic: at(topics, 'topic: «site.topics»') },
+      },
+    })
+    expect(data?.sources?.sections).toEqual([
+      expect.objectContaining({
+        path: 'sections/t.lem',
+        for: expect.objectContaining({ value: { title: 'site.topics' } }) as unknown,
+      }),
+    ])
+    // A page with no key carries none.
+    expect(data?.pages?.find((page) => page.path === 'index.lem')).not.toHaveProperty('for')
   })
 
   it('should report an environment variable that is not set, at the binding', async () => {

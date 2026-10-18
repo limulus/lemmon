@@ -7,7 +7,14 @@ import type { Plugin } from './plugins.ts'
 import { AMBIENT_FILE, compileSite, HOST, SiteError, type Compiled } from './program.ts'
 import { discover } from './site.ts'
 import { copy, inline, shell, tsHighlighter } from '../mocks/plugins.ts'
-import { configOf, LAYOUTS_LEM, project, SITE, SITE_LEM } from '../mocks/sites.ts'
+import {
+  configOf,
+  GENERATING,
+  LAYOUTS_LEM,
+  project,
+  SITE,
+  SITE_LEM,
+} from '../mocks/sites.ts'
 import { at } from '../mocks/spans.ts'
 
 /** Compiles `files` as a project's input, listing `plugins`, in a fresh core. */
@@ -205,21 +212,61 @@ describe('compileSite()', () => {
     )
   })
 
-  it('should refuse a generator, which nothing expands yet', async () => {
-    const topic = '---\ntype: Home\nfor:\n  title: site.titles\n---\n'
-    const { program, diagnostics } = await compiled({ ...SITE, 'topic.lem': topic })
+  describe('a generator', () => {
+    it('should compile as its own `type:`, keeping its `for:` key for the load', async () => {
+      const { program, diagnostics } = await compiled(GENERATING)
 
-    expect(program).toBeUndefined()
-    expect(diagnostics).toEqual([
-      {
-        path: 'topic.lem',
-        span: at(topic, 'title: site.titles'),
-        severity: 'error',
-        message:
-          '`for:` makes this page a generator, and `lem build` expands none yet (∆99b)',
-        labels: [],
-      },
-    ])
+      expect(diagnostics).toEqual([])
+      const topics = program?.pages.get('topics.lem')
+      expect(topics?.record).toBe('Topic')
+      expect(topics?.page.for?.value).toEqual({ topic: 'site.topics' })
+    })
+
+    it('should compile as the glob that holds it, which the load then refuses', async () => {
+      // The core sees the key on the glob's member, and says so at load (D43).
+      const site = `${GENERATING['site.lem']}<lem-let sections: [Home] from "sections/*.lem" />\n`
+      const held = '---\nfor:\n  title: site.topics\n---\n<p><lem.page.title></p>\n'
+      const files = { ...GENERATING, 'site.lem': site, 'sections/t.lem': held }
+
+      expect(await typed(files)).toEqual(
+        expect.arrayContaining([['sections/t.lem', 'Home', 'sections']])
+      )
+    })
+
+    it('should refuse one no `type:` names and no glob holds, which has no record', async () => {
+      const topic = '---\nfor:\n  title: site.titles\n---\n'
+      const { program, diagnostics } = await compiled({ ...SITE, 'topic.lem': topic })
+
+      expect(program).toBeUndefined()
+      expect(diagnostics).toEqual([
+        {
+          path: 'topic.lem',
+          span: at(topic, 'title: site.titles'),
+          severity: 'error',
+          message:
+            '`for:` makes this page a generator, and a generator names the type of its ' +
+            'pages with `type:`',
+          labels: [],
+        },
+      ])
+    })
+
+    it('should refuse a document with the key in the core’s words, typed or not', async () => {
+      // A document is no generator, so `type:` is no remedy: the core says the same of
+      // one it is given with a type.
+      const prose = '---\nfor:\n  title: site.titles\n---\nProse\n'
+      const { diagnostics } = await compiled({ ...SITE, 'notes/topic.md': prose })
+
+      expect(diagnostics).toEqual([
+        expect.objectContaining({
+          path: 'notes/topic.md',
+          span: at(prose, 'title: site.titles'),
+          message:
+            'a document is one page, of its own prose, so it takes no `for:` key: a ' +
+            'generator is a page template',
+        }),
+      ])
+    })
   })
 
   describe('the marks', () => {

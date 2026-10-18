@@ -1,0 +1,6 @@
+---
+type: TilTopicPage
+for:
+  topic: page.topics
+---
+<p>Every TIL about <lem.page.topic></p>

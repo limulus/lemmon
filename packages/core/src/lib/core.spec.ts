@@ -109,6 +109,36 @@ const homeLoaded = (url: string): DataInput => ({
   pages: [{ path: 'home.lem', value: { title: 'Home', url } }],
 })
 
+/**
+ * A generator (D43): a topic type whose defaults give each page its url, a list for
+ * it to page over, and the template naming both in its `for:` key.
+ */
+const topics: SourceFileInput[] = [
+  {
+    path: 'topics.lem',
+    text: [
+      '<lem-type Topic extends Page>',
+      '  topic: string',
+      '  url: url = url("/t/" + self.topic + "/")',
+      '  layout: (Topic, html): html = topical',
+      '</lem-type>',
+      '<lem-fn topical(t: Topic, body: html)><h1><lem.t.topic></h1><lem.body></lem-fn>',
+    ].join('\n'),
+  },
+  {
+    path: 'topic.lem',
+    text: '---\ntype: Topic\nfor:\n  topic: site.topics\n---\n<p><lem.page.url></p>',
+    record: 'Topic',
+  },
+]
+
+/** The typed site with a list of topics for {@link topics} to page over. */
+const topicSite: SourceFileInput[] = site.map((file) =>
+  file.path === 'site.lem'
+    ? { ...file, text: `${file.text}\n<lem-let topics: [string] = ["git", "node"] />` }
+    : file
+)
+
 /** The envelope that loads the typed site cleanly. */
 const loaded: DataInput = {
   ambient: {},
@@ -543,7 +573,58 @@ describe('Core', () => {
       expect(core.loadData(loaded)).toEqual([])
       expect(core.plan()).toEqual([{ path: 'posts/a.md', url: '/a/' }])
       expect(() => core.render({ path: 'home.lem' })).toThrow(
-        /`home.lem` is a page the last load did not carry/
+        /`home.lem` is a page the last load did not make/
+      )
+    })
+
+    it('should list each page a generator made by its index, which render takes', async () => {
+      const core = await loadCore()
+      expect(core.compile([...topicSite, ...topics], typedSite).diagnostics).toEqual([])
+      const generator = {
+        path: 'topic.lem',
+        value: {},
+        for: { value: { topic: 'site.topics' } },
+      }
+      expect(core.loadData({ ...loaded, pages: [generator] })).toEqual([])
+      expect(core.plan()).toEqual([
+        { path: 'posts/a.md', url: '/a/' },
+        { path: 'topic.lem', index: 0, url: '/t/git/' },
+        { path: 'topic.lem', index: 1, url: '/t/node/' },
+      ])
+      const [, , second] = core.plan()
+      expect(page(core.render(second))).toBe('<h1>node</h1><p>/t/node/</p>')
+      expect(page(core.render({ path: 'topic.lem', index: 0 }))).toBe(
+        '<h1>git</h1><p>/t/git/</p>'
+      )
+      expect(() => core.render({ path: 'topic.lem' })).toThrow(
+        /`topic.lem` is a generator: `render` takes the `index` of one of its pages/
+      )
+    })
+
+    it('should render a generated page reading its neighbour through the table', async () => {
+      const core = await loadCore()
+      const neighboured: SourceFileInput[] = topics.map((file) => ({
+        ...file,
+        text: file.text
+          .replace('  topic: string', '  topic: string\n  prev: Topic?\n  next: Topic?')
+          .replace(
+            '<p><lem.page.url></p>',
+            '<p>after <lem.page.prev?.topic ?? "none"></p>'
+          ),
+      }))
+      const host: HostDecl = { ...typedSite, neighbours: ['prev', 'next'] }
+      expect(core.compile([...topicSite, ...neighboured], host).diagnostics).toEqual([])
+      const generator = {
+        path: 'topic.lem',
+        value: {},
+        for: { value: { topic: 'site.topics' } },
+      }
+      expect(core.loadData({ ...loaded, pages: [generator] })).toEqual([])
+      expect(page(core.render({ path: 'topic.lem', index: 0 }))).toBe(
+        '<h1>git</h1><p>after none</p>'
+      )
+      expect(page(core.render({ path: 'topic.lem', index: 1 }))).toBe(
+        '<h1>node</h1><p>after git</p>'
       )
     })
 

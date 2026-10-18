@@ -27,12 +27,12 @@ use lemmon_syntax::{Span, SyntaxKind, SyntaxToken};
 use super::names::{BindingKind, Resolved};
 use super::narrowing::Path;
 use super::rules::{self, LambdaShape, Rule};
-use super::{Compiler, TokenSpan, refused_at_load, required};
+use super::{Compiler, Runs, TokenSpan, neighbour_out_of_reach, refused_at_load, required};
 use crate::Value;
 use crate::bytecode::Op;
 use crate::decls::DeclKind;
 use crate::types::{Type, join};
-use crate::unit::Access;
+use crate::unit::{Access, Root};
 
 impl Compiler<'_> {
     /// Lowers `expr`, leaving its value on the stack, and returns its type.
@@ -240,6 +240,17 @@ impl Compiler<'_> {
         refused_at_load(runs, self.host.document(), name)
     }
 
+    /// Why the read `object.field` is refused, if it is: a default of a page record
+    /// reading one of the record's own neighbour fields, which the loader has not filled
+    /// while the defaults run (D43). A read through a call is the link step's to find.
+    fn neighbour_read(&self, object: &Expr, field: &str) -> Option<String> {
+        let runs = self.uses.as_ref()?.runs?;
+        let own = runs == Runs::Default { page_backed: true }
+            && self.host.is_neighbour(field)
+            && self.root_of(object) == Some(Root::Own);
+        own.then(|| neighbour_out_of_reach(field))
+    }
+
     /// Why a name resolves to nothing: a name the project declares as a type is not a
     /// value, and saying so beats "undefined name" for the author who wrote `Placement`
     /// where its variant belonged.
@@ -315,10 +326,14 @@ impl Compiler<'_> {
             Op::GetField { name: index }
         };
         self.emit(op, span);
-        let ty = self.rule(
-            span,
-            rules::member(&object_ty, name.text(), optional, self.decls()),
-        );
+        let typed = rules::member(&object_ty, name.text(), optional, self.decls());
+        // Only a field the record has: one it lacks is that mistake, and no other.
+        if typed.is_ok()
+            && let Some(refusal) = self.neighbour_read(&object, name.text())
+        {
+            self.error(span, refusal);
+        }
+        let ty = self.rule(span, typed);
         let ty = self.known(ty);
         // A condition on this very path may have narrowed it for the arm being lowered.
         match self.path_of(&Expr::Member(member.clone())) {

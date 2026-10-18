@@ -14,6 +14,10 @@
 //! A [`Value::Record`] carries the name of its declared type (D35): that tag is what a
 //! type test reads at run time, and the one thing that tells a record from a map, whose
 //! entries are never fields to the checker. A record has no printed form.
+//!
+//! A [`Value::Neighbour`] is the one value no expression makes: what a generated page's
+//! neighbour field holds, a page of the store's page table by its position, which a
+//! field read resolves to that page's record before anything else sees it (D43).
 
 use std::borrow::Cow;
 use std::cmp::Ordering;
@@ -159,6 +163,11 @@ pub enum Value {
     Fn(Rc<Closure>),
     /// A record, tagged with its declared type.
     Record(Rc<Record>),
+    /// A page of the store's page table, by its position: what a generated page's
+    /// neighbour field holds, so that no record holds another and two neighbours make
+    /// no cycle (D43). A field read resolves it to the page's record, so a template
+    /// never holds one; equal to another by position, and refused in a payload.
+    Neighbour(u32),
 }
 
 impl Value {
@@ -222,6 +231,12 @@ impl Value {
             Self::Float(f) if !f.is_finite() => Some(
                 "a payload crosses to the handler as JSON, which has no NaN or infinity",
             ),
+            // A generated page's record holds its neighbours as references into a page
+            // table the handler never sees.
+            Self::Neighbour(_) => Some(
+                "a payload crosses to the handler as data, and a generated page's \
+                 neighbours have no form there",
+            ),
             Self::List(items) => items.iter().find_map(Self::payload_refusal),
             Self::Map(map) => map.iter().find_map(|(_, value)| value.payload_refusal()),
             Self::Record(record) => record
@@ -259,6 +274,7 @@ impl Value {
             Self::List(_) => "list",
             Self::Map(_) => "map",
             Self::Fn(_) => "function",
+            Self::Neighbour(_) => "neighbouring page",
             Self::Record(record) => return Cow::Owned(format!("`{}` record", record.name)),
         })
     }
@@ -447,6 +463,11 @@ mod tests {
             (
                 Value::Float(f64::NAN),
                 "a payload crosses to the handler as JSON, which has no NaN or infinity",
+            ),
+            (
+                Value::Neighbour(0),
+                "a payload crosses to the handler as data, and a generated page's \
+                 neighbours have no form there",
             ),
         ] {
             assert_eq!(record(value).payload_refusal(), Some(refusal));
@@ -693,6 +714,7 @@ mod tests {
                 captures: vec![],
             })),
             Value::record("Photo", Map::default()),
+            Value::Neighbour(0),
         ]
         .iter()
         .map(|value| value.type_name().into_owned())
@@ -713,8 +735,25 @@ mod tests {
                 "list",
                 "map",
                 "function",
-                "`Photo` record"
+                "`Photo` record",
+                "neighbouring page"
             ]
+        );
+    }
+
+    /// What a neighbour field holds compares by the page it names, so two records of
+    /// one generator's page compare as the same page — and it is never printed or
+    /// ordered, a read having resolved it before either could be asked.
+    #[test]
+    fn compares_a_neighbour_by_the_page_it_names() {
+        assert_eq!(Value::Neighbour(2).equals(&Value::Neighbour(2)), Ok(true));
+        assert_eq!(Value::Neighbour(2).equals(&Value::Neighbour(3)), Ok(false));
+        assert_eq!(Value::Neighbour(2).equals(&Value::Null), Ok(false));
+        assert_eq!(Value::Neighbour(2).order(&Value::Neighbour(3)), Ok(None));
+        assert!(Value::Neighbour(0).as_condition());
+        assert_eq!(
+            emitted(&Value::Neighbour(0)).unwrap_err(),
+            "cannot print a neighbouring page"
         );
     }
 

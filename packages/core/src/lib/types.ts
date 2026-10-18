@@ -69,6 +69,14 @@ export interface HostDecl {
    */
   url?: string
   /**
+   * The two fields a generated page's previous and next pages fill, in that order —
+   * `['prev', 'next']` in the standard shell (D43). Only a page type whose pages a
+   * generator makes declares them, each an optional of itself or of a type it extends,
+   * with no default; the loader fills them, and a read of one resolves to that page's
+   * record. One name given twice makes the call throw.
+   */
+  neighbours?: [string, string]
+  /**
    * The manifest the host's build produced: each asset's logical path mapped to the URL
    * it shipped at, in the order a diagnostic should list them.
    *
@@ -247,21 +255,48 @@ export interface LoadedValue {
    * index for a file it never compiled.
    */
   spans?: Record<string, Span>
+  /**
+   * A generator's `for:` pair (D43), which only a page carries — a glob's member too,
+   * which the load then refuses at the key, since no glob can hold a generator.
+   */
+  for?: ForPair
+}
+
+/**
+ * A generator's `for:` key as the host read and stripped it (D43): its value as
+ * parsed — one entry, the field each page's item fills to the list it pages over, as
+ * `{topic: 'site.tilTopics'}` — which the core checks and words every fault of.
+ */
+export interface ForPair {
+  value: JsonValue
+  /**
+   * Where the value stands, keyed from it as {@link LoadedValue.spans} is: `''` the
+   * value as a whole, and each entry from its key through its value — where a
+   * diagnostic about the field points.
+   */
+  spans?: Record<string, Span>
+  /**
+   * Where each entry's value stands alone, by the entry's key — where a diagnostic
+   * about the list points, so that it underlines `site.tilTopics` and not the field.
+   */
+  valueSpans?: Record<string, Span>
 }
 
 /**
  * What {@link Core.render} takes: the path of a file the program compiled — a page
- * {@link Core.plan} listed, or any other file. `index`, numbering a generator's pages,
- * is an additive field that arrives with ∆99b.
+ * {@link Core.plan} listed, or any other file — and, for a page a generator made, its
+ * `index` among the generator's pages as {@link Core.plan} lists it (D43). A
+ * generator's path without an index names none of its pages.
  */
 export interface PageRef {
   path: string
+  index?: number
 }
 
 /**
- * One page as {@link Core.plan} lists it (D43): what {@link Core.render} takes, with
- * the url the host-named field holds — absent where the host names no
- * {@link HostDecl.url}.
+ * One page as {@link Core.plan} lists it (D43): what {@link Core.render} takes — its
+ * `index` present exactly where a generator made it — with the url the host-named
+ * field holds, absent where the host names no {@link HostDecl.url}.
  */
 export interface PlannedPage extends PageRef {
   url?: string

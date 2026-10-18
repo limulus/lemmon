@@ -1,0 +1,13 @@
+---
+type: BlurbedTopicPage
+for:
+  topic: site.topics
+---
+<p><lem.page.blurb></p>
+
+<lem-type BlurbedTopicPage extends SitePage>
+  topic: string
+  title: string = "TILs: " + self.topic
+  blurb: string = {"git": "Version control", "rust": "Systems programming"}[self.topic]
+  url: url = url("/tils/" + self.topic + "/")
+</lem-type>

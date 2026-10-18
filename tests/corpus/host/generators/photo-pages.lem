@@ -1,0 +1,12 @@
+---
+type: PhotoPage
+for:
+  photo: site.gallery
+---
+<lem-if page.prev>
+  <a rel="prev" href="<lem.page.prev.url>"><lem.page.prev.title></a>
+  <p>which leads back here, to <lem.page.prev.next?.title ?? "nowhere"></p>
+</lem-if>
+<lem-if page.next>
+  <a rel="next" href="<lem.page.next.url>"><lem.page.next.title></a>
+</lem-if>

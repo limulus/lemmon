@@ -27,6 +27,7 @@ use lemmon_syntax::Span;
 
 use crate::builtins::{self, BUILTINS, Fault, Machine, ReceiverKind};
 use crate::bytecode::{Function, MarkKey, MarkPayload, Module, Op};
+use crate::load::LoadedPage;
 use crate::rendered::{Buffer, Fragment, Fragments, Mark, Marked, Payload, Rendered};
 use crate::value::{Closure, Map};
 use crate::{RuntimeError, Value};
@@ -74,6 +75,10 @@ enum Iter {
 struct Vm<'a> {
     module: &'a Module,
     globals: &'a [(&'a str, Value)],
+    /// The store's page table, which a neighbour field's reference names a page of
+    /// (D43): the pages a page render reads through, and empty for every other run —
+    /// nothing a file's render or a loader-run function reaches holds a reference.
+    pages: &'a [LoadedPage],
     stack: Vec<Value>,
     frames: Vec<Frame>,
     /// How many builtins are part-way through a call of their own, each holding a
@@ -99,6 +104,7 @@ impl<'a> Vm<'a> {
         Self {
             module,
             globals,
+            pages: &[],
             stack: Vec::new(),
             frames: Vec::new(),
             native_depth: 0,
@@ -249,6 +255,7 @@ impl<'a> Vm<'a> {
                 record.fields.get(name).cloned().ok_or_else(|| {
                     format!("no field `{name}` on {}", receiver.type_name())
                 })?;
+            let callee = self.resolved(callee)?;
             self.stack.remove(at);
             return Ok(self.call_value(callee, argc)?);
         }
@@ -630,13 +637,35 @@ impl<'a> Vm<'a> {
                 .fields
                 .get(name)
                 .cloned()
-                .ok_or_else(|| format!("no field `{name}` on {}", object.type_name())),
+                .ok_or_else(|| format!("no field `{name}` on {}", object.type_name()))
+                .and_then(|value| self.resolved(value)),
             Value::Null => Err(format!("cannot read field `{name}` of null")),
             other => Err(format!(
                 "cannot read field `{name}` of a {}",
                 other.type_name()
             )),
         }
+    }
+
+    /// `value` as a field read hands it on: a neighbour's reference resolved to the
+    /// record of the page it names, anything else as it is. A position the table does
+    /// not hold is an error rather than an index out of bounds (invariant 8): the
+    /// loader's references name pages of the store it built, so only a caller that
+    /// passed another table could reach it.
+    fn resolved(&self, value: Value) -> Result<Value, String> {
+        let Value::Neighbour(position) = value else {
+            return Ok(value);
+        };
+        self.pages
+            .get(position as usize)
+            .map(|page| page.record.clone())
+            .ok_or_else(|| {
+                format!(
+                    "a neighbour names page {position} of the page table, and this render \
+                     was given {}",
+                    self.pages.len()
+                )
+            })
     }
 
     /// The boolean on top of the stack, for a short-circuit operator.

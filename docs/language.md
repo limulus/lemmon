@@ -462,6 +462,20 @@ input directory.
   loaded, so no `from` glob holds them, and a glob that matches a generator is a load
   error at its `for:` key.
 
+  The shell sends the pair as it parsed it, and the loader words every way it can be
+  malformed — not a mapping, not one entry, a list not written `value.field`. A list
+  whose items the loader cannot check is refused — one of a value the host binds
+  without a type, or a list of `any` — and so is a field of the document value, which
+  is bound per page; a map is refused with the binding that would make it a list
+  (`photos.values()`). The named field is neither `url` nor a neighbour, and a document
+  is no generator, since its prose is one page. A type that gives `url` no default is one
+  error at the `for:` key, however long the list, and so is a default that gives every
+  item one url. The item is the list's value as loaded: it is not validated again, and its
+  field's own default and `by` index never run. The front matter is validated once for
+  every page, and a default's fault names the item it ran for. A message names a
+  generated page by its item, in the language's own index syntax:
+  `` `tils/topics.lem` for `site.tilTopics[2]` ``.
+
   ```
   ---
   type: TilTopicPage
@@ -483,7 +497,14 @@ input directory.
   loader fills them with the pages before and after it in the list; the first page has no
   `prev`, the last no `next`, and a page that was not generated has neither. A default may
   not read one, since the loader fills them after every page of the generator is built.
-- _Not yet (∆99b): nothing expands a generator or fills a neighbour field._
+  The rule is a page type's alone: a record no page has may declare a `prev` of any type,
+  and read it in a default. A page type may declare one of the two without the other, and
+  declares each with no default, which the fill would overwrite. A default's read of one
+  is refused where it stands, or at link when it goes through a call; a read neither can
+  see — through a lambda's parameter, or a record a default took of `self` — faults at
+  the read, since a page's neighbours are not in its record while its defaults run.
+  Front matter never gives one, `null` included. A neighbour is the page itself, read
+  through, so `page.prev.next` on a page with a previous one is that page again.
 - **`layout`** is a field every page schema declares, `(T, html): html` for its own `T`,
   usually with a default. At load its string value resolves to a project function of that
   type, as any string does where a function type is expected; `render` renders a page by

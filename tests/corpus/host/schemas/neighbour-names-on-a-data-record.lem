@@ -1,0 +1,6 @@
+<lem-type Revision>
+  text: string
+  prev: string?
+  next: string?
+  summary: string = (self.prev ?? "first") + " then " + self.text
+</lem-type>

@@ -32,6 +32,21 @@
   layout: (SitePage, html): html = sitePage
 </lem-type>
 
+<lem-type TilTopicPage extends SitePage>
+  topic: string
+  title: string = "TILs: " + self.topic
+  url: url = url("/tils/" + self.topic + "/")
+</lem-type>
+
+<lem-type PhotoPage extends Page>
+  photo: Photo
+  title: string = self.photo.caption
+  url: url = url("/photos/" + self.photo.caption.slugify() + "/")
+  prev: PhotoPage?
+  next: PhotoPage?
+  layout: (PhotoPage, html): html = photoPage
+</lem-type>
+
 <lem-fn article(a: Article, body: html)>
   <h1><lem.a.title></h1>
   <lem.body>
@@ -47,12 +62,20 @@
   <lem.body>
 </lem-fn>
 
+<lem-fn photoPage(p: PhotoPage, body: html)>
+  <h1><lem.p.title></h1>
+  <lem.body>
+</lem-fn>
+
 <lem-fn tilHeading(t: Til): string = "# " + t.title />
 
 <lem-let photos: {string: Photo} from "_data/photos.json" />
+<lem-let gallery: [Photo] = photos.values() />
 <lem-let posts: [Article] from "pages/*.md" />
 <lem-let tils: [Til] from "tils/*.md" />
 <lem-let sections: [SitePage] from "sections/*.lem" />
 <lem-let siteUrl: url from env("SITE_URL") />
+<lem-let topics: [string] = ["git", "nodejs", "rust"] />
+<lem-let draftTopics: [string] = [] />
 <lem-let name: string = "limulus.net" />
 <lem-let tagline: string = "Notes from " + name />

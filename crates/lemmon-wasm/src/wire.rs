@@ -24,9 +24,9 @@ use std::marker::PhantomData;
 use std::rc::Rc;
 
 use lemmon_vm::{
-    Ambient, Claim, CodePayload, Data, FromBinding, Host, HostSpan, LineIndex, Loaded, Map,
-    Payload, PlannedPage, Position, Range, Rendered, RuntimeError, Severity, Source,
-    SourceKind, Span, Spans, Value, repeated_path,
+    Ambient, Claim, CodePayload, Data, FromBinding, GeneratorKey, Host, HostSpan,
+    LineIndex, Loaded, Map, Payload, PlannedPage, Position, Range, Rendered, RuntimeError,
+    Severity, Source, SourceKind, Span, Spans, Value, repeated_path,
 };
 use serde::de::value::{MapAccessDeserializer, SeqAccessDeserializer};
 use serde::de::{self, Deserializer, MapAccess, SeqAccess, Visitor};
@@ -127,9 +127,10 @@ fn each_once<V, E: de::Error>(entries: &[(String, V)]) -> Result<(), E> {
     }
 }
 
-/// The host's declaration as `compile` receives it: `{ambient, document?, entry?,
-/// assets?, marks?}`, where each ambient name is bound to a declared type, to the
-/// top-level bindings of a file, or to nothing at all — a name without a type (D30).
+/// The host's declaration as `compile` receives it: `{ambient, document?, entry?, url?,
+/// neighbours?, assets?, marks?}`, where each ambient name is bound to a declared type,
+/// to the top-level bindings of a file, or to nothing at all — a name without a type
+/// (D30).
 ///
 /// `assets` is the manifest the host's build produced, logical path to the URL it
 /// shipped at. It rides here rather than on `loadData` because `asset("…")` is answered
@@ -152,6 +153,10 @@ pub(crate) struct HostInput {
     /// no url, and none is checked against another's.
     #[serde(default)]
     url: Option<String>,
+    /// The two fields a generated page's previous and next pages fill (D43), in that
+    /// order: `["prev", "next"]`.
+    #[serde(default)]
+    neighbours: Option<(String, String)>,
     /// In declaration order, like `ambient`: what a did-you-mean lists a near miss
     /// from, and the order a diagnostic shows.
     #[serde(default, deserialize_with = "ordered")]
@@ -222,7 +227,8 @@ enum AmbientBinding {
 /// # Errors
 ///
 /// Where the host's claims cannot be taken as one declaration: a key field with no
-/// payload, or two claims for one name naming different payloads or key fields.
+/// payload, or two claims for one name naming different payloads or key fields; and
+/// where it names one field as both neighbours.
 impl TryFrom<HostInput> for Host {
     type Error = String;
 
@@ -249,6 +255,17 @@ impl TryFrom<HostInput> for Host {
         if let Some(url) = input.url {
             host = host.addressed_by(&url);
         }
+        if let Some((previous, next)) = input.neighbours {
+            // One field cannot hold both neighbours. A name the host gives another
+            // field too — `url`, or the entry — is left to the link step, which finds
+            // the field declared as one or the other and says so where it stands.
+            if previous == next {
+                return Err(format!(
+                    "the declaration names `{previous}` as both neighbours"
+                ));
+            }
+            host = host.neighboured_by(&previous, &next);
+        }
         host = host.with_assets(
             input
                 .assets
@@ -272,9 +289,10 @@ impl TryFrom<HostInput> for Host {
 /// JSON by the name the host bound each value; `sources` fulfils each `from` binding of
 /// the bindings files by name — a list of entries, one per page, for a glob, and one
 /// entry for a data file, a plugin, or an environment value; and `pages` carries the
-/// entries of every page no glob holds, whose own `type:` key typed it (D41). Which
-/// names may appear, and which must, is the program's to say, so the loader checks
-/// them; what an entry may hold is the wire's, so `deny_unknown_fields` does.
+/// entries of every page no glob holds, whose own `type:` key typed it (D41), a
+/// generator's with its `for:` pair (D43). Which names may appear, and which must, is
+/// the program's to say, so the loader checks them; what an entry may hold is the
+/// wire's, so `deny_unknown_fields` does.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct DataInput {
@@ -351,11 +369,12 @@ fn sources<'de, D: Deserializer<'de>>(
 }
 
 /// One value the host loaded, as an entry of `sources` or of `pages`:
-/// `{value, path?, spans?}`.
+/// `{value, path?, spans?, for?}`.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct LoadedInput {
-    /// The value as parsed — a page's front matter with the `type:` key stripped.
+    /// The value as parsed — a page's front matter with the `type:` and `for:` keys
+    /// stripped.
     value: serde_json::Value,
     /// The file it came from: always for a page, a data file's path otherwise, and
     /// absent for a plugin or environment value.
@@ -365,6 +384,27 @@ struct LoadedInput {
     /// the empty path is the value as a whole.
     #[serde(default, deserialize_with = "ordered")]
     spans: Vec<(String, SpanWire)>,
+    /// A generator's `for:` pair, as the host read and stripped it (D43). Any page's
+    /// entry may carry one — a glob's member too, which the loader then refuses at the
+    /// key — and only a page's.
+    /// Boxed: few entries carry one, and every entry would pay for its size.
+    #[serde(default, rename = "for")]
+    generator: Option<Box<ForInput>>,
+}
+
+/// A `for:` pair on the wire, `{value, spans?, valueSpans?}`: the value as parsed, since
+/// the loader words every way it can be malformed; `spans` keyed from that value as any
+/// table is — `''` the value as a whole, each entry from its key through its value — and
+/// `valueSpans` each entry's value alone, by its key, so that an error about the list
+/// underlines the list rather than the field beside it.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct ForInput {
+    value: serde_json::Value,
+    #[serde(default, deserialize_with = "ordered")]
+    spans: Vec<(String, SpanWire)>,
+    #[serde(default, deserialize_with = "ordered")]
+    value_spans: Vec<(String, SpanWire)>,
 }
 
 impl DataInput {
@@ -417,44 +457,86 @@ impl DataInput {
 /// One entry of `sources` or `pages`, as the loader takes it; `holder` names it in a
 /// refusal.
 fn loaded(holder: &str, entry: LoadedInput) -> Result<Loaded, String> {
-    let mut spans = Spans::new();
-    for (field, span) in entry.spans {
-        // The core holds no text to check these against (D37); what it can check is
-        // that each span is a span, since `Span::new`'s own guard is a debug assertion
-        // and an inverted range would reach an editor as sent.
-        if span.start > span.end || span.range.start.after(&span.range.end) {
-            let what = if field.is_empty() {
-                "the value as a whole".to_owned()
-            } else {
-                format!("`{field}`")
-            };
-            return Err(format!(
-                "{holder}: the span for {what} ends before it starts"
-            ));
+    let spans = table(entry.spans, |field| {
+        if field.is_empty() {
+            "the value as a whole".to_owned()
+        } else {
+            format!("`{field}`")
         }
-        spans.insert(field, span.into());
-    }
+    })
+    .map_err(|what| format!("{holder}: the span for {what} ends before it starts"))?;
+    let generator = entry
+        .generator
+        .map(|pair| {
+            let ForInput {
+                value,
+                spans,
+                value_spans,
+            } = *pair;
+            let spans = table(spans, |field| {
+                if field.is_empty() {
+                    "`for` as a whole".to_owned()
+                } else {
+                    format!("`for.{field}`")
+                }
+            })?;
+            let value_spans =
+                table(value_spans, |field| format!("the value of `for.{field}`"))?;
+            Ok(GeneratorKey {
+                value: value_from_json(&value),
+                spans,
+                value_spans,
+            })
+        })
+        .transpose()
+        .map_err(|what: String| {
+            format!("{holder}: the span for {what} ends before it starts")
+        })?;
     Ok(Loaded {
         value: value_from_json(&entry.value),
         path: entry.path,
         spans,
+        generator,
     })
 }
 
-/// What `render` receives — a `PageRef`, `{path}`: the path of a file the program
-/// compiled, a page `plan()` listed or any other. An object, so that `index`, which
-/// numbers a generator's pages (∆99b), stays additive.
+/// A table of spans as the loader takes it, or how `named` names the first entry whose
+/// span ends before it starts. The core holds no text to check these against (D37);
+/// what it can check is that each span is a span, since `Span::new`'s own guard is a
+/// debug assertion and an inverted range would reach an editor as sent.
+fn table(
+    entries: Vec<(String, SpanWire)>,
+    named: impl Fn(&str) -> String,
+) -> Result<Spans, String> {
+    let mut spans = Spans::new();
+    for (field, span) in entries {
+        if span.start > span.end || span.range.start.after(&span.range.end) {
+            return Err(named(&field));
+        }
+        spans.insert(field, span.into());
+    }
+    Ok(spans)
+}
+
+/// What `render` receives — a `PageRef`, `{path, index?}`: the path of a file the
+/// program compiled, a page `plan()` listed or any other, and for a page a generator
+/// made, its `index` among the generator's pages, as `plan()` lists it (D43).
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct PageRef {
     pub(crate) path: String,
+    #[serde(default)]
+    pub(crate) index: Option<u32>,
 }
 
-/// One page as `plan()` reports it (D43): its path, and its url where the host names
-/// the field it is read from.
+/// One page as `plan()` reports it (D43): its path; its index among a generator's
+/// pages, where a generator made it — a generator of one item's page included; and
+/// its url, where the host names the field it is read from.
 #[derive(Serialize)]
 pub(crate) struct PlannedOut {
     path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    index: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     url: Option<String>,
 }
@@ -463,6 +545,7 @@ impl From<PlannedPage> for PlannedOut {
     fn from(page: PlannedPage) -> Self {
         Self {
             path: page.path,
+            index: page.index,
             url: page.url,
         }
     }
@@ -827,8 +910,10 @@ pub(crate) fn encode_render(
 /// in) as strings; a duration as its whole seconds; a record as the object of its
 /// fields, in declared order, its type being the one the claim named.
 ///
-/// A mark, a function, and a float that is not a finite number never reach here: the VM
-/// refuses a payload holding any of them, at the call that made it.
+/// A mark, a function, a generated page's neighbour, and a float that is not a finite
+/// number never reach here: the VM refuses a payload holding any of them, at the call
+/// that made it. A neighbour has no form here: a reader of page records across the
+/// boundary would owe it one.
 fn json_from_value(value: &Value) -> serde_json::Value {
     use serde_json::Value as Json;
     let object = |map: &Map| {
@@ -853,8 +938,10 @@ fn json_from_value(value: &Value) -> serde_json::Value {
         Value::List(items) => Json::Array(items.iter().map(json_from_value).collect()),
         Value::Map(map) => object(map),
         Value::Record(record) => object(&record.fields),
-        Value::Marked(_) | Value::Fn(_) => {
-            unreachable!("the VM refuses a payload holding a mark or a function")
+        Value::Marked(_) | Value::Fn(_) | Value::Neighbour(_) => {
+            unreachable!(
+                "the VM refuses a payload holding a mark, a function, or a neighbour"
+            )
         }
     }
 }
@@ -1245,6 +1332,23 @@ mod tests {
             "{:?}",
             twice.err().map(|e| e.to_string())
         );
+    }
+
+    #[test]
+    fn takes_the_neighbours_in_order_and_refuses_one_field_named_as_both() {
+        let host = |json: &str| {
+            serde_json::from_str::<HostInput>(json)
+                .map_err(|e| e.to_string())
+                .and_then(Host::try_from)
+        };
+        let named = host(r#"{"ambient": {}, "neighbours": ["prev", "next"]}"#).unwrap();
+        assert_eq!(named.neighbours(), Some(("prev", "next")));
+        assert_eq!(host(r#"{"ambient": {}}"#).unwrap().neighbours(), None);
+        assert_eq!(
+            host(r#"{"ambient": {}, "neighbours": ["prev", "prev"]}"#).unwrap_err(),
+            "the declaration names `prev` as both neighbours"
+        );
+        assert!(host(r#"{"ambient": {}, "neighbours": ["prev"]}"#).is_err());
     }
 
     #[test]

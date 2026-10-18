@@ -10,21 +10,22 @@
 
 use std::rc::Rc;
 
+use crate::bytecode::Module;
 use crate::compile::omittable;
 use crate::datetime::Datetime;
 use crate::decls::{DeclKind, Decls, no_field};
 use crate::diagnostics::Diagnostic;
-use crate::host::no_asset;
-use crate::plan::{Index, Step};
+use crate::host::{Host, no_asset};
+use crate::plan::{Index, RecordPlan, Step};
 use crate::types::{Type, assignable};
 use crate::url;
 use crate::value::{Closure, Map, Value};
 use crate::vm::invoke;
 
-use super::place::At;
+use super::place::{At, Place};
 use super::{Doc, Loader};
 
-impl Loader<'_> {
+impl<'a> Loader<'a> {
     /// `value` as a `ty`, or `None` once every problem with it has been reported.
     /// `doc` is the document a page-backed record here is loaded from, if any.
     pub(super) fn value(
@@ -237,13 +238,53 @@ impl Loader<'_> {
         at: &At<'_>,
         doc: Option<&Doc<'_>>,
     ) -> Option<Value> {
+        let fields = self.prepared(given, name, at, doc, &[])?;
+        let mut fields = self.planned(name, fields, doc, &Building::Record(at))?;
+        // A page a generator made has its neighbours filled by the generator; this page
+        // has none (D43).
+        if let Some((previous, next)) = self.neighbours(name, doc) {
+            fields.push((Rc::from(previous), Value::Null));
+            fields.push((Rc::from(next), Value::Null));
+        }
+        Some(self.assembled(name, &fields))
+    }
+
+    /// The neighbour fields the host names, previous then next, where the record `name`
+    /// is a page's, loaded from `doc` (D43): what the loader withholds while the page's
+    /// defaults run — so a read of one that the compiler could not see faults at the
+    /// read rather than finding a `null` — and fills once they have. A record that is no
+    /// page's has none, whatever its fields are called; one a page type does not declare
+    /// is dropped where the record is assembled, as any field it lacks is.
+    pub(super) fn neighbours(
+        &self,
+        name: &str,
+        doc: Option<&Doc<'_>>,
+    ) -> Option<(&'a str, &'a str)> {
+        let host: &'a Host = self.host;
+        let page = doc.is_some()
+            && self
+                .document_type
+                .as_ref()
+                .is_some_and(|document| self.module.is_a(name, document));
+        host.neighbours().filter(|_| page)
+    }
+
+    /// The fields of the record `name` that `given` settles, before any default runs:
+    /// [`record`](Self::record) up to its defaults, the `by` lookups included. A field
+    /// in `held` is one the caller fills itself — a generator's item (D43) — so its
+    /// omission is neither an error nor a `null`, and so is a page's neighbour, which no
+    /// front matter may give: not even `null`, which would otherwise validate as an
+    /// optional's (D43, D37).
+    pub(super) fn prepared(
+        &mut self,
+        given: &Map,
+        name: &Rc<str>,
+        at: &At<'_>,
+        doc: Option<&Doc<'_>>,
+        held: &[&str],
+    ) -> Option<Vec<(Rc<str>, Value)>> {
         let declared = self.module.fields(name);
-        let plan = self
-            .module
-            .records
-            .iter()
-            .find(|plan| plan.name == *name)
-            .expect("the link step plans every record");
+        let plan = self.plan(name);
         let page_backed = self
             .document_type
             .as_ref()
@@ -263,6 +304,10 @@ impl Loader<'_> {
             |field: &Rc<str>| plan.steps.iter().any(|step| step.field == *field);
         let has_index =
             |field: &Rc<str>| plan.indexes.iter().any(|index| index.field == *field);
+        let neighbours = self.neighbours(name, doc);
+        let withheld = |field: &str| {
+            neighbours.is_some_and(|(previous, next)| field == previous || field == next)
+        };
         let mut failed = false;
         for (key, _) in given.iter() {
             if !declared.iter().any(|(field, _)| field == key) {
@@ -277,6 +322,16 @@ impl Loader<'_> {
             let Some(value) = given.get(field) else {
                 continue;
             };
+            // Refused rather than validated or looked up, so one key is one diagnostic.
+            if withheld(field) {
+                let child = at.child(field, self.field_place(name, field));
+                self.diagnostics.push(child.error(format!(
+                    "`{field}` is a page's neighbour, which the loader fills, so the \
+                     front matter cannot give it"
+                )));
+                failed = true;
+                continue;
+            }
             // A string where a `by` field stands is the plan's to resolve.
             if has_index(field) && matches!(value, Value::Str(_)) {
                 continue;
@@ -293,7 +348,11 @@ impl Loader<'_> {
             return None;
         }
         for (field, ty) in &declared {
-            if given.get(field).is_some() || has_default(field) {
+            if given.get(field).is_some()
+                || has_default(field)
+                || held.contains(&&**field)
+                || withheld(field)
+            {
                 continue;
             }
             if omittable(ty) {
@@ -328,17 +387,38 @@ impl Loader<'_> {
                 None => failed = true,
             }
         }
-        if failed {
-            return None;
-        }
+        (!failed).then_some(fields)
+    }
+
+    /// `fields` with the record `name`'s defaults run — one for each field `fields`
+    /// does not hold yet, in the order the link step settled — or `None` once a
+    /// default's fault has been reported, labelled as `building` says.
+    pub(super) fn planned(
+        &mut self,
+        name: &Rc<str>,
+        mut fields: Vec<(Rc<str>, Value)>,
+        doc: Option<&Doc<'_>>,
+        building: &Building<'_>,
+    ) -> Option<Vec<(Rc<str>, Value)>> {
+        let plan = self.plan(name);
         for step in &plan.steps {
-            if given.get(&step.field).is_some() {
+            if fields.iter().any(|(field, _)| *field == step.field) {
                 continue;
             }
-            let value = self.step(step, name, &fields, doc, at)?;
+            let value = self.step(step, name, &fields, doc, building)?;
             fields.push((step.field.clone(), value));
         }
-        Some(self.assembled(name, &fields))
+        Some(fields)
+    }
+
+    /// The link step's plan for the record `name`.
+    pub(super) fn plan(&self, name: &str) -> &'a RecordPlan {
+        let module: &'a Module = self.module;
+        module
+            .records
+            .iter()
+            .find(|plan| *plan.name == *name)
+            .expect("the link step plans every record")
     }
 
     /// The map `index` names, from the ambient values loaded so far: the field of a
@@ -382,14 +462,14 @@ impl Loader<'_> {
 
     /// Runs one step of a record's plan with the record so far as `self` — and, when
     /// the function was compiled to take them, its document's path and body — and
-    /// reports a fault where it happened, with the record's position beside it.
+    /// reports a fault where it happened, labelled with what was being built.
     fn step(
         &mut self,
         step: &Step,
         record: &Rc<str>,
         fields: &[(Rc<str>, Value)],
         doc: Option<&Doc<'_>>,
-        at: &At<'_>,
+        building: &Building<'_>,
     ) -> Option<Value> {
         let mut args = vec![self.assembled(record, fields)];
         // What the function takes is what the compiler gave it: a default declared on
@@ -408,15 +488,15 @@ impl Loader<'_> {
         match invoke(self.module, step.func, args, &self.globals()) {
             Ok(value) => Some(value),
             Err(error) => {
-                let place = at.place();
+                let (place, what) = match building {
+                    Building::Record(at) => (at.place(), format!("this `{record}`")),
+                    Building::Item { list, index, entry } => {
+                        ((*entry).clone(), format!("`{list}[{index}]`"))
+                    }
+                };
+                let fault = Diagnostic::error(error.path, error.span, error.message);
                 self.diagnostics.push(
-                    Diagnostic::error(error.path, error.span, error.message)
-                        .with_placed_label(
-                            place.path,
-                            place.span,
-                            place.range,
-                            format!("computing `{}` for this `{record}`", step.field),
-                        ),
+                    place.label(fault, format!("computing `{}` for {what}", step.field)),
                 );
                 None
             }
@@ -459,6 +539,19 @@ impl Loader<'_> {
         }
         Some(found)
     }
+}
+
+/// What a record is being built as, for the label on a default's fault: a record of
+/// its own, placed where `at` is, or the page a generator makes from item `index` of
+/// `list`, placed at the generator's `for:` entry — so that a fault for one item is
+/// told from the same fault for another (D43).
+pub(super) enum Building<'a> {
+    Record(&'a At<'a>),
+    Item {
+        list: &'a str,
+        index: usize,
+        entry: &'a Place,
+    },
 }
 
 /// The largest integer a 64-bit float holds exactly.
@@ -518,6 +611,7 @@ mod tests {
                 value: object(&[("sunset", object(&[("caption", Value::str("Sunset"))]))]),
                 path: Some("_data/photos.json".to_owned()),
                 spans: Spans::new(),
+                generator: None,
             }),
         )
     }
@@ -542,6 +636,7 @@ mod tests {
                         value: front,
                         path: Some("pages/a.md".to_owned()),
                         spans: spans(TEXT, &[("", record()), ("title", record())]),
+                        generator: None,
                     }]),
                 ),
             ],
@@ -563,8 +658,10 @@ mod tests {
         let store = load(&site_module(), &shell(), data(object(front)))
             .unwrap()
             .expect_output();
-        let Value::Record(article) =
-            &store.page("pages/a.md").expect("a loaded page").record
+        let Value::Record(article) = &store
+            .page("pages/a.md", None)
+            .expect("a loaded page")
+            .record
         else {
             panic!("a tagged record");
         };
@@ -640,6 +737,7 @@ mod tests {
                     ]),
                     path: Some("pages/a.md".to_owned()),
                     spans: spans(TEXT, &[("", record()), ("title", record())]),
+                    generator: None,
                 }]),
             )],
             pages: Vec::new(),
@@ -837,6 +935,7 @@ mod tests {
                     value: object(&[("a", Value::Int(1)), ("b", Value::Bool(true))]),
                     path: None,
                     spans: Spans::new(),
+                    generator: None,
                 }),
             )],
             pages: Vec::new(),
@@ -872,6 +971,7 @@ mod tests {
                     ]),
                     path: Some("pages/a.md".to_owned()),
                     spans: spans(TEXT, &[("", record())]),
+                    generator: None,
                 }]),
             )],
             pages: Vec::new(),
@@ -902,6 +1002,7 @@ mod tests {
                     value: object(&[]),
                     path: None,
                     spans: Spans::new(),
+                    generator: None,
                 }),
             )],
             pages: Vec::new(),
@@ -945,6 +1046,7 @@ mod tests {
                         value: object(&[("x", Value::Int(1))]),
                         path: None,
                         spans: Spans::new(),
+                        generator: None,
                     }),
                 ),
                 (
@@ -957,6 +1059,7 @@ mod tests {
                         ]),
                         path: Some("pages/a.md".to_owned()),
                         spans: spans(TEXT, &[("", record()), ("hero", hero)]),
+                        generator: None,
                     }]),
                 ),
             ],
@@ -987,6 +1090,7 @@ mod tests {
                     ]),
                     path: None,
                     spans: Spans::new(),
+                    generator: None,
                 }),
             )],
             pages: Vec::new(),
@@ -1033,6 +1137,7 @@ mod tests {
                     value,
                     path: None,
                     spans: Spans::new(),
+                    generator: None,
                 }),
             )],
             pages: Vec::new(),
@@ -1122,6 +1227,7 @@ mod tests {
                     value: value.clone(),
                     path: None,
                     spans: Spans::new(),
+                    generator: None,
                 }),
             )],
             pages: Vec::new(),
@@ -1146,6 +1252,7 @@ mod tests {
                     value: Value::str("sunset"),
                     path: None,
                     spans: Spans::new(),
+                    generator: None,
                 }),
             )],
             pages: Vec::new(),
@@ -1184,13 +1291,16 @@ mod tests {
                     value: object(&[("url", Value::str("/a/"))]),
                     path: Some("pages/a.md".to_owned()),
                     spans: Spans::new(),
+                    generator: None,
                 }]),
             )],
             pages: Vec::new(),
         };
         let store = load(&module, &shell(), data).unwrap().expect_output();
-        let Value::Record(article) =
-            &store.page("pages/a.md").expect("a loaded page").record
+        let Value::Record(article) = &store
+            .page("pages/a.md", None)
+            .expect("a loaded page")
+            .record
         else {
             panic!("a record");
         };
@@ -1223,6 +1333,7 @@ mod tests {
                     ]),
                     path: Some("pages/a.md".to_owned()),
                     spans: spans(TEXT, &[("", record()), ("related", related)]),
+                    generator: None,
                 }]),
             )],
             pages: Vec::new(),
@@ -1255,13 +1366,16 @@ mod tests {
                     value: object(&[("url", Value::str("/a/"))]),
                     path: Some("pages/a.md".to_owned()),
                     spans: Spans::new(),
+                    generator: None,
                 }]),
             )],
             pages: Vec::new(),
         };
         let store = load(&module, &shell(), data).unwrap().expect_output();
-        let Value::Record(article) =
-            &store.page("pages/a.md").expect("a loaded page").record
+        let Value::Record(article) = &store
+            .page("pages/a.md", None)
+            .expect("a loaded page")
+            .record
         else {
             panic!("a record");
         };
@@ -1290,6 +1404,7 @@ mod tests {
                     value: object(&[("url", Value::str("/a/"))]),
                     path: Some("tils/a.md".to_owned()),
                     spans: spans(TEXT, &[("", record())]),
+                    generator: None,
                 }]),
             )],
             pages: Vec::new(),
@@ -1320,6 +1435,7 @@ mod tests {
                     value,
                     path: None,
                     spans: Spans::new(),
+                    generator: None,
                 }),
             )],
             pages: Vec::new(),
@@ -1357,6 +1473,7 @@ mod tests {
                     value: object(&[("ratio", Value::Int(ratio))]),
                     path: None,
                     spans: Spans::new(),
+                    generator: None,
                 }),
             )],
             pages: Vec::new(),
@@ -1400,6 +1517,7 @@ mod tests {
                     value: object(&[]),
                     path: None,
                     spans: Spans::new(),
+                    generator: None,
                 }),
             )],
             pages: Vec::new(),
@@ -1446,14 +1564,17 @@ mod tests {
                         ]),
                         path: Some("pages/a.md".to_owned()),
                         spans: spans(TEXT, &[("", record())]),
+                        generator: None,
                     }]),
                 ),
             ],
             pages: Vec::new(),
         };
         let store = load(&module, &shell(), data).unwrap().expect_output();
-        let Value::Record(article) =
-            &store.page("pages/a.md").expect("a loaded page").record
+        let Value::Record(article) = &store
+            .page("pages/a.md", None)
+            .expect("a loaded page")
+            .record
         else {
             panic!("a tagged record");
         };
@@ -1479,6 +1600,7 @@ mod tests {
                     value: object(&[("hero", Value::str("sunset"))]),
                     path: None,
                     spans: Spans::new(),
+                    generator: None,
                 }),
             )],
             pages: Vec::new(),

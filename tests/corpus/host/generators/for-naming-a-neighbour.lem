@@ -1,0 +1,6 @@
+---
+type: PhotoPage
+for:
+  prev: site.gallery
+---
+<p><lem.page.title></p>

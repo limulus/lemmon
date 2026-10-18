@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 
 import { build, check, type BuildResult } from './build.ts'
 import { bundler } from './bundler.ts'
-import type { Plugin } from './plugins.ts'
+import type { Plugin, PluginHandler } from './plugins.ts'
 import { AMBIENT_FILE, FILE_START as START, SiteError } from './program.ts'
 import { WriteError } from './write.ts'
 import {
@@ -22,6 +22,7 @@ import {
 import {
   configOf,
   ENV,
+  GENERATING,
   LAYOUTS_LEM,
   PASSTHROUGH,
   project,
@@ -215,6 +216,233 @@ describe('build()', () => {
       ])
       expect(result.pages).toHaveLength(4)
       expect(existsSync(join(dir, 'dist/index.html'))).toBe(true)
+    })
+  })
+
+  describe('a generator', () => {
+    const topics = GENERATING['topics.lem']
+    const entry = at(topics, 'topic: site.topics')
+
+    it('should write a page per item at its type’s url, each linking to its neighbours', async () => {
+      const { result, dir } = await built(GENERATING)
+
+      expect(result.diagnostics).toEqual([])
+      // Where the generator stands in the plan — after the glob's pages and the home
+      // page, in path order — in its list's order.
+      expect(result.pages).toEqual([
+        'posts/a/index.html',
+        'posts/b/index.html',
+        'index.html',
+        'tils/git/index.html',
+        'tils/nodejs/index.html',
+        'tils/rust/index.html',
+        'notes/loose/index.html',
+      ])
+      const written = tree(join(dir, 'dist/tils'))
+      const links = (file: string) =>
+        [...written[file].matchAll(/<a rel="(\w+)" href="([^"]+)">([^<]+)</g)].map(
+          ([, rel, href, title]) => [rel, href, title]
+        )
+      expect(written['git/index.html']).toMatch(/^<title>TILs: git · hi<\/title>/)
+      expect(links('git/index.html')).toEqual([['next', '/tils/nodejs/', 'TILs: nodejs']])
+      expect(written['nodejs/index.html']).toMatch(/^<title>TILs: nodejs · hi<\/title>/)
+      expect(links('nodejs/index.html')).toEqual([
+        ['prev', '/tils/git/', 'TILs: git'],
+        ['next', '/tils/rust/', 'TILs: rust'],
+      ])
+      expect(links('rust/index.html')).toEqual([['prev', '/tils/nodejs/', 'TILs: nodejs']])
+    })
+
+    it('should label a render fault with the item it was made from, for that page alone', async () => {
+      // Only `nodejs` is six letters, and only its page faults.
+      const faulting = topics.replace(
+        '<lem-if page.prev>',
+        '<lem.["git", "rust"][page.topic.length() - 3]>\n<lem-if page.prev>'
+      )
+      const errors = await refused({ ...GENERATING, 'topics.lem': faulting })
+
+      expect(errors).toEqual([
+        {
+          path: 'topics.lem',
+          span: at(faulting, '["git", "rust"][page.topic.length() - 3]'),
+          severity: 'error',
+          message: 'index 3 is out of range for a list of 2',
+          labels: [
+            {
+              path: 'topics.lem',
+              span: at(faulting, 'topic: site.topics'),
+              message: 'rendering `topics.lem` for `site.topics[1]`',
+            },
+          ],
+        },
+      ])
+    })
+
+    it('should name each page by its item where its handlers warn', async () => {
+      // The layout places no `mark("styles")`, so what each page collects is unwritten.
+      const styled = `${topics}<lem-style>a { color: red }</lem-style>\n`
+      const { result } = await built({ ...GENERATING, 'topics.lem': styled })
+
+      expect(result.diagnostics.map((diagnostic) => diagnostic.message)).toEqual(
+        [0, 1, 2].map(
+          (index) =>
+            `\`topics.lem\` for \`site.topics[${index}]\` collects \`styles\` here, and ` +
+            'nothing on that page places `mark("styles")`, so what it collected is not written'
+        )
+      )
+    })
+
+    it('should refuse two of its pages at files a file system may hold as one', async () => {
+      // `/tils/A/` and `/tils/a/` are two urls, so the load lets them stand; their files
+      // fold to one, and the second is refused at the generator's key, naming each.
+      const site = GENERATING['site.lem'].replace('["git", "nodejs", "rust"]', '["A", "a"]')
+      const errors = await refused({ ...GENERATING, 'site.lem': site })
+
+      expect(errors).toEqual([
+        {
+          path: 'topics.lem',
+          span: entry,
+          severity: 'error',
+          message:
+            '`topics.lem` for `site.topics[1]` is at the url "/tils/a/", and ' +
+            '`tils/a/index.html` differs from `tils/A/index.html`, which `topics.lem` for ' +
+            '`site.topics[0]` writes, only in case or Unicode form, and a file system may ' +
+            'hold the two as one file',
+          labels: [
+            {
+              path: 'topics.lem',
+              span: entry,
+              message: 'the first to write there, as `tils/A/index.html`',
+            },
+          ],
+        },
+      ])
+    })
+
+    it('should name the page whose url names no file by its item', async () => {
+      const site = GENERATING['site.lem'].replace(
+        '["git", "nodejs", "rust"]',
+        '["git", ".."]'
+      )
+      const errors = await refused({ ...GENERATING, 'site.lem': site })
+
+      expect(errors).toEqual([
+        expect.objectContaining({
+          path: 'topics.lem',
+          span: entry,
+          message: expect.stringMatching(
+            /^the url "\/tils\/..\/" of `topics.lem` for `site.topics\[1\]` names no file/
+          ) as string,
+        }),
+      ])
+    })
+
+    describe('and the plugins that resolve its marks', () => {
+      // Every page places one `probe` mark, which these plugins answer.
+      const probed = { ...GENERATING, 'topics.lem': `${topics}<lem.mark("probe")>\n` }
+      const MARK = at(probed['topics.lem'], 'mark("probe")')
+      const decoder = new TextDecoder()
+
+      /** A plugin whose `probe` producer is `produce`. */
+      const probing = (produce: NonNullable<PluginHandler['produce']>): Plugin => ({
+        name: 'probing',
+        marks: [{ name: 'probe', produce }],
+      })
+
+      it('should name the page a producer failed on by its item', async () => {
+        const plugin = probing(({ marks, page }) => {
+          if (decoder.decode(page).includes('<title>TILs: nodejs')) throw new Error('no')
+          return marks.map(() => '')
+        })
+        const { result } = await built(probed, { plugins: [plugin] })
+
+        expect(result.diagnostics).toEqual([
+          expect.objectContaining({
+            path: 'topics.lem',
+            span: MARK,
+            severity: 'warning',
+            message: expect.stringMatching(
+              /^the `probing` plugin's producer for `probe` failed on `topics.lem` for `site.topics\[1\]`, /
+            ) as string,
+          }),
+        ])
+      })
+
+      it('should name each page whose producer wrote another file at one url', async () => {
+        const plugin = probing(({ marks, page, write }) => {
+          write('/probe.txt', decoder.decode(page).slice(0, 20))
+          return marks.map(() => '')
+        })
+        const errors = await refused(probed, { plugins: [plugin] })
+
+        expect(errors.map((error) => error.message)).toEqual(
+          [1, 2].map(
+            (index) =>
+              'the `probing` plugin writes a file for this mark on `topics.lem` for ' +
+              `\`site.topics[${index}]\`, and the \`probing\` plugin, for \`topics.lem\` for ` +
+              '`site.topics[0]`, writes other content to `probe.txt`'
+          )
+        )
+      })
+
+      it('should name the page whose producer misused `write` by its item', async () => {
+        const plugin = probing(({ marks, write }) => {
+          write(3 as unknown as string, 'x')
+          return marks.map(() => '')
+        })
+        const errors = await refused(probed, { plugins: [plugin] })
+
+        expect(errors.map((error) => error.message)).toEqual(
+          [0, 1, 2].map(
+            (index) =>
+              "the `probing` plugin's producer for `probe` called `write` on `topics.lem` " +
+              `for \`site.topics[${index}]\` with 3 and a string, where it takes a url and a ` +
+              'string or bytes'
+          )
+        )
+      })
+    })
+
+    it('should refuse one a glob holds, at its key, as the core loads it', async () => {
+      const site = `${GENERATING['site.lem']}<lem-let sections: [Home] from "sections/*.lem" />\n`
+      const held = '---\nfor:\n  title: site.topics\n---\n<p><lem.page.title></p>\n'
+      const errors = await refused({
+        ...GENERATING,
+        'site.lem': site,
+        'sections/t.lem': held,
+      })
+
+      expect(errors).toEqual([
+        {
+          path: 'sections/t.lem',
+          span: at(held, 'title: site.topics'),
+          severity: 'error',
+          message:
+            '`for:` makes this page a generator, whose pages are made once every binding ' +
+            'has loaded, so no `from` glob can hold it',
+          labels: [
+            expect.objectContaining({
+              path: 'site.lem',
+              message: 'the glob of `sections` matches it',
+            }),
+          ],
+        },
+      ])
+    })
+
+    it('should refuse one no `type:` names, which has no type to make its pages of', async () => {
+      const untyped = topics.replace('type: Topic\n', '')
+      const errors = await refused({ ...GENERATING, 'topics.lem': untyped })
+
+      expect(errors).toEqual([
+        expect.objectContaining({
+          path: 'topics.lem',
+          span: at(untyped, 'topic: site.topics'),
+          message:
+            '`for:` makes this page a generator, and a generator names the type of its ' +
+            'pages with `type:`',
+        }),
+      ])
     })
   })
 
