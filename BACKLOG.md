@@ -34,13 +34,14 @@ Generators land in the core here, needed by exactly two pages; the seven collect
 pages are page templates. Eric opens `dist/` from `/` and reaches every page of the site,
 each comparing clean.
 
+Built on 2026-10-18 but for `∆EEa` (journal entries for ∆pP5, ∆LsH, ∆99b and ∆hvm):
+`npm run parity` in the branch compares all 55 pages clean and their 37 script files byte
+for byte, and `npm run parity:look` shows all 165 screenshots identical. Eric chose to
+hold the slice open until `∆EEa` is built, which waits on his limulus-dot-net change.
+
 - `∆EEa` `esbuild()` names follow the files they reference
   - Adopt the naming limulus-dot-net's `11ty/esbuild.ts` moves to, a loader's hash following
     the workers it names, so parity's byte comparison holds once the port merges main
-- `∆hvm` Photo and TIL topic pages as generators
-  - `photos/photo` and `tils/topics`, the two paginated pages, as generator templates whose
-    `for:` key names a list (D43), with `prev` and `next` filled by the loader
-  - needs: `∆99b`, `∆tAw`
 
 ### 6. Feeds, sitemap, cutover
 
@@ -100,7 +101,8 @@ point; this is only its default place.
 Opens only if the full rebuild time recorded in the daily-loop slice exceeds one second;
 until then, rebuilding the whole site is the incremental build. Recorded on 2026-10-17: a
 median of 250 ms for the port's 25 documents (∆Vhi's journal), and 375 ms once slice 4's
-esbuild plugin added its 200 ms (∆d1N's journal); worth taking again at the whole-site run.
+esbuild plugin added its 200 ms (∆d1N's journal); on 2026-10-18, 421 ms for all 55 pages
+(∆hvm's journal). Worth taking again with the feeds at the whole-site run.
 
 - `∆xBO` Render-reported deps
   - `render` reports which units and records a page read, so `lem dev` (`∆Vhi`) re-renders

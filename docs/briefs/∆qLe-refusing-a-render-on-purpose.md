@@ -15,6 +15,10 @@ with a video, so the port gave it `VideoPost extends Post` with `vod: Vod` requi
 
 Invariant 10 says errors over guesses; here the author has no way to write the error.
 
+A second case, from the photo pages (`∆hvm`, 2026-10-18): `photo-meta.webc` throws on a
+lens or camera its tables do not know, and the port's `photoMeta` can fail only through
+the table lookup itself, `no key "…"`, which names the key but not the table or the fix.
+
 ## Scope and constraints
 
 - A design question for Eric: a `fail("…")` stdlib function whose call is a render error
