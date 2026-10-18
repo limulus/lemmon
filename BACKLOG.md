@@ -24,20 +24,10 @@ true. The shell is built here (`@limulus/lemmon-shell`, docs/architecture.md §B
 pipeline, §Shell plugin API); the port lives in limulus-dot-net on a branch while 11ty stays
 green on main, and that branch is where every slice is accepted. A language or core feature
 lands inside the slice that needs it.
-Slices 1 and 2, a page from `lem build` and then styled output, were accepted on
-2026-10-17; their items' journal entries record them, and ∆Oyi's records why dprint left
-slice 2. Slice 2's `npm run parity:look` refuses `/lib/**` on both sides until ∆d1N.
-
-### 3. The daily loop
-
-The authoring loop Eleventy provides today, without incrementality: a change rebuilds
-everything, and the rebuild time recorded here decides whether the Incrementality epic
-opens. Eric runs `lem dev` in the branch, edits a post or a layout and sees the change in
-the browser, and sees `lem check` report a deliberate error with its span.
-
-Built on 2026-10-17 (journal entries for ∆Uqg and ∆Vhi): `npm run lemmon:dev` in the
-branch serves at http://127.0.0.1:8080/, and a full rebuild takes about 250 ms. The run
-above is Eric's to make before slice 4 starts.
+Slices 1 to 3, a page from `lem build`, styled output, and the daily loop of `lem dev` and
+`lem check`, were accepted on 2026-10-17; their items' journal entries record them, and
+∆Oyi's records why dprint left slice 2. Slice 2's `npm run parity:look` refuses `/lib/**`
+on both sides until ∆d1N.
 
 ### 4. Every document page
 
