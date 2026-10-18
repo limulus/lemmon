@@ -2,7 +2,9 @@
 
 - **Status:** Accepted 2026-10-17 (∆ETy), settled while building it; refines D06, whose
   trust in the shell reaches from what is done to a page after the core returns it to
-  what plugins hand the core before it compiles: a document's body, and the manifest
+  what plugins hand the core before it compiles: a document's body, and the manifest;
+  revised 2026-10-17 by D45 (∆d1N): the asset hook is given the project's root too, the
+  config file's directory, since esbuild's hashes name the sources from where it runs
 - **Backlog item:** ∆ETy
 - **Normative text:** `docs/architecture.md` § Build pipeline (step 2), § Shell plugin
   API; `packages/shell/README.md` § Plugins

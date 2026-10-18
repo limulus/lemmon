@@ -84,6 +84,13 @@ export interface DocumentSource {
 
 /** What an {@link Plugin.assets} hook is given: the build it runs for. */
 export interface AssetsContext {
+  /**
+   * The directory the config file is in, absolute, which its `input` and `output` are
+   * relative to: the project's root, where a tool run for the site — esbuild, whose
+   * hashes name its sources from its working directory — runs as it would from the
+   * command line, wherever `lem` was started.
+   */
+  root: string
   /** The input directory, absolute. */
   input: string
   /**

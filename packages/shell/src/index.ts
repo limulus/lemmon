@@ -10,6 +10,7 @@ export {
   type CheckResult,
 } from './lib/build.ts'
 export { bundler } from './lib/bundler.ts'
+export { esbuild, type EsbuildOptions } from './lib/esbuild.ts'
 export { highlighter, type HighlighterOptions } from './lib/highlighter.ts'
 export {
   ConfigError,

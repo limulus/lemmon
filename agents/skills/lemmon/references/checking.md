@@ -38,6 +38,9 @@ What it reports, in the order it finds them:
   `assets` hook that throws or returns anything but `{manifest?, files?}`, a logical path
   two plugins both map, or an asset file that collides with another output file, at the
   start of `lemmon.config.ts`, printed without source lines. Nothing compiles past one.
+  The shell's `esbuild()` bundles the client scripts here, so a script esbuild cannot
+  build, a `XXXXXXXX` placeholder naming no entry, and an `env` variable that is not set
+  are each one of these, esbuild's message giving the script's file and position.
   The text a transform leaves is what compiles: a diagnostic in what it appended points
   past the end of the file you wrote, and its frame shows the appended text.
 - **Compile errors**: everything the checker finds, in every `.lem` first — page templates
@@ -72,8 +75,5 @@ What it reports, in the order it finds them:
 
 What it does not cover:
 
-- **Assets.** An `asset("…")` resolves against the manifest the config's plugins'
-  `assets` hooks return. The esbuild plugin is not yet built (∆d1N), so where no plugin of
-  the site's own maps the path, it reports that the manifest has no such asset.
 - **Computed mark keys.** A key a template computes is read at render, and one no producer
   lists keeps the default content without a word: not yet reported (∆CxX).

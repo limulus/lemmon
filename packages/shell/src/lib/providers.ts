@@ -1,4 +1,5 @@
 import type { Diagnostic } from '@limulus/lemmon-core'
+import { dirname } from 'node:path'
 
 import { isPlainObject, type LoadedConfig } from './config.ts'
 import { findFrontMatter, opensFrontMatter, type Block, type Page } from './front-matter.ts'
@@ -173,7 +174,8 @@ export async function provided(
   for (const plugin of config.plugins) {
     if (plugin.assets === undefined) continue
     const failed = `the \`${plugin.name}\` plugin's \`assets\` hook failed`
-    const context = { input: config.input, output: config.output, writes, env: frozenEnv }
+    const { input, output } = config
+    const context = { root: dirname(config.file), input, output, writes, env: frozenEnv }
     let made: unknown
     try {
       made = await plugin.assets.call(plugin, context)

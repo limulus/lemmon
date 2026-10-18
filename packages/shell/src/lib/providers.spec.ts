@@ -1,3 +1,4 @@
+import { dirname, join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 import { readPage } from './front-matter.ts'
@@ -338,7 +339,7 @@ describe('provided()', () => {
     })
   })
 
-  it('should give each hook the directories, whether the build writes, and its environment', async () => {
+  it('should give each hook the root, the directories, whether the build writes, and its environment', async () => {
     const given: [AssetsContext, string][] = []
     const plugin: Plugin = {
       name: 'given',
@@ -352,10 +353,14 @@ describe('provided()', () => {
     await provided(listing, BUILD)
     await provided(listing, { writes: false, env: {} })
 
-    const { input, output } = listing
+    // The root is the config file's directory, which `input` and `output` are under
+    // here: `www` and `dist`.
+    const { file, input, output } = listing
+    const root = dirname(file)
+    expect([input, output]).toEqual([join(root, 'www'), join(root, 'dist')])
     expect(given).toEqual([
-      [{ input, output, writes: true, env: { TOKEN: 'abc' } }, 'given'],
-      [{ input, output, writes: false, env: {} }, 'given'],
+      [{ root, input, output, writes: true, env: { TOKEN: 'abc' } }, 'given'],
+      [{ root, input, output, writes: false, env: {} }, 'given'],
     ])
   })
 

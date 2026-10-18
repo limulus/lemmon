@@ -377,7 +377,7 @@ describe('loadConfig()', () => {
         // Taken as they are, so a hook is the function the config wrote.
         const document = { path: 'a.md', frontMatter: {}, body: 'Hi' }
         expect(plugins[0].transformDocument?.(document)).toBe('Hi!')
-        const context = { input: '', output: '', writes: false, env: {} }
+        const context = { root: '', input: '', output: '', writes: false, env: {} }
         expect(await plugins[0].assets?.(context)).toEqual({})
       })
 

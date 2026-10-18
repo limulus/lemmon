@@ -123,7 +123,7 @@ judge (∆Zo7), not these examples'.
 | `this.svg(name)`                        | `<lem.svgUse(name)>`; the sprite is a mark  |
 | `<link>` to `getBundleFileUrl('css')`   | `<lem.mark("styles")>`, link and all        |
 | `getBundle('html', 'head')`             | `<lem.mark("head")>`                        |
-| `src="/lib/x/index.XXXXXXXX.js"`        | `<lem-script src = asset("…") />` (∆d1N)    |
+| `src="/lib/x/index.XXXXXXXX.js"`        | `src="<lem.asset("/lib/x/index.js")>"`      |
 | `{% renderTemplate 'webc' %}` in a post | a lem block alone on its line               |
 | JS appending to a post's markdown       | a plugin's `transformDocument`              |
 
@@ -500,6 +500,28 @@ printed — and only then, so a component's styles reach the pages that call it.
 that writes another component's class therefore calls that component instead: an
 `authorChip` that printed `<data-chip class="dataChip">` itself left `.dataChip`'s styles to
 whichever other chip on the page called `dataChip`.
+
+## Client scripts
+
+The client TypeScript is bundled by the shell's `esbuild()`, listed in the config (D45),
+and keeps its `XXXXXXXX` placeholders — `import '/lib/x/index.XXXXXXXX.js'`,
+`new URL('./worker.XXXXXXXX.js', import.meta.url)` — which the plugin resolves in the
+bundles as Eleventy did. The markup changes: Eleventy rewrote every `….XXXXXXXX.js` string
+in a page's HTML after rendering it, and a template names the script by its URL without
+the hash, through `asset()`, which compiles to the hashed URL — a compile error with a
+did-you-mean where no entry ships at that path:
+
+```lem
+<script type="module" src="<lem.asset("/lib/common/index.js")>" async></script>
+```
+
+A `<script webc:keep>` loading one becomes that tag where it stood — in the `head`, inside
+a component — rather than a `lem-script`, whose `mark("scripts")` writes no `async` and
+places every URL the page collected at every mark. An inline loader prints the URL into its
+text, since a `<lem.` tag fires inside a script: `import('<lem.asset("/lib/rum/index.js")>')`.
+A path in front matter is an `asset` field holding the path from `/`: the core does no path
+arithmetic (D38), so a page-relative `./lib/index.js` cannot resolve, and penumbra's
+`scripts:` names `/penumbra/journal/<slug>/lib/index.js`, typed `scripts: asset?`.
 
 ## Posts
 

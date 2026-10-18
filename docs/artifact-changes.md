@@ -399,8 +399,8 @@ moved it. Newest last. An entry is removed when its change has been applied.
   rebuild re-hashing an asset is therefore a change to the declaration (D10, D38).
 
 - **Build pipeline, steps 2 and 4** — step 2's manifest — every plugin's `assets` hook's,
-  merged, as the esbuild plugin's will be (D44) — is handed to `compile` on the host
-  declaration rather than to `loadData`; step 4 resolves `[asset]` fields against that
+  merged, the shell's `esbuild()` among them (D44, D45) — is handed to `compile` on the
+  host declaration rather than to `loadData`; step 4 resolves `[asset]` fields against that
   same manifest, reporting a miss at the YAML position the shell sent (D38).
 
 - **Separate compilation, the facts a unit records** — add the manifest entries a file
@@ -577,7 +577,8 @@ moved it. Newest last. An entry is removed when its change has been applied.
   sketch, `transformDocument?(doc, ctx): Document` becomes `transformDocument?(document:
   DocumentSource): string` and `assets?(ctx): Promise<AssetManifest>` becomes
   `assets?(context: AssetsContext): Assets | Promise<Assets>`, with `DocumentSource =
-  {path, frontMatter, body}`, `AssetsContext = {input, output, writes, env}` and `Assets =
+  {path, frontMatter, body}`, `AssetsContext = {root, input, output, writes, env}` — `root`
+  the config file's directory, which esbuild runs from (D45) — and `Assets =
   {manifest?, files?}`. Say what step 2 does with them: each document (`.md`, never a
   template) is handed to every plugin's transform in order, with its front matter as
   loaded and frozen, and the body each returns is the next one's, the front matter kept
@@ -590,6 +591,18 @@ moved it. Newest last. An entry is removed when its change has been applied.
   with `writes: false`. A hook's failure is an error at the start of `lemmon.config.ts`.
   The sketch's other hooks stay unbuilt: `data` and `commands`, `transformOutput`, and
   `watch` and `emit` are refused at config load (D44; ∆ETy).
+
+- **Crates, Bundler row; Shell plugin API, the esbuild plugin** — the row's esbuild 0.28
+  becomes 0.24.0, pinned exactly, with `esbuild-plugin-wasm` 1.1.0 beside it: what
+  limulus.net's Eleventy build runs, since a bundle's bytes name it and its bundles must
+  come out the same. Say the esbuild pipeline is a plugin the shell ships,
+  `esbuild(options?)`, an `assets` hook listed in the config like `bundler()`: D09's
+  conventions are its defaults (`**/index.ts` and `**/worker.ts`, `/lib/*` external, the
+  wasm loader, `[dir]/[name].[hash]`), a site passes its own names and `env`, the
+  variables its scripts read as `process.env.NAME`, and esbuild runs from the config
+  file's directory, since its hashes name each source by its path from there. It bundles
+  on every build, `lem dev`'s too — about 0.2 s of a limulus.net rebuild — with no
+  incremental context (D45; ∆d1N).
 
 ## From Eleventy to Lemmon
 
@@ -623,3 +636,15 @@ moved it. Newest last. An entry is removed when its change has been applied.
   `<link>` to the page's bundle. It is written to `/assets/immutable/bundle/`, named as
   Eleventy names one — the first ten base64url characters of the bytes' SHA-256 — so the
   CloudFront config caching `/assets/immutable/*` is untouched (D13, D42; ∆F4y).
+
+- **Template mapping, client scripts** — where the text maps `11ty/esbuild.ts`: its
+  options become the shell's `esbuild()` with limulus.net's asset directory and token
+  (`assetNames: 'assets/immutable/11ty/esbuild/[name].[hash]'`,
+  `env: ['MAPBOX_PUBLIC_TOKEN']`), and its bundles come out byte for byte the same, built
+  in the same checkout. The client TypeScript keeps its `XXXXXXXX` placeholders, the
+  hashed file name spliced in after hashing as before; the transform that rewrote them in
+  every page's HTML goes, since a template writes `asset("/lib/x/index.js")`,
+  compile-checked. The unhashed
+  `/lib/x/index.js` stubs it wrote are not written: nothing loads one. A page-relative
+  front-matter path cannot be an asset, so penumbra's `scripts: ./lib/index.js` becomes
+  `/penumbra/journal/<slug>/lib/index.js`, typed `asset?` (D10, D38, D45; ∆d1N).

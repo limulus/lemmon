@@ -233,9 +233,9 @@ not a break:
    handlers given the payload `compile` reported, kept by id (D42). The handlers are
    the plugins' (§Shell plugin API), the shell's `bundler()` and `highlighter()` among
    them where the site lists them.
-8. **Write** (shell) — HTML, the files the asset hooks built, the files producers wrote
-   — the per-page CSS bundles `bundler()` writes under `/assets/immutable/bundle/` — and
-   passthrough.
+8. **Write** (shell) — HTML, the files the asset hooks built — the script bundles
+   `esbuild()` builds — the files producers wrote — the per-page CSS bundles `bundler()`
+   writes under `/assets/immutable/bundle/` — and passthrough.
 9. **Post-process** (shell) — optional transforms (dprint), link/asset integrity check.
 10. **Second phase** (shell) — pages that read other pages' finished output (feeds,
     ∆zu0) render after steps 6–9 have finished every other page, with those outputs
@@ -308,21 +308,32 @@ throws or returns anything but a string the core can be sent — or a body that 
 text other front matter, a `---` first line where it had none, or a first line other than a
 newline after a closing `---` that ended the file — is an error at the document's front
 matter, which stops the build before it compiles. Then each plugin's `assets` hook is
-awaited, in order, given the input and output directories, whether the build writes
-(`lem check` does not) and the build's environment, the values `env("…")` bindings read,
-and returning `{manifest?, files?}`; the manifests merge, a logical path two plugins both
-map an error naming both. A hook that throws or returns anything else is an error at the
-start of `lemmon.config.ts`, which lists the plugin and is printed without a frame, since no
-step reads it as text. The hooks' files are claimed after the passthrough files and before
-any page: one that names no file, or collides with a passthrough file or another plugin's,
-is an error at the config's start, and a page or produced file that collides with one is an
-error at that page's url or mark, labelled at the config. Any error in step 2 stops the
-build before it compiles. `lem dev` reads the config once, so a plugin object outlives every
-build, and each build calls its hooks again.
+awaited, in order, given the project's root — the config file's directory, which esbuild
+runs from, since its hashes name each source by its path from there (D45) — the input and
+output directories, whether the build writes (`lem check` does not) and the build's
+environment, the values `env("…")` bindings read, and returning `{manifest?, files?}`;
+the manifests merge, a logical path two plugins both map an error naming both. A hook
+that throws or returns anything else is an error at the start of `lemmon.config.ts`,
+which lists the plugin and is printed without a frame, since no step reads it as text.
+The hooks' files are claimed after the passthrough files and before any page: one that
+names no file, or collides with a passthrough file or another plugin's, is an error at the
+config's start, and a page or produced file that collides with one is an error at that
+page's url or mark, labelled at the config. Any error in step 2 stops the build before it
+compiles. `lem dev` reads the config once, so a plugin object outlives every build, and
+each build calls its hooks again. The shell's esbuild plugin, `esbuild()`, is one: it
+bundles every `index.ts` and `worker.ts` under the input with esbuild 0.24.0 —
+minified ES modules with source maps, `/lib/*` left to the browser, a `.wasm` import
+instantiated by `esbuild-plugin-wasm` 1.1.0, each bundle beside its source as
+`[dir]/[name].[hash]` — and maps each entry's URL as its source names it,
+`/lib/x/index.js`, to the URL its bundle ships at; each `XXXXXXXX` placeholder in a
+bundle then takes the file name the entry it names ships under, spliced in after hashing
+as limulus.net's Eleventy build splices the hash (D09, D10, D45). It bundles on every
+build, about 0.2 s of a limulus.net rebuild. With the site's `11ty/` asset names and from
+the same checkout — a `.wasm` worker's map names its module by absolute path — its files
+come out byte for byte Eleventy's.
 
 - Step 2's data hooks are not yet run (∆wOn), so a `plugin("…")` source is an error at
-  its binding; and the esbuild plugin is not yet built (∆d1N), so an `asset()` resolves
-  only against a manifest a site's own plugin returns.
+  its binding.
 - Step 9 is not yet run: no output transform (∆fwn) and no integrity check (∆yOJ).
 - Step 10 is not yet run (∆zu0): a feed renders with the other pages, reading none of
   their output.
@@ -461,7 +472,7 @@ VM time (that number is the Phase 0 exit criterion).
 | Serde          | `serde_json` (rmp-serde optional)                        | avoid serde-wasm-bindgen for bulk data                                                                                                                                                                                   |
 | Editor grammar | `tree-sitter` 0.26                                       | editor-only; do NOT link its C runtime into the core wasm; its `wasm` cargo feature means "host wasmtime", not "compile to wasm"                                                                                         |
 | Native later   | `napi-rs` 3.x                                            | optional perf path behind the same TS interface (D11)                                                                                                                                                                    |
-| Bundler        | `esbuild` 0.28 via JS API                                | config ports 1:1 from limulus.net                                                                                                                                                                                        |
+| Bundler        | `esbuild` 0.24.0 via JS API, `esbuild-plugin-wasm` 1.1.0 | the shell's `esbuild()` (D45): limulus.net's options port 1:1 (D09), and both are pinned exactly, since a bundle's bytes name it — 0.24.0 is what the site's Eleventy build runs, so its bundles come out byte for byte the same |
 
 ## Shell plugin API (sketch)
 
@@ -516,6 +527,7 @@ interface DocumentSource {
 }
 
 interface AssetsContext {
+  root: string // the config file's directory, absolute: where esbuild runs from (D45)
   input: string // the input directory, absolute
   output: string // the output directory, absolute, where the files are written
   writes: boolean // false for `lem check`, which writes none of them
@@ -559,6 +571,10 @@ highlighter, `highlighter(options?)`, is a `code` producer listed beside it, and
 ```ts
 plugins: [bundler(), highlighter({ exclude: ['rust', 'rs'] }), rustHighlighter()]
 ```
+
+Its esbuild plugin, `esbuild(options?)`, is an `assets` hook listed the same way, whose
+options are a site's own entry globs, externals, entry and asset names, and the
+environment variables its scripts read as `process.env.NAME` (D45).
 
 ## Editor tooling (day one, D16)
 

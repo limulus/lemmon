@@ -10,13 +10,13 @@ change, reloading the pages open on it.
 
 ```ts
 // lemmon.config.ts
-import { bundler, highlighter, type Config } from '@limulus/lemmon-shell'
+import { bundler, esbuild, highlighter, type Config } from '@limulus/lemmon-shell'
 
 export default {
   input: 'www',
   output: 'dist/www',
   passthrough: ['assets/**/*', '**/*.{png,svg,jpg,jpeg,xsd,xsl,txt,pdf}'],
-  plugins: [bundler(), highlighter()],
+  plugins: [bundler(), highlighter(), esbuild()],
   dev: {
     headers: {
       'Cross-Origin-Opener-Policy': 'same-origin',
@@ -94,6 +94,73 @@ lists it; the `lem` bin never imports the package's entry point, and a type-only
 block names it, and highlighting is not cached: on the limulus-dot-net port branch its
 eight blocks take about 8 ms in the first build and 1 ms in each rebuild.
 
+### `esbuild(options?)`
+
+`esbuild()` bundles a site's client scripts in its `assets` hook (D09, D10, D45), with
+esbuild pinned at exactly 0.24.0, since another release can write the same bundle
+differently and a bundle's bytes name it — a dependency of 148 KB of JavaScript and one
+native binary of about 9.3 MB for the platform — and `esbuild-plugin-wasm` pinned at 1.1.0,
+28 KB, which writes code of its own into a bundle. Every `index.ts` and `worker.ts` under
+the input, found as the build's walk finds files, is an entry, bundled on its own:
+minified, an ES module with its source map beside it, an import of `/lib/*` left for the
+browser, and a `.wasm` it imports instantiated as a module. Each bundle is written beside
+its source, named by its hash — `www/lib/x/index.ts` at `/lib/x/index.ABCD2345.js` — and a
+file a bundle imports, the `.wasm`, under `/assets/immutable/esbuild/`. The manifest maps
+each entry's URL as its source names it to the URL its bundle ships at, so a layout writes
+
+```lem
+<script type="module" src="<lem.asset("/lib/x/index.js")>" async></script>
+```
+
+and a front matter field typed `asset` names one the same way, `script: /lib/x/index.js`.
+The styles an entry's imports gather are a bundle too, mapped as `/lib/x/index.css`; two
+bundles at one such path — two entries, or an entry's styles and a CSS entry — fail the
+hook, naming both sources.
+
+A script names another entry — to import it, or to start it as a worker — by a
+placeholder, the entry's URL with `XXXXXXXX` where the hash goes (D10):
+`import '/lib/y/index.XXXXXXXX.js'`, `new URL('./worker.XXXXXXXX.js', import.meta.url)`.
+Once every bundle is hashed, each placeholder in a string names the entry at its path,
+found from the bundle's own logical path where it is relative, and the file name that
+entry ships under is spliced in as written, as limulus.net's Eleventy build splices the
+hash in — `'worker.XXXXXXXX.js'` becomes `"worker.ABCD2345.js"`, the same length, so the
+map's columns hold. Where `entryNames` has moved the bundles, so that the spliced string
+would name another file, it becomes the URL the entry ships at instead, relative to the
+bundle's own where it was relative. One naming no entry fails the hook at the source that
+wrote it, from the root with its line and column as esbuild places its own errors — or at
+the bundle, where a `define` put it there. Because the replacing follows the hashing, a
+bundle's name does not change when only the bundle it names does. Eleventy's build also
+writes an unhashed `/lib/x/index.js` re-exporting each bundle; this one does not, since
+nothing loads one.
+
+Each option is optional: `entryPoints`, globs from the input matched as `passthrough` globs
+are; `external`, `entryNames` and `assetNames`, as esbuild reads them; and `env`, the
+environment variables the scripts read as `process.env.NAME`, each replaced by its value
+in the build's environment — the one `lem` runs in, so a site keeping a value in a `.env`
+file loads it in its config, `import 'dotenv/config'` — and one the environment lacks fails
+the hook, naming it. limulus.net keeps Eleventy's asset directory, which a worker's bundle
+names, and its map's token:
+
+```ts
+esbuild({
+  assetNames: 'assets/immutable/11ty/esbuild/[name].[hash]',
+  env: ['MAPBOX_PUBLIC_TOKEN'],
+})
+```
+
+esbuild runs from the config file's directory, wherever `lem` was started, since it
+hashes each source by its path from there, and the hook resolves the directories through
+symbolic links first, as esbuild resolves the sources. On the limulus-dot-net port branch
+its 37 files — 18 bundles, their maps and a `.wasm` — are byte for byte Eleventy's, with
+the `11ty/` asset names above and in the same checkout, since a `.wasm` worker's map
+names its module by absolute path.
+esbuild's errors fail the hook, an error at the config's start carrying esbuild's message,
+file and position; its warnings are written to standard error as esbuild words them, and
+the build goes on. Every build bundles again, `lem check` too, since `asset()` compiles
+against the manifest: on the port branch that is about 0.2 s of each `lem dev` rebuild,
+0.37 s against 0.17 s without it. esbuild is loaded the first time the hook runs, so a
+site that does not list the plugin never loads it.
+
 ## Plugins
 
 A plugin is `{name, transformDocument?, assets?, marks?}`: a name its errors and warnings
@@ -146,8 +213,11 @@ says so.
 ### Assets
 
 `assets(context)` is called once per build, after the transforms and before anything
-compiles, and the build waits for it: it may be `async`. The context is `{input, output,
-writes, env}`: the input and output directories, absolute; whether the build writes —
+compiles, and the build waits for it: it may be `async`. The context is `{root, input,
+output, writes, env}`: the directory of the config file, which `input` and `output` are
+relative to — where a tool whose output depends on its working directory, as esbuild's
+hashes do, runs from — and the input and output directories, all absolute; whether the
+build writes —
 `false` for `lem check`; and the build's environment, the values `env("…")` bindings
 read, as a frozen copy — so a hook reads a token from it rather than from `process.env`,
 and a spec can hand it one. It returns `{manifest?, files?}`:
@@ -324,8 +394,6 @@ it no glob matches anything.
 
 ### Not yet
 
-- **Assets.** The shell ships no esbuild plugin, so an `asset()` resolves only where a
-  site's own plugin's `assets` hook maps it: ∆d1N.
 - **Computed mark keys.** A key a template computes and no producer lists keeps the
   default content, unreported: ∆CxX.
 - **Plugins.** A plugin has no data hook and no `lem` command, it ships no `.lem` — so
@@ -401,7 +469,8 @@ Ctrl-\ ends it at once. A port it cannot listen at, one in use say, is exit 1.
 
 Neither `lem dev` nor `lem build` removes anything from the output, so the file of a page
 deleted or moved stays there, and `lem dev` goes on serving it, until the output is
-cleaned.
+cleaned. So do the bundles `esbuild()` wrote before: each edit to a script ships it under a
+new hashed name, and the old ones stay beside it.
 
 The server listens at the literal `127.0.0.1`, since a `localhost` listen binds `::1`
 alone on macOS, where another server at `127.0.0.1` on the same port would go unreported,

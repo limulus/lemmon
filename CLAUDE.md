@@ -210,8 +210,8 @@ that checks the 1 ms/page criterion — runs only by hand.
 describes it), the bin at `packages/shell/bin/lem.ts` runs the plugins the config lists
 over each document's text and for their asset files, compiles the site in two calls — the
 assets' manifest on its declaration — loads it, renders every page into memory, resolves
-its marks through those plugins — the shell's own, `bundler()` and `highlighter()`, run
-only where the config lists them — and then writes HTML, the asset files, the files the producers made
+its marks through those plugins — the shell's own, `bundler()`, `highlighter()` and
+`esbuild()`, run only where the config lists them — and then writes HTML, the asset files, the files the producers made
 (its CSS bundles), and passthrough files.
 `lem check` runs the same pipeline and stops before the write, so it never touches the
 output directory; both print each diagnostic with the source its span covers framed
@@ -220,7 +220,11 @@ the whole site once changes settle, and serves the output at `127.0.0.1` with th
 config's `dev.headers`, reloading the open pages over a WebSocket after a build with no
 error; it reads the config once. The bin runs from source under the `source` export
 condition, so the limulus-dot-net port branch depends on this checkout with `file:` and
-sees every edit without a build.
+sees every edit without a build. A shell plugin that reproduces limulus.net's output pins
+its tool exactly (highlight.js 11.9.0; esbuild 0.24.0 with esbuild-plugin-wasm 1.1.0),
+since a release inside a range moves the spans and hashes parity compares exactly, and a
+tool whose output depends on its working directory runs from the asset hook's `root`,
+never `process.cwd()`.
 
 Still aspirational; keep them true as they come to exist:
 

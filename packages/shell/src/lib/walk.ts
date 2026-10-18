@@ -81,25 +81,8 @@ export async function walk(
   config: Pick<LoadedConfig, 'input' | 'output' | 'passthrough'>
 ): Promise<Entry[]> {
   const isPassthrough = picomatch(config.passthrough, { dot: true, nocase: true })
-  const files: string[] = []
-  const visit = async (dir: string): Promise<void> => {
-    for (const dirent of await readdir(dir, { withFileTypes: true })) {
-      const file = join(dir, dirent.name)
-      if (skipped(config, file)) continue
-      if (dirent.isDirectory()) {
-        await visit(file)
-      } else if (
-        dirent.isFile() ||
-        (dirent.isSymbolicLink() && (await stat(file)).isFile())
-      ) {
-        files.push(relative(config.input, file).split(sep).join('/'))
-      }
-    }
-  }
-  await visit(config.input)
-  files.sort((a, b) => (a < b ? -1 : 1))
   return await Promise.all(
-    files.map(async (path): Promise<Entry> => {
+    (await files(config)).map(async (path): Promise<Entry> => {
       if (isPassthrough(path)) return { kind: 'passthrough', path }
       if (path.endsWith('.md')) return { kind: 'document', path, text: await read(path) }
       if (path.endsWith('.lem')) {
@@ -113,4 +96,32 @@ export async function walk(
   function read(path: string): Promise<string> {
     return readFile(join(config.input, ...path.split('/')), 'utf8')
   }
+}
+
+/**
+ * The path of every file under the config's input directory, relative to it with `/`
+ * separators, sorted: the files {@link walk} classifies, found as it finds them — passing
+ * over what {@link skipped} names, counting a symbolic link as the file it names, failing
+ * on one that names nothing, and following no linked directory.
+ */
+export async function files(
+  config: Pick<LoadedConfig, 'input' | 'output'>
+): Promise<string[]> {
+  const found: string[] = []
+  const visit = async (dir: string): Promise<void> => {
+    for (const dirent of await readdir(dir, { withFileTypes: true })) {
+      const file = join(dir, dirent.name)
+      if (skipped(config, file)) continue
+      if (dirent.isDirectory()) {
+        await visit(file)
+      } else if (
+        dirent.isFile() ||
+        (dirent.isSymbolicLink() && (await stat(file)).isFile())
+      ) {
+        found.push(relative(config.input, file).split(sep).join('/'))
+      }
+    }
+  }
+  await visit(config.input)
+  return found.sort((a, b) => (a < b ? -1 : 1))
 }
