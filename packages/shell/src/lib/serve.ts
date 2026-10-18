@@ -27,6 +27,11 @@ export interface ServeOptions {
    * them, so none is a header the server sends itself.
    */
   headers: Readonly<Record<string, string>>
+  /**
+   * Told what went wrong answering a request, whose response is then cut off: a header
+   * Node refuses only as it writes it, or a broken assertion.
+   */
+  onError(error: unknown): void
 }
 
 /** A running dev server. */
@@ -97,9 +102,11 @@ interface Served {
  * (`outputFile`, so `/feed/` is `feed/index.html`), with a `Content-Type` from its
  * extension; a directory requested without its `/` redirected to the url with one,
  * keeping the query; and anything else — a url naming no file inside `root`, a
- * malformed escape among them, or a file not there — 404. A rebuild rewrites each file
- * in place, so a page read while it writes can be served partial; the reload comes
- * after the build, so only a page refreshed by hand in those milliseconds sees one.
+ * malformed escape among them, or a file not there — 404, as a page carrying the reload
+ * client, so that a tab open on a page no build has written yet reloads once one has;
+ * every other refusal is plain text. A rebuild rewrites each file in place, so a page
+ * read while it writes can be served partial; the reload comes after the build, so
+ * only a page refreshed by hand in those milliseconds sees one.
  * Only GET and HEAD are answered; any other method is 405. An HTML page gets the
  * reload client's `<script>` before its last `</body>`, or after it all where it has
  * none, in the bytes sent: the file on disk is left as the build wrote it. Two urls
@@ -108,13 +115,19 @@ interface Served {
  * message to. A WebSocket upgrade to any other url is refused; any other upgrade, such
  * as HTTP/2's `h2c`, is answered as a request — from Node 24.9, which reads
  * `shouldUpgradeCallback`; before it, the upgrade reaches ws, which refuses it with a
- * 400. A response that cannot be written is cut off, and the server goes on.
+ * 400. A response that cannot be written is cut off, what went wrong given to
+ * `onError`, and the server goes on.
  *
  * Every response carries `headers` and `Cache-Control: no-cache`, but those the `ws`
  * package writes — the WebSocket handshake, answered or refused — and those Node's own
  * parser writes for a request it cannot read.
  */
-export async function serve({ root, port, headers }: ServeOptions): Promise<DevServer> {
+export async function serve({
+  root,
+  port,
+  headers,
+  onError,
+}: ServeOptions): Promise<DevServer> {
   const served: Served = { root, headers, port }
   const sockets = new WebSocketServer({
     noServer: true,
@@ -133,7 +146,8 @@ export async function serve({ root, port, headers }: ServeOptions): Promise<DevS
     (request, response) => {
       // Node refuses some headers only as it writes them — a `Trailer` on a response
       // with a length — and an unhandled rejection would take the server down.
-      respond(served, request, response).catch(() => {
+      respond(served, request, response).catch((error: unknown) => {
+        onError(error)
         response.destroy()
       })
     }
@@ -211,7 +225,7 @@ async function answer({ root, port }: Served, request: IncomingMessage): Promise
   if (url === CLIENT) return file(CLIENT, CLIENT_SOURCE)
   if (url === SOCKET) return plain(426, { upgrade: 'websocket' })
   const name = outputFile(url)
-  if (name === undefined) return plain(404)
+  if (name === undefined) return NOT_FOUND
   const path = join(root, name)
   assert(contains(root, path), 'a url names a file inside the output, or none')
   const stats = await stat(path).catch(() => undefined)
@@ -221,7 +235,7 @@ async function answer({ root, port }: Served, request: IncomingMessage): Promise
   }
   // Missing, or a directory: no page is there.
   const bytes = await readFile(path).catch(() => undefined)
-  if (bytes === undefined) return plain(404)
+  if (bytes === undefined) return NOT_FOUND
   return file(path, lookup(path) === 'text/html' ? withClient(bytes) : bytes)
 }
 
@@ -231,6 +245,17 @@ const file = (path: string, body: string | Buffer): Reply => ({
   headers: { 'content-type': typeOf(path) },
   body,
 })
+
+/** The answer where no file is, a page so that it can carry the reload client. */
+const NOT_FOUND: Reply = {
+  status: 404,
+  headers: { 'content-type': 'text/html; charset=utf-8' },
+  body: Buffer.concat([
+    Buffer.from('<!doctype html>\n<title>Not Found</title>\n<p>Not Found</p>\n'),
+    CLIENT_TAG,
+    Buffer.from('\n'),
+  ]),
+}
 
 /** A response that is its status, in plain text. */
 const plain = (status: number, headers: Own = {}): Reply => ({

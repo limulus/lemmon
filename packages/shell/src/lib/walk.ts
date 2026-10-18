@@ -48,17 +48,34 @@ export type Entry = DocumentEntry | TemplateEntry | PassthroughEntry | IgnoredEn
 /** What the walk makes of a file. */
 export type EntryKind = Entry['kind']
 
-/** Directories the walk never enters, at any depth, as Eleventy ignores them by default. */
+/** Names the walk passes over, at any depth, as Eleventy ignores them by default. */
 const SKIPPED = new Set(['node_modules', '.git'])
+
+/**
+ * Whether the walk passes over `path`, an absolute path under the config's input: the
+ * output directory and what is in it, where the input holds it, and anything named
+ * `node_modules` or `.git` — a worktree's `.git` is a file — and what is in it, at any
+ * depth. `lem dev` watches the input through it too, so that a change the walk would
+ * not see starts no rebuild.
+ */
+export function skipped(
+  config: Pick<LoadedConfig, 'input' | 'output'>,
+  path: string
+): boolean {
+  if (contains(config.output, path)) return true
+  return relative(config.input, path)
+    .split(sep)
+    .some((name) => SKIPPED.has(name))
+}
 
 /**
  * Every file under the config's input directory, sorted by path, each classified: a
  * file a passthrough glob matches is passthrough whatever its extension; otherwise
- * `.md` is a document, `.lem` a template, and anything else is ignored. The walk never
- * enters a `node_modules` or `.git` directory, nor the output directory when it is
- * inside the input, so a build never reads what an earlier one wrote. A symbolic link
- * counts as the file it names, and one that names nothing fails the walk; a linked
- * directory is not followed.
+ * `.md` is a document, `.lem` a template, and anything else is ignored. The walk passes
+ * over a `node_modules` or `.git`, and the output directory when it is inside the
+ * input, so a build never reads what an earlier one wrote ({@link skipped}). A
+ * symbolic link counts as the file it names, and one that names nothing fails the
+ * walk; a linked directory is not followed.
  */
 export async function walk(
   config: Pick<LoadedConfig, 'input' | 'output' | 'passthrough'>
@@ -68,8 +85,9 @@ export async function walk(
   const visit = async (dir: string): Promise<void> => {
     for (const dirent of await readdir(dir, { withFileTypes: true })) {
       const file = join(dir, dirent.name)
+      if (skipped(config, file)) continue
       if (dirent.isDirectory()) {
-        if (!SKIPPED.has(dirent.name) && !contains(config.output, file)) await visit(file)
+        await visit(file)
       } else if (
         dirent.isFile() ||
         (dirent.isSymbolicLink() && (await stat(file)).isFile())

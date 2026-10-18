@@ -13,9 +13,9 @@ Two halves, one contract:
   `(program, data, page) → (page bytes, marks and fragments, diagnostics)`. No I/O, clock,
   or env.
 - **Shell** — Node/TypeScript: content walker, YAML front matter (with positions), plugin
-  host, esbuild driver, worker pool, dev server (COOP/COEP headers, live reload), output
-  writer (hashing conventions), CLI (`lem`). Everything site- or host-specific is a plugin:
-  photos, revisions, svg-sprite, dprint. Markdown is _not_ a plugin (D08).
+  host, esbuild driver, worker pool, dev server (the site's `dev.headers`, live reload),
+  output writer (hashing conventions), CLI (`lem`). Everything site- or host-specific is
+  a plugin: photos, revisions, svg-sprite, dprint. Markdown is _not_ a plugin (D08).
 
 The same `.wasm` runs in the build, the LSP (Node process), a browser playground, and —
 later, unchanged — a Lambda (`ContentSource` seam, D14).
@@ -240,9 +240,12 @@ not a break:
 What `lem build` (∆muD) runs is steps 1 and 3–8, produced files included, in one core on one
 thread. `lem check` runs the same and stops before the first write, so it reports every
 diagnostic a build would, render errors and output collisions included; it never touches the
-output directory, so a write the file system refuses is found only by `lem build`. Step 3's
-first call compiles every `.lem` — page templates too, without their records, so a layout
-sees what they define — and its second the pages as
+output directory, so a write the file system refuses is found only by `lem build`.
+`lem dev` runs `lem build`'s steps over the whole site again each time changes to the
+input settle, serves the output, and reloads the pages open on it after a build with no
+error and every file written; it reads `lemmon.config.ts` once, so a change to that needs
+a restart. Step 3's first call compiles every `.lem` — page templates too, without their
+records, so a layout sees what they define — and its second the pages as
 their records; a document compiles only in the second, so no template sees what a
 document defines. Every page is rendered and its output file checked against every
 other — the same file, the same but for case or Unicode form, or a file where another
@@ -288,12 +291,13 @@ share one bundle.
 - Step 10 is not yet run (∆zu0): a feed renders with the other pages, reading none of
   their output.
 
-Dev incrementality comes from two reported sets. Render-reported deps: template edit →
-recompile one file, re-render dependents; content edit → `upsertRecord`, re-render readers;
-TS edit → esbuild incremental, re-render referencing pages. Compile-reported facts (D25):
-the shell keys each file's unit on its text plus the facts it consumed, so a document edit
-recompiles that document and nothing else — its layouts are unchanged units, not recompiled
-ones.
+Dev incrementality, not yet built (∆xBO, ∆Qr2), comes from two reported sets, and is
+built only if a full rebuild of limulus.net takes over a second. Render-reported deps:
+template edit → recompile one file, re-render dependents; content edit → `upsertRecord`,
+re-render readers; TS edit → esbuild incremental, re-render referencing pages.
+Compile-reported facts (D25): the shell keys each file's unit on its text plus the facts
+it consumed, so a document edit recompiles that document and nothing else — its layouts
+are unchanged units, not recompiled ones.
 
 ## Separate compilation (D25)
 

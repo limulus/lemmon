@@ -20,7 +20,8 @@ interface Ran {
 
 /**
  * Runs `lem` with `args` in `cwd`, capturing what it writes: in `env`, at a fixed
- * time unless `now` is `null`, when the system clock tells it.
+ * time unless `now` is `null`, when the system clock tells it. Its interrupt throws,
+ * since only `lem dev` may arm one, and these commands end on their own.
  */
 async function lem(
   args: string[],
@@ -38,6 +39,9 @@ async function lem(
     cwd: () => cwd,
     env: env as Record<string, string>,
     ...(now === null ? {} : { now: () => now }),
+    interrupted: () => {
+      throw new Error('only lem dev arms the interrupt')
+    },
   })
   return { code, stdout: out.join(''), stderr: err.join('') }
 }
@@ -86,6 +90,36 @@ describe('run()', () => {
         code: 2,
         stderr: `lem: unexpected argument 'www'\n\n${USAGE}`,
       })
+    })
+
+    it('should print the usage and exit 2 for a --port given to build or check', async () => {
+      for (const command of ['build', 'check']) {
+        expect(await lem([command, '--port', '8080'])).toEqual({
+          code: 2,
+          stdout: '',
+          stderr: `lem: --port is an option of lem dev\n\n${USAGE}`,
+        })
+      }
+    })
+
+    it('should print the usage and exit 2 for a --port that names no port', async () => {
+      for (const port of ['65536', '-1', '80a', '1e3', '', ' 80', '123456']) {
+        expect(await lem(['dev', `--port=${port}`]), port).toEqual({
+          code: 2,
+          stdout: '',
+          stderr: `lem: --port takes a port from 0 to 65535, not '${port}'\n\n${USAGE}`,
+        })
+      }
+    })
+
+    it('should take any port from 0 to 65535, to a config it then loads', async () => {
+      for (const port of ['0', '65535', '08080']) {
+        // No config here, so it stops there, past the command line.
+        expect(await lem(['dev', '--port', port]), port).toMatchObject({
+          code: 1,
+          stderr: expect.stringMatching(/: no config file here\n$/),
+        })
+      }
     })
   })
 
@@ -414,6 +448,16 @@ describe('run()', () => {
           '    |       ^^^^^^^^^^^',
           '',
         ].join('\n'),
+      })
+    })
+
+    it('should report a site with no `site.lem`, and exit 1', async () => {
+      const cwd = project({ 'a.md': '' })
+
+      expect(await lem(['check'], cwd)).toEqual({
+        code: 1,
+        stdout: '',
+        stderr: expect.stringMatching(/^lem: \S+site\.lem: no bindings file: /),
       })
     })
 

@@ -2,7 +2,7 @@ import { mkdirSync, symlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
-import { walk, type Entry } from './walk.ts'
+import { skipped, walk, type Entry } from './walk.ts'
 import { tempDir } from '../mocks/temp-dir.ts'
 
 /** limulus.net's two Eleventy passthrough globs, written relative to its input. */
@@ -152,6 +152,14 @@ describe('walk()', () => {
     ])
   })
 
+  it('should pass over a .git that is a file, as a worktree’s is', async () => {
+    const entries = await walked({ '.git': 'gitdir: ../.git/worktrees/x\n', 'a.md': '' }, [
+      '**',
+    ])
+
+    expect(kinds(entries)).toEqual(['passthrough a.md'])
+  })
+
   it('should leave out an output directory inside the input', async () => {
     const input = tempDir({ 'a.md': '', '_site/a/index.html': '', '_site.md': '' })
 
@@ -197,5 +205,47 @@ describe('walk()', () => {
 
   it('should find nothing in an empty input', async () => {
     expect(await walked({})).toEqual([])
+  })
+})
+
+describe('skipped()', () => {
+  const input = join('/site', 'www')
+  const config = { input, output: join(input, 'dist') }
+  const under = (path: string) => join(input, ...path.split('/'))
+
+  it('should pass over the output directory inside the input, and what is in it', () => {
+    expect(skipped(config, under('dist'))).toBe(true)
+    expect(skipped(config, under('dist/x.html'))).toBe(true)
+    expect(skipped(config, under('dist/feed/index.html'))).toBe(true)
+  })
+
+  it('should not pass over a neighbour whose name begins as the output’s does', () => {
+    expect(skipped(config, under('dist.md'))).toBe(false)
+    expect(skipped(config, under('distx/a.md'))).toBe(false)
+    expect(skipped(config, under('feed/dist/a.md'))).toBe(false)
+  })
+
+  it('should pass over node_modules and .git at any depth, and what is in them', () => {
+    for (const path of [
+      'node_modules',
+      'node_modules/pkg/README.md',
+      '.git',
+      '.git/HEAD',
+      'lib/node_modules/x/index.md',
+      'lib/.git',
+    ]) {
+      expect(skipped(config, under(path)), path).toBe(true)
+    }
+  })
+
+  it('should not pass over a name that only begins as theirs does', () => {
+    for (const path of ['node_modules.md', '.github/notes.md', '.gitignore', 'a.md']) {
+      expect(skipped(config, under(path)), path).toBe(false)
+    }
+  })
+
+  it('should not pass over the input itself, nor a file in it beside an output outside', () => {
+    expect(skipped(config, input)).toBe(false)
+    expect(skipped({ input, output: join('/site', 'dist') }, under('a.md'))).toBe(false)
   })
 })

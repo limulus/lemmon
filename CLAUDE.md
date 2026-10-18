@@ -97,7 +97,8 @@ crates/lemmon-wasm/     wasm-bindgen boundary: the resident Core (lemmon-core's 
 packages/core/          @limulus/lemmon-core — typed JS wrapper around the .wasm
 packages/shell/         @limulus/lemmon-shell — the `lem` CLI: config, walk, front matter,
                         the two-phase compile, load, render and write (`lem build`),
-                        and `lem check`, all of it but the write
+                        `lem check`, all of it but the write, and `lem dev`: watch,
+                        rebuild, and the dev server
 tests/corpus/           golden inputs → expected trees + diagnostics; see its README
 tests/fidelity/         the-rebound's sources and its 11ty reference page; see its README
 scripts/                repo tooling run by npm scripts (wasm staging + check, the
@@ -212,14 +213,17 @@ it, renders every page into memory, resolves its marks through the plugins the c
 writes HTML, the files the plugins produced (its CSS bundles), and passthrough files.
 `lem check` runs the same pipeline and stops before the write, so it never touches the
 output directory; both print each diagnostic with the source its span covers framed
-beneath, from the text the build read. The bin runs from source under the `source` export
+beneath, from the text the build read. `lem dev` watches the input (chokidar), rebuilds
+the whole site once changes settle, and serves the output at `127.0.0.1` with the
+config's `dev.headers`, reloading the open pages over a WebSocket after a build with no
+error; it reads the config once. The bin runs from source under the `source` export
 condition, so the limulus-dot-net port branch depends on this checkout with `file:` and
 sees every edit without a build.
 
 Still aspirational; keep them true as they come to exist:
 
 - `cargo fuzz run parser` — parser/VM fuzzing (never commit a panic repro as expected)
-- `lem dev | fmt` — the rest of the CLI; `lem build` and `lem check` exist (above)
+- `lem fmt` — the rest of the CLI; `lem build`, `lem check` and `lem dev` exist (above)
 
 ## TypeScript setup
 

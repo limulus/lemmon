@@ -1,16 +1,18 @@
 import type { Diagnostic, Span } from '@limulus/lemmon-core'
-import { relative, resolve } from 'node:path'
+import { strict as assert } from 'node:assert'
+import { resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 
-import { build, check, type BuildOptions, type CheckResult } from './build.ts'
-import { ConfigError, contains, loadConfig, type LoadedConfig } from './config.ts'
+import { build, check, CoreTrapped, type BuildOptions, type CheckResult } from './build.ts'
+import { ConfigError, display, loadConfig, type LoadedConfig } from './config.ts'
+import { dev } from './dev.ts'
 import type { Environment } from './load.ts'
 import { SiteError } from './program.ts'
 import { SourceText } from './source-text.ts'
 
 /**
  * Where the CLI writes, what it resolves paths against, and what a build reads from its
- * surroundings — `process`, from the bin.
+ * surroundings — `process`'s, from the bin.
  */
 export interface Io {
   stdout: { write(text: string): unknown }
@@ -20,6 +22,11 @@ export interface Io {
   env: Environment
   /** The clock `build.time` is read from; the system's when omitted. */
   now?(): Date
+  /**
+   * What stops `lem dev`, armed as it is called — the bin's Ctrl-C — and called by that
+   * command alone, so that until then an interrupt stops `lem` as it would any program.
+   */
+  interrupted(): AbortSignal
 }
 
 export const USAGE = `usage: lem <command> [options]
@@ -29,11 +36,17 @@ commands:
                     copy the passthrough files
   check             compile the site and render every page as build does, reporting
                     what it finds and writing nothing
+  dev               build the site, serve the output, and build it again on every
+                    change, reloading the pages open on it
 
 options:
   --config <path>   the config file (default: lemmon.config.ts)
+  --port <n>        the port dev serves at, on 127.0.0.1 (default: 8080)
   -h, --help        print this help
 `
+
+/** The port `lem dev` serves at by default: Eleventy's, which limulus.net's dev used. */
+const PORT = 8080
 
 /**
  * Runs `lem` with `args` — the arguments after the executable and script — and returns
@@ -54,12 +67,21 @@ export async function run(args: readonly string[], io: Io): Promise<number> {
   }
   const [command, ...extra] = positionals
   if (command === undefined) return usage(io, 'no command given')
-  if (command !== 'build' && command !== 'check') {
+  if (command !== 'build' && command !== 'check' && command !== 'dev') {
     return usage(io, `unknown command '${command}'`)
   }
   if (extra.length > 0) return usage(io, `unexpected argument '${extra[0]}'`)
   const configPath = resolve(io.cwd(), values.config ?? 'lemmon.config.ts')
-  return await (command === 'build' ? buildCommand : checkCommand)(configPath, io)
+  if (command !== 'dev') {
+    if (values.port !== undefined) return usage(io, '--port is an option of lem dev')
+    const step = command === 'build' ? buildCommand : checkCommand
+    return await untrapped(io, step(configPath, io))
+  }
+  const port = values.port ?? String(PORT)
+  if (!/^\d{1,5}$/.test(port) || Number(port) > 65535) {
+    return usage(io, `--port takes a port from 0 to 65535, not '${port}'`)
+  }
+  return await devCommand(configPath, Number(port), io)
 }
 
 function parse(args: readonly string[]) {
@@ -67,6 +89,7 @@ function parse(args: readonly string[]) {
     args: [...args],
     options: {
       config: { type: 'string' },
+      port: { type: 'string' },
       help: { type: 'boolean', short: 'h' },
     },
     allowPositionals: true,
@@ -80,12 +103,23 @@ function usage(io: Io, problem: string): number {
 
 /** `lem build`: the site built into its output, and what it wrote. */
 async function buildCommand(configPath: string, io: Io): Promise<number> {
-  const ran = await reported(configPath, io, build)
-  if (ran === undefined) return 1
+  const config = await configured(configPath, io)
+  if (config === undefined) return 1
+  return (await built(config, io)) ? 0 : 1
+}
+
+/**
+ * Builds the site `config` describes, printing what `lem build` prints — what the build
+ * reported, then what it wrote or why it wrote nothing, or not all: whether it built
+ * with no error and every file written.
+ */
+async function built(config: LoadedConfig, io: Io): Promise<boolean> {
+  const ran = await reported(config, io, build)
+  if (ran === undefined) return false
   const { errors, result } = ran
   if (errors > 0) {
     io.stderr.write(`lem: ${plural(errors, 'error')}, so nothing was written\n`)
-    return 1
+    return false
   }
   if (result.failure !== undefined) {
     const { file, cause } = result.failure
@@ -93,18 +127,20 @@ async function buildCommand(configPath: string, io: Io): Promise<number> {
       `lem: could not write ${display(io.cwd(), file)}: ${(cause as Error).message}\n` +
         'lem: every page rendered, and the output may hold what was written before it\n'
     )
-    return 1
+    return false
   }
   const { pages, produced, copied } = result
   io.stdout.write(
     `wrote ${files(pages, produced)}, copied ${plural(copied.length, 'file')}\n`
   )
-  return 0
+  return true
 }
 
 /** `lem check`: the site checked as a build would be, and nothing written. */
 async function checkCommand(configPath: string, io: Io): Promise<number> {
-  const ran = await reported(configPath, io, check)
+  const config = await configured(configPath, io)
+  if (config === undefined) return 1
+  const ran = await reported(config, io, check)
   if (ran === undefined) return 1
   const { errors, result } = ran
   if (errors > 0) {
@@ -116,22 +152,53 @@ async function checkCommand(configPath: string, io: Io): Promise<number> {
 }
 
 /**
- * Loads the config at `configPath`, runs `step` over the site it describes, and prints
- * every diagnostic the step reported: its result and how many of those were errors, or
- * `undefined` where the config or the site could not be read, which is printed too.
+ * What `command` exits with, or 1 where the core trapped, which is said as `lem dev`
+ * says it: in the words of the `CoreTrapped`.
+ */
+async function untrapped(io: Io, command: Promise<number>): Promise<number> {
+  try {
+    return await command
+  } catch (error) {
+    if (!(error instanceof CoreTrapped)) throw error
+    io.stderr.write(`lem: ${error.message}\n`)
+    return 1
+  }
+}
+
+/** `lem dev`: the site built, served, and built again on every change. */
+async function devCommand(configPath: string, port: number, io: Io): Promise<number> {
+  const config = await configured(configPath, io)
+  if (config === undefined) return 1
+  return await dev({ config, port, io, build: () => built(config, io) })
+}
+
+/** The config at `configPath`, or `undefined` where it cannot be loaded, said why. */
+async function configured(configPath: string, io: Io): Promise<LoadedConfig | undefined> {
+  try {
+    return await loadConfig(configPath)
+  } catch (error) {
+    // Every way a config can be wrong is a `ConfigError`; anything else is rethrown.
+    assert(error instanceof ConfigError, error as Error)
+    io.stderr.write(`lem: ${error.message}\n`)
+    return undefined
+  }
+}
+
+/**
+ * Runs `step` over the site `config` describes and prints every diagnostic it
+ * reported: its result and how many of those were errors, or `undefined` where the
+ * site has no bindings file, which is printed too.
  */
 async function reported<R extends CheckResult>(
-  configPath: string,
+  config: LoadedConfig,
   io: Io,
   step: (config: LoadedConfig, options: BuildOptions) => Promise<R>
 ): Promise<{ result: R; errors: number } | undefined> {
-  let config: LoadedConfig
   let result: R
   try {
-    config = await loadConfig(configPath)
     result = await step(config, { now: io.now?.() ?? new Date(), env: io.env })
   } catch (error) {
-    if (!(error instanceof ConfigError || error instanceof SiteError)) throw error
+    if (!(error instanceof SiteError)) throw error
     io.stderr.write(`lem: ${error.message}\n`)
     return undefined
   }
@@ -180,9 +247,4 @@ export function formatted(
     ...(text === undefined ? [] : new SourceText(text).frame(span.range)),
     ...labels.map((label) => `  ${place(label.path, label.span)}: ${label.message}`),
   ].join('\n')
-}
-
-/** `path` as a terminal shows it: relative to `cwd` when it is under it. */
-function display(cwd: string, path: string): string {
-  return contains(cwd, path) ? relative(cwd, path) : path
 }

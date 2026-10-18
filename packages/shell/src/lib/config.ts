@@ -305,3 +305,8 @@ export function contains(dir: string, path: string): boolean {
   const rel = relative(dir, path)
   return !(rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel))
 }
+
+/** `path` as a terminal shows it: relative to `cwd` when it is under it. */
+export function display(cwd: string, path: string): string {
+  return contains(cwd, path) ? relative(cwd, path) : path
+}

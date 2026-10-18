@@ -4,6 +4,7 @@ export type { Fragment, Mark, MarkContext } from '@limulus/lemmon-core'
 export {
   build,
   check,
+  CoreTrapped,
   type BuildOptions,
   type BuildResult,
   type CheckResult,
@@ -22,6 +23,14 @@ export type { Plugin, PluginHandler, ProducerContext } from './lib/plugins.ts'
 export { SiteError } from './lib/program.ts'
 export * from './lib/rendered-html.ts'
 export * from './lib/site.ts'
-export * from './lib/walk.ts'
+export {
+  walk,
+  type DocumentEntry,
+  type Entry,
+  type EntryKind,
+  type IgnoredEntry,
+  type PassthroughEntry,
+  type TemplateEntry,
+} from './lib/walk.ts'
 export { WriteError } from './lib/write.ts'
 export { readData, type DataRead } from './lib/yaml-values.ts'

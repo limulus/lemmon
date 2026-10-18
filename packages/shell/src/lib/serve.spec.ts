@@ -103,14 +103,25 @@ async function reloadSocket(port: number): Promise<WebSocket> {
 }
 
 /**
+ * What a server that should meet no error is given to tell of one: rethrown, it is an
+ * unhandled rejection, which fails the run.
+ */
+const UNEXPECTED = (error: unknown): never => {
+  throw error
+}
+
+/**
  * Runs `test` against a server over `files` — keyed by paths under the served
  * directory, with `/` separators — closing it when `test` ends. The directory is
  * `dist` inside a temporary one, which also holds `secret.txt` outside what is served.
+ * What the server could not answer is collected in `errors` where it is given, and is
+ * otherwise expected to be nothing.
  */
 async function serving(
   files: Record<string, string>,
   test: (server: DevServer, root: string) => Promise<void>,
-  headers: Record<string, string> = {}
+  headers: Record<string, string> = {},
+  errors?: unknown[]
 ): Promise<void> {
   const dir = tempDir({
     'secret.txt': 'secret',
@@ -120,12 +131,17 @@ async function serving(
   })
   const root = join(dir, 'dist')
   mkdirSync(root, { recursive: true })
-  const server = await serve({ root, port: 0, headers })
+  const met: unknown[] = errors ?? []
+  const onError = (error: unknown) => {
+    met.push(error)
+  }
+  const server = await serve({ root, port: 0, headers, onError })
   try {
     await test(server, root)
   } finally {
     await server.close()
   }
+  if (errors === undefined) expect(met, 'what the server could not answer').toEqual([])
 }
 
 const site = {
@@ -298,14 +314,18 @@ describe('serve()', { timeout: 10_000 }, () => {
   })
 
   describe('a url naming no file', () => {
-    it('should answer 404 in plain text where no file is', async () => {
+    it('should answer 404 with a page carrying the reload client, where no file is', async () => {
       await serving(site, async ({ port }) => {
-        for (const path of ['/nope.html', '/feed/nope/', '/a.css/']) {
+        // No file there, or a url naming none: a tab open on either reloads once a
+        // build writes the page.
+        for (const path of ['/nope.html', '/feed/nope/', '/a.css/', '/a//b/']) {
           const { status, headers, body } = await get(port, path)
 
           expect(status, path).toBe(404)
-          expect(headers['content-type']).toBe('text/plain; charset=utf-8')
-          expect(body.toString()).toBe('Not Found\n')
+          expect(headers['content-type']).toBe('text/html; charset=utf-8')
+          expect(body.toString()).toBe(
+            `<!doctype html>\n<title>Not Found</title>\n<p>Not Found</p>\n${TAG}\n`
+          )
         }
       })
     })
@@ -432,7 +452,8 @@ describe('serve()', { timeout: 10_000 }, () => {
       )
     })
 
-    it('should cut off a response it cannot write, and go on', async () => {
+    it('should cut off a response it cannot write, tell of it, and go on', async () => {
+      const errors: unknown[] = []
       // A header Node refuses only as it writes it, as one that slipped past
       // `loadConfig` would be.
       await serving(
@@ -444,8 +465,13 @@ describe('serve()', { timeout: 10_000 }, () => {
 
           expect(status).toBe(101)
         },
-        { Trailer: 'Server-Timing' }
+        { Trailer: 'Server-Timing' },
+        errors
       )
+
+      expect(errors).toEqual([
+        expect.objectContaining({ code: 'ERR_HTTP_TRAILER_INVALID' }),
+      ])
     })
 
     it('should send no header of its own that SERVER_HEADERS does not name', async () => {
@@ -556,7 +582,7 @@ describe('serve()', { timeout: 10_000 }, () => {
 
     it('should open its socket again after it closes, and reload once one opens', async () => {
       const root = tempDir()
-      let server = await serve({ root, port: 0, headers: {} })
+      let server = await serve({ root, port: 0, headers: {}, onError: UNEXPECTED })
       const { port } = server
       const made: WebSocket[] = []
       class PageSocket extends WebSocket {
@@ -584,7 +610,7 @@ describe('serve()', { timeout: 10_000 }, () => {
         expect(timers.map((timer) => timer.delay)).toEqual([1000, 1000])
         expect(reloads()).toBe(0)
 
-        server = await serve({ root, port, headers: {} })
+        server = await serve({ root, port, headers: {}, onError: UNEXPECTED })
         timers[1].run()
         await once(made[2], 'open')
 
@@ -693,9 +719,9 @@ describe('serve()', { timeout: 10_000 }, () => {
       try {
         const { port } = taken.address() as AddressInfo
 
-        await expect(serve({ root: tempDir(), port, headers: {} })).rejects.toMatchObject({
-          code: 'EADDRINUSE',
-        })
+        const options = { root: tempDir(), port, headers: {}, onError: UNEXPECTED }
+
+        await expect(serve(options)).rejects.toMatchObject({ code: 'EADDRINUSE' })
       } finally {
         taken.close()
       }

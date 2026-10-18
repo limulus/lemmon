@@ -553,6 +553,17 @@ moved it. Newest last. An entry is removed when its change has been applied.
   without their records — returns them, and the second compiles the pages as their
   records, so a document's definitions are out of every template's sight (∆muD).
 
+- **Shape and build pipeline, the dev server** — where the text gives the dev server
+  COOP/COEP headers of its own, none is built in: it adds to every response the headers
+  the site's config lists under `dev.headers`, as the site's host sends them (limulus.net
+  lists COOP `same-origin` and COEP `require-corp`), and a header the server writes
+  itself is refused at config load. Where `lem dev` rebuilds incrementally, from
+  render-reported deps and `upsertRecord`: it rebuilds the whole site on every change
+  that settles, and reloads the open pages, over a WebSocket, after a build with no error
+  and every file written, until the Incrementality epic, which opens only if that full
+  rebuild of limulus.net takes over a second. It reads `lemmon.config.ts` once, so a
+  change to it needs a restart (∆Vhi).
+
 ## From Eleventy to Lemmon
 
 - **Template mapping and the photo page port** — the `---js pagination` row maps to a

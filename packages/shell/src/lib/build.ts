@@ -66,6 +66,21 @@ export interface CheckResult {
   texts: Map<string, string>
 }
 
+/**
+ * A call into the core that never returned, which leaves the `.wasm` instance it ran in
+ * unable to run anything again in this process: a trap, or an error raised inside the
+ * instance, such as V8's stack overflow (∆ugN). Its `cause` is what the call threw.
+ * Known by the core refusing to be freed after it, since the call still holds it.
+ */
+export class CoreTrapped extends Error {
+  constructor(cause: unknown) {
+    super(`the core failed with ${String(cause)}, and cannot run again in this process`, {
+      cause,
+    })
+    this.name = 'CoreTrapped'
+  }
+}
+
 /** What a build did: what a check finds, with the files written and copied. */
 export interface BuildResult extends CheckResult {
   /**
@@ -97,6 +112,7 @@ export interface BuildResult extends CheckResult {
  * cost about 0.35 s in all.
  *
  * @throws {SiteError} when the input has no `site.lem`.
+ * @throws {CoreTrapped} when a call into the core never returned.
  */
 export async function build(
   config: LoadedConfig,
@@ -121,6 +137,7 @@ export async function build(
  * errors and the collisions among them, and the output directory is not touched.
  *
  * @throws {SiteError} when the input has no `site.lem`.
+ * @throws {CoreTrapped} when a call into the core never returned.
  */
 export async function check(
   config: LoadedConfig,
@@ -152,6 +169,7 @@ async function renderSite(
   const failed = { result: { pages: [], produced: [], copied: [], diagnostics, texts } }
   if (hasError(diagnostics)) return failed
   const core = await loadCore()
+  let threw = false
   try {
     const compiled = await compileSite(core, site, texts)
     diagnostics.push(...compiled.diagnostics)
@@ -192,8 +210,28 @@ async function renderSite(
     }
     const { outputs, produced } = renderer
     return { result, rendered: { outputs, produced } }
+  } catch (error) {
+    threw = true
+    throw released(core, error)
   } finally {
+    if (!threw) core.free()
+  }
+}
+
+/**
+ * `core` freed after a step threw `error`, and what the build throws for it: `error`
+ * itself, or a {@link CoreTrapped} where the core refuses to be freed. It refuses only
+ * while a call into it still holds it, one that `error` ended inside the instance — and
+ * only after the glue has taken it off its finalization registry, which would otherwise
+ * free it in that instance whenever the collector reached it, a throw no caller could
+ * catch.
+ */
+function released(core: Core, error: unknown): unknown {
+  try {
     core.free()
+    return error
+  } catch {
+    return new CoreTrapped(error)
   }
 }
 

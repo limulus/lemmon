@@ -4,7 +4,8 @@ The Node/TypeScript shell around the Lemmon core (see `docs/architecture.md` §S
 §Build pipeline): the `lem` CLI and what it drives. `lem build` reads a site, compiles and
 renders every page through the WASM core, fills each page's marks with its plugins, and
 writes HTML, the files the plugins produced, and passthrough files to the output
-directory; `lem check` does all of it but the writing.
+directory; `lem check` does all of it but the writing; and `lem dev` builds the site,
+serves the output, and builds it again on every change, reloading the pages open on it.
 
 ```ts
 // lemmon.config.ts
@@ -27,14 +28,13 @@ export default {
 `input` and `output` are directories relative to the config file; `passthrough` globs are
 relative to `input`, with Eleventy's glob semantics (picomatch, dotfiles included,
 case-insensitive); `plugins` lists the site's plugins, none when omitted. `dev.headers`
-are the headers the dev server adds to every response it writes itself, as the site's
-host sends them — the two above make a page cross-origin isolated — none when omitted;
-the dev server is not yet a command (∆Vhi). Refused at load: a name or value Node would
-not send, two names equal but for case, and a header that is the server's
-(`SERVER_HEADERS` in `src/lib/config.ts`) — one it sends, such as `Content-Type`,
-`Cache-Control`, `Location` and Node's framing, or one that would describe the body other
-than as it is sent: `Content-Encoding`, and `Trailer`, which Node refuses to write beside
-a length. So neither side overrides the other.
+are the headers `lem dev`'s server adds to every response it writes itself, as the
+site's host sends them — the two above make a page cross-origin isolated — none when
+omitted. Refused at load: a name or value Node would not send, two names equal but for
+case, and a header that is the server's (`SERVER_HEADERS` in `src/lib/config.ts`) — one
+it sends, such as `Content-Type`, `Cache-Control`, `Location` and Node's framing, or one
+that would describe the body other than as it is sent: `Content-Encoding`, and `Trailer`,
+which Node refuses to write beside a length. So neither side overrides the other.
 
 ## The default plugin
 
@@ -203,8 +203,8 @@ may hold what was written before it. A site needs a `site.lem` without front mat
 - **Second phase.** A feed renders with the other pages, reading none of their output:
   ∆zu0.
 - **The rest of the pipeline.** No output transform (∆c4j), no integrity check
-  (∆yOJ), no dev server (∆Vhi), and no worker pool or incremental rebuild: every build
-  compiles and renders everything in one core.
+  (∆yOJ), and no worker pool or incremental rebuild (∆xBO): every build compiles and
+  renders everything in one core, `lem dev`'s rebuilds among them.
 
 ## `lem check [--config <path>]`
 
@@ -215,6 +215,77 @@ form, and never creates or touches the output directory. A write the file system
 refuse is therefore found only by `lem build`. It ends with `lem: N errors` and exit 1, or
 `checked N pages and P produced files` and exit 0, the middle clause again only where a
 producer wrote a file.
+
+## `lem dev [--config <path>] [--port <n>]`
+
+Watches `input`, builds the site as `lem build` does, and serves the output at
+`http://127.0.0.1:<port>/` — 8080 unless `--port` names another, 0 for one the system
+picks — then builds the whole site again each time changes settle, once 50 ms pass with no
+other: the window in which chokidar, which watches, drops a second write to one file. The
+watch passes over what the walk does: `node_modules`, `.git`, and the output where the
+input holds it; and as the walk, it follows no linked directory, so a link to the output
+does not rebuild for every file a build writes. A linked file is watched as the link: an
+edit reaches a build through the file it names only where that file is under the input
+too. On a two-post site, a post edited, then given an error and fixed:
+
+```text
+wrote 2 pages, copied 0 files
+built in 22 ms
+serving dist at http://127.0.0.1:8080/
+restart lem dev after changing lemmon.config.ts
+wrote 2 pages, copied 0 files
+rebuilt in 7 ms
+www/posts/first.md:6:6: error: `Post` has no field `byline`
+> 6 | <lem.page.byline>
+    |      ^^^^^^^^^^^
+lem: 1 error, so nothing was written
+rebuilt in 7 ms
+wrote 2 pages, copied 0 files
+rebuilt in 6 ms
+```
+
+Each build prints what `lem build` would, then how long it took. One with no error and
+every file written tells every page open on the server to reload. One with an error
+reloads nothing, since the error stopped it before it wrote, so a browser keeps the last
+good pages; nor does one the file system refused partway. A first build that fails is
+served all the same, its pages answered with a 404 page carrying the reload client, so
+that the fix reloads them. A build that throws — on a file the walk cannot read, such as
+the dangling link an editor's lock file is — and a directory the watch cannot read are
+printed, and `lem dev` goes on. A call into the core that never returns ends it, exit 1,
+saying to restart it, since every later build would load the instance it poisoned;
+`lem build` and `lem check` print the first of these lines for it, and exit 1:
+
+```text
+lem: the core failed with RangeError: Maximum call stack size exceeded, and cannot run again in this process
+lem: restart lem dev to build again
+```
+
+The config is read once, so a change to `lemmon.config.ts` needs a restart. Ctrl-C stops
+it once the build in flight is done, reloading nothing for that build, exit 0, and
+Ctrl-\ ends it at once. A port it cannot listen at, one in use say, is exit 1.
+
+Neither `lem dev` nor `lem build` removes anything from the output, so the file of a page
+deleted or moved stays there, and `lem dev` goes on serving it, until the output is
+cleaned.
+
+The server listens at the literal `127.0.0.1`, since a `localhost` listen binds `::1`
+alone on macOS, where another server at `127.0.0.1` on the same port would go unreported,
+and refuses with a 403 a request naming any host but `127.0.0.1` or `localhost` at its
+port, so that a page elsewhere whose name has been pointed here cannot read it. It answers
+GET and HEAD from the output as the build wrote it — `/feed/` is `feed/index.html`, a
+directory asked for without its `/` is redirected to the url with one, and anything else
+is 404, a small page carrying the reload client — with a `Content-Type` from `mime-types`
+by extension, `Cache-Control: no-cache`, and the config's `dev.headers` on every response;
+every other refusal is plain text. An HTML page gets
+`<script type="module" src="/.lemmon/reload.js"></script>` before its last `</body>` in
+the bytes sent, the file on disk left as built, so the parity harness can read a
+`lem dev` output — once the output has been cleaned and built again, since a page
+deleted since the last clean build is still there. That client, a file so that a page
+allowing only `script-src 'self'` still runs it, opens a WebSocket to `/.lemmon/reload`
+and reloads on any message — a WebSocket rather than server-sent events, which hold one
+of a browser's six HTTP/1.1 connections to a host for every tab open on it. It opens one
+again every second after it closes, and reloads once one opens, so a restarted `lem dev`
+reloads the pages still open on it.
 
 ## Comparing rendered HTML
 
