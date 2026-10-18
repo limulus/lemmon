@@ -10,7 +10,8 @@ Four things change in kind, not just in spelling:
   where the work needs something Lemmon cannot compute, data a plugin hands the site. What
   `eleventy.config.ts` does to a post's markdown before it renders, such as appending link
   definitions, is a plugin's `transformDocument` in `lemmon.config.ts`, which rewrites the
-  body alone; its front matter is the schema's to compute.
+  body alone; its front matter is the schema's to compute. Its markdown-it `highlight`
+  function is the shell's `highlighter()`, which writes the same `<pre><code class="hljs">`.
 - **Data is typed.** Front matter and data files load against declared records, and a record
   has exactly its declared fields. `$data`, `collections` and `this.getPhoto` become reads
   of `site`.

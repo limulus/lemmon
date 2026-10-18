@@ -45,9 +45,11 @@ What it reports, in the order it finds them:
   pages as their records. A template never sees what a document (`.md`) defines.
 - **Mark warnings**: a `mark()` name no plugin the config lists claims, with a
   did-you-mean, and a literal key none of their producers lists. A site listing no plugins
-  is warned at every mark; `plugins: [bundler()]`, the shell's default plugin, claims
-  `styles`, `scripts` and `head`. The shell ships no highlighter, so a code block naming
-  a language warns too (not yet, ∆Nxd).
+  is warned at every mark. The shell's default plugin, `bundler()`, claims `styles`,
+  `scripts` and `head`, and its highlighter, `highlighter()`, claims `code` for every
+  language highlight.js has, by name and alias: with both listed, a code block warns at
+  its word only where that names another language — `TS` among them, since a key matches
+  as written.
 - **Sources it cannot fulfil**: an environment variable that is not set, a data file outside
   the input directory or not there, and a `plugin("…")` source, which nothing runs yet
   (∆wOn) — each at its binding in `site.lem`; and a data file that does not parse, at the

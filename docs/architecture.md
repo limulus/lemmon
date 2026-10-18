@@ -230,9 +230,9 @@ not a break:
    dependency set. Parallel via shell workers.
 7. **Resolve** (shell) — for each mark, the producer for its name and key, then its
    decorators in plugin order, over the page as the core returned it; a code block's
-   output cached by payload id, the payload itself kept from `compile` (D42). The
-   handlers are the plugins' (§Shell plugin API), the shell's default plugin,
-   `bundler()`, among them where the site lists it.
+   handlers given the payload `compile` reported, kept by id (D42). The handlers are
+   the plugins' (§Shell plugin API), the shell's `bundler()` and `highlighter()` among
+   them where the site lists them.
 8. **Write** (shell) — HTML, the files the asset hooks built, the files producers wrote
    — the per-page CSS bundles `bundler()` writes under `/assets/immutable/bundle/` — and
    passthrough.
@@ -284,7 +284,17 @@ SHA-256 in base64url (Eleventy's bundle form), and every `styles` mark becomes t
 `<link>` to it, or nothing where the page collected no styles; every `scripts` mark
 becomes a module `<script>` per URL the `lem-script` tags collected; and every `head`
 mark the `lem-head` fragments, joined by newlines. Pages that collect the same styles
-share one bundle.
+share one bundle. The shell's highlighter, `highlighter()`, is listed the same way —
+`plugins: [bundler(), highlighter()]` — and produces `code` for every language
+highlight.js 11.9.0 has, by name and by alias (`typescript` and `ts`, `plaintext` and
+`txt`), each key matched as written, so `TS` is none of them; its `exclude` option leaves
+the keys it lists to another plugin's producer. Each block it claims becomes
+`<pre><code class="hljs">…</code></pre>` with highlight.js's spans inside — the markup
+of markdown-it's documented highlight function, which limulus.net uses — and a block in
+any other language, or naming none, keeps comrak's. The version is pinned exactly, since
+another release's grammars mark the same code differently. No output is cached by payload
+id: highlighting limulus.net's eight blocks takes about 1 ms of a 160 ms rebuild, and
+8 ms in the first build, which compiles the grammars.
 
 Step 2 runs once discovery has read the site, before anything compiles. Each document whose
 front matter read — not a page template, which has no markdown and whose definitions every
@@ -313,9 +323,6 @@ build, and each build calls its hooks again.
 - Step 2's data hooks are not yet run (∆wOn), so a `plugin("…")` source is an error at
   its binding; and the esbuild plugin is not yet built (∆d1N), so an `asset()` resolves
   only against a manifest a site's own plugin returns.
-- No highlighter ships, nor step 7's cache of a code block's output by payload id —
-  not yet built (∆Nxd) — so a code block naming a language keeps comrak's plain block
-  and is warned at, since no producer claims its language.
 - Step 9 is not yet run: no output transform (∆fwn) and no integrity check (∆yOJ).
 - Step 10 is not yet run (∆zu0): a feed renders with the other pages, reading none of
   their output.
@@ -448,7 +455,7 @@ VM time (that number is the Phase 0 exit criterion).
 | URL encoding   | `percent-encoding` 2.3                                   | one encoding pass behind `url()`. The WHATWG `url` crate was rejected: it refuses a relative reference like `/feed/` without a base, which is most of what a site composes, and pulls `idna`'s tables in (D38) |
 | Latin folding  | `unicode-normalization` 0.1                              | canonical decomposition behind `slugify`, so a letter carrying a mark slugs as the letter. Transliteration was measured and rejected: `deunicode` cost 479 KB of the `.wasm` and `any_ascii` 582 KB, to answer a question no site in the corpus asks — and `@sindresorhus/slugify`'s answer applies German's `ü`→`ue` to every language's `ü` (D38) |
 | Word counting  | `unicode-segmentation` 1.13                              | UAX #29 word boundaries behind `html.readingTime()`, so a script that does not space its words is counted rather than read as one long one. Splitting on whitespace would have made the core assume English |
-| Payload ids    | `siphasher` 1.0                                          | SipHash-1-3 with zero keys behind a code block's payload id (D42): a fixed algorithm, since a host caches producer output across builds of the core and `std`'s `DefaultHasher` may change between Rust releases. Already in the tree through comrak's `phf` |
+| Payload ids    | `siphasher` 1.0                                          | SipHash-1-3 with zero keys behind a code block's payload id (D42): a document reports each payload once per compile and a render's mark names it by the id, and the algorithm is fixed for a host that caches producer output on the id across builds of the core, since `std`'s `DefaultHasher` may change between Rust releases. Already in the tree through comrak's `phf` |
 | Suggestions    | `strsim` 0.11                                             | optimal string alignment behind `lemmon_syntax::nearest`, which owns the threshold deciding whether to suggest at all; shared so that every stage's did-you-mean reads the same, rather than each growing its own and drifting                                                                                |
 | Corpus diffs   | `similar` 3.2                                             | the unified diff a failing corpus case reports, so what changed can be read from the failure instead of by blessing and diffing the result; dev-only, since `lemmon-corpus` is never anything but a dev-dependency                                                       |
 | Serde          | `serde_json` (rmp-serde optional)                        | avoid serde-wasm-bindgen for bulk data                                                                                                                                                                                   |
@@ -544,7 +551,14 @@ interface ProducerContext {
 
 The shell's default plugin is `bundler()`, exported from `@limulus/lemmon-shell`, whose
 `styles`, `scripts` and `head` producers §Build pipeline describes; a site lists it as
-`plugins: [bundler()]`, and one that produces those names itself leaves it out.
+`plugins: [bundler()]`, and one that produces those names itself leaves it out. Its
+highlighter, `highlighter(options?)`, is a `code` producer listed beside it, and
+`options.exclude` narrows its claim, so a site producing some languages itself lists both
+(D42):
+
+```ts
+plugins: [bundler(), highlighter({ exclude: ['rust', 'rs'] }), rustHighlighter()]
+```
 
 ## Editor tooling (day one, D16)
 

@@ -48,7 +48,7 @@ export class Core {
    * The payloads are those of every code block the files that compiled write, each
    * once (D42) — including a file that compiled beside one that did not, since it will
    * not be compiled again. A caller keeps them by id, which is what a render's `code`
-   * mark names, and a producer's output is cached on that id.
+   * mark names; a host can cache its producers' output on that id too.
    *
    * The sources are every `from` binding of the program this call installed — the
    * globs a host matches its documents and page templates against, with the record

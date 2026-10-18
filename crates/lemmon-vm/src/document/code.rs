@@ -41,7 +41,8 @@ pub(crate) const CODE: &str = "code";
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CodePayload {
     /// A hash of the rest, as sixteen hex digits. The same block has the same id wherever
-    /// it stands, which is what a host caches its producer's output on.
+    /// it stands, so a compile reports its payload once and a render's mark names it by
+    /// the id; a host can cache its producer's output on it.
     pub id: Rc<str>,
     /// The first word of the info string, decoded — what the block's mark is keyed by.
     /// `None` for a block that names none, which no producer can claim.
@@ -73,7 +74,8 @@ impl CodePayload {
 /// collide. The language is the info string's first word, so hashing the info covers it.
 ///
 /// A fixed algorithm rather than `std`'s `DefaultHasher`, whose output is free to change
-/// between Rust releases: a host keeps what its producers made across builds of the core.
+/// between Rust releases, for a host that keeps what its producers made across builds of
+/// the core.
 fn id(info: &str, code: &str) -> Rc<str> {
     let mut hasher = SipHasher13::new_with_keys(0, 0);
     for part in [info, code] {
@@ -213,9 +215,9 @@ mod tests {
 
     #[test]
     fn names_a_payload_by_its_content_alone() {
-        // The id is what a host caches on, so it is a function of the payload and of
-        // nothing else: the same block anywhere is one id, and changing either field is
-        // another.
+        // The id is what a render names a payload by, and what a host can cache on, so
+        // it is a function of the payload and of nothing else: the same block anywhere is
+        // one id, and changing either field is another.
         let one = CodePayload::new("ts {1,3}", "let x = 1\n");
         assert_eq!(one, CodePayload::new("ts {1,3}", "let x = 1\n"));
         assert_ne!(one.id, CodePayload::new("ts", "let x = 1\n").id);
@@ -239,8 +241,9 @@ mod tests {
 
     #[test]
     fn pins_the_id_across_builds_of_the_core() {
-        // A host's cache outlives one build, so the id is a fixed algorithm and this
-        // value may only change with a note to every host that keeps one. It was checked
+        // A host that caches on the id may keep its cache across builds of the core, so
+        // the id is a fixed algorithm and this value may only change with a note to every
+        // host that keeps one. It was checked
         // against SipHash-1-3 written independently from the paper, over the same
         // length-prefixed bytes, so the doc above names what actually runs.
         assert_eq!(&*CodePayload::new("sh", "echo hi\n").id, "4429e5aa07a9b5e3");

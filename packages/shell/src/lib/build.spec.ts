@@ -14,9 +14,9 @@ import {
   CALLOUT_LEM,
   callouts,
   copy,
-  highlighter,
   inline,
   shipping,
+  tsHighlighter,
   wrapping,
 } from '../mocks/plugins.ts'
 import {
@@ -241,7 +241,7 @@ describe('build()', () => {
 
     it('should replace each mark with its producer’s output, then decorators in plugin order', async () => {
       const frame: Plugin = { name: 'frame', marks: [wrapping('frame')] }
-      const { result, html } = await postA([copy, inline, highlighter, frame])
+      const { result, html } = await postA([copy, inline, tsHighlighter, frame])
 
       expect(result.diagnostics).toEqual([])
       // The producer runs first wherever its plugin is listed; the decorators follow in
@@ -289,7 +289,7 @@ describe('build()', () => {
         '<lem.mark("callout", {kind: "tip", text: "Or not"}, default: d)>\n'
       const { result, dir } = await built(
         { ...files, 'site.lem': `${SITE_LEM}${CALLOUT_LEM}`, 'index.lem': home },
-        { plugins: [inline, highlighter, callouts] }
+        { plugins: [inline, tsHighlighter, callouts] }
       )
 
       expect(result.diagnostics).toEqual([
@@ -367,7 +367,7 @@ describe('build()', () => {
           },
         ],
       }
-      const { result, html } = await postA([inline, highlighter, throwing, copy])
+      const { result, html } = await postA([inline, tsHighlighter, throwing, copy])
 
       expect(result.diagnostics).toEqual([
         expect.objectContaining({
@@ -412,7 +412,7 @@ describe('build()', () => {
       it('should not warn where a page places what it collected, or collected nothing', async () => {
         const { result, dir } = await built(
           { ...files, 'card.lem': card, 'posts/c.md': carded },
-          { plugins: [inline, highlighter] }
+          { plugins: [inline, tsHighlighter] }
         )
 
         expect(result.diagnostics).toEqual([])
@@ -425,7 +425,7 @@ describe('build()', () => {
     it('should resolve an untyped page as a loaded one', async () => {
       const { result, dir } = await built(
         { ...files, 'notes/loose.md': '```ts\nlet y\n```\n' },
-        { plugins: [inline, highlighter] }
+        { plugins: [inline, tsHighlighter] }
       )
 
       expect(result.diagnostics).toEqual([])

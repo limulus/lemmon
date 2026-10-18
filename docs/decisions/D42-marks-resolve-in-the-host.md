@@ -45,10 +45,19 @@
   collected CSS, joined by newlines, to `/assets/immutable/bundle/<name>.css`, the name the
   first ten base64url characters of its SHA-256 — Eleventy's bundle form — and links it
   from every `styles` mark; no wrapping `lem-fn` ships with it, since a plugin's `.lem` is
-  ∆wOn's, so a layout writes `mark("styles")`
+  ∆wOn's, so a layout writes `mark("styles")`. As built (∆Nxd): the shell's highlighter
+  is `highlighter()`, a plugin a site lists beside `bundler()`, over highlight.js pinned
+  at exactly 11.9.0, since another release's grammars mark the same code differently; it
+  produces `code` for each name and alias of every language highlight.js has, each
+  matched as written, and writes `<pre><code class="hljs">` with highlight.js's spans —
+  limulus.net's markup, which is markdown-it's documented one — with no language class
+  and no option for one, since a decorator can add one; a site narrows its claim with
+  `exclude`, the keys it leaves to another producer, an unknown key refused; and no
+  output is cached by payload id, since highlighting limulus.net's eight blocks takes
+  about 1 ms of a 160 ms rebuild
 - **Backlog item:** ∆1Hp (the mark, claims by name, the collect tags, the boundary);
   ∆7wK (the `code` mark, keys and payloads, the core's highlighter removed); ∆F4y (the
-  shell's plugins, their handlers, and the default plugin)
+  shell's plugins, their handlers, and the default plugin); ∆Nxd (the shell's highlighter)
 - **Normative text:** `docs/language.md` § Marks, § Document mode, Code blocks;
   `docs/architecture.md` § WASM API, § Build pipeline, § Shell plugin API
 

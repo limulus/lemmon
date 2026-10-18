@@ -10,13 +10,13 @@ change, reloading the pages open on it.
 
 ```ts
 // lemmon.config.ts
-import { bundler, type Config } from '@limulus/lemmon-shell'
+import { bundler, highlighter, type Config } from '@limulus/lemmon-shell'
 
 export default {
   input: 'www',
   output: 'dist/www',
   passthrough: ['assets/**/*', '**/*.{png,svg,jpg,jpeg,xsd,xsl,txt,pdf}'],
-  plugins: [bundler()],
+  plugins: [bundler(), highlighter()],
   dev: {
     headers: {
       'Cross-Origin-Opener-Policy': 'same-origin',
@@ -37,10 +37,12 @@ it sends, such as `Content-Type`, `Cache-Control`, `Location` and Node's framing
 that would describe the body other than as it is sent: `Content-Encoding`, and `Trailer`,
 which Node refuses to write beside a length. So neither side overrides the other.
 
-## The default plugin
+## The shell's plugins
 
-`bundler()` is the shell's own plugin, listed like any other. It produces the three names
-the collect tags collect under, none of them keyed, so a layout places what a page's
+### `bundler()`
+
+`bundler()` is the shell's default plugin, listed like any other. It produces the three
+names the collect tags collect under, none of them keyed, so a layout places what a page's
 components collected:
 
 - `styles`: what the page's `lem-style` blocks collected, joined by newlines in the order
@@ -56,6 +58,41 @@ components collected:
 A site that produces one of those names itself leaves `bundler()` out, since two producers
 for one mark are refused at config load. It ships no `.lem`, so there is no
 `<lem.styles()>` wrapper: a layout writes `<lem.mark("styles")>`.
+
+### `highlighter(options?)`
+
+`highlighter()` highlights code blocks with highlight.js, pinned at exactly 11.9.0, since
+another release's grammars mark the same code differently — a dependency of about 5.3 MB
+unpacked, 1,535 files, with none of its own. It produces `code` for every
+language highlight.js has, by name and by alias — `typescript` and `ts`, `plaintext` and
+`txt` — and writes each block as markdown-it's documented highlight function does:
+
+```html
+<pre><code class="hljs"><span class="hljs-keyword">let</span> x = <span class="hljs-number">1</span>
+</code></pre>
+```
+
+The spans carry highlight.js's classes, so any of its themes styles them; the shell ships
+none, so a site links one, as limulus.net links `hljs-github.css`. A key matches as written,
+so a fence opening ```` ```TS ```` is claimed by no producer, though highlight.js would
+read it: it keeps comrak's `<pre><code class="language-TS">`, and is warned at with a
+did-you-mean, `ts`. So is any language highlight.js lacks; a block naming none keeps
+comrak's block unremarked.
+
+`options.exclude` lists keys it leaves to another plugin, each one it would claim — an
+unknown one is refused when the config loads — and each matched as written, so a
+language's other names stay claimed until listed too:
+
+```ts
+plugins: [bundler(), highlighter({ exclude: ['rust', 'rs'] }), rustHighlighter()]
+```
+
+highlight.js loads its 192 grammars, about 30 ms, when `lemmon.config.ts` imports a value
+from `@limulus/lemmon-shell` — `bundler` as much as `highlighter` — whether or not the site
+lists it; the `lem` bin never imports the package's entry point, and a type-only import,
+`import type { Config }`, is erased. It compiles a language's grammar the first time a
+block names it, and highlighting is not cached: on the limulus-dot-net port branch its
+eight blocks take about 8 ms in the first build and 1 ms in each rebuild.
 
 ## Plugins
 
@@ -287,8 +324,6 @@ it no glob matches anything.
 
 ### Not yet
 
-- **Highlighting.** The shell ships no highlighter, so a code block naming a language
-  keeps comrak's plain block and is warned at: ∆Nxd.
 - **Assets.** The shell ships no esbuild plugin, so an `asset()` resolves only where a
   site's own plugin's `assets` hook maps it: ∆d1N.
 - **Computed mark keys.** A key a template computes and no producer lists keeps the

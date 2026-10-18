@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest'
 import type { Plugin } from './plugins.ts'
 import { AMBIENT_FILE, compileSite, HOST, SiteError, type Compiled } from './program.ts'
 import { discover } from './site.ts'
-import { copy, highlighter, inline, shell } from '../mocks/plugins.ts'
+import { copy, inline, shell, tsHighlighter } from '../mocks/plugins.ts'
 import { configOf, LAYOUTS_LEM, project, SITE, SITE_LEM } from '../mocks/sites.ts'
 import { at } from '../mocks/spans.ts'
 
@@ -241,7 +241,7 @@ describe('compileSite()', () => {
       const misspelled = layouts.replace('mark("styles")', 'mark("stylez")')
 
       expect(
-        await warned({ ...files, 'layouts.lem': misspelled }, [inline, highlighter])
+        await warned({ ...files, 'layouts.lem': misspelled }, [inline, tsHighlighter])
       ).toEqual([
         [
           'layouts.lem',
@@ -264,7 +264,7 @@ describe('compileSite()', () => {
           at(post, '«ts»\n'),
         ],
       ])
-      expect(await warned(files, [inline, highlighter])).toEqual([])
+      expect(await warned(files, [inline, tsHighlighter])).toEqual([])
     })
 
     it('should leave a key only a decorator lists warned at', async () => {
@@ -272,7 +272,7 @@ describe('compileSite()', () => {
       const sh = fenced('sh', 'ls')
 
       expect(
-        await warned({ ...files, 'posts/b.md': sh }, [inline, highlighter, shell])
+        await warned({ ...files, 'posts/b.md': sh }, [inline, tsHighlighter, shell])
       ).toEqual([
         [
           'posts/b.md',
@@ -310,7 +310,7 @@ describe('compileSite()', () => {
       const both = `${post}\n\`\`\`sh {1}\nls\n\`\`\`\n`
       const { program } = await compiled(
         { ...files, 'posts/a.md': both, 'posts/b.md': post },
-        [inline, highlighter]
+        [inline, tsHighlighter]
       )
 
       const payloads = [...program!.payloads]

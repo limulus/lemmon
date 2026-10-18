@@ -210,8 +210,8 @@ that checks the 1 ms/page criterion — runs only by hand.
 describes it), the bin at `packages/shell/bin/lem.ts` runs the plugins the config lists
 over each document's text and for their asset files, compiles the site in two calls — the
 assets' manifest on its declaration — loads it, renders every page into memory, resolves
-its marks through those plugins — the shell's default plugin, `bundler()`, runs only where
-the config lists it — and then writes HTML, the asset files, the files the producers made
+its marks through those plugins — the shell's own, `bundler()` and `highlighter()`, run
+only where the config lists them — and then writes HTML, the asset files, the files the producers made
 (its CSS bundles), and passthrough files.
 `lem check` runs the same pipeline and stops before the write, so it never touches the
 output directory; both print each diagnostic with the source its span covers framed

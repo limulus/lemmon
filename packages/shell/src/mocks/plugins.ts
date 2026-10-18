@@ -8,8 +8,8 @@ const decoder = new TextDecoder()
  * A highlighter for `ts` alone, which reads the code from the payload the shell fills in
  * rather than from the page, and claims the record and key field a code block carries.
  */
-export const highlighter: Plugin = {
-  name: 'highlighter',
+export const tsHighlighter: Plugin = {
+  name: 'ts-highlighter',
   marks: [
     {
       name: 'code',

@@ -15,14 +15,14 @@ import {
   type ProducedFile,
   type ProducerContext,
 } from './plugins.ts'
-import { callouts, copy, highlighter, inline, shell, wrapping } from '../mocks/plugins.ts'
+import { callouts, copy, inline, shell, tsHighlighter, wrapping } from '../mocks/plugins.ts'
 import { at } from '../mocks/spans.ts'
 
 const decoder = new TextDecoder()
 
 describe('claimsOf()', () => {
   it('should claim a producer’s name with its keys, payload and key field', () => {
-    expect(claimsOf([highlighter, callouts])).toEqual([
+    expect(claimsOf([tsHighlighter, callouts])).toEqual([
       { name: 'code', keys: ['ts'], payload: 'Code', keyedBy: 'language' },
       { name: 'callout', keys: ['note'], payload: 'Callout', keyedBy: 'kind' },
     ])

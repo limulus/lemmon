@@ -112,7 +112,8 @@ expectation resolves each id under a `--- payloads` line after the fragments: on
 payload the page's marks name, in the order it first names each — `#id {language: …,
 info: …, code: …}` — which is also where dedup shows, as two marks naming one id. The ids
 are hashes of the content, so a change to how they are computed moves every one of them
-here, which is what should happen: a host's cache is keyed on them.
+here, which is what should happen: a render names a payload by its id, and a host that
+caches producer output keys it on the id.
 
 ### Positions in a trailer
 

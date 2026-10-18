@@ -465,7 +465,9 @@ moved it. Newest last. An entry is removed when its change has been applied.
   adapter is the core's own, writing comrak's own markup behind a sentinel so each block
   becomes a `code` mark. Keep the measurement as the reason: removing syntect took the
   staged `.wasm` from 4.21 MB to 2.26 MB (D42, ∆7wK). Add `siphasher` for the payload
-  id, a fixed SipHash-1-3 so a host's cache survives a new build of the core.
+  id — what a compile reports each payload under once and a render's mark names it by —
+  a fixed SipHash-1-3 for a host that caches producer output on it across builds of the
+  core; the shell caches nothing on it (∆Nxd).
 
 - **Highlighter seam** — where the text says syntect highlights code fences, say a code
   block is a `code` mark: the page holds comrak's plain escaped block, and the host's
@@ -487,9 +489,13 @@ moved it. Newest last. An entry is removed when its change has been applied.
   lists as `plugins: [bundler()]`: `styles` writes a page's collected CSS to
   `/assets/immutable/bundle/<name>.css`, the name the first ten base64url characters of its
   SHA-256, and links it; `scripts` places a module `<script>` per collected URL; `head`
-  places the `lem-head` fragments. In the pipeline, a Resolve step between Render and Write
-  runs each mark's producer then its decorators, cached by payload id, before any
-  transform; Write writes the pages, then the files producers wrote, then passthrough; and
+  places the `lem-head` fragments. The shell's highlighter, `highlighter()`, is a `code`
+  producer the site lists beside it, over highlight.js 11.9.0's languages by name and
+  alias, writing `<pre><code class="hljs">`; its `exclude` option leaves keys to another
+  plugin's producer (∆Nxd). In the pipeline, a Resolve step between Render and Write
+  runs each mark's producer then its decorators before any transform, caching nothing by
+  payload id, since highlighting limulus.net's code costs about 1 ms a rebuild (∆Nxd);
+  Write writes the pages, then the files producers wrote, then passthrough; and
   a Second phase renders pages that read other pages' finished output (feeds) after every
   other page is written, that output loaded back as a string source. D06's "plugins
   cannot inject logic" is scoped to the language and the core (D42; ∆F4y): what a plugin

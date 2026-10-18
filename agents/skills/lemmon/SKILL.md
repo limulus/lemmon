@@ -353,7 +353,9 @@ Prose inside an element: a blank line on each side lets the markdown run.
   `<aside>` above; without them the prose stays unrendered and a block in it is an error.
 - **A string is a string:** look a record up by id, `site.photos["middle-falls"]`; a miss
   fails the render.
-- **Code fences become `code` marks** the host highlights; a language no producer claims
+- **Code fences become `code` marks** the host highlights: `highlighter()`, listed in
+  `lemmon.config.ts` beside `bundler()`, claims every language highlight.js has, by name
+  and alias, spelled as it spells them (`ts`, not `TS`). A language no producer claims
   warns. Write about Lemmon in a fence, a code span, or as `&lt;lem`.
 - **A page no glob matched and no `type:` named** has `page: any` and renders its own
   output, with no layout.
