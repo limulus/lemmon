@@ -1040,6 +1040,52 @@ mod tests {
         assert_eq!(html_of(&core, "page.lem"), "3|1.5|yes|none|1,2,|z=1;a=2;");
     }
 
+    #[test]
+    fn prints_a_float_from_data_and_front_matter_as_the_host_wrote_it() {
+        // Coordinates from limulus.net's photos, in the shortest text that reads back as
+        // their double — what `JSON.stringify` sends. A fast, inexact reader lands three
+        // of the five on the double one unit in the last place away, and prints that.
+        let site = "<lem-type Photo>\n  latitude: float\n  longitude: float\n</lem-type>\n\
+            <lem-type Post extends Page>\n  longitude: float\n  \
+            layout: (Post, html): html = post\n</lem-type>\n\
+            <lem-fn post(p: Post, body: html)><lem.p.longitude>|<lem.body></lem-fn>\n\
+            <lem-let posts: [Post] from \"posts/*.md\" />\n\
+            <lem-let photos: {string: Photo} from \"_data/photos.json\" />";
+        let post = "---\nlongitude: -110.76918888888889\nurl: /a/\n---\n\
+            <lem-for alias, photo in site.photos><lem.alias> \
+            <lem.photo.latitude>,<lem.photo.longitude>;</lem-for>";
+        let mut core = Core::new();
+        compile_clean_with(
+            &mut core,
+            &serde_json::json!([
+                {"path": "ambient.lem", "text": AMBIENT_LEM},
+                {"path": "site.lem", "text": site},
+                {"path": "posts/a.md", "text": post, "record": "Post"},
+            ])
+            .to_string(),
+            Some(SITE_HOST),
+        );
+        let reply = core
+            .load_data_json(
+                r#"{"sources": {
+                    "posts": [{"path": "posts/a.md",
+                        "value": {"longitude": -110.76918888888889, "url": "/a/"}}],
+                    "photos": {"path": "_data/photos.json", "value": {
+                        "split": {"latitude": 32.44250555555555,
+                            "longitude": -110.78919166666667},
+                        "all-in-all-by-beth-lipman": {"latitude": 42.150394444444444,
+                            "longitude": -77.05377222222222}}}
+                }}"#,
+            )
+            .unwrap();
+        assert_eq!(reply, "[]");
+        assert_eq!(
+            html_of(&core, "posts/a.md"),
+            "-110.76918888888889|split 32.44250555555555,-110.78919166666667;\
+            all-in-all-by-beth-lipman 42.150394444444444,-77.05377222222222;\n"
+        );
+    }
+
     /// The declaration a host with handlers makes: the three names the shell's own
     /// bundler claims (D42).
     const CLAIMING: &str = r#"{"ambient": {"site": null, "page": null, "build": null},

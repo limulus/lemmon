@@ -20,7 +20,12 @@ wasm-bindgen-test = "0.3.77"
 serde = { version = "1.0.228", features = ["derive"] }
 # `preserve_order`, because JSON objects become the VM's insertion-ordered `Map`s and
 # `lem-for` walks a map in that order — alphabetising here would reorder every loop.
-serde_json = { version = "1.0.145", features = ["preserve_order"] }
+# `float_roundtrip`, because the default reader is fast and inexact: it read the
+# coordinate `-110.78919166666667` a unit in the last place off, and the page printed the
+# neighbour. Data reaches the core as the shortest text JavaScript writes for a double,
+# so reading it exactly is what makes a printed float match the source. 41 KB of the
+# .wasm.
+serde_json = { version = "1.0.145", features = ["preserve_order", "float_roundtrip"] }
 logos = "0.16.1"
 # Optimal string alignment behind `lemmon_syntax::nearest`, the one did-you-mean policy
 # every stage suggests through. No dependencies of its own, so it costs the .wasm almost

@@ -335,6 +335,59 @@ describe('Core', () => {
       )
     })
 
+    it('should print a float from data and front matter as JavaScript writes it', async () => {
+      // Coordinates from limulus.net's photos. A fast, inexact reader lands three of the
+      // five on the double one unit in the last place away, and the page prints that.
+      const longitude = -110.76918888888889
+      const photos = {
+        split: { latitude: 32.44250555555555, longitude: -110.78919166666667 },
+        'all-in-all-by-beth-lipman': {
+          latitude: 42.150394444444444,
+          longitude: -77.05377222222222,
+        },
+      }
+      const core = await loadCore()
+      const files: SourceFileInput[] = [
+        site[0],
+        {
+          path: 'site.lem',
+          text: [
+            '<lem-type Photo>',
+            '  latitude: float',
+            '  longitude: float',
+            '</lem-type>',
+            '<lem-type Post extends Page>',
+            '  longitude: float',
+            '  layout: (Post, html): html = post',
+            '</lem-type>',
+            '<lem-fn post(p: Post, body: html)><lem.p.longitude>|<lem.body></lem-fn>',
+            '<lem-let posts: [Post] from "posts/*.md" />',
+            '<lem-let photos: {string: Photo} from "_data/photos.json" />',
+          ].join('\n'),
+        },
+        {
+          path: 'posts/a.md',
+          text:
+            `---\nlongitude: ${longitude}\nurl: /a/\n---\n` +
+            '<lem-for alias, photo in site.photos><lem.alias> ' +
+            '<lem.photo.latitude>,<lem.photo.longitude>;</lem-for>',
+          record: 'Post',
+        },
+      ]
+      expect(core.compile(files, typedSite).diagnostics).toEqual([])
+      const envelope: DataInput = {
+        sources: {
+          posts: [{ path: 'posts/a.md', value: { longitude, url: '/a/' } }],
+          photos: { path: '_data/photos.json', value: photos },
+        },
+      }
+      expect(core.loadData(envelope)).toEqual([])
+      const printed = Object.entries(photos)
+        .map(([alias, at]) => `${alias} ${at.latitude},${at.longitude};`)
+        .join('')
+      expect(page(core.render({ path: 'posts/a.md' }))).toBe(`${longitude}|${printed}\n`)
+    })
+
     it('should load a page no glob holds from `pages` and render it through its layout', async () => {
       const core = await loadCore()
       expect(core.compile([...site, home], typedSite).diagnostics).toEqual([])
