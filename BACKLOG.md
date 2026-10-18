@@ -194,6 +194,9 @@ initiative before starting it.
 - `∆HzB` The `watch` and `emit` hooks
   - A plugin's own change source for `lem dev`, and files it writes after render; in
     the architecture's plugin sketch, with no consumer in the port
+- `∆qoe` Floats print as JavaScript writes them
+  - `<lem.x>` prints a float with Rust's `{}`: `inf`, `-0`, and every digit of `1e21` or
+    `1e-7`, where `Number#toString` writes `Infinity`, `0`, `1e+21` and `1e-7`
 - `∆v6d` Serialize the linked program
   - `exportModule`/`importModule` serialize the linked program (D14 headroom), deferred from
     `∆TNT` because a fact nothing consumes is a comment
