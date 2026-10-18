@@ -18,3 +18,8 @@ Split from `∆c4j` Plugin host on 2026-10-17 and placed in slice 6 with the rev
   `npm run rust:wasm:test`, and its decision record.
 - The body the updater hashes is the markdown as written, front matter removed — what
   Eleventy's `gray-matter` hands it — not text a `transformDocument` plugin rewrote.
+- A generated page's `prev` and `next` hold `Value::Neighbour`, a position in the store's
+  page table that a field read resolves (`∆99b`); `json_from_value` in
+  `crates/lemmon-wasm/src/wire.rs` reaches it only through an `unreachable!` arm today,
+  since a mark payload refuses it. Records read back to a tool need a form for it first,
+  such as the neighbour's `{path, index}` reference.

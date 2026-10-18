@@ -37,10 +37,6 @@ each comparing clean.
 - `∆EEa` `esbuild()` names follow the files they reference
   - Adopt the naming limulus-dot-net's `11ty/esbuild.ts` moves to, a loader's hash following
     the workers it names, so parity's byte comparison holds once the port merges main
-- `∆99b` Generators and neighbours
-  - A page template whose `for:` key names a field and an `<ambient value>.<field>` list
-    becomes one page per item at load, its url from its type's default (D43)
-  - needs: `∆Bhz`
 - `∆hvm` Photo and TIL topic pages as generators
   - `photos/photo` and `tils/topics`, the two paginated pages, as generator templates whose
     `for:` key names a list (D43), with `prev` and `next` filled by the loader
@@ -197,6 +193,9 @@ initiative before starting it.
 - `∆qoe` Floats print as JavaScript writes them
   - `<lem.x>` prints a float with Rust's `{}`: `inf`, `-0`, and every digit of `1e21` or
     `1e-7`, where `Number#toString` writes `Infinity`, `0`, `1e+21` and `1e-7`
+- `∆0uV` Output a build no longer writes is removed
+  - Neither `lem build` nor `lem dev` deletes from the output, so a page whose item left a
+    generator's list, or a moved document, stays served with stale links until cleaned
 - `∆v6d` Serialize the linked program
   - `exportModule`/`importModule` serialize the linked program (D14 headroom), deferred from
     `∆TNT` because a fact nothing consumes is a comment
