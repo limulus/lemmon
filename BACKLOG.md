@@ -37,13 +37,9 @@ the live site on Eleventy until he has reviewed it (2026-10-18). Eric sees `npm 
 report zero unexpected differences over the whole `dist/`, and a local cutover branch builds
 limulus.net with `lem`, its CloudFront config untouched, ready for his review.
 
-- `∆Zg9` Whole-site parity
-  - `npm run parity` over the whole `dist/` against the 11ty build, every difference in a
-    forgiveness class with its count, at zero unexpected differences; the acceptance bar
 - `∆oAl` Cutover
   - On a local branch Eric reviews, replace Eleventy with `lem` in limulus-dot-net, single
     switch, no dual-serving, CloudFront config unchanged; nothing deploys
-  - needs: `∆Zg9`
 
 ### 7. Live on Lemmon
 
