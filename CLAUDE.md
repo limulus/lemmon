@@ -13,8 +13,8 @@ page rendering end-to-end from the WASM core) is done, and the rest is cut into 
 each end in software Eric runs. The first three, `lem build` and `npm run parity` over
 limulus.net's feed posts on its `lemmon-port` branch, styled output with `npm run
 parity:look`'s screenshots, and the daily loop of `lem dev` and `lem check`, were
-accepted on 2026-10-17, and the fourth, every document page, on 2026-10-18; the fifth,
-the index and generated pages, is built but for ∆EEa, which waits on limulus-dot-net.
+accepted on 2026-10-17, and the fourth and fifth, every document page and then the index
+and generated pages, on 2026-10-18; the sixth, feeds, sitemap and cutover, is under way.
 The language runs end to end — scanner → parser → typed AST → compiler → VM, with `.md`
 through document mode — and what each stage settled is the decision index
 (`docs/decisions/README.md`, D01–D45), which is the status. The shape to hold in mind:

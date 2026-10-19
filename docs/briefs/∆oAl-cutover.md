@@ -19,10 +19,6 @@ config unchanged
     sees, not the markdown source (D38, accepted by Eric 2026-10-17; `reading-time`).
   - Photo alt text WebC cut short at a quote comes out whole (`attr-escaping`), on
     `/photos/`, in `/feed/`'s cards, and on the two photos' own pages too.
-  - `/photos/`'s visually hidden heading on each photo names it, where WebC's `webc:text`
-    left all 19 empty, so a screen reader announces the title (`photo-list-heading`). On
-    2026-10-18 Eric started fixing it on limulus-dot-net's main instead; once the port
-    merges that, retire the class and drop this entry.
   - The Source link in the header of a page template (the index pages, and the photo and
     TIL topic pages) names its `.lem` file where it named the `.webc` (`source-pill`).
   - Footnotes are comrak's, not markdown-it-footnote's (`footnote-markup`, which

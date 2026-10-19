@@ -25,23 +25,9 @@ pipeline, §Shell plugin API); the port lives in limulus-dot-net on a branch whi
 green on main, and that branch is where every slice is accepted. A language or core feature
 lands inside the slice that needs it.
 Slices 1 to 3, a page from `lem build`, styled output, and the daily loop of `lem dev` and
-`lem check`, were accepted on 2026-10-17, and slice 4, every document page, on 2026-10-18;
-their items' journal entries record them, and ∆Oyi's records why dprint left slice 2.
-
-### 5. Index and generated pages
-
-Generators land in the core here, needed by exactly two pages; the seven collection-reading
-pages are page templates. Eric opens `dist/` from `/` and reaches every page of the site,
-each comparing clean.
-
-Built on 2026-10-18 but for `∆EEa` (journal entries for ∆pP5, ∆LsH, ∆99b and ∆hvm):
-`npm run parity` in the branch compares all 55 pages clean and their 37 script files byte
-for byte, and `npm run parity:look` shows all 165 screenshots identical. Eric chose to
-hold the slice open until `∆EEa` is built, which waits on his limulus-dot-net change.
-
-- `∆EEa` `esbuild()` names follow the files they reference
-  - Adopt the naming limulus-dot-net's `11ty/esbuild.ts` moves to, a loader's hash following
-    the workers it names, so parity's byte comparison holds once the port merges main
+`lem check`, were accepted on 2026-10-17, and slices 4 and 5, every document page and then
+the index and generated pages, on 2026-10-18; their items' journal entries record them, and
+∆Oyi's records why dprint left slice 2.
 
 ### 6. Feeds, sitemap, cutover
 
