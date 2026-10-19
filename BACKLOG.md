@@ -37,9 +37,6 @@ the live site on Eleventy until he has reviewed it (2026-10-18). Eric sees `npm 
 report zero unexpected differences over the whole `dist/`, and a local cutover branch builds
 limulus.net with `lem`, its CloudFront config untouched, ready for his review.
 
-- `∆shS` `update-revisions` without Eleventy
-  - A script lists the articles and their titles as the port's `site.lem` does, so the
-    deploy records each revision as it does today, every recorded hash unchanged
 - `∆zu0` Feeds and sitemap in a second phase
   - The three feeds (rss, two atom, `/feed.xsl`) and `sitemap.xml` with video entries as
     templates rendered after every other page, reading finished output as a string source
@@ -54,7 +51,7 @@ limulus.net with `lem`, its CloudFront config untouched, ready for his review.
 - `∆oAl` Cutover
   - On a local branch Eric reviews, replace Eleventy with `lem` in limulus-dot-net, single
     switch, no dual-serving, CloudFront config unchanged; nothing deploys
-  - needs: `∆Zg9`, `∆yOJ`, `∆shS`
+  - needs: `∆Zg9`, `∆yOJ`
 
 ### 7. Live on Lemmon
 

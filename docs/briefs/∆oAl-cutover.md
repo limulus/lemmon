@@ -82,6 +82,11 @@ lemmon is `∆FnH`, decided before the merge.
   module by absolute path, so its hash depended on where the site was checked out. Each
   bundle is now named by what it ships as, the names it holds included, and its map names
   that module relative to itself; the port compares the new names byte for byte.
+- The revision hash translates a post's lem calls back to the WebC they replaced (`∆shS`),
+  and no spec exercises the ten real calls in six posts, since every recorded commit
+  predates the port: a regression in that translation after the switch shows first as six
+  spurious revisions in a deploy's history commit. Check `npm run update-revisions`
+  records nothing on the switch commit.
 - Two photo-tooling tasks, from `∆pP5` (closed 2026-10-18): make `@sindresorhus/slugify`
   a direct dependency, since `bin/process-photos.js` imports it and it arrives today only
   through `@11ty/eleventy`; and have `process-photos.js` write the alias-keyed records the
