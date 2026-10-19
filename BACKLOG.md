@@ -31,15 +31,12 @@ the index and generated pages, on 2026-10-18; their items' journal entries recor
 
 ### 6. Feeds, sitemap, cutover
 
-The pages that read other pages' finished output, the link check and the revisions updater
-the deploy runs, the whole-site parity run, and the switch prepared on a branch: Eric keeps
+The feeds and sitemap, the link check and the revisions updater the deploy runs, the
+whole-site parity run, and the switch prepared on a branch: Eric keeps
 the live site on Eleventy until he has reviewed it (2026-10-18). Eric sees `npm run parity`
 report zero unexpected differences over the whole `dist/`, and a local cutover branch builds
 limulus.net with `lem`, its CloudFront config untouched, ready for his review.
 
-- `∆zu0` Feeds and sitemap in a second phase
-  - The three feeds (rss, two atom, `/feed.xsl`) and `sitemap.xml` with video entries as
-    templates rendered after every other page, reading finished output as a string source
 - `∆yOJ` Link and asset integrity check
   - Every link and `asset()` URL a build writes resolves to a file it writes, fragments
     included, checked before anything is written so `lem check` reports it too
@@ -191,6 +188,9 @@ initiative before starting it.
 - `∆0uV` Output a build no longer writes is removed
   - Neither `lem build` nor `lem dev` deletes from the output, so a page whose item left a
     generator's list, or a moved document, stays served with stale links until cleaned
+- `∆gsV` An intentionally unused parameter
+  - A layout that ignores its record warns that the parameter is never used, so limulus.net's
+    XML layout reads it for nothing; no spelling marks a parameter as unused on purpose
 - `∆v6d` Serialize the linked program
   - `exportModule`/`importModule` serialize the linked program (D14 headroom), deferred from
     `∆TNT` because a fact nothing consumes is a comment

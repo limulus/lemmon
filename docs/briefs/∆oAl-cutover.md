@@ -58,7 +58,13 @@ lemmon is `∆FnH`, decided before the merge.
     feeds, and gives an undated page no `lastmod` where Eleventy gave its checkout time
     (Eric, 2026-10-18; `∆zu0`).
   - A feed's dates are spelled in the offset each was written in (D38), where Eleventy's
-    RSS spelled the build machine's zone; every instant is the same.
+    RSS spelled the build machine's zone and its Atom and sitemap wrote UTC (`Z`); every
+    instant is the same. RSS's `pubDate` has an unpadded day and a numeric zone, and a
+    revision time written `.770Z` prints `.77Z`.
+  - Feed entries carry the same markup differences the pages do (comrak footnotes and
+    heading ids, no WebC hashes or leaked attributes, no stray `<p>` in a photo, the alt
+    whole), without dprint's whitespace, and the XML files have indented blank lines
+    between elements; the sitemap lists its urls by group, not by date and file creation.
   - Footnotes are comrak's, not markdown-it-footnote's (`footnote-markup`, which
     `parity:look` neutralizes): the reference reads `1` where it read `[1]`, the back
     link `↩` where it read `↩︎`, and the section loses the `section-separator` class, so
