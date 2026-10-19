@@ -178,7 +178,9 @@ describe('htmlLinks()', () => {
 
   describe('what it walks', () => {
     it('should read a page nested deeper than the call stack goes', () => {
-      const html = `${'<div>'.repeat(20_000)}<a href="/deep/">x</a><p id="bottom">`
+      // Spans, since parse5 looks down every open element for a `<p>` to close at each
+      // `<div>`: nesting 20,000 of those takes a second, and five under coverage.
+      const html = `${'<span>'.repeat(20_000)}<a href="/deep/">x</a><p id="bottom">`
 
       const { links, targets } = htmlLinks(html, PAGE)
 

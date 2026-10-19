@@ -122,7 +122,9 @@ describe('rebaseLinks()', () => {
 
     it('should rebase a body nested deeper than the call stack goes, in document order', () => {
       const depth = 20_000
-      const body = `${'<div>'.repeat(depth)}<a href="x">x</a><a href="http://exa mple/">y</a>`
+      // Spans, since parse5 looks down every open element for a `<p>` to close at each
+      // `<div>`: nesting 20,000 of those takes a second, and five under coverage.
+      const body = `${'<span>'.repeat(depth)}<a href="x">x</a><a href="http://exa mple/">y</a>`
       const { body: rebased, unrebased } = rebaseLinks(
         `${body}<a href="http://exa mple/z">z</a>`,
         PAGE,
