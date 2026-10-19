@@ -58,9 +58,10 @@ export interface Writer {
   assets?: { plugin: string }
   /**
    * The plugin whose producer wrote the file, and the page it was written for — which of
-   * a generator's pages, where a generator made it.
+   * a generator's pages, where a generator made it, or its body alone, where the body
+   * pass rendered it (D46).
    */
-  producer?: { plugin: string; page: string; generated?: Generated }
+  producer?: { plugin: string; page: string; generated?: Generated; body?: boolean }
 }
 
 /** An output file another writer has claimed in a way that rules this one out. */

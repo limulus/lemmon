@@ -11,6 +11,7 @@ import {
   type RenderResult,
 } from '@limulus/lemmon-core'
 import { strict as assert } from 'node:assert'
+import { isUtf8 } from 'node:buffer'
 
 import type { Environment } from './load.ts'
 
@@ -133,10 +134,22 @@ export interface Assets {
  * {@link ProducerContext}, which can write files. A handler sees a code block's mark with
  * its payload filled in, `{language, info, code}` as `Code` declares it, beside the id
  * the render names it by.
+ *
+ * It runs for a document's body before it runs for the document's page: the body pass
+ * renders each document's body alone and resolves its marks, for `build.bodies`, before
+ * any page renders (D46), so a mark in a document's own text is answered twice, and each
+ * call is told which it is for by its context's `body`. Content bytes must be UTF-8,
+ * which a page is: other bytes are a failure, as any other answer that is no content is.
  */
-export interface PluginHandler extends Omit<MarkHandler, 'produce'> {
+export interface PluginHandler extends Omit<MarkHandler, 'produce' | 'decorate'> {
   /** One replacement per mark it answers, in the order the marks were given. */
   produce?: (context: ProducerContext) => readonly (string | Uint8Array)[]
+  /** The content of `mark` in place of `content`, the content it has so far. */
+  decorate?: (
+    mark: Mark,
+    content: Uint8Array,
+    context: DecoratorContext
+  ) => string | Uint8Array
   /**
    * The declared record a mark of {@link name} carries, which every `mark()` call's
    * payload is checked against — `Code` for `code`, which the shell declares; any other
@@ -152,15 +165,31 @@ export interface PluginHandler extends Omit<MarkHandler, 'produce'> {
 }
 
 /**
- * What a producer is given: the core's {@link MarkContext}, and a way to write a file of
- * its own beside the pages — a stylesheet its marks link to.
+ * What a decorator is given beside a mark and its content: whether the mark stands in a
+ * document's body, as the body pass resolves it, rather than in a page (D46).
+ */
+export interface DecoratorContext {
+  body: boolean
+}
+
+/**
+ * What a producer is given: the core's {@link MarkContext}, whether the marks stand in a
+ * document's body, and a way to write a file of its own beside the pages — a stylesheet
+ * its marks link to.
  */
 export interface ProducerContext extends MarkContext {
   /**
+   * Whether the marks stand in a document's body, as the body pass resolves it before any
+   * page renders (D46), rather than in a page. A file written for a body is written as a
+   * page's is: a body that places `mark("styles")` in its own text gets a bundle of its
+   * own fragments, which only `build.bodies` links to.
+   */
+  body: boolean
+  /**
    * Queues `content` as the output file `url` names — a path from `/`, mapped to a file
    * as a page's url is — written with the pages once every page has rendered. A file
-   * another page's producer wrote with the same bytes is written once. It works only
-   * while the producer runs: a call after the producer returns is dropped.
+   * another page's producer, or a body's, wrote with the same bytes is written once. It
+   * works only while the producer runs: a call after the producer returns is dropped.
    *
    * It never throws. A url that is not a string, content neither a string nor bytes, a
    * url naming no file, and other content where this producer or another page's wrote
@@ -475,9 +504,11 @@ export interface Generated {
  * How a message names the page at `path`: `` `about.md` ``, and a page a generator made
  * by the item it was made from, in the language's own index syntax —
  * `` `photos/photo.lem` for `site.gallery[3]` `` — as the core names it, since every page
- * of a generator shares its path (D43).
+ * of a generator shares its path (D43); and the body the body pass renders of a
+ * document as that, `` the body of `about.md` `` (D46).
  */
-export function pageName(path: string, generated?: Generated): string {
+export function pageName(path: string, generated?: Generated, body = false): string {
+  if (body) return `the body of \`${path}\``
   if (generated === undefined) return `\`${path}\``
   return `\`${path}\` for \`${generated.list}[${generated.index}]\``
 }
@@ -491,6 +522,13 @@ export interface PageMarks {
   path: string
   /** Which of its generator's pages it is, where a generator made it. */
   generated?: Generated
+  /**
+   * Whether this is the page's body alone, as the body pass renders a document's (D46):
+   * named so, and resolved without a warning — a handler's failure, or fragments nothing
+   * places — since its page resolves the same marks over the same fragments, and warns
+   * once. Its errors stand.
+   */
+  body?: boolean
   plugins: readonly Plugin[]
   /** Every code block's payload the compile reported, by id. */
   payloads: ReadonlyMap<string, CodePayload>
@@ -522,15 +560,17 @@ export interface ResolvedPage {
  *
  * No handler's failure breaks the page or stops the build (D42). One that throws, or
  * returns anything but its content — a promise, a count other than one per mark, a value
- * neither a string nor bytes — is a warning at the mark, the producer's first, and the
- * marks keep the content they had: the default for a producer's, the content so far for
- * a decorator's. A file a producer that succeeded wrote is another matter: one `write`
- * was given the wrong kind of value for is an error here, and the build checks the rest
- * ({@link ProducerContext.write}). What the page collected under a name it never marks is
- * a warning at the first such fragment, since nothing writes it. A mark nothing answers
- * keeps its default content unreported here: the compile warned at a literal name or key
- * no handler claims, and a key computed at render, or a code block with no language where
- * the producers of `code` list keys, is not reported at all.
+ * neither a string nor bytes, bytes that are not UTF-8 — is a warning at the mark, the
+ * producer's first, and the marks keep the content they had: the default for a
+ * producer's, the content so far for a decorator's. A file a producer that succeeded
+ * wrote is another matter: one `write` was given the wrong kind of value for is an error
+ * here, and the build checks the rest ({@link ProducerContext.write}). What the page
+ * collected under a name it never marks is a warning at the first such fragment, since
+ * nothing writes it. A mark nothing answers keeps its default content unreported here:
+ * the compile warned at a literal name or key no handler claims, and a key computed at
+ * render, or a code block with no language where the producers of `code` list keys, is
+ * not reported at all. A body (D46) is resolved the same way and warned at nowhere, since
+ * its page warns ({@link PageMarks.body}).
  */
 export function resolvePage(rendered: RenderResult, page: PageMarks): ResolvedPage {
   const resolved: Omit<ResolvedPage, 'bytes'> = { files: [], diagnostics: [] }
@@ -539,6 +579,10 @@ export function resolvePage(rendered: RenderResult, page: PageMarks): ResolvedPa
     (plugin.marks ?? []).map((handler) => wrapped(plugin.name, handler, page, resolved))
   )
   const { html, unplaced } = resolveMarks(rendered, handlers)
+  if (page.body === true) {
+    const errors = diagnostics.filter((diagnostic) => diagnostic.severity === 'error')
+    return { bytes: html, files: resolved.files, diagnostics: errors }
+  }
   for (const name of unplaced) {
     const [first] = rendered.fragments![name]
     diagnostics.push({
@@ -568,14 +612,16 @@ function wrapped(
   const { diagnostics, files } = resolved
   const { name, keys, produce, decorate } = handler
   const wrapper: MarkHandler = { name, keys }
+  const named = pageName(page.path, page.generated, page.body)
+  const body = page.body === true
   const failed = (role: string, mark: Mark, kept: string, problem: string) => {
     diagnostics.push({
       path: mark.path,
       span: mark.span,
       severity: 'warning',
       message:
-        `the \`${plugin}\` plugin's ${role} for \`${name}\` failed on ` +
-        `${pageName(page.path, page.generated)}, so ${kept}: ${problem}`,
+        `the \`${plugin}\` plugin's ${role} for \`${name}\` failed on ${named}, so ` +
+        `${kept}: ${problem}`,
       labels: [],
     })
   }
@@ -593,7 +639,7 @@ function wrapped(
       }
       let made: unknown
       const problem = failure(() => {
-        made = produce.call(handler, { ...context, marks, write })
+        made = produce.call(handler, { ...context, marks, write, body })
         return unproduced(made, marks.length)
       })
       if (problem === undefined) {
@@ -609,8 +655,8 @@ function wrapped(
             severity: 'error',
             message:
               `the \`${plugin}\` plugin's producer for \`${name}\` called \`write\` on ` +
-              `${pageName(page.path, page.generated)} with ${shown(url)} and ` +
-              `${shown(content)}, where it takes a url and a string or bytes`,
+              `${named} with ${shown(url)} and ${shown(content)}, where it takes a url ` +
+              'and a string or bytes',
             labels: [],
           })
         }
@@ -630,10 +676,10 @@ function wrapped(
     wrapper.decorate = (mark, content) => {
       let made: unknown
       const problem = failure(() => {
-        made = decorate.call(handler, filled(mark, page.payloads), content)
-        return isContent(made)
-          ? undefined
-          : `it returned ${shown(made)} rather than a string or bytes`
+        made = decorate.call(handler, filled(mark, page.payloads), content, { body })
+        if (!isContent(made))
+          return `it returned ${shown(made)} rather than a string or bytes`
+        return garbled(made) ? `it returned ${UNREADABLE}` : undefined
       })
       if (problem === undefined) return made as string | Uint8Array
       settle(made)
@@ -683,10 +729,19 @@ function unproduced(made: unknown, marks: number): string | undefined {
     return `it returned ${count(made.length, 'replacement')} for ${count(marks, 'mark')}`
   }
   const bad = made.findIndex((item) => !isContent(item))
-  if (bad === -1) return undefined
-  const what = shown(made[bad])
-  return `it returned ${what} as a replacement, which is neither a string nor bytes`
+  if (bad !== -1) {
+    const what = shown(made[bad])
+    return `it returned ${what} as a replacement, which is neither a string nor bytes`
+  }
+  return made.some(garbled) ? `it returned ${UNREADABLE}, as a replacement` : undefined
 }
+
+/** Whether `content` is bytes a page cannot hold, being no UTF-8. */
+const garbled = (content: string | Uint8Array): boolean =>
+  typeof content !== 'string' && !isUtf8(content)
+
+/** What {@link garbled} content is, said in a failure. */
+const UNREADABLE = 'bytes that are not UTF-8, which a page cannot hold'
 
 const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`
 

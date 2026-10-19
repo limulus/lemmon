@@ -13,7 +13,7 @@ import { Buffer } from 'node:buffer'
 
 import type { LoadedConfig } from './config.ts'
 import { forEntry } from './front-matter.ts'
-import { envelope, type Environment } from './load.ts'
+import { envelope, withBodies, type Environment } from './load.ts'
 import {
   pageName,
   resolvePage,
@@ -23,6 +23,7 @@ import {
 } from './plugins.ts'
 import { compileSite, FILE_START, hasError, pageSpan, type Program } from './program.ts'
 import { provided, type AssetFile } from './providers.ts'
+import { rebaseLinks } from './rebase.ts'
 import { discover } from './site.ts'
 import {
   OutputFiles,
@@ -113,7 +114,8 @@ export interface BuildResult extends CheckResult {
  * Builds the site `config` describes into its output directory — every step of the
  * build pipeline this shell has (docs/architecture.md §Build pipeline): discover and
  * transform each document with the config's plugins, build their assets, compile, load,
- * plan, render each page and resolve its marks with the plugins, write it, the files
+ * plan, render each document's body and load again with the bodies in `build.bodies`
+ * (D46), render each page and resolve its marks with the plugins, write it, the files
  * their asset hooks and producers built, and copy the passthrough files.
  * Any error diagnostic, at any step, stops the build before it writes a file, since
  * every page is rendered and every output file checked against every other before the
@@ -126,9 +128,9 @@ export interface BuildResult extends CheckResult {
  * and no `type:` named has no schema, so it renders its own output with `page` bound
  * to its front matter as read (D30, D37): `page` is bound as sent, one value per load,
  * so each such page is loaded on its own before it renders. Each of those loads
- * re-sends and re-validates the whole envelope, so their cost grows with the untyped
- * pages times the size of the site: 18 of 25 pages on the limulus-dot-net port branch
- * cost about 0.35 s in all.
+ * re-sends and re-validates the whole envelope, the bodies included, so their cost grows
+ * with the untyped pages times the size of the site: 18 of 25 pages on the
+ * limulus-dot-net port branch cost about 0.35 s in all while they were untyped.
  *
  * @throws {SiteError} when the input has no `site.lem`.
  * @throws {CoreTrapped} when a call into the core never returned.
@@ -196,6 +198,9 @@ async function renderSite(
   const passthrough = site.entries
     .filter((entry) => entry.kind === 'passthrough')
     .map((entry) => entry.path)
+  const documents = new Set(
+    site.entries.filter((entry) => entry.kind === 'document').map((entry) => entry.path)
+  )
   const failed = {
     result: { pages: [], assets: [], produced: [], copied: [], diagnostics, texts },
   }
@@ -226,14 +231,24 @@ async function renderSite(
     )
     diagnostics.push(...loaded.diagnostics)
     if (loaded.data === undefined) return failed
-    const { data } = loaded
+    diagnostics.push(...core.loadData(loaded.data))
+    if (hasError(diagnostics)) return failed
+    const renderer = new Renderer(core, program, config, files, diagnostics)
+    // The body pass (D46): each document the load made renders its body alone, under a
+    // `build.bodies` that is still empty, and the second load binds them all, so every
+    // page renders after it. An error in it stops the build here, so that a page reading
+    // a body never reports the body's error again as a missing key.
+    const bodies: Record<string, string> = {}
+    for (const { path, url } of planned(core)) {
+      if (!documents.has(path)) continue
+      const body = renderer.body(path, url)
+      if (body !== undefined) bodies[url] = body
+    }
+    if (hasError(diagnostics)) return failed
+    const data = withBodies(loaded.data, bodies)
     diagnostics.push(...core.loadData(data))
     if (hasError(diagnostics)) return failed
-    const renderer = new Renderer(core, program, config.plugins, files, diagnostics)
-    for (const planned of core.plan()) {
-      assert(planned.url !== undefined, 'the shell’s host names the url field')
-      renderer.render({ ...planned, url: planned.url })
-    }
+    for (const page of planned(core)) renderer.render(page)
     for (const [path, compiledPage] of program.pages) {
       if (compiledPage.record !== undefined) continue
       const { value } = compiledPage.page.loaded
@@ -258,6 +273,14 @@ async function renderSite(
   } finally {
     if (!threw) core.free()
   }
+}
+
+/** Every page the last load made, in its plan's order, each with its url. */
+function planned(core: Core): (PageRef & { url: string })[] {
+  return core.plan().map((page) => {
+    assert(page.url !== undefined, 'the shell’s host names the url field')
+    return { ...page, url: page.url }
+  })
 }
 
 /**
@@ -319,7 +342,8 @@ function claimed(
 
 /**
  * Renders pages into memory, their marks resolved, with the files their producers wrote,
- * refusing any two files that cannot both be written.
+ * refusing any two files that cannot both be written; and the bodies of documents, for
+ * the body pass (D46).
  */
 class Renderer {
   readonly outputs: Output[] = []
@@ -327,6 +351,8 @@ class Renderer {
   readonly #core: Core
   readonly #program: Program
   readonly #plugins: readonly Plugin[]
+  /** The site's origin, which a body's links are made absolute against, if it has one. */
+  readonly #origin?: string
   readonly #diagnostics: Diagnostic[]
   /** Every output file claimed so far: the passthrough and asset files to start with. */
   readonly #files: OutputFiles
@@ -339,13 +365,14 @@ class Renderer {
   constructor(
     core: Core,
     program: Program,
-    plugins: readonly Plugin[],
+    { plugins, origin }: Pick<LoadedConfig, 'plugins' | 'origin'>,
     files: OutputFiles,
     diagnostics: Diagnostic[]
   ) {
     this.#core = core
     this.#program = program
     this.#plugins = plugins
+    this.#origin = origin
     this.#files = files
     this.#diagnostics = diagnostics
   }
@@ -413,25 +440,71 @@ class Renderer {
     const resolved = resolvePage(rendered, marks)
     this.#diagnostics.push(...resolved.diagnostics)
     this.outputs.push({ file, bytes: resolved.bytes })
-    for (const produced of resolved.files) this.#produce(path, generated, produced)
+    const subject = { page: path, generated }
+    for (const produced of resolved.files) this.#produce(subject, produced)
   }
 
   /**
-   * Takes the file a producer wrote while the page at `page` resolved, or reports why
-   * it cannot be written, at the producer's mark: its url names no file, another
-   * producer wrote other bytes there, or a page, a passthrough file or an asset hook's
-   * file claims it, or a file that cannot stand beside it. The same bytes another
-   * producer wrote at the same file are taken as written already — the stylesheet two
-   * pages share — and other bytes from the same call are the producer writing the file
-   * twice.
+   * The body of the document at `path`, whose page is at `url`, rendered alone (D46) —
+   * its own output, its layout never called — with its marks resolved by the handlers a
+   * page's are, and its links rebased for reading on another page: made absolute against
+   * the site's origin, or root-relative where it names none; or `undefined`, where it
+   * failed, or where `url` names no file, which the page's render reports. It renders
+   * before any body exists, so a runtime error is labelled at its front matter as
+   * rendering the body then. Resolving it reports only errors, since its page resolves
+   * the same marks and warns there; each file its producers wrote is taken as a page's
+   * is, named as the body's. A link it cannot rebase is kept as written and warned at,
+   * at its front matter, as is a `srcset` candidate the rebase dropped.
+   */
+  body(path: string, url: string): string | undefined {
+    // A body is keyed by its page's url, which the page's render refuses, and reports.
+    if (outputFile(url) === undefined) return undefined
+    const page = this.#program.pages.get(path)
+    assert(page !== undefined, 'every planned page was compiled by this build')
+    const at = pageSpan(page.page)
+    const named = pageName(path, undefined, true)
+    const rendered = this.#core.render({ path, body: true })
+    const label = { path, span: at, message: `rendering ${named}, before any body exists` }
+    for (const diagnostic of rendered.diagnostics) {
+      this.#diagnostics.push({ ...diagnostic, labels: [...diagnostic.labels, label] })
+    }
+    if (rendered.html === null) return undefined
+    const { payloads } = this.#program
+    const marks = { path, body: true, plugins: this.#plugins, payloads }
+    const resolved = resolvePage(rendered, marks)
+    this.#diagnostics.push(...resolved.diagnostics)
+    const subject = { page: path, body: true }
+    for (const produced of resolved.files) this.#produce(subject, produced)
+    const { body, unrebased } = rebaseLinks(UTF8.decode(resolved.bytes), url, this.#origin)
+    for (const problem of unrebased) {
+      const message =
+        problem.kind === 'refused'
+          ? `${named} links to ${JSON.stringify(problem.url)} in \`${problem.at}\`, ` +
+            "which the URL parser refuses even against its page's url, so the body keeps " +
+            'it as written'
+          : `${named} holds \`${problem.at}\` as ${JSON.stringify(problem.srcset)}, ` +
+            `whose descriptor \`${problem.descriptor}\` does not parse, so its candidate is ` +
+            'dropped from the body as the others are rebased, as Eleventy drops it'
+      this.#diagnostics.push({ path, span: at, severity: 'warning', message, labels: [] })
+    }
+    return body
+  }
+
+  /**
+   * Takes the file a producer wrote while `subject` — a page, which of a generator's
+   * pages, or a document's body — resolved, or reports why it cannot be written, at the
+   * producer's mark: its url names no file, another producer wrote other bytes there, or
+   * a page, a passthrough file or an asset hook's file claims it, or a file that cannot
+   * stand beside it. The same bytes another producer wrote at the same file are taken as
+   * written already — the stylesheet two pages share, or a body and its page — and other
+   * bytes from the same call are the producer writing the file twice.
    */
   #produce(
-    page: string,
-    generated: Generated | undefined,
+    subject: { page: string; generated?: Generated; body?: boolean },
     { url, bytes, plugin, mark }: ProducedFile
   ): void {
     const { path, span } = mark
-    const named = pageName(page, generated)
+    const named = pageName(subject.page, subject.generated, subject.body)
     const lead = `the \`${plugin}\` plugin writes a file for this mark on ${named}`
     const file = outputFile(url)
     if (file === undefined) {
@@ -446,7 +519,7 @@ class Renderer {
       })
       return
     }
-    const writer: Writer = { path, span, producer: { plugin, page, generated } }
+    const writer: Writer = { path, span, producer: { plugin, ...subject } }
     const first = this.#written.get(file)
     if (first !== undefined) {
       if (Buffer.compare(first.bytes, bytes) === 0) return
@@ -474,6 +547,12 @@ class Renderer {
   }
 }
 
+/**
+ * A body's bytes as text: UTF-8, since the core writes it and a handler's bytes that are
+ * not are refused, so a stray byte is a bug; a leading U+FEFF is the body's own.
+ */
+const UTF8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true })
+
 /** What a url must be to name a file in the output directory. */
 const URL_RULE =
   'is a path from `/`, without an empty, `.` or `..` segment, a percent-encoded `/` or ' +
@@ -486,8 +565,8 @@ const URL_RULE =
  */
 function who(writer: Writer): string {
   if (writer.producer !== undefined) {
-    const { plugin, page, generated } = writer.producer
-    return `the \`${plugin}\` plugin, for ${pageName(page, generated)},`
+    const { plugin, page, generated, body } = writer.producer
+    return `the \`${plugin}\` plugin, for ${pageName(page, generated, body)},`
   }
   if (writer.assets !== undefined) {
     return `the \`${writer.assets.plugin}\` plugin's \`assets\` hook`

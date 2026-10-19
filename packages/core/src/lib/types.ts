@@ -291,6 +291,13 @@ export interface ForPair {
 export interface PageRef {
   path: string
   index?: number
+  /**
+   * Whether to render a loaded page's body alone: its own output, its entry field never
+   * called — what its layout would have been given, with the marks and fragments that
+   * stand in it, its ids numbered as on the page (D46). A file that is no page renders
+   * as it does without it.
+   */
+  body?: boolean
 }
 
 /**

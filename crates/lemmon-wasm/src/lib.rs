@@ -6,7 +6,7 @@
 //! changed, compiles each into its own unit against the resident signatures, and
 //! relinks; `loadData` validates the host's data against the program and keeps what it
 //! builds; `plan` lists the pages it loaded; `render` runs one file's entry over it, a
-//! loaded page's through its layout (D43).
+//! loaded page's through its layout (D43) or, asked for its body, without (D46).
 //!
 //! Diagnostics come back as a JSON array of
 //! `{path, span: {start, end, range}, severity, message, labels}`, every one pointing at
@@ -178,10 +178,10 @@ impl Core {
         self.plan_json().map_err(|m| JsError::new(&m))
     }
 
-    /// Renders one page. `page` is JSON `{path, index?}`, `index` naming one page of a
-    /// generator as `plan()` lists it; the result is bytes — a four-byte little-endian
-    /// length, that many bytes of JSON `{marks, fragments, diagnostics}`, then the
-    /// page's UTF-8 bytes.
+    /// Renders one page. `page` is JSON `{path, index?, body?}`, `index` naming one page
+    /// of a generator as `plan()` lists it; the result is bytes — a four-byte
+    /// little-endian length, that many bytes of JSON `{marks, fragments, diagnostics}`,
+    /// then the page's UTF-8 bytes.
     ///
     /// The page crosses as bytes rather than inside the JSON because escaping and
     /// parsing it there costs more than the render, and because a mark's offsets name
@@ -192,7 +192,9 @@ impl Core {
     /// A loaded page renders through its record's entry field, with the host's
     /// document value bound to that record and its own output passed as the body
     /// (D43); any other file renders its own output, reading the value the envelope
-    /// carried, if it did.
+    /// carried, if it did. With `body`, a loaded page renders its own output and calls
+    /// no entry field — what its layout would have been given, its marks and fragments
+    /// as they stand in it (D46) — and a file that is no page renders as it always does.
     ///
     /// # Errors
     ///
@@ -453,14 +455,14 @@ impl Core {
         let globals: Vec<(&str, Value)> = store
             .map(|store| store.globals(&linked.host, path, page.index))
             .unwrap_or_default();
+        // A body is the page's own output, what its entry would have been given: the
+        // same run with no entry to call, so ids, fragments and marks are the body's
+        // exactly as they stand in the page (D46).
+        let entry = if page.body { None } else { linked.host.entry() };
         let rendered = match store.zip(loaded) {
-            Some((store, loaded)) => render_page(
-                &linked.module,
-                loaded,
-                &store.pages,
-                linked.host.entry(),
-                &globals,
-            ),
+            Some((store, loaded)) => {
+                render_page(&linked.module, loaded, &store.pages, entry, &globals)
+            }
             None => render(&linked.module, &page.path, &globals),
         };
         match rendered {
@@ -1699,6 +1701,112 @@ mod tests {
                 .unwrap_err()
                 .contains("`loadData` first")
         );
+    }
+
+    /// A typed site whose post writes a style, an id and a code block, and whose layout
+    /// writes an id of the same prefix and places the styles: what a body render must
+    /// return as it stands in the page (D46). Loaded, with the claims declared.
+    fn body_core() -> Core {
+        let host = SITE_HOST.replace(
+            r#""url": "url""#,
+            r#""url": "url", "marks": [{"name": "styles"},
+                {"name": "code", "keys": ["sh"], "payload": "Code", "keyedBy": "language"}]"#,
+        );
+        let site = SITE_LEM.replace(
+            "<lem-fn post(p: Post, body: html)><h1><lem.p.title></h1><lem.body></lem-fn>",
+            "<lem-fn post(p: Post, body: html)><h1 id=\"<lem.uniqueId(\"n\")>\">\
+             <lem.p.title></h1><lem.body><lem.mark(\"styles\")></lem-fn>",
+        );
+        assert_ne!(site, SITE_LEM);
+        let post = "---\ntitle: A\nurl: /a/\n---\n<lem-style>\n  p {}\n</lem-style>\n\
+                    <lem.uniqueId(\"n\")>\n\n```sh\nls\n```\n";
+        let files = serde_json::json!([
+            {"path": "ambient.lem", "text": format!("{AMBIENT_LEM}\n{CODE}")},
+            {"path": "site.lem", "text": site},
+            {"path": "posts/a.md", "text": post, "record": "Post"},
+        ]);
+        let mut core = Core::new();
+        compile_clean_with(&mut core, &files.to_string(), Some(&host));
+        assert_eq!(load(&mut core, &loaded()), serde_json::json!([]));
+        core
+    }
+
+    #[test]
+    fn renders_a_loaded_pages_body_without_its_layout() {
+        let core = body_core();
+        let body = |core: &Core| {
+            decode(
+                &core
+                    .render_bytes(r#"{"path": "posts/a.md", "body": true}"#)
+                    .unwrap(),
+            )
+        };
+        let (meta, html) = body(&core);
+        let html = html.expect("a body");
+        let block = "<pre><code class=\"language-sh\">ls\n</code></pre>";
+        assert_eq!(html, format!("n-0\n{block}\n"));
+        // The body's own mark, at the body's own bytes; the layout's `styles` is not
+        // in it.
+        let marks = meta["marks"].as_array().expect("marks");
+        assert_eq!(marks.len(), 1, "{marks:?}");
+        let start = html.find("<pre>").expect("the block");
+        assert_eq!(
+            (&marks[0]["name"], &marks[0]["start"], &marks[0]["end"]),
+            (
+                &serde_json::json!("code"),
+                &serde_json::json!(start),
+                &serde_json::json!(start + block.len())
+            )
+        );
+        assert_eq!(meta["fragments"]["styles"][0]["text"], "p {}");
+        // The page holds the same body, through its layout.
+        assert_eq!(
+            html_of(&core, "posts/a.md"),
+            format!("<h1 id=\"n-1\">A</h1>{html}")
+        );
+    }
+
+    #[test]
+    fn numbers_a_bodys_ids_as_its_page_numbers_them() {
+        // The page renders its body before its layout, in one run, so the body's ids
+        // come first there as they do alone: a fragment link in a body read elsewhere
+        // names the element it names on the page.
+        let core = body_core();
+        let (_, body) = decode(
+            &core
+                .render_bytes(r#"{"path": "posts/a.md", "body": true}"#)
+                .unwrap(),
+        );
+        let page = html_of(&core, "posts/a.md");
+        assert!(body.expect("a body").starts_with("n-0\n"));
+        assert!(page.contains("</h1>n-0\n"), "{page}");
+    }
+
+    #[test]
+    fn renders_a_generated_pages_body_by_its_index() {
+        let (mut core, envelope) = generator_core();
+        assert_eq!(load(&mut core, &envelope), serde_json::json!([]));
+        let page = serde_json::json!({"path": "topics.lem", "index": 1, "body": true});
+        assert_eq!(rendered_at(&core, &page), "node");
+        let page = serde_json::json!({"path": "topics.lem", "body": true});
+        assert!(
+            core.render_bytes(&page.to_string())
+                .unwrap_err()
+                .contains("is a generator"),
+            "a body names its page as a render does"
+        );
+    }
+
+    #[test]
+    fn renders_a_file_that_is_no_page_the_same_with_body() {
+        // A document nothing typed is no page: it has no layout to leave out.
+        let mut core = site_core();
+        let loose = r#"[{"path": "loose.md", "text": "<lem.site.motto>\n"}]"#;
+        compile_clean_with(&mut core, loose, None);
+        assert_eq!(load(&mut core, &loaded()), serde_json::json!([]));
+        let page = serde_json::json!({"path": "loose.md", "body": true});
+        assert_eq!(rendered_at(&core, &page), "hi\n");
+        assert_eq!(html_of(&core, "loose.md"), "hi\n");
     }
 
     #[test]

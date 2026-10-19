@@ -113,8 +113,9 @@ export class Core {
    * collected, or `null`s alongside the runtime diagnostic. A loaded page renders
    * through its record's entry field, with the host's document value bound to that
    * record and its own output passed as the body, in one run — so ids, fragments, and
-   * marks are continuous across the two (D43). Any other file renders its own output,
-   * reading the value the envelope carried, if it did.
+   * marks are continuous across the two (D43) — or, with {@link PageRef.body}, as that
+   * body alone (D46). Any other file renders its own output, reading the value the
+   * envelope carried, if it did.
    *
    * The reply crosses as a four-byte length, that many bytes of metadata JSON, then the
    * page. `html` is a view onto those bytes, so a caller reading `html.buffer` must
@@ -127,8 +128,9 @@ export class Core {
    */
   render(page: PageRef): RenderResult {
     // A `PlannedPage` is a `PageRef` with more, and the wire takes exactly a `PageRef`;
-    // an `index` left undefined is left out.
-    const reply = this.#core.render(JSON.stringify({ path: page.path, index: page.index }))
+    // an `index` or `body` left undefined is left out.
+    const { path, index, body } = page
+    const reply = this.#core.render(JSON.stringify({ path, index, body }))
     const length = new DataView(reply.buffer, reply.byteOffset, 4).getUint32(0, true)
     const meta = JSON.parse(decoder.decode(reply.subarray(4, 4 + length))) as RenderMeta
     return {

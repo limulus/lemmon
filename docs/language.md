@@ -371,6 +371,7 @@ The standard shell (`@limulus/lemmon-shell`) ships this declaration and binds `p
 <lem-type Build>
   time: datetime
   generator: string
+  bodies: {string: string}
 </lem-type>
 ```
 
@@ -380,6 +381,19 @@ page.
 `/` separators — `www/feed/the-rebound/index.md` — where the core's path starts at the
 input directory.
 `Page` declares no neighbours: a generated page's type declares its own (below, D43).
+
+`build.bodies` is each document's finished body by its page's url as `url.text()` writes it
+— what a feed prints, `<lem.build.bodies[post.url.text()]>` — which the shell renders alone
+before any page renders (D46): the document's own output with its layout never called, its
+code highlighted by the shell's handlers and its links made absolute against the site's
+`origin` (a path from `/` where the config names none). A body is a `string`, escaped once
+where it is printed; `raw()` splices it as markup. While the bodies render the map is empty,
+so a document's own body reading it sees `{}`, an index into it a render error at the read;
+a computed binding in `site.lem` runs at both of the shell's loads, so one that indexes a
+body fails the first, and a tolerant read — `has`, `keys()`, a `lem-for` — sees `{}` and
+then every body; a layout and every page template read them all. The `body` a default sees
+is not this: that is a document's prose as comrak rendered it at compile, as `html`, where
+`build.bodies` holds the body after render, marks resolved, as a string.
 
 - **`site`** is the record of `site.lem`'s top-level bindings. A `from` binding names a
   source the shell fulfils, and the binding's type decides what is loaded: a list of a
@@ -860,8 +874,8 @@ as well as text — by what they place, not by where the `mark()` that made them
 written. `readingTime` counts a default's text like any other. A mark inside a
 `lem-style`/`lem-head` body, a payload — at any depth inside it — or a default is a render
 error at the block or the call. A rendered body that reaches a template as a value is a
-string of finished output the host loaded back for a second render phase, never `html`
-carrying marks.
+string the host finished and bound before the page rendered — the standard shell's
+`build.bodies` (D46) — never `html` carrying marks.
 
 ## Document mode (D07, D08)
 

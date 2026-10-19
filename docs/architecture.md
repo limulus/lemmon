@@ -36,8 +36,9 @@ class Core {
   upsertRecord(collection, record) / removeRecord(id) // dev server + future on-demand
   plan(): {path, index?, url?}[]                      // every loaded page (D43)
   render(page: PageRef): { html (bytes), marks, fragments, deps }
-      // a page through its entry; marks are named ranges the host's handlers fill,
-      // fragments what the collect tags gathered under each name (D42); deps ∆xBO
+      // a page through its entry, or its body alone (D46); marks are named ranges the
+      // host's handlers fill, fragments what the collect tags gathered under each name
+      // (D42); deps ∆xBO
   exportModule(): Uint8Array / importModule(bytes)    // precompiled program (Lambda cold start)
   analyze(path, offset): { diagnostics, completions, hover, definition }  // LSP
   format(path): string
@@ -137,8 +138,9 @@ not a break:
   `compile` may carry `recordSpan`, the byte offsets of the `type:` key's value, so a
   diagnostic about the record points at the key; offsets that are not a span of the
   file's text are refused as a caller bug, since a line index panics on them.
-- `PageRef` is `{path, index?}`: a path names a document or page template, and `index`
-  one page of a generator, counted from zero in its list's order. `plan()` lists every
+- `PageRef` is `{path, index?, body?}`: a path names a document or page template, `index`
+  one page of a generator, counted from zero in its list's order, and `body` asks for a
+  loaded page's own output alone, its entry field never called (D46). `plan()` lists every
   loaded page with the url the host-named field holds (D43): each collection's in the
   order the loader builds them, then the envelope's `pages` in their order, a generator
   expanded where it stands, `index` present exactly on a generated page. `DataInput`
@@ -168,7 +170,10 @@ not a break:
   its file's output passed as `body` to the entry field's function, in one run of the
   VM; any other file — a template with no front matter, or a document or page template
   no collection matched and no `type:` named — renders its own output, reading the value
-  the envelope carried, if it did, as sent (D37).
+  the envelope carried, if it did, as sent (D37). With `body`, a loaded page renders as
+  far as that output and stops: what its layout would be given, with the marks and
+  fragments standing in it and its `uniqueId`s counted as the page counts them, since the
+  page renders its body first; a file that is no page renders as it does without it.
 - A `Diagnostic` is `{path, span: {start, end, range}, severity, message, labels}`. The
   span carries byte offsets (invariant 8) *and* `range`, the same two points as
   `{line, character}` LSP positions — zero-based, `character` in UTF-16 code units. The
@@ -237,9 +242,13 @@ not a break:
    (D43); deps come with ∆xBO. A file with no record — a document or
    page template no glob matched and no `type:` named — is no page: `plan()` omits it,
    and the shell renders it with `render({path})` at the url it derives.
-6. **Render × N** (core) — body → the entry function → the page as bytes + its marks
-   (name, range, payload id, span) + the fragments collected under each name +
-   dependency set. Parallel via shell workers.
+6. **Render × N** (core) — first the body pass (shell, D46): each document the load made
+   renders its body alone, `render({path, body: true})`, its marks resolved as step 7
+   resolves a page's and its links made absolute against the config's `origin`, and the
+   shell loads again with every body a string in `build.bodies`, by its page's url. Then
+   every page: body → the entry function → the page as bytes + its marks (name, range,
+   payload id, span) + the fragments collected under each name + dependency set. Parallel
+   via shell workers.
 7. **Resolve** (shell) — for each mark, the producer for its name and key, then its
    decorators in plugin order, over the page as the core returned it; a code block's
    handlers given the payload `compile` reported, kept by id (D42). The handlers are
@@ -249,9 +258,6 @@ not a break:
    `esbuild()` builds — the files producers wrote — the per-page CSS bundles `bundler()`
    writes under `/assets/immutable/bundle/` — and passthrough.
 9. **Post-process** (shell) — optional transforms (dprint), link/asset integrity check.
-10. **Second phase** (shell) — pages that read other pages' finished output (feeds,
-    ∆zu0) render after steps 6–9 have finished every other page, with those outputs
-    loaded back as a string source (D42).
 
 What `lem build` (∆muD) runs is steps 1–8, step 2 but its data hooks, in one core on one
 thread. `lem check` runs the same and stops before the first write, so it reports every
@@ -270,8 +276,9 @@ writes; a write the file system then refuses is reported, and the output may hol
 was written before it. A page no glob matched and no `type:` named renders with `page`
 its own front matter, each such page loaded on its own before it renders, since a load
 binds one document value; each of those loads re-sends and re-validates the whole
-envelope, so the cost grows with the untyped pages times the size of the site — 18 of 25
-pages on the limulus-dot-net port branch cost about 0.35 s in all. Step 7 runs as each
+envelope, every body in `build.bodies` among it, so the cost grows with the untyped pages
+times the size of the site — 18 of 25 pages on the limulus-dot-net port branch cost about
+0.35 s in all while they were untyped; it types every page now. Step 7 runs as each
 page renders, with the handlers of the plugins `lemmon.config.ts` lists, whose claims step
 3's first call declared — an empty list for a site listing none, which warns at every mark.
 A plugin list two producers would answer one mark under, or whose handlers name two
@@ -307,6 +314,37 @@ any other language, or naming none, keeps comrak's. The version is pinned exactl
 another release's grammars mark the same code differently. No output is cached by payload
 id: highlighting limulus.net's eight blocks takes about 1 ms of a 160 ms rebuild, and
 8 ms in the first build, which compiles the grammars.
+
+Step 6's body pass (D46) runs once the load has succeeded. Each page `plan()` lists whose
+file is a document (`.md`) renders with `render({path, body: true})` — its own output, its
+layout never called, with its marks and fragments and its `uniqueId`s counted as its page
+counts them — and its marks are resolved by the handlers a page's are, so a code block is
+highlighted as on its page and a producer's file is checked and written as a page's is,
+named for the body, the same bytes its page writes written once. Every handler so runs for a
+document's body and then for its page, told which by `body` on a producer's context and in a
+decorator's third argument; content it returns as bytes must be UTF-8, on a page or a body
+alike, or it is a handler's failure, its mark keeping what it had. The pass reports only
+errors: a handler that fails on a body, and fragments a body collects and nothing in it
+places, are warned at by its page, which resolves the same marks over the same fragments.
+Each body is decoded as UTF-8, a leading U+FEFF kept, and its links rebased for reading on
+another page, by the rule Eleventy's HTML base plugin applies to a feed's content over the
+attributes `@11ty/posthtml-urls` walks for it (D46): parsed with parse5 — `<noscript>`
+content included, `<template>` content walked, a namespaced attribute such as `xlink:href`
+left — and each url in an `href`, `src`, `srcset` candidate and the rest that the URL parser
+cannot read on its own resolved against the page's url on the site's origin,
+`lemmon.config.ts`'s `origin`, or, where it names none, made a path from `/`, a url naming a
+host of its own kept; only an attribute that changes is rewritten, so the rest of the body
+stays as rendered. A url the URL parser refuses is kept as written and warned at, at the
+document's front matter, as is a `srcset` candidate the rewrite drops; a document whose url
+names no file is left to its page's render, which reports it. Each body is kept by its
+page's url, the string `plan()` reports, which is what `url.text()` writes; the shell then
+loads again, `build.bodies` carrying them, where the first load carried `{}`. So a
+document's own body reads an empty map in the pass — an index into it is a runtime error
+labelled as rendering the body before any body exists — and its page, rendered after, reads
+every body; a computed binding runs at both loads. An error in the pass stops the build
+before the second load, so that no page, feed or binding reports a body's error again as the
+body it lacks, and an error in the second load stops it before any page renders. Page
+templates, generated pages and documents no record typed have no body in the map.
 
 Step 2 runs once discovery has read the site, before anything compiles. Each document whose
 front matter read — not a page template, which has no markdown and whose definitions every
@@ -350,8 +388,6 @@ ASCII is escaped there, and stays absolute, on both sides.
 - Step 2's data hooks are not yet run (∆wOn), so a `plugin("…")` source is an error at
   its binding.
 - Step 9 is not yet run: no output transform (∆fwn) and no integrity check (∆yOJ).
-- Step 10 is not yet run (∆zu0): a feed renders with the other pages, reading none of
-  their output.
 
 Dev incrementality, not yet built (∆xBO, ∆Qr2), comes from two reported sets, and is
 built only if a full rebuild of limulus.net takes over a second. Render-reported deps:
@@ -568,7 +604,7 @@ interface PluginHandler {
   payload?: string // the record its marks carry, which a `.lem` file declares
   keyedBy?: string // the field of that record holding a mark's key; needs `payload`
   produce?(ctx: ProducerContext): (string | Uint8Array)[] // one per mark it answers
-  decorate?(mark: Mark, content: Uint8Array): string | Uint8Array
+  decorate?(mark: Mark, content: Uint8Array, ctx: { body: boolean }): string | Uint8Array
 }
 
 interface ProducerContext {
@@ -576,6 +612,7 @@ interface ProducerContext {
   marks: Mark[] // every mark of the name on the page that it answers
   fragments: Fragment[] // what the page collected under the name
   page: Uint8Array // the page as the core returned it
+  body: boolean // a document's body in the body pass (D46), which runs before its page
   write(url: string, content: string | Uint8Array): void // a file beside the pages
 }
 ```

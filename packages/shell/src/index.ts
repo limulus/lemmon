@@ -24,6 +24,7 @@ export type { Environment } from './lib/load.ts'
 export type {
   Assets,
   AssetsContext,
+  DecoratorContext,
   DocumentSource,
   Plugin,
   PluginHandler,

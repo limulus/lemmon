@@ -3,7 +3,7 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
-import { envelope, type Envelope } from './load.ts'
+import { envelope, withBodies, type Envelope } from './load.ts'
 import { compileSite } from './program.ts'
 import { discover } from './site.ts'
 import { configOf, ENV, GENERATING, project, SITE, SITE_LEM } from '../mocks/sites.ts'
@@ -42,8 +42,9 @@ describe('envelope()', () => {
     const post = SITE['posts/a.md']
 
     expect(diagnostics).toEqual([])
+    // No bodies yet: this is what the body pass renders under (D46).
     expect(data?.ambient).toEqual({
-      build: { time: '2026-10-15T12:00:00.000Z', generator: 'Lemmon 0.0.0' },
+      build: { time: '2026-10-15T12:00:00.000Z', generator: 'Lemmon 0.0.0', bodies: {} },
     })
     expect(Object.keys(data?.sources ?? {})).toEqual(['posts', 'photos', 'motto'])
     // A glob's pages in path order, as discovery read their front matter.
@@ -274,5 +275,21 @@ describe('envelope()', () => {
       expect(data?.sources?.again).toEqual(data?.sources?.photos)
       expect(texts.get('_data/photos.json')).toBe(SITE['_data/photos.json'])
     })
+  })
+})
+
+describe('withBodies()', () => {
+  it('should carry the bodies as `build.bodies`, leaving the rest of the envelope as it was', async () => {
+    const { data } = await enveloped(SITE)
+    const bodies = { '/posts/a/': '<p>Hello <em>a</em>.</p>\n' }
+
+    const second = withBodies(data!, bodies)
+
+    expect(second.ambient).toEqual({
+      build: { time: '2026-10-15T12:00:00.000Z', generator: 'Lemmon 0.0.0', bodies },
+    })
+    expect({ ...second, ambient: data?.ambient }).toEqual(data)
+    // The first envelope is untouched: an untyped page's reload spreads the second.
+    expect(data?.ambient?.build).toMatchObject({ bodies: {} })
   })
 })

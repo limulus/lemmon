@@ -134,7 +134,7 @@ describe('loadConfig()', () => {
 
       expect(error.field).toBe('passthru')
       expect(error.message).toMatch(
-        /: unknown field `passthru`; a config has `input`, `output`, `passthrough`, `plugins`, `dev`$/
+        /: unknown field `passthru`; a config has `input`, `output`, `origin`, `passthrough`, `plugins`, `dev`$/
       )
     })
 
@@ -564,6 +564,90 @@ describe('loadConfig()', () => {
 
         expect(await loaded(`[${plugins.join(', ')}]`)).toHaveLength(3)
       })
+    })
+  })
+
+  describe('origin', () => {
+    /** A config whose `origin` is `origin`, the source of a JavaScript expression. */
+    const listing = (origin: string) =>
+      `export default { input: 'www', output: 'dist', origin: ${origin} }`
+
+    /** The origin a config whose `origin` is `origin` loads with. */
+    async function loaded(origin: string) {
+      return (await loadConfig(configFile(listing(origin)))).origin
+    }
+
+    /** Why loading a config whose `origin` is `origin` is refused, past the file's name. */
+    async function refused(origin: string): Promise<string> {
+      const error = await refusal(listing(origin))
+      expect(error.field).toBe('origin')
+      return error.message.slice(`${error.file}: `.length)
+    }
+
+    const RULE =
+      ': it is where the site is served, an http or https URL with nothing after its ' +
+      'host and port, as `https://example.com`'
+
+    it('should default to none', async () => {
+      const omitted = configFile("export default { input: 'www', output: 'dist' }")
+
+      expect(await loadConfig(omitted)).not.toHaveProperty('origin')
+    })
+
+    it('should take an origin as the URL parser writes one', async () => {
+      expect(await loaded("'https://limulus.net'")).toBe('https://limulus.net')
+      expect(await loaded("'HTTPS://Limulus.NET/'")).toBe('https://limulus.net')
+      expect(await loaded("'http://localhost:80'")).toBe('http://localhost')
+      expect(await loaded("'http://localhost:8080'")).toBe('http://localhost:8080')
+      expect(await loaded("'https://[::1]:3000'")).toBe('https://[::1]:3000')
+    })
+
+    it('should refuse what is not a string', async () => {
+      expect(await refused('3')).toBe(`\`origin\` must be a string${RULE}`)
+    })
+
+    it('should refuse, as written, what the URL parser would read past', async () => {
+      const reasons: [string, string][] = [
+        ['  https://limulus.net  ', 'holds whitespace'],
+        ['https://limu\tlus.net', 'holds whitespace'],
+        ['limulus.net', 'does not start `http://` or `https://`'],
+        ['http:limulus.net', 'does not start `http://` or `https://`'],
+        ['https:\\\\limulus.net', 'does not start `http://` or `https://`'],
+        ['ftp://limulus.net', 'does not start `http://` or `https://`'],
+        ['https://limu\\lus.net', 'holds a backslash'],
+      ]
+      for (const [origin, reason] of reasons) {
+        // A JSON string is a JavaScript one, so the config holds `origin` as it is here.
+        const written = JSON.stringify(origin)
+        expect(await refused(written)).toBe(
+          `\`origin\` is ${written}, which ${reason}${RULE}`
+        )
+      }
+    })
+
+    it('should refuse anything after the host and port, each for what it is', async () => {
+      const reasons: [string, string][] = [
+        [
+          'https://limulus.net/blog/',
+          "has a path, and Lemmon has no path prefix: a page's url is a path from `/` on " +
+            'the origin',
+        ],
+        ['https://limulus.net/?', 'has a query, which no origin has'],
+        ['https://limulus.net?a=1', 'has a query, which no origin has'],
+        ['https://limulus.net/#', 'has a fragment, which no origin has'],
+        ['https://eric@limulus.net', 'holds credentials, which no origin has'],
+      ]
+      for (const [origin, reason] of reasons) {
+        expect(await refused(`'${origin}'`)).toBe(
+          `\`origin\` is "${origin}", which ${reason}${RULE}`
+        )
+      }
+    })
+
+    it('should refuse what the URL parser refuses', async () => {
+      expect(await refused("'https://[::1'")).toBe(
+        `\`origin\` is "https://[::1", which the URL parser refuses${RULE}`
+      )
     })
   })
 

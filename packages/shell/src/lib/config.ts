@@ -14,6 +14,7 @@ import { validatePlugins, type Plugin } from './plugins.ts'
  * export default {
  *   input: 'www',
  *   output: 'dist/www',
+ *   origin: 'https://example.com',
  *   passthrough: ['assets/**', 'robots.txt'],
  *   plugins: [bundler()],
  *   dev: { headers: { 'Cross-Origin-Opener-Policy': 'same-origin' } },
@@ -27,6 +28,15 @@ export interface Config {
   input: string
   /** The directory a build writes to; it may not be the input or hold it. */
   output: string
+  /**
+   * Where the site is served: an `http` or `https` URL with nothing after its host and
+   * port, `https://example.com`, since a page's url is a path from `/` and Lemmon has no
+   * path prefix. A document's body is read on other pages — a feed's — so its links are
+   * made absolute against it before the body is bound in `build.bodies` (D46). With none,
+   * they are made root-relative, a path from `/`, which reads the same on every page of
+   * the site and nowhere else.
+   */
+  origin?: string
   /**
    * Globs naming the files copied to the output as they are, matched against each
    * file's path relative to {@link input} with Eleventy's glob semantics: picomatch,
@@ -97,6 +107,8 @@ export interface LoadedConfig {
   input: string
   /** {@link Config.output}, absolute. */
   output: string
+  /** {@link Config.origin} as the URL parser writes an origin, `https://example.com`. */
+  origin?: string
   passthrough: string[]
   plugins: Plugin[]
   /** {@link Config.dev}, its `headers` none where it names none. */
@@ -126,6 +138,7 @@ export class ConfigError extends Error {
 const FIELDS: readonly string[] = [
   'input',
   'output',
+  'origin',
   'passthrough',
   'plugins',
   'dev',
@@ -188,6 +201,7 @@ function validated(file: string, exported: unknown): LoadedConfig {
     file,
     input,
     output,
+    ...origin(file, fields.origin),
     passthrough: globs(file, fields.passthrough),
     plugins: plugins(file, fields.plugins),
     dev: dev(file, fields.dev),
@@ -206,6 +220,43 @@ function directory(file: string, fields: Record<string, unknown>, field: string)
     throw new ConfigError(file, `\`${field}\` must be a non-empty string`, { field })
   }
   return value
+}
+
+/**
+ * `{origin}`, the origin `value` names as the URL parser writes it, or nothing where it
+ * is omitted: refused, as written, unless it is `http://` or `https://`, a host, and an
+ * optional port and `/` — each other thing it holds refused for what it is, before the
+ * URL parser, which would read past whitespace, a backslash or a missing `//`, sees it.
+ */
+function origin(file: string, value: unknown): { origin?: string } {
+  if (value === undefined) return {}
+  const refused = (problem: string) =>
+    new ConfigError(
+      file,
+      `\`origin\` ${problem}: it is where the site is served, an http or https URL with ` +
+        'nothing after its host and port, as `https://example.com`',
+      { field: 'origin' }
+    )
+  if (typeof value !== 'string') throw refused('must be a string')
+  const is = `is ${JSON.stringify(value)}, which`
+  if (/\s/.test(value)) throw refused(`${is} holds whitespace`)
+  const scheme = /^https?:\/\//i.exec(value)
+  if (scheme === null) throw refused(`${is} does not start \`http://\` or \`https://\``)
+  const rest = value.slice(scheme[0].length)
+  const host = /^[^/?#]*/.exec(rest)![0]
+  if (host.includes('@')) throw refused(`${is} holds credentials, which no origin has`)
+  if (host.includes('\\')) throw refused(`${is} holds a backslash`)
+  const after = rest.slice(host.length).replace(/^\//, '')
+  if (after.startsWith('?')) throw refused(`${is} has a query, which no origin has`)
+  if (after.startsWith('#')) throw refused(`${is} has a fragment, which no origin has`)
+  if (after !== '') {
+    throw refused(
+      `${is} has a path, and Lemmon has no path prefix: a page's url is a path from ` +
+        '`/` on the origin'
+    )
+  }
+  if (!URL.canParse(value)) throw refused(`${is} the URL parser refuses`)
+  return { origin: new URL(value).origin }
 }
 
 function globs(file: string, value: unknown): string[] {

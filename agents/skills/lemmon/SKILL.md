@@ -129,9 +129,13 @@ deferred), so write `1.0 / 3.0`.
 
 The standard shell (`@limulus/lemmon-shell`, whose `lem build` writes the site) compiles
 every file with its `ambient.lem`, which declares `Page` (`url: url`, `inputPath: string`,
-`draft: bool = false`), `Build` (`time`, `generator`) and `Code`. It binds `page` (the page
-being rendered), `build`, and `site`, the record of `site.lem`'s top-level bindings; a site
-needs a `site.lem` in its input directory, even an empty one.
+`draft: bool = false`), `Build` (`time`, `generator`, `bodies`) and `Code`. It binds `page`
+(the page being rendered), `build`, and `site`, the record of `site.lem`'s top-level
+bindings; a site needs a `site.lem` in its input directory, even an empty one.
+`build.bodies` is a `{string: string}` of every document's finished body by its page's url
+— what a feed prints, `<lem.build.bodies[post.url.text()]>`, escaped once, its links made
+absolute against the config's `origin` — rendered before any page renders, so it is empty
+(`{}`) inside a document's own body (D46).
 
 ```lem site.lem
 <lem-enum Placement = hero | left | right />

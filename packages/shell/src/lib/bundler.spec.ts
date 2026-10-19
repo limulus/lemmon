@@ -25,6 +25,7 @@ function produced(name: string, texts: string[], marks = 1) {
     marks: Array.from({ length: marks }, () => mark),
     fragments,
     page: new Uint8Array(),
+    body: false,
     write: (url, content) => {
       written.push([url, content])
     },

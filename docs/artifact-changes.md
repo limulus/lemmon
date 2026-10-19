@@ -260,8 +260,9 @@ moved it. Newest last. An entry is removed when its change has been applied.
   checked against the host's claims, a name none claims a warning and a host declaring no
   handlers silent, the claims recorded as a fact, a mark inside a fragment, a payload, or
   a default a render error,
-  and a rendered body reaching a template a string of finished output from a second
-  render phase. In Escaping, a producer's output is the host's trust (D42).
+  and a rendered body reaching a template a string the host finished and bound before
+  the page rendered — the standard shell's `build.bodies` (D46). In Escaping, a
+  producer's output is the host's trust (D42).
 
 - **Deferred questions** — add raw text in templates: a `: string` capture scanned as
   text and call-with-body sugar (`lem-with`/`lem-raw`) over it, both additive (∆M5x, D42).
@@ -283,6 +284,13 @@ moved it. Newest last. An entry is removed when its change has been applied.
 - **`readingTime()`** — say it counts what a reader sees, not the source, so a link counts
   as its words and not its URL; Eric accepted for limulus.net that this reads a minute
   under Eleventy's count near a rounding boundary (D38, 2026-10-17).
+- **Ambient types, the standard shell's `Build`** — add `bodies: {string: string}`: each
+  document's finished body by its page's url as `url.text()` writes it, which a feed
+  prints, escaped once. It is empty while the bodies render, so a document's own body
+  reading it sees `{}` and a computed binding, which runs at both of the shell's loads,
+  sees `{}` and then every body. Beside `body` in a default, say that one is a document's
+  prose as comrak rendered it at compile, as `html`, and `build.bodies` the body after
+  render, as a string (D46).
 
 ## Shell & Core
 
@@ -507,8 +515,11 @@ moved it. Newest last. An entry is removed when its change has been applied.
   runs each mark's producer then its decorators before any transform, caching nothing by
   payload id, since highlighting limulus.net's code costs about 1 ms a rebuild (∆Nxd);
   Write writes the pages, then the files producers wrote, then passthrough; and
-  a Second phase renders pages that read other pages' finished output (feeds) after every
-  other page is written, that output loaded back as a string source. D06's "plugins
+  Render begins with a body pass — each document's body rendered alone, its marks
+  resolved by handlers told it is a body, its links made absolute against
+  `lemmon.config.ts`'s `origin`, and every body bound as a string in `build.bodies` by a
+  second load before any page renders — where the text had a Second phase after every
+  other page was written (D46). D06's "plugins
   cannot inject logic" is scoped to the language and the core (D42; ∆F4y): what a plugin
   hands the core before it compiles — a document transform's body, an asset hook's
   manifest — is the shell's trust too, as what it does to a page afterwards is (D44).
@@ -536,10 +547,11 @@ moved it. Newest last. An entry is removed when its change has been applied.
   every loaded page: each collection's in the order the loader builds them, then the
   envelope's `pages` in order, a generator expanded where it stands, the url read from the
   field the host names, and two pages at one url a load error. `PageRef` is `{path,
-  index?}`, `index` numbering a generator's pages, and `render` refuses a generator's
-  path with no `index`, an `index` past its pages, and one for a file that is no
-  generator. `HostDecl` gains `url?` and `neighbours?`, two field names; `DataInput` gains
-  `pages`, the front matter of every page no glob holds, and any page's entry may carry
+  index?, body?}`, `index` numbering a generator's pages and `body` asking for a loaded
+  page's own output alone, its entry field never called (D46), and `render` refuses a
+  generator's path with no `index`, an `index` past its pages, and one for a file that
+  is no generator. `HostDecl` gains `url?` and `neighbours?`, two field names;
+  `DataInput` gains `pages`, the front matter of every page no glob holds, and any page's entry may carry
   its `for:` pair as the shell parsed it, `{value, spans, valueSpans}`, a glob's member
   too, which the load refuses at the key (∆99b). `render` renders a loaded page through
   its entry — the file's output passed as `body` to the entry field's function in one VM run
@@ -636,9 +648,11 @@ moved it. Newest last. An entry is removed when its change has been applied.
   the null (D41, D43).
 
 - **Feeds and code blocks** — where the text maps `eleventy-plugin-rss` and the
-  markdown-it highlight function: the three feeds are Lemmon templates rendered in a
-  second phase over each page's finished output, loaded back as a string source and
-  escaped as any string is; code blocks are `code` marks a highlight.js producer fills,
+  markdown-it highlight function: the three feeds are Lemmon page templates printing each
+  post's body from `build.bodies` — the document's body the shell rendered alone and
+  finished before any page rendered, its links made absolute against the config's
+  `origin` by Eleventy's HTML-base rule (D46) — escaped as any string is; code blocks are
+  `code` marks a highlight.js producer fills,
   reproducing `<pre><code class="hljs">` with `hljs-*` spans exactly, so the parity
   harness forgives nothing there (D42).
 

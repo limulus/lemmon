@@ -189,7 +189,8 @@ fn renders_blocks_nested_to_the_parser_cap_without_trapping() {
 }
 
 /// A page no glob holds crosses in `pages`, the plan lists what loaded with the url the
-/// host-named field holds, and the page renders through its layout (D43).
+/// host-named field holds, and the page renders through its layout (D43), or as its body
+/// alone (D46).
 #[wasm_bindgen_test]
 fn plans_and_renders_loaded_pages_through_the_abi() {
     let mut core = Core::new();
@@ -246,6 +247,13 @@ fn plans_and_renders_loaded_pages_through_the_abi() {
             .expect("a loaded page renders"),
     );
     assert_eq!(page, "<h1>Home</h1>hi");
+    // Its body alone, the layout never called (D46).
+    let (_, body) = decode(
+        &core
+            .render(r#"{"path": "home.lem", "body": true}"#)
+            .expect("a loaded page's body renders"),
+    );
+    assert_eq!(body, "hi");
 }
 
 /// A generator's `for:` pair crosses on its page's entry, the plan lists each page it

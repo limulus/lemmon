@@ -518,15 +518,18 @@ fn table(
     Ok(spans)
 }
 
-/// What `render` receives — a `PageRef`, `{path, index?}`: the path of a file the
-/// program compiled, a page `plan()` listed or any other, and for a page a generator
-/// made, its `index` among the generator's pages, as `plan()` lists it (D43).
+/// What `render` receives — a `PageRef`, `{path, index?, body?}`: the path of a file the
+/// program compiled, a page `plan()` listed or any other; for a page a generator made,
+/// its `index` among the generator's pages, as `plan()` lists it (D43); and `body`, for
+/// a page's own output alone, its entry field never called (D46).
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct PageRef {
     pub(crate) path: String,
     #[serde(default)]
     pub(crate) index: Option<u32>,
+    #[serde(default)]
+    pub(crate) body: bool,
 }
 
 /// One page as `plan()` reports it (D43): its path; its index among a generator's

@@ -138,6 +138,8 @@ judge (∆Zo7), not these examples'.
 | `src="/lib/x/index.XXXXXXXX.js"`        | `src="<lem.asset("/lib/x/index.js")>"`      |
 | `{% renderTemplate 'webc' %}` in a post | a lem block alone on its line               |
 | JS appending to a post's markdown       | a plugin's `transformDocument`              |
+| `eleventy-plugin-rss`, `post.content`   | `build.bodies[p.url.text()]` in a feed      |
+| a feed's `base`, `HtmlBasePlugin`       | `origin` in `lemmon.config.ts`              |
 
 ## No direct equivalent
 

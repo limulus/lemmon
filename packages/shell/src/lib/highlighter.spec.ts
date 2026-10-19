@@ -34,7 +34,8 @@ function highlighted(blocks: [string, string][]) {
     span: FILE_START,
   }))
   const page = new Uint8Array()
-  return handler.produce({ name: 'code', marks, fragments: [], page, write: () => {} })
+  const context = { name: 'code', marks, fragments: [], page, body: false, write: () => {} }
+  return handler.produce(context)
 }
 
 /** A site's own producer of `code` for Rust, which the highlighter must make room for. */

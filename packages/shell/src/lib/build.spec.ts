@@ -34,20 +34,25 @@ import { at } from '../mocks/spans.ts'
 
 const NOW = new Date('2026-10-15T12:00:00Z')
 
-/** How {@link built} builds: in what environment, copying what, with which plugins. */
+/**
+ * How {@link built} builds: in what environment, copying what, with which plugins, for
+ * which origin.
+ */
 interface Options {
   env?: object
   passthrough?: string[]
   plugins?: Plugin[]
+  origin?: string
 }
 
 /** Builds `files` as a project, in `env`, returning the result and the project. */
 async function built(
   files: Record<string, string>,
-  { env = ENV, passthrough = PASSTHROUGH, plugins = [] }: Options = {}
+  { env = ENV, passthrough = PASSTHROUGH, plugins = [], origin }: Options = {}
 ): Promise<{ result: BuildResult; dir: string }> {
   const dir = project(files, passthrough)
-  const result = await build(configOf(dir, passthrough, plugins), {
+  const config = configOf(dir, passthrough, plugins)
+  const result = await build(origin === undefined ? config : { ...config, origin }, {
     now: NOW,
     env: env as Record<string, string>,
   })
@@ -501,11 +506,13 @@ describe('build()', () => {
       }
       const { html } = await postA([inline, watching])
 
+      // Once as the body pass resolves the post's body, and again on its page (D46).
       const payload = { language: 'ts', info: 'ts {1}', code: 'let x = 1\n' }
-      expect(seen).toEqual([
-        { payload, payloadId: expect.stringMatching(/^[0-9a-f]{16}$/) as string },
-        { payload },
-      ])
+      const produced = {
+        payload,
+        payloadId: expect.stringMatching(/^[0-9a-f]{16}$/) as string,
+      }
+      expect(seen).toEqual([produced, { payload }, produced, { payload }])
       expect(html).toContain('<p>made</p>')
     })
 
@@ -902,6 +909,433 @@ describe('build()', () => {
       )
       expect(result.produced).toEqual([])
       expect(existsSync(join(dir, 'dist/kept.css'))).toBe(false)
+    })
+  })
+
+  describe('the body pass (D46)', () => {
+    /**
+     * A page template that prints, for each post, the post's body as `build.bodies` holds
+     * it: one item per line, at `/feed.xml`.
+     */
+    const FEED =
+      '---\ntype: Home\ntitle: Feed\nurl: /feed.xml\n---\n<lem-for p in site.posts>\n' +
+      '<item><lem.build.bodies[p.url.text()]></item>\n</lem-for>\n'
+
+    /** What a build of `files` wrote at `file`, with what it reported. */
+    async function wrote(
+      files: Record<string, string>,
+      file: string,
+      options: Options = {}
+    ) {
+      const { result, dir } = await built(files, options)
+      return { result, text: tree(join(dir, 'dist'))[file] }
+    }
+
+    it('should give a template each document’s finished body by its url, escaped once', async () => {
+      const post = '---\ntitle: A\n---\nHello *a*.\n\n```ts\nlet x = 1\n```\n'
+      const { result, text } = await wrote(
+        { ...SITE, 'posts/a.md': post, 'feed.lem': FEED },
+        'feed.xml',
+        { plugins: [tsHighlighter] }
+      )
+
+      expect(result.diagnostics).toEqual([])
+      // Its code as the site's highlighter wrote it, and a string printed as text.
+      expect(text).toContain(
+        '<item>&lt;p&gt;Hello &lt;em&gt;a&lt;/em&gt;.&lt;/p&gt;\n' +
+          '&lt;pre class=&quot;ts&quot;&gt;let x = 1&lt;/pre&gt;\n</item>'
+      )
+      expect(text).toContain('<item>&lt;p&gt;Hello b.&lt;/p&gt;\n</item>')
+    })
+
+    it('should key a body by its url as `url.text()` writes it, encoded', async () => {
+      const keys =
+        '---\ntype: Home\ntitle: Keys\nurl: /keys/\n---\n' +
+        '<lem.build.bodies.keys().join(" ")>\n'
+      const { result, text } = await wrote(
+        {
+          ...SITE,
+          'posts/café.md': '---\ntitle: Café\n---\nBonjour.\n',
+          'feed.lem': FEED,
+          'keys.lem': keys,
+        },
+        'feed.xml'
+      )
+
+      expect(result.diagnostics).toEqual([])
+      expect(text).toContain('<item>&lt;p&gt;Bonjour.&lt;/p&gt;\n</item>')
+      const { text: listed } = await wrote(
+        { ...SITE, 'posts/café.md': '---\ntitle: Café\n---\n', 'keys.lem': keys },
+        'keys/index.html'
+      )
+      expect(listed).toContain('/posts/a/ /posts/b/ /posts/caf%C3%A9/')
+    })
+
+    it('should give a layout every body, its own page’s among them', async () => {
+      const layouts = LAYOUTS_LEM.replace(
+        '<lem.body>\n  </lem-let>',
+        '<lem.body>\n    <lem.build.bodies[p.url.text()]>\n  </lem-let>'
+      )
+      expect(layouts).not.toBe(LAYOUTS_LEM)
+      const { result, text } = await wrote(
+        { ...SITE, 'layouts.lem': layouts },
+        'posts/b/index.html'
+      )
+
+      expect(result.diagnostics).toEqual([])
+      expect(text).toContain('<p>Hello b.</p>\n\n&lt;p&gt;Hello b.&lt;/p&gt;\n')
+    })
+
+    it('should stop at a document that reads a body, where none exists yet, before any page renders', async () => {
+      const post = '---\ntitle: B\n---\n<lem.build.bodies["/posts/a/"]>\n'
+      // Each post's body beside the next one's, which holds for every body the pass
+      // renders, and would fault on the one it could not.
+      const site =
+        `${SITE_LEM}<lem-let pairs: [string] = build.bodies.keys()` +
+        '.map(|k| build.bodies[k.replace("/a/", "/b/")]) />\n'
+      const errors = await refused({ ...SITE, 'site.lem': site, 'posts/b.md': post })
+
+      // Once, from the body pass: no load or page runs on to report what it left out.
+      expect(errors).toEqual([
+        {
+          path: 'posts/b.md',
+          span: at(post, 'build.bodies["/posts/a/"]'),
+          severity: 'error',
+          message: 'no key "/posts/a/"',
+          labels: [
+            {
+              path: 'posts/b.md',
+              span: at(post, 'title: B'),
+              message: 'rendering the body of `posts/b.md`, before any body exists',
+            },
+          ],
+        },
+      ])
+    })
+
+    it('should give an untyped page every body, its reload carrying them', async () => {
+      const loose = '---\ntitle: Loose\n---\n<lem.build.bodies["/posts/b/"]>\n'
+      const { result, text } = await wrote(
+        { ...SITE, 'notes/loose.md': loose },
+        'notes/loose/index.html'
+      )
+
+      expect(result.diagnostics).toEqual([])
+      expect(text).toBe('&lt;p&gt;Hello b.&lt;/p&gt;\n\n')
+    })
+
+    describe('a body’s links', () => {
+      const post =
+        '---\ntitle: A\n---\nSee [the other](../b/#top), [a note](#fn), and ' +
+        '[photos](/photos/).\n'
+      const files = { ...SITE, 'posts/a.md': post, 'feed.lem': FEED }
+      const RELATIVE =
+        '<a href="../b/#top">the other</a>, <a href="#fn">a note</a>, and ' +
+        '<a href="/photos/">photos</a>'
+
+      it('should be absolute against the site’s origin in the body, and as written on its page', async () => {
+        const options = { origin: 'https://example.com' }
+        const { result, text } = await wrote(files, 'feed.xml', options)
+        const { text: page } = await wrote(files, 'posts/a/index.html', options)
+
+        expect(result.diagnostics).toEqual([])
+        expect(text).toContain(
+          '&lt;a href=&quot;https://example.com/posts/b/#top&quot;&gt;the other&lt;/a&gt;, ' +
+            '&lt;a href=&quot;https://example.com/posts/a/#fn&quot;&gt;a note&lt;/a&gt;, ' +
+            'and &lt;a href=&quot;https://example.com/photos/&quot;&gt;'
+        )
+        expect(page).toContain(RELATIVE)
+      })
+
+      it('should be paths from `/` in the body where the site names no origin', async () => {
+        const { result, text } = await wrote(files, 'feed.xml')
+
+        expect(result.diagnostics).toEqual([])
+        expect(text).toContain(
+          '&lt;a href=&quot;/posts/b/#top&quot;&gt;the other&lt;/a&gt;, ' +
+            '&lt;a href=&quot;/posts/a/#fn&quot;&gt;a note&lt;/a&gt;, ' +
+            'and &lt;a href=&quot;/photos/&quot;&gt;'
+        )
+      })
+
+      it('should keep a link the URL parser refuses as written, warning at its document', async () => {
+        const broken =
+          '---\ntitle: A\n---\n<a href="http://exa mple.com/">x</a> <a href="./y">y</a>\n'
+        const files = { ...SITE, 'posts/a.md': broken, 'feed.lem': FEED }
+        const { result, text } = await wrote(files, 'feed.xml', {
+          origin: 'https://ex.com',
+        })
+
+        expect(result.diagnostics).toEqual([
+          {
+            path: 'posts/a.md',
+            span: at(broken, 'title: A'),
+            severity: 'warning',
+            message:
+              'the body of `posts/a.md` links to "http://exa mple.com/" in `<a href>`, ' +
+              "which the URL parser refuses even against its page's url, so the body keeps " +
+              'it as written',
+            labels: [],
+          },
+        ])
+        // The rest of the body rebased all the same, and every page written.
+        expect(text).toContain(
+          '&lt;a href=&quot;http://exa mple.com/&quot;&gt;x&lt;/a&gt; ' +
+            '&lt;a href=&quot;https://ex.com/posts/a/y&quot;&gt;'
+        )
+        expect(result.pages).toHaveLength(5)
+      })
+
+      it('should warn at a `srcset` candidate the rebase drops, and at none it keeps', async () => {
+        const post = (srcset: string) => `---\ntitle: A\n---\n<img srcset="${srcset}">\n`
+        const dropping = post('a.jpg 1x, b.jpg 2q')
+        const { result } = await built({ ...SITE, 'posts/a.md': dropping })
+        const kept = post('https://x/a.jpg 1x, https://x/b.jpg 2q')
+        const { result: left } = await built({ ...SITE, 'posts/a.md': kept })
+
+        expect(result.diagnostics).toEqual([
+          {
+            path: 'posts/a.md',
+            span: at(dropping, 'title: A'),
+            severity: 'warning',
+            message:
+              'the body of `posts/a.md` holds `<img srcset>` as "a.jpg 1x, b.jpg 2q", whose ' +
+              'descriptor `2q` does not parse, so its candidate is dropped from the body as ' +
+              'the others are rebased, as Eleventy drops it',
+            labels: [],
+          },
+        ])
+        expect(left.diagnostics).toEqual([])
+      })
+
+      it('should leave a document whose url names no file to its page, which reports it', async () => {
+        const post = '---\ntitle: A\nurl: "a:b/"\n---\n[y](./y)\n'
+        const { result } = await built({ ...SITE, 'posts/a.md': post })
+
+        // No word from the body pass, whose links have no page to resolve against.
+        expect(result.pages).toEqual([])
+        expect(result.diagnostics).toEqual([
+          expect.objectContaining({
+            path: 'posts/a.md',
+            span: at(post, 'url: "a:b/"'),
+            message: expect.stringMatching(/^the url "a:b\/" names no file/) as string,
+          }),
+        ])
+      })
+    })
+
+    describe('a computed binding over `build.bodies`', () => {
+      it('should run at both loads, seeing none in the body pass and every one after', async () => {
+        const site = `${SITE_LEM}<lem-let bodyCount: int = build.bodies.keys().length() />\n`
+        const post = '---\ntitle: B\n---\n<lem.site.bodyCount>\n'
+        const { result, text } = await wrote(
+          { ...SITE, 'site.lem': site, 'posts/b.md': post, 'feed.lem': FEED },
+          'feed.xml'
+        )
+        const { text: page } = await wrote(
+          { ...SITE, 'site.lem': site, 'posts/b.md': post },
+          'posts/b/index.html'
+        )
+
+        expect(result.diagnostics).toEqual([])
+        // The body of `posts/b.md` as the body pass rendered it, and then its page.
+        expect(text).toContain('<item>0\n</item>')
+        expect(page).toContain('<main><h1>B</h1>\n\n2\n</main>')
+      })
+
+      it('should fail the first load where it indexes one, before any body exists', async () => {
+        const site = `${SITE_LEM}<lem-let first: string = build.bodies["/posts/a/"] />\n`
+        const errors = await refused({ ...SITE, 'site.lem': site })
+
+        expect(errors).toEqual([
+          {
+            path: 'site.lem',
+            span: at(site, 'build.bodies["/posts/a/"]'),
+            severity: 'error',
+            message: 'no key "/posts/a/"',
+            labels: [
+              {
+                path: 'site.lem',
+                span: at(site, '«first»: string'),
+                message: 'computing `first`',
+              },
+            ],
+          },
+        ])
+      })
+      it('should stop where it fails once the bodies are bound, before any page renders', async () => {
+        const site =
+          `${SITE_LEM}<lem-let misread: [string] = build.bodies.keys()` +
+          '.map(|k| build.bodies[k + "/"]) />\n'
+        const errors = await refused({ ...SITE, 'site.lem': site })
+
+        expect(errors).toEqual([
+          expect.objectContaining({
+            path: 'site.lem',
+            span: at(site, 'build.bodies[k + "/"]'),
+            message: 'no key "/posts/a//"',
+          }),
+        ])
+      })
+    })
+
+    describe('resolving a body', () => {
+      // `posts/a.md` places a mark of its own, which its body and its page both resolve.
+      const post = '---\ntitle: A\n---\n<lem.mark("styles")>\n'
+      const files = { ...SITE, 'posts/a.md': post }
+      const MARK = at(post, 'mark("styles")')
+
+      /** A plugin whose `styles` producer writes `content(page)` to `/stamp.txt`. */
+      const stamping = (content: (page: Uint8Array) => unknown): Plugin => ({
+        name: 'stamping',
+        marks: [
+          {
+            name: 'styles',
+            produce: ({ marks, page, write }) => {
+              write('/stamp.txt', content(page) as string)
+              return marks.map(() => '')
+            },
+          },
+        ],
+      })
+
+      it('should tell each handler whether it answers a body or a page', async () => {
+        const seen: [string, boolean][] = []
+        const telling: Plugin = {
+          name: 'telling',
+          marks: [
+            {
+              name: 'styles',
+              produce: ({ marks, body }) => {
+                seen.push(['produce', body])
+                return marks.map(() => '\uFEFF<link>')
+              },
+              decorate: (_, content, { body }) => {
+                seen.push(['decorate', body])
+                return content
+              },
+            },
+          ],
+        }
+        const { result, text } = await wrote({ ...files, 'feed.lem': FEED }, 'feed.xml', {
+          plugins: [telling],
+        })
+
+        expect(result.diagnostics).toEqual([])
+        // The body pass's first, then the page's.
+        expect(seen).toEqual([
+          ['produce', true],
+          ['decorate', true],
+          ['produce', false],
+          ['decorate', false],
+        ])
+        // A body starting with U+FEFF keeps it: it is the body's, not a byte order mark.
+        expect(text).toContain('<item>\uFEFF&lt;link&gt;\n</item>')
+      })
+
+      it('should write a file its body and its page write alike once', async () => {
+        const { result, dir } = await built(files, { plugins: [stamping(() => 'same')] })
+
+        expect(result.diagnostics).toEqual([])
+        expect(result.produced).toEqual(['stamp.txt'])
+        expect(tree(join(dir, 'dist'))['stamp.txt']).toBe('same')
+      })
+
+      it('should refuse other content where its body wrote, naming the body', async () => {
+        const errors = await refused(files, {
+          plugins: [stamping((page) => String(page.length))],
+        })
+
+        expect(errors).toEqual([
+          {
+            path: 'posts/a.md',
+            span: MARK,
+            severity: 'error',
+            message:
+              'the `stamping` plugin writes a file for this mark on `posts/a.md`, and the ' +
+              '`stamping` plugin, for the body of `posts/a.md`, writes other content to ' +
+              '`stamp.txt`',
+            labels: [
+              {
+                path: 'posts/a.md',
+                span: MARK,
+                message: 'the first to write there, as `stamp.txt`',
+              },
+            ],
+          },
+        ])
+      })
+
+      it('should report a producer’s misuse of `write` on a body, and stop before any page', async () => {
+        const errors = await refused(files, { plugins: [stamping(() => 3)] })
+
+        expect(errors).toEqual([
+          expect.objectContaining({
+            path: 'posts/a.md',
+            span: MARK,
+            message:
+              "the `stamping` plugin's producer for `styles` called `write` on the body of " +
+              '`posts/a.md` with a string and 3, where it takes a url and a string or bytes',
+          }),
+        ])
+      })
+
+      it('should warn at a handler that fails on a body once, on its page', async () => {
+        const failing: Plugin = {
+          name: 'failing',
+          marks: [
+            {
+              name: 'styles',
+              produce: () => {
+                throw new Error('no bundle')
+              },
+            },
+          ],
+        }
+        const { result } = await built(files, { plugins: [failing] })
+
+        expect(result.diagnostics.map((d) => [d.path, d.message])).toEqual([
+          [
+            'posts/a.md',
+            "the `failing` plugin's producer for `styles` failed on `posts/a.md`, so the " +
+              'marks it answers keep their default content: it threw Error: no bundle',
+          ],
+        ])
+      })
+
+      it('should warn at what a body collects and nothing places once, on its page', async () => {
+        const styled = '---\ntitle: A\n---\n<lem-style>\n  p {}\n</lem-style>\nHi.\n'
+        const { result } = await built(
+          { ...SITE, 'posts/a.md': styled },
+          { plugins: [inline] }
+        )
+        const placing = LAYOUTS_LEM.replace('<main>', '<lem.mark("styles")>\n  <main>')
+        const { result: placed } = await built(
+          { ...SITE, 'posts/a.md': styled, 'layouts.lem': placing },
+          { plugins: [inline] }
+        )
+
+        expect(result.diagnostics).toEqual([
+          expect.objectContaining({
+            path: 'posts/a.md',
+            severity: 'warning',
+            message:
+              '`posts/a.md` collects `styles` here, and nothing on that page places ' +
+              '`mark("styles")`, so what it collected is not written',
+          }),
+        ])
+        // The body places nothing either, and is not warned at: its page places them.
+        expect(placed.diagnostics).toEqual([])
+      })
+    })
+
+    it('should build a site with no documents, which has no bodies', async () => {
+      const { 'posts/a.md': _a, 'posts/b.md': _b, 'notes/loose.md': _n, ...rest } = SITE
+      const { result, text } = await wrote({ ...rest, 'feed.lem': FEED }, 'index.html')
+
+      expect(result.diagnostics).toEqual([])
+      expect(result.pages).toEqual(['feed.xml', 'index.html'])
+      expect(text).toContain('<main>\n</main>')
     })
   })
 
@@ -1616,23 +2050,39 @@ describe('check()', () => {
   })
 
   it('should render every page, finding what only rendering finds', async () => {
-    const post = '---\ntitle: B\n---\n<lem.site.photos["nope"].caption>\n'
+    // In a page template, which the body pass does not render, so that every page is.
+    const home = SITE['index.lem'] + '<lem.site.photos["nope"].caption>\n'
     const css = '---\nurl: /assets/site.css\n---\n'
     const { result, dir } = await checked({
       ...SITE,
-      'posts/b.md': post,
+      'index.lem': home,
       'notes/loose.md': css,
     })
 
     expect(result.pages).toEqual([])
     expect(result.diagnostics).toEqual([
-      expect.objectContaining({ path: 'posts/b.md', message: 'no key "nope"' }),
+      expect.objectContaining({ path: 'index.lem', message: 'no key "nope"' }),
       expect.objectContaining({
         path: 'notes/loose.md',
         span: at(css, 'url: /assets/site.css'),
       }),
     ])
     expect(existsSync(join(dir, 'dist'))).toBe(false)
+  })
+
+  it('should report the body of every document that fails, in one run', async () => {
+    const failing = (key: string) =>
+      `---\ntitle: X\n---\n<lem.site.photos["${key}"].caption>\n`
+    const { result } = await checked({
+      ...SITE,
+      'posts/a.md': failing('one'),
+      'posts/b.md': failing('two'),
+    })
+
+    expect(result.diagnostics.map(({ path, message }) => [path, message])).toEqual([
+      ['posts/a.md', 'no key "one"'],
+      ['posts/b.md', 'no key "two"'],
+    ])
   })
 
   it('should leave the output as it is, though a build could not write over it', async () => {

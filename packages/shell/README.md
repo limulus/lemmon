@@ -15,6 +15,7 @@ import { bundler, esbuild, highlighter, type Config } from '@limulus/lemmon-shel
 export default {
   input: 'www',
   output: 'dist/www',
+  origin: 'https://limulus.net',
   passthrough: ['assets/**/*', '**/*.{png,svg,jpg,jpeg,xsd,xsl,txt,pdf}'],
   plugins: [bundler(), highlighter(), esbuild()],
   dev: {
@@ -36,6 +37,12 @@ case, and a header that is the server's (`SERVER_HEADERS` in `src/lib/config.ts`
 it sends, such as `Content-Type`, `Cache-Control`, `Location` and Node's framing, or one
 that would describe the body other than as it is sent: `Content-Encoding`, and `Trailer`,
 which Node refuses to write beside a length. So neither side overrides the other.
+
+`origin` is where the site is served, an `http` or `https` URL with nothing after its host
+and port, as `https://limulus.net`; it is checked as written, and whitespace, a backslash, a
+path, a query, a fragment or credentials are each refused for what they are, since a page's
+url is a path from `/` and Lemmon has no path prefix. A document's body is made absolute
+against it before a feed reads it (step 5); with none, its links are made paths from `/`.
 
 ## The shell's plugins
 
@@ -177,8 +184,8 @@ A plugin is `{name, transformDocument?, assets?, marks?}`: a name its errors and
 call it by, a document transform and an asset hook that run before anything compiles
 (D44), and the mark handlers that fill each page's marks after it renders (D42). Any other
 field is refused when the config loads, since this shell runs no other hook. The types
-are exported: `Plugin`, `DocumentSource`, `AssetsContext`, `Assets`, `PluginHandler` and
-`ProducerContext`.
+are exported: `Plugin`, `DocumentSource`, `AssetsContext`, `Assets`, `PluginHandler`,
+`ProducerContext` and `DecoratorContext`.
 
 ### Document transforms
 
@@ -302,15 +309,22 @@ the marks carrying one of them, and one that lists none answers the marks with n
 there is no wildcard producer. A **decorator** (`decorate`) runs per mark, over the content
 so far, on the marks carrying a key it lists or on every mark of its name where it lists
 none. A code block is a `code` mark keyed by its language, and its handlers see its
-payload, `{language, info, code}`, as `mark.payload`.
+payload, `{language, info, code}`, as `mark.payload`. Content returned as bytes must be
+UTF-8, as a page is; other bytes are a failure, as any other answer that is no content is.
+
+Handlers run for each document's body, which the body pass resolves for `build.bodies`
+before any page renders (D46), and then again for its page: `body` on a producer's
+context, and on the object a decorator is given after the content, says which.
 
 A producer may also write files of its own — the stylesheet its marks link to — through its
 context's `write(url, content)`, which takes a url as a page's url is, a path from `/`, and
 a string or bytes, and works only while the producer runs. A file is queued, checked as a
 page's file is, and written after the pages; two pages whose producers write the same bytes
-to one file write it once. A url or content of the wrong kind, a url naming no file, and
-other content where this producer or another page's wrote already are each an error at the
-producer's mark. A clash with a page, a passthrough file, an asset hook's file or another
+to one file write it once, and so do a body and its page. A document that places
+`mark("styles")` in its own text therefore gets a bundle of its body's fragments, which
+only `build.bodies` links to, beside its page's. A url or content of the wrong kind, a url
+naming no file, and other content where this producer or another page's wrote already are
+each an error at the producer's mark. A clash with a page, a passthrough file, an asset hook's file or another
 produced file — the same file, the same but for case or Unicode form, or a file where the
 other needs a directory — is an error at the later writer, a page's url or a producer's
 mark, labelled at the first.
@@ -356,10 +370,11 @@ promise, and a function where a plugin belongs, a plugin factory not called.
    error at the page. Documents compile only in the second call, so what a document
    (`.md`) defines is invisible to every template, with front matter or without. The
    first call's declaration carries the plugins' claims, so the core warns at the marks.
-4. **Load.** `build` is `{time, generator}` — the clock as RFC 3339 in UTC, and `Lemmon`
-   with the core's version. A glob's binding is the front matter of the pages it holds;
-   a data file (JSON or YAML) is read from `input` with positions, and one whose path
-   leads outside `input` is an error at its binding; `env("X")` is the variable's text.
+4. **Load.** `build` is `{time, generator, bodies}` — the clock as RFC 3339 in UTC,
+   `Lemmon` with the core's version, and no bodies yet, `{}`. A glob's binding is the
+   front matter of the pages it holds; a data file (JSON or YAML) is read from `input`
+   with positions, and one whose path leads outside `input` is an error at its binding;
+   `env("X")` is the variable's text.
    Every page no glob holds whose `type:` named its record is carried on its own, a
    generator with its `for:` key beside its front matter — the value as read, with
    spans for the whole of it, its entry, and the list alone — which the core checks and
@@ -368,16 +383,46 @@ promise, and a function where a plugin belongs, a plugin factory not called.
    which no glob holds, is an error at the key, and is not compiled as a page: a
    template's generator has no type to make its pages of, and a document is no
    generator at all.
-5. **Plan and render.** Every loaded page renders through its layout, in the plan's
-   order: a generator's pages each by its index, at the url its type's default gave it.
+5. **Plan and render.** After the body pass, below, every loaded page renders through
+   its layout, in the plan's order: a generator's pages each by its index, at the url its
+   type's default gave it.
    A diagnostic names a generated page by its item — `` `photos/photo.lem` for
    `site.gallery[3]` `` — and a render's runtime error on one is labelled so at the
    generator's `for:` entry. A page no glob
    holds and no `type:` names has no schema: it renders its own output, with `page` its
    front matter as read, loaded on its own before it renders. Each of those loads
-   re-sends and re-validates the whole envelope, so the cost grows with the untyped
-   pages times the size of the site: 18 of 25 pages on the limulus-dot-net port branch
-   cost about 0.35 s in all.
+   re-sends and re-validates the whole envelope, every body among it, so the cost grows
+   with the untyped pages times the size of the site: 18 of 25 pages on the
+   limulus-dot-net port branch cost about 0.35 s in all while they were untyped.
+
+   **The body pass** (D46) runs first. Each document the load made — each page the plan
+   lists whose file is a `.md` — renders its body alone, its own output without its layout,
+   and its marks are resolved as step 6 resolves a page's: every handler runs for a
+   document's body and then again for its page, told which by its context's `body` (a
+   producer's context, a decorator's third argument). It reports only errors, since the page
+   resolves the same marks and warns there; a file a producer writes for it is checked and
+   written as a page's is, named for "the body of" the document, so a document that places
+   `mark("styles")` in its own text gets a bundle of its own fragments, which only
+   `build.bodies` links to. Its links are then made absolute against `origin` by the rule
+   Eleventy's HTML base plugin applies to a feed's content: in the attributes
+   `@11ty/posthtml-urls` walks for it — `href`, `src`, `srcset`, `poster`, `cite`, `action`,
+   `formaction`, `data` and `ping` on the elements that hold one — a url the URL parser
+   reads on its own is kept, trimmed, and any other is resolved against the page's url, its
+   query kept, where Eleventy drops it; where the config names no `origin`, it is made a
+   path from `/` instead, which names the same thing from any page of the site, and a url
+   naming a host of its own is kept. The body is parsed with parse5 and only an attribute
+   that changes is rewritten — a `srcset` candidate by candidate, parsed by `parse-srcset`
+   1.0.2 as posthtml-urls parses it, pinned, 10 KB of JavaScript with no dependencies. A url
+   the URL parser refuses is kept as written and warned at, at the document's front matter,
+   as is a `srcset` candidate whose descriptors do not parse, which the rewrite drops; a
+   document whose url names no file is left to its page's render, which reports it. Then the
+   core loads again with every body a string in `build.bodies`, by its page's url as
+   `url.text()` writes it, so a feed template prints `<lem.build.bodies[post.url.text()]>`,
+   escaped once. While the bodies render the map is empty: a document whose own body indexes
+   it fails there, at the read, labelled at its front matter as rendering the body before
+   any body exists, and a computed binding in `site.lem` runs at both loads. An error in the
+   pass stops the build before the second load, and one in the second load before any page
+   renders.
 6. **Resolve.** As each page renders, its marks are filled by the plugins' handlers, in
    the order the plugins and their handlers are listed. A handler that throws, or returns
    anything but its content, is a warning at the mark, which keeps the content it had —
@@ -425,8 +470,6 @@ it no glob matches anything.
   the binding: ∆wOn.
 - **Drafts.** `draft: true` is built like any page; `--drafts` and leaving drafts out
   are ∆Han, in Someday/Maybe.
-- **Second phase.** A feed renders with the other pages, reading none of their output:
-  ∆zu0.
 - **The rest of the pipeline.** No output transform (∆fwn), no integrity check
   (∆yOJ), and no worker pool or incremental rebuild (∆xBO): every build compiles and
   renders everything in one core, `lem dev`'s rebuilds among them.

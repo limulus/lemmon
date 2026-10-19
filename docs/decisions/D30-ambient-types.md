@@ -104,7 +104,9 @@ declaring `Page` (`url`, `inputPath`, `draft`; `prev` and `next` until D43) and 
   no longer a `Page` field. A rendered document body as a value needs a form of its own
   (∆ePP, ∆c9S). D42 gave it one: a string of the page's finished output — rendered,
   spliced, transformed — loaded back as a data source for a second render phase, never
-  an `html` value carrying marks.
+  an `html` value carrying marks. D46 refined it: a document's body rendered alone and
+  finished in the shell, a string in `build.bodies` by its page's url, bound before
+  every page renders.
 - The spike is untouched: its ambient fields are ad hoc and unknown-typed, which is the
   fallback this decision keeps.
 - D19 and D23 gain a clause; D29's field order loses the `from` clause the first form

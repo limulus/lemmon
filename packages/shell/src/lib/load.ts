@@ -1,4 +1,10 @@
-import type { DataInput, Diagnostic, FromBinding, LoadedValue } from '@limulus/lemmon-core'
+import type {
+  DataInput,
+  Diagnostic,
+  FromBinding,
+  JsonValue,
+  LoadedValue,
+} from '@limulus/lemmon-core'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
@@ -25,9 +31,10 @@ export interface Envelope {
 
 /**
  * The envelope that loads `program` (step 4 of the build pipeline, D37): `build` as the
- * shell's own value, every `from` binding fulfilled by its kind, and in `pages` every
- * page no glob holds whose `type:` named its record — a generator with its `for:` key,
- * which the core expands into its pages (D43).
+ * shell's own value, with no bodies yet — the value the body pass renders under, before
+ * {@link withBodies} adds them (D46) — every `from` binding fulfilled by its kind, and in
+ * `pages` every page no glob holds whose `type:` named its record — a generator with its
+ * `for:` key, which the core expands into its pages (D43).
  *
  * A glob's binding is the front matter of the pages it holds, in path order; a data
  * file is read from the input directory and parsed with positions; an environment
@@ -106,9 +113,18 @@ export async function envelope(
     .filter((page) => page.record !== undefined && page.binding === undefined)
     .map(entryOf)
   const ambient = {
-    build: { time: build.time.toISOString(), generator: build.generator },
+    build: { time: build.time.toISOString(), generator: build.generator, bodies: {} },
   }
   return { data: { ambient, sources, pages }, diagnostics }
+}
+
+/**
+ * `data`, an {@link envelope}, with `bodies` as `build.bodies`: each document's finished
+ * body by its page's url, which the second load binds for every page to read (D46).
+ */
+export function withBodies(data: DataInput, bodies: Record<string, string>): DataInput {
+  const build = data.ambient?.build as Record<string, JsonValue>
+  return { ...data, ambient: { ...data.ambient, build: { ...build, bodies } } }
 }
 
 /**

@@ -347,6 +347,11 @@ describe('resolvePage()', () => {
         () => ['<a>', null],
         'it returned null as a replacement, which is neither a string nor bytes',
       ],
+      [
+        'returns bytes that are not UTF-8 for a mark',
+        () => ['<a>', new Uint8Array([0x3c, 0xff, 0x3e])],
+        'it returned bytes that are not UTF-8, which a page cannot hold, as a replacement',
+      ],
     ]
 
     for (const [label, produce, problem] of failures) {
@@ -393,6 +398,11 @@ describe('resolvePage()', () => {
         () => [Promise.reject(new Error('later'))],
         'it returned an object rather than a string or bytes',
       ],
+      [
+        'returns bytes that are not UTF-8',
+        () => new Uint8Array([0xc3]),
+        'it returned bytes that are not UTF-8, which a page cannot hold',
+      ],
     ]
 
     for (const [label, decorate, problem] of failures) {
@@ -423,6 +433,76 @@ describe('resolvePage()', () => {
         ])
       })
     }
+  })
+
+  describe('a body (D46)', () => {
+    // A page whose producer misuses `write`, whose decorator throws, and which collects
+    // a `head` fragment it never places: one error and two warnings, as a page.
+    const BODY = '<lem-head><meta></lem-head>\n<lem.mark("styles")>\n'
+    const plugins: Plugin[] = [
+      styles(({ marks, write }: ProducerContext) => {
+        write(5 as unknown as string, '')
+        return marks.map(() => '<s>')
+      }),
+      {
+        name: 'failing',
+        marks: [
+          {
+            name: 'styles',
+            decorate: () => {
+              throw new Error('no frame')
+            },
+          },
+        ],
+      },
+    ]
+
+    /** What resolving `BODY` reports, as a body or as a page. */
+    async function reported(body: boolean): Promise<[string, string][]> {
+      const core = await loadCore()
+      const compiled = core.compile([{ path: 'post.lem', text: BODY }], {
+        ambient: {},
+        marks: [...claimsOf(plugins), { name: 'head', keys: [] }],
+      })
+      expect(compiled.diagnostics).toEqual([])
+      core.loadData({})
+      const page = { path: 'post.lem', body, plugins, payloads: new Map() }
+      const { bytes, diagnostics } = resolvePage(core.render({ path: 'post.lem' }), page)
+      expect(decoder.decode(bytes)).toBe('<s>\n')
+      return diagnostics.map(({ severity, message }) => [severity, message])
+    }
+
+    const MISUSED = 'called `write` on'
+    const WRITE = ' with 5 and a string, where it takes a url and a string or bytes'
+
+    it('should report its errors, naming the body, and none of its warnings', async () => {
+      expect(await reported(true)).toEqual([
+        [
+          'error',
+          `the \`styles\` plugin's producer for \`styles\` ${MISUSED} the body of ` +
+            `\`post.lem\`${WRITE}`,
+        ],
+      ])
+    })
+
+    it('should leave a page’s warnings as they are', async () => {
+      expect(await reported(false)).toEqual([
+        [
+          'error',
+          `the \`styles\` plugin's producer for \`styles\` ${MISUSED} \`post.lem\`${WRITE}`,
+        ],
+        [
+          'warning',
+          "the `failing` plugin's decorator for `styles` failed on `post.lem`, so this " +
+            'mark keeps the content it had: it threw Error: no frame',
+        ],
+        [
+          'warning',
+          '`post.lem` collects `head` here, and nothing on that page places ' +
+            '`mark("head")`, so what it collected is not written',
+        ],
+      ])
+    })
   })
 
   it('should call a handler with its own object as `this`', async () => {

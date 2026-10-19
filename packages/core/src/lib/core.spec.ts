@@ -692,6 +692,33 @@ describe('Core', () => {
       expect([resolved.unclaimed, resolved.unplaced]).toEqual([[], []])
     })
 
+    it('should render a loaded page’s body alone, its marks at the body’s bytes', async () => {
+      // What a layout is given, and what a feed reads (D46): the layout is not called,
+      // so the `code` mark names a range of the body rather than of the page.
+      const core = await loadCore()
+      const host: HostDecl = {
+        ...typedSite,
+        marks: [{ name: 'code', keys: ['sh'], payload: 'Code', keyedBy: 'language' }],
+      }
+      const code =
+        '<lem-type Code>\n  language: string?\n  info: string\n  code: string\n</lem-type>'
+      const files = site.map((file) => {
+        if (file.path === 'ambient.lem') return { ...file, text: `${file.text}\n${code}` }
+        if (file.path !== 'posts/a.md') return file
+        return { ...file, text: '---\ntitle: A\nurl: /a/\n---\n```sh\nls\n```\n' }
+      })
+      expect(core.compile(files, host).diagnostics).toEqual([])
+      core.loadData(loaded)
+      const element = '<pre><code class="language-sh">ls\n</code></pre>'
+      const [planned] = core.plan()
+      const body = core.render({ ...planned, body: true })
+      expect(page(body)).toBe(`${element}\n`)
+      expect(body.marks?.map(({ name, start, end }) => [name, start, end])).toEqual([
+        ['code', 0, new TextEncoder().encode(element).length],
+      ])
+      expect(page(core.render(planned))).toBe(`<h1>A</h1>${element}\n`)
+    })
+
     it('should report each code block once and name it from the render', async () => {
       // The highlighter claims two languages (D42). Two documents write one `sh` block
       // between them, which is one payload; the render names it by id, the host keeps

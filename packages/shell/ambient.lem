@@ -7,6 +7,7 @@
 <lem-type Build>
   time: datetime
   generator: string
+  bodies: {string: string}
 </lem-type>
 
 <lem-type Code>

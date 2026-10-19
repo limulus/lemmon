@@ -54,7 +54,10 @@
   and no option for one, since a decorator can add one; a site narrows its claim with
   `exclude`, the keys it leaves to another producer, an unknown key refused; and no
   output is cached by payload id, since highlighting limulus.net's eight blocks takes
-  about 1 ms of a 160 ms rebuild
+  about 1 ms of a 160 ms rebuild. Refined by D46 (∆zu0, 2026-10-19): the string a
+  template reads is not a page's finished output, rendered after every other page, but a
+  document's body rendered alone, its marks resolved, and bound in `build.bodies` before
+  every page renders
 - **Backlog item:** ∆1Hp (the mark, claims by name, the collect tags, the boundary);
   ∆7wK (the `code` mark, keys and payloads, the core's highlighter removed); ∆F4y (the
   shell's plugins, their handlers, and the default plugin); ∆Nxd (the shell's highlighter)
@@ -130,9 +133,11 @@ producer runs, then every matching decorator in the site's plugin order, each ov
 previous output; producers see the page as the core returned it and never each other's
 output.
 
-**The shell resolves before it transforms, and feeds render in a second phase.** The
-splice precedes every output transform. A rendered body reaching a template as a value
-is a shell-supplied *string* of a page's finished output — rendered, spliced,
+**The shell resolves before it transforms, and feeds render in a second phase.**
+_(Refined by D46: no second phase — each document's body renders alone and is finished
+in the shell, then bound in `build.bodies` before every page renders, feeds among them.)_
+The splice precedes every output transform. A rendered body reaching a template as a
+value is a shell-supplied *string* of a page's finished output — rendered, spliced,
 transformed — loaded back as a data source for a second render phase; it is never an
 `html` value carrying marks. A mark inside a fragment, a payload, or a default is a
 render error at the collecting block or the call.
@@ -179,7 +184,8 @@ wants wasm instantiates it inside its own handler; the shell defines no wasm pro
   carries today.
 - **Feeds written by a shell plugin over final output**, as `eleventy-plugin-rss` does.
   Not rejected, subsumed: the second phase is that, with the feed still a Lemmon
-  template.
+  template. _(Refined by D46: the body pass is, reading documents' bodies rather than
+  pages.)_
 - **A new tag for a template mark**, `<lem-mark name>body</lem-mark>`. Rejected: a body
   is a rendered template, wrong for raw text, and a raw body needs its own scanner mode
   and head marker either way (∆M5x).
@@ -204,7 +210,8 @@ wants wasm instantiates it inside its own handler; the shell defines no wasm pro
   ∆SDN keeps only its value-producing half. ∆5pk becomes a `code` producer for `lem`
   built from `lemmon-syntax`. ∆aaw loses the half D40 caused, since a body's default
   content carries no `syn-` spans. ∆ePP renders feeds in the second phase, which
-  answers D30's open question about a rendered body's form. ∆PgF gains the `marks`
+  answers D30's open question about a rendered body's form _(refined by D46: ∆zu0
+  renders them after a body pass, from `build.bodies`)_. ∆PgF gains the `marks`
   registration and ships the shell's `styles`/`scripts`/`head` producers as a default
   plugin a site lists, so a site can produce those names itself without a collision.
 - A host that claims a name ships an ordinary `lem-fn` wrapping `mark()` for it, so a
