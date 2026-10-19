@@ -56,7 +56,10 @@ lemmon is `∆FnH`, decided before the merge.
     TIL topic pages) names its `.lem` file where it named the `.webc` (`source-pill`).
   - Heading anchors with punctuation in their text are spelled as comrak spells them: seven
     anchors on four pages are renamed, so a link to the old one lands at the top of the
-    page.
+    page; and headings no longer carry `tabindex="-1"`.
+  - The six in-body photos on two posts lose the `id` WebC left on them, their component's
+    `id` input leaking onto the host element; nothing links those anchors (Eric,
+    2026-10-19), and each photo's own page stays its link.
   - The sitemap lists `/tils/nodejs/`, which Eleventy left out, no longer lists the three
     feeds, and gives an undated page no `lastmod` where Eleventy gave its checkout time
     (Eric, 2026-10-18; `∆zu0`).
@@ -76,10 +79,10 @@ lemmon is `∆FnH`, decided before the merge.
     (Eric, 2026-10-19, `∆yOJ`); the switch records one revision for that post.
   - Footnotes are comrak's, not markdown-it-footnote's (`footnote-markup`, which
     `parity:look` neutralizes): the reference reads `1` where it read `[1]`, the back
-    link `↩` where it read `↩︎`, and the section loses the `section-separator` class, so
-    the centred rule `main.css` draws above it goes unless the site's CSS gives
-    `.footnotes` its own (decided in `∆ITg`, slice 4, rather than reproducing
-    markdown-it's markup in the core). The footnote anchors are renamed on six pages
+    link `↩` where it read `↩︎`, and the section loses the `section-separator` class
+    (decided in `∆ITg`, slice 4, rather than reproducing markdown-it's markup in the
+    core); `main.css` draws the centred rule above `.footnotes` itself, so it stays (Eric,
+    2026-10-19). The footnote anchors are renamed on six pages
     (`#fn-out-of-scope` for `#fn2`), so a link to one from another page must follow.
 - The sprite (`∆IvY`, the port's `lemmon/svg-sprite.ts`) strips the `<style>` inside the
   `svg-ldn` symbol because WebC hoists it into the CSS bundle, and `page.lem` carries a
