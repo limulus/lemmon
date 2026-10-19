@@ -15,6 +15,7 @@ import { validatePlugins, type Plugin } from './plugins.ts'
  *   input: 'www',
  *   output: 'dist/www',
  *   origin: 'https://example.com',
+ *   served: ['/@eric'],
  *   passthrough: ['assets/**', 'robots.txt'],
  *   plugins: [bundler()],
  *   dev: { headers: { 'Cross-Origin-Opener-Policy': 'same-origin' } },
@@ -37,6 +38,13 @@ export interface Config {
    * the site and nowhere else.
    */
   origin?: string
+  /**
+   * The paths on {@link origin} that the site's host answers without a file the build
+   * writes — a redirect, a rewrite — each a path from `/` as a link writes it, matched
+   * exactly. A link to one is taken as answered, where the link check (D47) would
+   * otherwise refuse it for naming no file; nothing else reads it. None when omitted.
+   */
+  served?: string[]
   /**
    * Globs naming the files copied to the output as they are, matched against each
    * file's path relative to {@link input} with Eleventy's glob semantics: picomatch,
@@ -109,6 +117,8 @@ export interface LoadedConfig {
   output: string
   /** {@link Config.origin} as the URL parser writes an origin, `https://example.com`. */
   origin?: string
+  /** {@link Config.served}, each path as the URL parser writes one, `/caf%C3%A9`. */
+  served: string[]
   passthrough: string[]
   plugins: Plugin[]
   /** {@link Config.dev}, its `headers` none where it names none. */
@@ -139,6 +149,7 @@ const FIELDS: readonly string[] = [
   'input',
   'output',
   'origin',
+  'served',
   'passthrough',
   'plugins',
   'dev',
@@ -202,6 +213,7 @@ function validated(file: string, exported: unknown): LoadedConfig {
     input,
     output,
     ...origin(file, fields.origin),
+    served: served(file, fields.served),
     passthrough: globs(file, fields.passthrough),
     plugins: plugins(file, fields.plugins),
     dev: dev(file, fields.dev),
@@ -257,6 +269,48 @@ function origin(file: string, value: unknown): { origin?: string } {
   }
   if (!URL.canParse(value)) throw refused(`${is} the URL parser refuses`)
   return { origin: new URL(value).origin }
+}
+
+/**
+ * The paths `value` lists, each as the URL parser writes a path, or none where it is
+ * omitted: each refused, as written, unless it is a path from `/` that names neither a
+ * host nor a query or fragment, and holds no whitespace, backslash, or `.` or `..`
+ * segment, which the URL parser would read past or resolve away; and two refused that
+ * the parser writes as one.
+ */
+function served(file: string, value: unknown): string[] {
+  if (value === undefined) return []
+  const refused = (problem: string) =>
+    new ConfigError(
+      file,
+      `${problem}: \`served\` lists paths on the origin its host answers without a file ` +
+        'the build writes, each a path from `/` as a link writes it, as `/@eric`',
+      { field: 'served' }
+    )
+  if (!Array.isArray(value)) throw refused('`served` must be a list of paths')
+  const paths = new Map<string, number>()
+  value.forEach((path: unknown, index) => {
+    const entry = `\`served[${index}]\``
+    if (typeof path !== 'string') throw refused(`${entry} must be a string`)
+    const is = `${entry} is ${JSON.stringify(path)}, which`
+    if (path === '') throw refused(`${entry} is empty`)
+    if (/\s/.test(path)) throw refused(`${is} holds whitespace`)
+    if (path.includes('\\')) throw refused(`${is} holds a backslash`)
+    if (!path.startsWith('/')) throw refused(`${is} does not start \`/\``)
+    if (path.startsWith('//')) throw refused(`${is} starts \`//\`, which names a host`)
+    if (path.includes('?')) throw refused(`${is} has a query`)
+    if (path.includes('#')) throw refused(`${is} has a fragment`)
+    if (path.split('/').some((segment) => /^(?:\.|%2e){1,2}$/i.test(segment))) {
+      throw refused(`${is} has a \`.\` or \`..\` segment`)
+    }
+    const { pathname } = new URL(path, 'http://served.invalid')
+    const earlier = paths.get(pathname)
+    if (earlier !== undefined) {
+      throw refused(`${is} names \`${pathname}\`, as \`served[${earlier}]\` does`)
+    }
+    paths.set(pathname, index)
+  })
+  return [...paths.keys()]
 }
 
 function globs(file: string, value: unknown): string[] {

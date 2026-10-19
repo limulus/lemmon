@@ -136,6 +136,8 @@ export interface AssetFile {
 export interface Provided {
   /** Every plugin's manifest, merged in the order the plugins are listed. */
   manifest: Record<string, string>
+  /** The plugin that mapped each logical path of {@link manifest}, by that path. */
+  mappedBy: ReadonlyMap<string, string>
   /** Every plugin's files, in the order the plugins and their files are listed. */
   files: AssetFile[]
   diagnostics: Diagnostic[]
@@ -159,9 +161,9 @@ export async function provided(
   config: LoadedConfig,
   { writes, env }: Pick<AssetsContext, 'writes' | 'env'>
 ): Promise<Provided> {
-  const result: Provided = { manifest: {}, files: [], diagnostics: [] }
-  const frozenEnv = Object.freeze({ ...env })
   const mappedBy = new Map<string, string>()
+  const result: Provided = { manifest: {}, mappedBy, files: [], diagnostics: [] }
+  const frozenEnv = Object.freeze({ ...env })
   const at = (message: string) => {
     result.diagnostics.push({
       path: config.file,

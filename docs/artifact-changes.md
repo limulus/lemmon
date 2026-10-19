@@ -514,6 +514,8 @@ moved it. Newest last. An entry is removed when its change has been applied.
   plugin's producer (∆Nxd). In the pipeline, a Resolve step between Render and Write
   runs each mark's producer then its decorators before any transform, caching nothing by
   payload id, since highlighting limulus.net's code costs about 1 ms a rebuild (∆Nxd);
+  Post-process's link/asset integrity check moves before Write as a Check step, over
+  every page and file in memory, so nothing is written on a broken link (D47, below);
   Write writes the pages, then the files producers wrote, then passthrough; and
   Render begins with a body pass — each document's body rendered alone, its marks
   resolved by handlers told it is a body, its links made absolute against
@@ -635,6 +637,23 @@ moved it. Newest last. An entry is removed when its change has been applied.
   `lem dev`'s too — about 0.2 s of a limulus.net rebuild — with no incremental context
   (D45; ∆d1N, ∆EEa).
 
+- **Build pipeline, the link check; `lemmon.config.ts`** — say what the Check step (step
+  8, before Write) reads, in memory: every link in the HTML (parse5, the attributes
+  `@11ty/posthtml-urls` walks, a refreshing `meta`, any SVG `href`, Open Graph url
+  properties, inline CSS), CSS (`@csstools/css-tokenizer`: `url()`, `@import`) and XML
+  (`@xmldom/xmldom`: `xml-stylesheet`, `href`/`xlink:href`, RSS `link`/`guid`/image `url`,
+  sitemap `loc`) the build would write, and every manifest url, each resolved as a browser
+  resolves it and matched exactly — case and Unicode form included — against the files the
+  build claims, a fragment into an HTML page against its ids by HTML's rule. Links on
+  other hosts than the config's `origin` (its own host on either scheme), in other
+  schemes, or at a path the config's new `served` field lists (a host's redirect or
+  rewrite, exact paths; one the build writes is a warning) are skipped. Each fault is an
+  error once per page per resolved url, at the page's url, a generator's `for:` entry, a
+  producer's mark, or the config's start, a manifest url once; an XML file the parser
+  refuses, or not in UTF-8, is one too; `lem check` reports them and `lem dev` writes
+  nothing on one. The pipeline has no Post-process step: an output transform, when built,
+  runs between Resolve and the Check (D47; ∆yOJ).
+
 ## From Eleventy to Lemmon
 
 - **Template mapping and the photo page port** — the `---js pagination` row maps to a
@@ -685,3 +704,11 @@ moved it. Newest last. An entry is removed when its change has been applied.
   `/lib/x/index.js` stubs it wrote are not written: nothing loads one. A page-relative
   front-matter path cannot be an asset, so penumbra's `scripts: ./lib/index.js` becomes
   `/penumbra/journal/<slug>/lib/index.js`, typed `asset?` (D10, D38, D45; ∆d1N, ∆EEa).
+
+- **Link checking and CloudFront** — Eleventy's build checks no link; Lemmon's refuses to
+  write a site with one that names no file it writes (D47). Where the text maps the
+  CloudFront function, say its Mastodon redirect, `/@eric`, is listed in the config's
+  `served`, the paths the host answers without a file; and that the links Eleventy wrote
+  which leaned on CloudFront's dot-less rewrite — the Atom feeds' alternate links,
+  `https://limulus.net/tils` and `/penumbra` — are fixed at the cutover to end in `/`,
+  a reader-visible change, their `<id>`s kept as they are (∆yOJ).

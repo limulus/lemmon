@@ -17,3 +17,5 @@ async transforms are refused at load.
   2026-10-17 (`git merge-tree`); its doc hunks did not all conflict but are wrong now: they
   say `transformOutput` landed in `∆Oyi` and that dprint is the site's plugin, both false
   since Eric retired `∆Oyi`. Reuse the code and specs and rewrite every doc hunk.
+- A page transform runs after Resolve and before the link check (D47, ∆yOJ), which reads
+  what is written: architecture step 8, at the end of `renderSite()`.

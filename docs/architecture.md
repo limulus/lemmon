@@ -254,15 +254,18 @@ not a break:
    handlers given the payload `compile` reported, kept by id (D42). The handlers are
    the plugins' (§Shell plugin API), the shell's `bundler()` and `highlighter()` among
    them where the site lists them.
-8. **Write** (shell) — HTML, the files the asset hooks built — the script bundles
+8. **Check** (shell) — every link in the HTML, CSS and XML the build would write, and
+   every url the asset hooks mapped, against the files it writes, fragments included
+   (D47).
+9. **Write** (shell) — HTML, the files the asset hooks built — the script bundles
    `esbuild()` builds — the files producers wrote — the per-page CSS bundles `bundler()`
    writes under `/assets/immutable/bundle/` — and passthrough.
-9. **Post-process** (shell) — optional transforms (dprint), link/asset integrity check.
 
-What `lem build` (∆muD) runs is steps 1–8, step 2 but its data hooks, in one core on one
+What `lem build` (∆muD) runs is steps 1–9, step 2 but its data hooks, in one core on one
 thread. `lem check` runs the same and stops before the first write, so it reports every
-diagnostic a build would, render errors and output collisions included; it never touches the
-output directory, so a write the file system refuses is found only by `lem build`.
+diagnostic a build would, render errors, output collisions and broken links included; it
+never touches the output directory, so a write the file system refuses is found only by
+`lem build`.
 `lem dev` runs `lem build`'s steps over the whole site again each time changes to the
 input settle, serves the output, and reloads the pages open on it after a build with no
 error and every file written; it reads `lemmon.config.ts` once, so a change to that needs
@@ -271,14 +274,15 @@ records, so a layout sees what they define — and its second the pages as
 their records; a document compiles only in the second, so no template sees what a
 document defines. Every page is rendered and its output file checked against every
 other — the same file, the same but for case or Unicode form, or a file where another
-needs a directory — before the first is written, so any error stops the build before it
-writes; a write the file system then refuses is reported, and the output may hold what
-was written before it. A page no glob matched and no `type:` named renders with `page`
-its own front matter, each such page loaded on its own before it renders, since a load
-binds one document value; each of those loads re-sends and re-validates the whole
-envelope, every body in `build.bodies` among it, so the cost grows with the untyped pages
-times the size of the site — 18 of 25 pages on the limulus-dot-net port branch cost about
-0.35 s in all while they were untyped; it types every page now. Step 7 runs as each
+needs a directory — and every link in what it would write checked (step 8, below) before
+the first is written, so any error stops the build before it writes; a write the file
+system then refuses is reported, and the output may hold what was written before it. A
+page no glob matched and no `type:` named renders with `page` its own front matter, each
+such page loaded on its own before it renders, since a load binds one document value;
+each of those loads re-sends and re-validates the whole envelope, every body in
+`build.bodies` among it, so the cost grows with the untyped pages times the size of the
+site — 18 of 25 pages on the limulus-dot-net port branch cost about 0.35 s in all while
+they were untyped; it types every page now. Step 7 runs as each
 page renders, with the handlers of the plugins `lemmon.config.ts` lists, whose claims step
 3's first call declared — an empty list for a site listing none, which warns at every mark.
 A plugin list two producers would answer one mark under, or whose handlers name two
@@ -287,7 +291,7 @@ so are keys for a name no handler keys by a payload field; a handler that throws
 returns anything but its content, is a warning at its mark, which keeps the content it
 had; and fragments a page collects under a name nothing on it marks are a warning at the
 first of them. A producer writes a file of its own through its context's
-`write(url, content)`; step 8 writes the pages, then the files the asset hooks built,
+`write(url, content)`; step 9 writes the pages, then the files the asset hooks built,
 then those, then the passthrough files. A url or content of the wrong kind, a url naming
 no file, and other bytes where a producer wrote already are each an error at the
 producer's mark; the same bytes two pages' producers write to one file are written once.
@@ -346,6 +350,45 @@ before the second load, so that no page, feed or binding reports a body's error 
 body it lacks, and an error in the second load stops it before any page renders. Page
 templates, generated pages and documents no record typed have no body in the map.
 
+Step 8 (D47) runs once every page has rendered and resolved with no error, so that it
+reports the author's fault and not one downstream of it: a page that failed has claimed its
+file and holds no links. It reads, in memory, every page, asset file and produced file the
+build would write, by its extension, walking each tree with a stack of its own: HTML parsed
+with parse5 as a document with scripting off — the parse the body pass uses — whose links
+are the attributes `@11ty/posthtml-urls` walks (the table the body pass rebases, a `srcset`
+candidate by candidate, a `ping` split at whitespace as HTML splits it) with `<base href>`
+setting the base rather than being checked, a refreshing `meta`'s url, any SVG element's
+`href` and `xlink:href`, an Open Graph url property's `content`, and the `url()`s of a
+`<style>` and a `style` attribute; CSS tokenized by `@csstools/css-tokenizer` (CSS Syntax
+3), its `url()`s and `@import`s; XML parsed by `@xmldom/xmldom`, an `xml-stylesheet`
+instruction's `href` before the root, any element's `href` and `xlink:href`, and the text of
+an RSS `link` without `href`, an RSS channel image's `url`, a sitemap `loc` or `*_loc`, and
+a permalink `guid`, each against its nearest `xml:base`. An XML file is an error where the
+parser reports any error or warning in it (a U+FFFD aside), where it declares an encoding
+other than UTF-8, or where it is not UTF-8, since its links cannot be read. An Atom `id` is
+no link, and a feed's escaped content is its page's, checked there. JavaScript, an HTML page
+whose file does not end `.html`, passthrough files and every other kind are targets only. A
+link the URL parser refuses, one in another scheme than `http` or `https`, and one on
+another host than the config's `origin` — every absolute one, where it names none — are
+skipped, and so is a path the config lists as `served`, one its host answers without a file
+(a redirect, a rewrite); the origin's host on either scheme is the site's own. Any other
+names the file its path maps to as a page's url does, which a page, asset file, produced
+file or passthrough file must claim exactly: one differing only in case or Unicode form is
+an error that names it, since a host matching names exactly serves nothing there, and so is
+a dot-less link to a directory whose `index.html` is written. A fragment into an HTML page
+the build writes must name an element of it by HTML's rule — an `id`, or an `a`'s `name`, as
+written or percent-decoded, `top` and the empty fragment the top, a `:~:` text directive
+dropped — so one only a script satisfies is an error too; one into anything else is not
+checked. Every url an asset hook's manifest maps must name a claimed file too, and one that
+does not is said once, at the config, and not again at each page that prints it. Each fault
+is an error, one per page per url it resolves to, naming each way it is written and every
+attribute it stands in, at the page's writer — its url, its generator's `for:` entry, a
+producer's mark, the config's start for an asset file or a manifest entry — labelled at the
+writer of the file a near miss names, or of the page a missing fragment points into. A
+`served` path the build writes a file at is a warning at the config's start. On the
+limulus-dot-net port branch the check reads about 4,100 links in 59 pages and 10
+stylesheets, in about 65 ms in `lem build` and 45 ms in a `lem dev` rebuild.
+
 Step 2 runs once discovery has read the site, before anything compiles. Each document whose
 front matter read — not a page template, which has no markdown and whose definitions every
 layout compiles against — is handed to every plugin's `transformDocument` in the order
@@ -387,7 +430,8 @@ ASCII is escaped there, and stays absolute, on both sides.
 
 - Step 2's data hooks are not yet run (∆wOn), so a `plugin("…")` source is an error at
   its binding.
-- Step 9 is not yet run: no output transform (∆fwn) and no integrity check (∆yOJ).
+- An output transform is not yet run (∆fwn): one would run over each page between steps
+  7 and 8, since the check reads what is written.
 
 Dev incrementality, not yet built (∆xBO, ∆Qr2), comes from two reported sets, and is
 built only if a full rebuild of limulus.net takes over a second. Render-reported deps:

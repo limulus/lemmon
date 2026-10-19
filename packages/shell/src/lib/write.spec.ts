@@ -2,7 +2,8 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
-import { outputFile, write } from './write.ts'
+import { FILE_START } from './program.ts'
+import { OutputFiles, outputFile, write } from './write.ts'
 import { tree } from '../mocks/sites.ts'
 import { tempDir } from '../mocks/temp-dir.ts'
 
@@ -42,6 +43,40 @@ describe('outputFile()', () => {
   })
 })
 
+describe('OutputFiles', () => {
+  describe('find()', () => {
+    const files = new OutputFiles()
+    const page = { path: 'feed.md', span: FILE_START }
+    files.claim('feed/index.html', page)
+    files.claim('café/x.css', { path: 'café/x.css' })
+
+    it('should find the claim on a file, exactly', () => {
+      expect(files.find('feed/index.html')).toEqual({
+        file: 'feed/index.html',
+        writer: page,
+        exact: true,
+      })
+    })
+
+    it('should find the claim on a file that differs only in case or Unicode form', () => {
+      expect(files.find('Feed/index.html')).toEqual({
+        file: 'feed/index.html',
+        writer: page,
+        exact: false,
+      })
+      expect(files.find('cafe\u0301/X.css')).toMatchObject({
+        file: 'café/x.css',
+        exact: false,
+      })
+    })
+
+    it('should find no claim on a file nothing claims, or on a directory', () => {
+      expect(files.find('feed.html')).toBeUndefined()
+      expect(files.find('feed')).toBeUndefined()
+    })
+  })
+})
+
 describe('write()', () => {
   it('should write each page’s bytes, creating its directories', async () => {
     const root = tempDir({ 'www/.keep': '' })
@@ -51,7 +86,7 @@ describe('write()', () => {
     await write(
       join(root, 'www'),
       join(root, 'dist'),
-      [{ file: 'a/b/index.html', bytes }],
+      [{ file: 'a/b/index.html', url: '/a/b/', bytes }],
       [],
       []
     )
@@ -90,7 +125,13 @@ describe('write()', () => {
       join(root, 'www'),
       join(root, 'dist'),
       [],
-      [{ file: 'assets/immutable/bundle/x.css', bytes: css }],
+      [
+        {
+          file: 'assets/immutable/bundle/x.css',
+          url: '/assets/immutable/bundle/x.css',
+          bytes: css,
+        },
+      ],
       []
     )
 
@@ -106,12 +147,12 @@ describe('write()', () => {
       join(root, 'www'),
       join(root, 'dist'),
       [
-        { file: 'a.txt', bytes: bytes('page') },
-        { file: 'b.txt', bytes: bytes('page') },
+        { file: 'a.txt', url: '/a.txt', bytes: bytes('page') },
+        { file: 'b.txt', url: '/b.txt', bytes: bytes('page') },
       ],
       [
-        { file: 'a.txt', bytes: bytes('produced') },
-        { file: 'b.txt', bytes: bytes('produced') },
+        { file: 'a.txt', url: '/a.txt', bytes: bytes('produced') },
+        { file: 'b.txt', url: '/b.txt', bytes: bytes('produced') },
       ],
       ['a.txt']
     )

@@ -120,6 +120,24 @@ describe('rebaseLinks()', () => {
       )
     })
 
+    it('should rebase a body nested deeper than the call stack goes, in document order', () => {
+      const depth = 20_000
+      const body = `${'<div>'.repeat(depth)}<a href="x">x</a><a href="http://exa mple/">y</a>`
+      const { body: rebased, unrebased } = rebaseLinks(
+        `${body}<a href="http://exa mple/z">z</a>`,
+        PAGE,
+        ORIGIN
+      )
+
+      expect(rebased).toContain(
+        '<a href="https://limulus.net/feed/the-rebound/x">x</a><a href="http://exa mple/">'
+      )
+      expect(unrebased).toEqual([
+        { kind: 'refused', at: '<a href>', url: 'http://exa mple/' },
+        { kind: 'refused', at: '<a href>', url: 'http://exa mple/z' },
+      ])
+    })
+
     it('should write an attribute it rebases double-quoted, escaped, by its name in lower case', () => {
       expect(absolute("<a HREF='?a=1&amp;b=2'>x</a>")).toBe(
         '<a href="https://limulus.net/feed/the-rebound/?a=1&amp;b=2">x</a>'

@@ -13,6 +13,7 @@ import { Buffer } from 'node:buffer'
 
 import type { LoadedConfig } from './config.ts'
 import { forEntry } from './front-matter.ts'
+import { checkLinks } from './link-check.ts'
 import { envelope, withBodies, type Environment } from './load.ts'
 import {
   pageName,
@@ -115,14 +116,15 @@ export interface BuildResult extends CheckResult {
  * build pipeline this shell has (docs/architecture.md §Build pipeline): discover and
  * transform each document with the config's plugins, build their assets, compile, load,
  * plan, render each document's body and load again with the bodies in `build.bodies`
- * (D46), render each page and resolve its marks with the plugins, write it, the files
- * their asset hooks and producers built, and copy the passthrough files.
+ * (D46), render each page and resolve its marks with the plugins, check every link in
+ * what it would write (D47), write the pages, the files their asset hooks and producers
+ * built, and copy the passthrough files.
  * Any error diagnostic, at any step, stops the build before it writes a file, since
- * every page is rendered and every output file checked against every other before the
- * first is written; warnings are reported and the build goes on. A write the file
- * system then refuses — a file an earlier build left in the way, which nothing removes —
- * is reported as the result's `failure`, and the output may hold what was written before
- * it.
+ * every page is rendered, every output file checked against every other, and every link
+ * checked before the first is written; warnings are reported and the build goes on. A
+ * write the file system then refuses — a file an earlier build left in the way, which
+ * nothing removes — is reported as the result's `failure`, and the output may hold what
+ * was written before it.
  *
  * A page whose record the core loaded renders through its layout. A page no glob held
  * and no `type:` named has no schema, so it renders its own output with `page` bound
@@ -155,10 +157,10 @@ export async function build(
 /**
  * Checks the site `config` describes as {@link build} builds it, every step but the
  * writing: every document is transformed, the plugins' assets are built, every page is
- * rendered and its marks resolved, and every output file checked against every other,
- * so a check reports what a build would, the runtime errors and the collisions among
- * them, and the output directory is not touched. The asset hooks are told the build
- * writes nothing.
+ * rendered and its marks resolved, every output file checked against every other, and
+ * every link checked, so a check reports what a build would, the runtime errors, the
+ * collisions and the broken links among them, and the output directory is not touched.
+ * The asset hooks are told the build writes nothing.
  *
  * @throws {SiteError} when the input has no `site.lem`.
  * @throws {CoreTrapped} when a call into the core never returned.
@@ -257,6 +259,20 @@ async function renderSite(
       renderer.render({ path, url: value.url })
     }
     if (hasError(diagnostics)) return failed
+    const { outputs, produced } = renderer
+    // Last, over every byte the build would write: the links in it (D47).
+    diagnostics.push(
+      ...checkLinks({
+        outputs: [...outputs, ...assets, ...produced],
+        files,
+        manifest: built.manifest,
+        mappedBy: built.mappedBy,
+        origin: config.origin,
+        served: config.served,
+        config: config.file,
+      })
+    )
+    if (hasError(diagnostics)) return failed
     const result = {
       pages: renderer.outputs.map((output) => output.file),
       assets: assets.map((output) => output.file),
@@ -265,7 +281,6 @@ async function renderSite(
       diagnostics,
       texts,
     }
-    const { outputs, produced } = renderer
     return { result, rendered: { outputs, assets, produced } }
   } catch (error) {
     threw = true
@@ -335,7 +350,7 @@ function claimed(
       )
       continue
     }
-    outputs.push({ file, bytes })
+    outputs.push({ file, url, bytes })
   }
   return outputs
 }
@@ -439,7 +454,8 @@ class Renderer {
     const marks = { path, generated, plugins: this.#plugins, payloads }
     const resolved = resolvePage(rendered, marks)
     this.#diagnostics.push(...resolved.diagnostics)
-    this.outputs.push({ file, bytes: resolved.bytes })
+    // A url that names a file is a string.
+    this.outputs.push({ file, url: url as string, bytes: resolved.bytes })
     const subject = { page: path, generated }
     for (const produced of resolved.files) this.#produce(subject, produced)
   }
@@ -543,7 +559,7 @@ class Renderer {
       return
     }
     this.#written.set(file, { bytes, writer, mark })
-    this.produced.push({ file, bytes })
+    this.produced.push({ file, url, bytes })
   }
 }
 

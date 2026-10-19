@@ -323,6 +323,10 @@ describe('provided()', () => {
 
     expect(await provided(listing, BUILD)).toEqual({
       manifest: { 'lib/a.js': '/lib/a.1.js', 'lib/b.js': 'https://cdn.example/b.js' },
+      mappedBy: new Map([
+        ['lib/a.js', 'a'],
+        ['lib/b.js', 'b'],
+      ]),
       files: [
         { url: '/lib/a.1.js', bytes: new TextEncoder().encode('a'), plugin: 'a' },
         { url: '/b.wasm', bytes, plugin: 'b' },
@@ -334,6 +338,7 @@ describe('provided()', () => {
   it('should take a hook that builds nothing', async () => {
     expect(await provided(config([shipping({})]), BUILD)).toEqual({
       manifest: {},
+      mappedBy: new Map(),
       files: [],
       diagnostics: [],
     })
@@ -389,10 +394,16 @@ describe('provided()', () => {
       shipping({ manifest: { 'lib/a.js': '/2.js', 'lib/b.js': '/3.js' } }, 'second'),
     ])
 
-    const { manifest, diagnostics } = await provided(listing, BUILD)
+    const { manifest, mappedBy, diagnostics } = await provided(listing, BUILD)
 
     // A path one plugin alone maps is taken from a plugin that also maps a shared one.
     expect(manifest).toEqual({ 'lib/a.js': '/1.js', 'lib/b.js': '/3.js' })
+    expect(mappedBy).toEqual(
+      new Map([
+        ['lib/a.js', 'first'],
+        ['lib/b.js', 'second'],
+      ])
+    )
     expect(diagnostics).toEqual([
       {
         path: listing.file,

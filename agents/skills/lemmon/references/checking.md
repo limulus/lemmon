@@ -73,6 +73,23 @@ What it reports, in the order it finds them:
   content, at the mark, which keeps the content it had; and what a page collects that
   nothing on it places — a `lem-style` with no `mark("styles")` in its layout — at the block
   that collected it.
+- **Broken links**, last, once nothing else failed: every link in the HTML, CSS and XML
+  the build would write — `href`, `src`, `srcset`, a CSS `url()`, a feed's `<link>`, a
+  sitemap's `<loc>`, an SVG `<use href="#…">` — and every url a plugin's `assets` hook
+  maps, that names no file the build writes, matched exactly: `/Feed/` for `/feed/`, and
+  `/tils` for `/tils/`, are errors that say so. A fragment must name an `id` (or an `a`'s
+  `name`) in the page as built, so one only a script inserts fails, as does a footnote
+  linked by number: comrak names it by its label, `#fn-label`. Each is reported once per
+  page per url, at the page's `url` key or its front matter — the link may come from its
+  layout, a component or its prose — or at a generator's `for:` entry, or at the mark of
+  the producer whose file holds it; a manifest url, and a link in a file an asset hook
+  built, at the start of `lemmon.config.ts`, printed without source lines, a manifest url
+  once however many pages print it. An XML file the parser refuses, or that declares an
+  encoding other than UTF-8, is an error too, since its links cannot be read. Links to
+  other hosts, other schemes, and the paths `lemmon.config.ts` lists as `served` (a host's
+  redirect, say) are not checked — a `served` path the build does write is a warning,
+  since links to that page then go unchecked — nor are a feed's escaped entries, whose
+  links are their pages'.
 
 What it does not cover:
 

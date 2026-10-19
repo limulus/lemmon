@@ -38,6 +38,7 @@ describe('loadConfig()', () => {
       file,
       input: resolve(file, '..', 'www'),
       output: resolve(file, '..', '..', 'dist', 'www'),
+      served: [],
       passthrough: ['assets/**'],
       plugins: [],
       dev: { headers: {} },
@@ -134,7 +135,7 @@ describe('loadConfig()', () => {
 
       expect(error.field).toBe('passthru')
       expect(error.message).toMatch(
-        /: unknown field `passthru`; a config has `input`, `output`, `origin`, `passthrough`, `plugins`, `dev`$/
+        /: unknown field `passthru`; a config has `input`, `output`, `origin`, `served`, `passthrough`, `plugins`, `dev`$/
       )
     })
 
@@ -648,6 +649,90 @@ describe('loadConfig()', () => {
       expect(await refused("'https://[::1'")).toBe(
         `\`origin\` is "https://[::1", which the URL parser refuses${RULE}`
       )
+    })
+  })
+
+  describe('served', () => {
+    /** A config whose `served` is `served`, the source of a JavaScript expression. */
+    const listing = (served: string) =>
+      `export default { input: 'www', output: 'dist', served: ${served} }`
+
+    /** The paths a config whose `served` is `served` loads with. */
+    async function loaded(served: string) {
+      return (await loadConfig(configFile(listing(served)))).served
+    }
+
+    /** Why loading a config whose `served` is `served` is refused, past the file's name. */
+    async function refused(served: string): Promise<string> {
+      const error = await refusal(listing(served))
+      expect(error.field).toBe('served')
+      return error.message.slice(`${error.file}: `.length)
+    }
+
+    const RULE =
+      ': `served` lists paths on the origin its host answers without a file the build ' +
+      'writes, each a path from `/` as a link writes it, as `/@eric`'
+
+    it('should default to none', async () => {
+      const omitted = configFile("export default { input: 'www', output: 'dist' }")
+
+      expect((await loadConfig(omitted)).served).toEqual([])
+    })
+
+    it('should take each path as the URL parser writes one', async () => {
+      expect(await loaded("['/@eric', '/tils', '/feed/']")).toEqual([
+        '/@eric',
+        '/tils',
+        '/feed/',
+      ])
+      expect(await loaded("['/café', '/a//b', '/%7e']")).toEqual([
+        '/caf%C3%A9',
+        '/a//b',
+        '/%7e',
+      ])
+    })
+
+    it('should refuse what is not a list of strings', async () => {
+      expect(await refused("'/@eric'")).toBe(`\`served\` must be a list of paths${RULE}`)
+      expect(await refused("['/a', 3]")).toBe(`\`served[1]\` must be a string${RULE}`)
+      expect(await refused("['']")).toBe(`\`served[0]\` is empty${RULE}`)
+    })
+
+    it('should refuse, as written, what is not a path from `/`, each for what it is', async () => {
+      const reasons: [string, string][] = [
+        ['@eric', 'does not start `/`'],
+        ['https://limulus.net/@eric', 'does not start `/`'],
+        ['//limulus.net/@eric', 'starts `//`, which names a host'],
+        [' /a', 'holds whitespace'],
+        ['/a b', 'holds whitespace'],
+        ['/a\tb', 'holds whitespace'],
+        ['/a\\b', 'holds a backslash'],
+        ['\\a', 'holds a backslash'],
+        ['/a?b=1', 'has a query'],
+        ['/a?', 'has a query'],
+        ['/a#b', 'has a fragment'],
+        ['/a/./b', 'has a `.` or `..` segment'],
+        ['/a/..', 'has a `.` or `..` segment'],
+        ['/a/%2E%2e/b', 'has a `.` or `..` segment'],
+      ]
+      for (const [path, reason] of reasons) {
+        // A JSON string is a JavaScript one, so the config holds `path` as it is here.
+        const written = JSON.stringify(path)
+        expect(await refused(`[${written}]`)).toBe(
+          `\`served[0]\` is ${written}, which ${reason}${RULE}`
+        )
+      }
+    })
+
+    it('should refuse two paths the URL parser writes as one, and keep two that differ', async () => {
+      expect(await refused("['/café', '/x', '/caf%C3%A9']")).toBe(
+        '`served[2]` is "/caf%C3%A9", which names `/caf%C3%A9`, as `served[0]` does' + RULE
+      )
+      expect(await refused("['/x', '/x']")).toBe(
+        '`served[1]` is "/x", which names `/x`, as `served[0]` does' + RULE
+      )
+      // Case, a trailing `/`, and a dot that is no segment of its own all name another path.
+      expect(await loaded("['/x', '/X', '/x/', '/x.']")).toEqual(['/x', '/X', '/x/', '/x.'])
     })
   })
 

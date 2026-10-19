@@ -33,6 +33,7 @@ export function configOf(
     file: join(dir, 'lemmon.config.ts'),
     input: join(dir, 'www'),
     output: join(dir, 'dist'),
+    served: [],
     passthrough,
     plugins,
     dev: { headers: {} },

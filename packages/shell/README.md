@@ -3,10 +3,10 @@
 The Node/TypeScript shell around the Lemmon core (see `docs/architecture.md` §Shape and
 §Build pipeline): the `lem` CLI and what it drives. `lem build` reads a site, runs its
 plugins' document transforms and asset hooks, compiles and renders every page through the
-WASM core, fills each page's marks with its plugins, and writes HTML, the files the plugins
-built, and passthrough files to the output directory; `lem check` does all of it but the
-writing; and `lem dev` builds the site, serves the output, and builds it again on every
-change, reloading the pages open on it.
+WASM core, fills each page's marks with its plugins, checks every link in what it would
+write, and writes HTML, the files the plugins built, and passthrough files to the output
+directory; `lem check` does all of it but the writing; and `lem dev` builds the site,
+serves the output, and builds it again on every change, reloading the pages open on it.
 
 ```ts
 // lemmon.config.ts
@@ -16,6 +16,7 @@ export default {
   input: 'www',
   output: 'dist/www',
   origin: 'https://limulus.net',
+  served: ['/@eric'],
   passthrough: ['assets/**/*', '**/*.{png,svg,jpg,jpeg,xsd,xsl,txt,pdf}'],
   plugins: [bundler(), highlighter(), esbuild()],
   dev: {
@@ -43,6 +44,19 @@ and port, as `https://limulus.net`; it is checked as written, and whitespace, a 
 path, a query, a fragment or credentials are each refused for what they are, since a page's
 url is a path from `/` and Lemmon has no path prefix. A document's body is made absolute
 against it before a feed reads it (step 5); with none, its links are made paths from `/`.
+The link check (step 7) reads it to tell the site's own absolute links — on its host, by
+`http` or `https` — from another host's, which it skips; with none, it skips every
+absolute link.
+
+`served` lists the paths on the origin that the site's host answers without a file the
+build writes — a redirect or a rewrite, as limulus.net's CloudFront function sends
+`/@eric` to Mastodon — each a path from `/` as a link writes it, matched exactly: `/@eric`
+is not `/@eric/`, nor `/@eric/posts`. A link to one is taken as answered, and nothing else
+reads the list. Each is refused at load, for what it is, unless it starts with one `/` and
+holds no whitespace, backslash, query, fragment, or `.` or `..` segment, and two that the
+URL parser writes as one path (`/café` and `/caf%C3%A9`) are refused as one. None when
+omitted. One that names a file the build writes is a warning at the config's start, since
+a link there, a fragment into it among them, then goes unchecked.
 
 ## The shell's plugins
 
@@ -429,15 +443,73 @@ promise, and a function where a plugin belongs, a plugin factory not called.
    the default for a producer's marks, the content so far for a decorator's — so the page
    is correct either way. What a page collects under a name nothing on it marks is a
    warning at the block that collected it, since nothing writes it.
-7. **Write.** A url ending in `/` is written as `<output>/<url>/index.html`, any other as
+7. **Check** (D47). Once every page has rendered and resolved without an error, every
+   link in what the build would write is checked against the files it writes: in each page,
+   asset file and produced file whose name ends `.html`, `.css` or `.xml`, read as its
+   kind is read — HTML parsed with parse5 as a browser parses it, CSS tokenized with
+   `@csstools/css-tokenizer` 4 (CSS Syntax 3; 18 KB of JavaScript), XML parsed with
+   `@xmldom/xmldom` 0.9 (about 280 KB), neither with dependencies of its own — and every
+   url an asset hook's manifest maps. In HTML a link is an attribute `@11ty/posthtml-urls`
+   walks, as the body pass reads them (`href`, `src`, each `srcset` candidate, `poster`,
+   `cite`, `action`, `formaction`, `data`, and each of a `ping`'s urls, split at
+   whitespace as HTML splits them), resolved against the first `<base href>`; a refreshing
+   `meta`'s url; any SVG element's `href` or `xlink:href` (`use`, `image`, `feImage`,
+   `a`); an Open Graph url's `content` (`og:url`, and `og:image`, `og:video` and
+   `og:audio` in each spelling); and each `url()` and `@import` in a `<style>` or a
+   `style` attribute. In CSS a link is a `url()`, and an `@import`'s string, against the
+   stylesheet's own url, so a `data:` URI holding `url(%23clip)` is one link that is
+   skipped. In XML it is an `xml-stylesheet` instruction's `href` before the root, any
+   element's `href` or `xlink:href`, and the text of an RSS `link` without one, an RSS
+   channel image's `url`, a sitemap `loc` or `*_loc`, and a `guid` unless
+   `isPermaLink="false"`, each against its nearest `xml:base`; an Atom `id` is no link,
+   and a feed's escaped content is checked on its page. An XML file is an error where the
+   parser reports any error or warning in it but a U+FFFD, where it declares an encoding
+   other than UTF-8, or where it is not UTF-8, since none of its links can be read; the
+   parser expands no entity a document declares. JavaScript, an inline script's text, an
+   SVG paint's `url(#…)`, an HTML page whose name does not end `.html`, and passthrough
+   files of any kind are not read. Every tree is walked with a stack of its own, so no
+   nesting overflows the call stack.
+
+   A link the URL parser refuses, one in a scheme other than `http` and `https`, one on
+   another host than `origin`'s, and a path `served` lists are skipped; `http://` and
+   `https://` on the origin's host are both the site's own. Any other names the file its
+   path maps to, as a page's url does, which the build must write exactly: a file that
+   differs only in case or Unicode form is no match, since a host that matches names
+   exactly serves nothing there, though macOS's file system and so `lem dev` would serve
+   it; nor is a directory whose `index.html` it writes — `/tils` is not `/tils/`, whose
+   relative links resolve elsewhere. A fragment into an HTML page the build writes must
+   name an element of it, by its `id` or an `a`'s `name`, as written or percent-decoded,
+   with the empty fragment and `top` the top and a `:~:` text directive left off — so one
+   only a script would satisfy, an id it inserts or a route such as `#/settings`, is an
+   error, which nothing exempts yet; one into anything else is not checked. Each fault is
+   an error, once per page per url it resolves to, naming each way it is written there and
+   every attribute it stands in, with how often:
+
+   ```text
+   www/b.md:2:1: error: `b.md` links to "/a/#fn2" in `<a href>`, and `a/index.html` has no element whose `id`, or an `a` whose `name`, is `fn2`
+   > 2 | title: B
+       | ^^^^^^^^
+     www/a.md:2:1: the writer of `a/index.html`
+   ```
+
+   It stands at the page's url key, or its front matter where it has none, a generated
+   page's `for:` entry, a producer's mark for its file, or the config's start for an asset
+   file or a manifest url, and is labelled at the writer of the file a near miss names, or
+   of the page a missing fragment points into. A manifest url that names no file is said
+   once, at the config, and no page that prints it is faulted for it again. A `served`
+   path that names a file the build writes is a warning at the config's start, since a
+   link there goes unchecked. On the limulus-dot-net port branch the check reads about
+   4,100 links in about 65 ms in `lem build` and 45 ms in a `lem dev` rebuild. `lem dev`
+   writes nothing while a page links to a page the site does not have, until it does.
+8. **Write.** A url ending in `/` is written as `<output>/<url>/index.html`, any other as
    the file it names; then each file an asset hook built; then each file a producer
    wrote, the bundler's stylesheets among them; and each passthrough file is copied to
    its own path. Nothing in the output is removed. Before the first file is written,
-   every page has been rendered and every file checked against every other — page,
-   asset, produced, and passthrough: the same file, the same but for case or Unicode form
-   (APFS holds those as one), and a file where another needs a directory are each an
-   error at the later writer, a page's url or a producer's mark — or the config's start,
-   for an asset hook's file — labelled at the first.
+   every page has been rendered, every link checked (step 7), and every file checked
+   against every other — page, asset, produced, and passthrough: the same file, the same
+   but for case or Unicode form (APFS holds those as one), and a file where another needs
+   a directory are each an error at the later writer, a page's url or a producer's mark —
+   or the config's start, for an asset hook's file — labelled at the first.
 
 It prints every diagnostic as `path:line:col: severity: message`, then each line its span
 covers, numbered, with `^` beneath what the span covers there — a span over more than five
@@ -470,20 +542,21 @@ it no glob matches anything.
   the binding: ∆wOn.
 - **Drafts.** `draft: true` is built like any page; `--drafts` and leaving drafts out
   are ∆Han, in Someday/Maybe.
-- **The rest of the pipeline.** No output transform (∆fwn), no integrity check
-  (∆yOJ), and no worker pool or incremental rebuild (∆xBO): every build compiles and
-  renders everything in one core, `lem dev`'s rebuilds among them.
+- **The rest of the pipeline.** No output transform (∆fwn), and no worker pool or
+  incremental rebuild (∆xBO): every build compiles and renders everything in one core,
+  `lem dev`'s rebuilds among them.
 
 ## `lem check [--config <path>]`
 
-`lem build`'s steps 1–6 and the checks step 7 makes before its first write: every
+`lem build`'s steps 1–7 and the checks step 8 makes before its first write: every
 document is transformed, the asset hooks run — told the build writes nothing — every page
-is rendered and its marks resolved, and every file checked against every other, so it
-reports every diagnostic a build would — render errors and collisions among them — in the
-same form, and never creates or touches the output directory. A write the file system
-would refuse is therefore found only by `lem build`. It ends with `lem: N errors` and exit
-1, or `checked N pages, A asset files and P produced files` and exit 0, each kind of
-plugin-built file again counted only where a plugin built one.
+is rendered and its marks resolved, every file checked against every other, and every link
+checked, so it reports every diagnostic a build would — render errors, collisions and
+broken links among them — in the same form, and never creates or touches the output
+directory. A write the file system would refuse is therefore found only by `lem build`.
+It ends with `lem: N errors` and exit 1, or `checked N pages, A asset files and P
+produced files` and exit 0, each kind of plugin-built file again counted only where a
+plugin built one.
 
 ## `lem dev [--config <path>] [--port <n>]`
 

@@ -41,7 +41,9 @@
   },
   "homepage": "https://github.com/limulus/lemmon/tree/main/packages/shell#readme",
   "dependencies": {
+    "@csstools/css-tokenizer": "^4.0.2",
     "@limulus/lemmon-core": "0.0.0",
+    "@xmldom/xmldom": "^0.9.12",
     "chokidar": "^5.0.0",
     "esbuild": "0.24.0",
     "esbuild-plugin-wasm": "1.1.0",

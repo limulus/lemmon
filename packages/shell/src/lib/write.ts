@@ -77,10 +77,18 @@ export interface Collision {
   how: 'same' | 'fold' | 'inside' | 'holds'
 }
 
-/** One claim on an output file. */
-interface Claim {
+/** One claim on an output file: the file, as its writer named it, and the writer. */
+export interface Claim {
   file: string
   writer: Writer
+}
+
+/**
+ * The claim {@link OutputFiles.find} found for a file, and whether it is on that file
+ * `exact`ly, or on one that differs from it only in case or Unicode form.
+ */
+export interface Found extends Claim {
+  exact: boolean
 }
 
 /**
@@ -119,6 +127,16 @@ export class OutputFiles {
     }
     return undefined
   }
+
+  /**
+   * The claim on `file`, or on the file that differs from it only in case or Unicode
+   * form, if any — what a link to `file` reaches (D47). A directory a file is written
+   * inside is no claim.
+   */
+  find(file: string): Found | undefined {
+    const claim = this.#files.get(file.normalize('NFC').toLowerCase())
+    return claim === undefined ? undefined : { ...claim, exact: claim.file === file }
+  }
 }
 
 /** Every directory `file` is written inside: `a` and `a/b` for `a/b/c`. */
@@ -134,6 +152,11 @@ function parents(file: string): string[] {
 export interface Output {
   /** Relative to the output directory, with `/` separators. */
   file: string
+  /**
+   * The url it is served at, as its writer named it: a page's from its record or its
+   * path, a plugin's as the plugin wrote it. Its links are resolved against it (D47).
+   */
+  url: string
   /** The page as the core returned it with its marks resolved, or what was built. */
   bytes: Uint8Array
 }
