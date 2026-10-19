@@ -29,6 +29,9 @@ lemmon is `∆FnH`, decided before the merge.
   generator. Untouched: `infra/**`, `cdk.json` and the stack snapshot. CSS bundles move
   from `/assets/immutable/11ty/bundle/` to `/assets/immutable/bundle/`, the same CloudFront
   behaviour; every other file keeps its name and bytes.
+- A fresh install under npm 12 runs no package's install script until it is approved
+  (`npm install-scripts approve`); esbuild, sharp and dprint have one, so the fresh clone's
+  `npm ci` and CI (`∆FnH`) must approve them or prove they are not needed.
 - Accepted without deploying: parity's last green run over the whole output on the
   commit before the switch, with Eleventy built under `TZ=UTC`; on the switch commit, a
   fresh clone's `npm ci`, `npm run verify` and `TZ=UTC npm run build` with no `.env` but
@@ -65,6 +68,12 @@ lemmon is `∆FnH`, decided before the merge.
     heading ids, no WebC hashes or leaked attributes, no stray `<p>` in a photo, the alt
     whole), without dprint's whitespace, and the XML files have indented blank lines
     between elements; the sitemap lists its urls by group, not by date and file creation.
+  - The Atom feeds' alternate links name `https://limulus.net/penumbra/` and `…/tils/`, the
+    pages themselves, where Eleventy wrote them without the slash only CloudFront's rewrite
+    serves (`feed-alternate-slash`; their `<id>`s are unchanged, `∆yOJ`).
+  - make-ai-boring-again's "previously suggested" link names `#fn-out-of-scope` on
+    better-software-with-ai, comrak's footnote id, where it named markdown-it's `#fn2`
+    (Eric, 2026-10-19, `∆yOJ`); the switch records one revision for that post.
   - Footnotes are comrak's, not markdown-it-footnote's (`footnote-markup`, which
     `parity:look` neutralizes): the reference reads `1` where it read `[1]`, the back
     link `↩` where it read `↩︎`, and the section loses the `section-separator` class, so

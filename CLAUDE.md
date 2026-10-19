@@ -17,7 +17,7 @@ accepted on 2026-10-17, and the fourth and fifth, every document page and then t
 and generated pages, on 2026-10-18; the sixth, feeds, sitemap and cutover, is under way.
 The language runs end to end — scanner → parser → typed AST → compiler → VM, with `.md`
 through document mode — and what each stage settled is the decision index
-(`docs/decisions/README.md`, D01–D45), which is the status. The shape to hold in mind:
+(`docs/decisions/README.md`, D01–D47), which is the status. The shape to hold in mind:
 the checker is the compiler's own walk (D31); a host declares the ambient environment a
 program compiles in, and `loadData` validates the host's data against the declared
 schemas (D30, D36, D37); each file compiles to its own `Unit`, and a link step joins
@@ -210,12 +210,14 @@ that checks the 1 ms/page criterion — runs only by hand.
 `lem build` is real: in a directory with a `lemmon.config.ts` (`packages/shell/README.md`
 describes it), the bin at `packages/shell/bin/lem.ts` runs the plugins the config lists
 over each document's text and for their asset files, compiles the site in two calls — the
-assets' manifest on its declaration — loads it, renders every page into memory, resolves
-its marks through those plugins — the shell's own, `bundler()`, `highlighter()` and
-`esbuild()`, run only where the config lists them — and then writes HTML, the asset files, the files the producers made
-(its CSS bundles), and passthrough files.
-`lem check` runs the same pipeline and stops before the write, so it never touches the
-output directory; both print each diagnostic with the source its span covers framed
+assets' manifest on its declaration — loads it, renders each document's body alone and
+loads again with every body in `build.bodies`, its links rebased on the config's `origin`
+(D46), renders every page into memory, resolves its marks through those plugins — the
+shell's own, `bundler()`, `highlighter()` and `esbuild()`, run only where the config
+lists them — checks that every link it holds names a file it writes (D47), and then
+writes HTML, the asset files, the files the producers made (its CSS bundles), and
+passthrough files. `lem check` runs the same pipeline and stops before the write, so it
+never touches the output directory; both print each diagnostic with the source its span covers framed
 beneath, from the text the build read. `lem dev` watches the input (chokidar), rebuilds
 the whole site once changes settle, and serves the output at `127.0.0.1` with the
 config's `dev.headers`, reloading the open pages over a WebSocket after a build with no
