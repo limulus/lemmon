@@ -381,6 +381,27 @@ describe('esbuild()', () => {
         )
       })
 
+      it('should fail at the source that wrote it past one whose text the map lacks', async () => {
+        // A dependency's own map, naming its source without the source's text.
+        const map = { version: 3, sources: ['dep.coffee'], names: [], mappings: 'AAAA' }
+        const inline = Buffer.from(JSON.stringify(map)).toString('base64')
+        const context = site({
+          'lib/a/dep.js':
+            'export const f = () => 1\n' +
+            `//# sourceMappingURL=data:application/json;base64,${inline}\n`,
+          'lib/a/index.ts':
+            "import { f } from './dep.js'\n" +
+            "console.log(f(), new URL('./gone.XXXXXXXX.js', import.meta.url))\n",
+        })
+
+        await expect(bundled(context)).rejects.toThrow(
+          new Error(
+            'www/lib/a/index.ts:2:26: the placeholder `./gone.XXXXXXXX.js` names no entry ' +
+              'point: none ships at `/lib/a/gone.js`'
+          )
+        )
+      })
+
       it('should fail at the bundle where no source wrote it', async () => {
         const context = site(
           { 'lib/a/index.ts': 'import(process.env.SCRIPT)\n' },

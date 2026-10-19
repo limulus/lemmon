@@ -211,11 +211,12 @@ interface Bundle {
 function located(written: string, map: OutputFile, root: string): string | undefined {
   const { sources, sourcesContent } = JSON.parse(map.text) as {
     sources: string[]
-    sourcesContent: string[]
+    // `null` for a source a dependency's own map names without its text.
+    sourcesContent: (string | null)[]
   }
-  const index = sourcesContent.findIndex((content) => content.includes(written))
+  const index = sourcesContent.findIndex((content) => content?.includes(written))
   if (index === -1) return undefined
-  const content = sourcesContent[index]
+  const content = sourcesContent[index]!
   const before = content.slice(0, content.indexOf(written)).split('\n')
   const column = encoder.encode(before[before.length - 1]).length
   const source = relative(root, resolve(dirname(map.path), sources[index]))
