@@ -122,14 +122,14 @@ refused where it stands, or at link when it goes through a call, as a default's 
 front matter (D37). _(Refined by ∆99b: the link step asks the question anew on every
 link rather than reading a fact the unit recorded, as it does of the url and entry
 fields, so a relink under a declaration that newly names the fields finds a direct read
-too. A page's neighbour fields are absent from its record while its defaults run, not
+too. A page's neighbour fields hold a reference to no page while its defaults run, not
 null, so a read the compiler cannot see — through a lambda's parameter, or a record a
-default took of `self` — faults at the read rather than keeping a null. Front matter
-gives none, `null` included, which would otherwise validate as an optional's; the key is
-refused rather than validated, once. Only a page's own field read resolves a reference:
-it is equal to another by the page it names, has no order and no printed form, and is
-refused in a payload, at the call. A page that is no generator's — a collection's member
-too — holds null.)_
+default took of `self` — is refused at the read, in the compiler's words, rather than
+keeping a null. Front matter gives none, `null` included, which would otherwise validate
+as an optional's; the key is refused rather than validated, once. Only a page's own
+field read resolves a reference: it is equal to another by the page it names, has no
+order and no printed form, and is refused in a payload, at the call. A page that is no
+generator's — a collection's member too — holds null.)_
 
 **A record whose defaults read `body` cannot type a page template.** The compiler records
 where each default reads `body`, and the link step, which holds every unit, refuses a page

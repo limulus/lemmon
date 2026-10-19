@@ -1,0 +1,8 @@
+---
+type: PhotoPage
+url: /photos/
+prev: null
+for:
+  photo: site.gallery
+---
+<p><lem.page.title></p>

@@ -422,7 +422,8 @@ A neighbour field holds a `Neighbour`, a reference into the store's page table b
 position, which a field read resolves to that page's record, so no record holds another
 and a page's render takes the table beside the globals (D43); nothing else is given it,
 since only a generated page's own record holds a reference. A payload holding one is
-refused at the call that made it.
+refused at the call that made it. While a page's defaults run, its neighbour fields
+hold a `Neighbour` naming no page, which a read refuses in the compiler's words.
 Records carry their declared name, and the module the declaration table that
 `TypeTest` walks and the loader validates against, so the two cannot disagree about
 what a name is; fields are read by name (by index is an optimisation nothing needs,

@@ -307,8 +307,9 @@ pub(crate) fn refused_at_load(
 /// Why a default may not read the neighbour field `field` of the page it builds (D43):
 /// the loader fills a page's neighbours only once every page of its generator is built,
 /// so no default could see one. One sentence, said by the compiler where the read
-/// stands and by the link step when a call reaches it, or a relink that changed only
-/// the declaration finds one.
+/// stands, by the link step when a call reaches it or a relink that changed only the
+/// declaration finds one, and by the VM when a read neither could see finds the
+/// neighbour withheld.
 pub(crate) fn neighbour_out_of_reach(field: &str) -> String {
     format!(
         "`{field}` is out of reach of a default: the loader fills a page's neighbours once \

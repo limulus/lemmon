@@ -4,21 +4,24 @@
 //! A page template whose front matter carries `for:` is a generator. The host reads and
 //! strips the key as it strips `type:`, and sends it as it parsed it, with the
 //! positions of the field and of the list; the loader words every way the pair can be
-//! malformed, so no host parses it. Once every binding has loaded, the pair is checked
-//! against the program — the ambient value is one the host binds and types, the field
-//! is declared on it as a list, the page type declares the named field, and the list's
-//! element is assignable to it — and the front matter is validated once. Each item
-//! then makes a page: the item preset into the named field, as loaded and never a
-//! string resolved again as data, and the type's defaults run for it, the url among
-//! them. The pages join the page table where the generator stood, in the list's order.
+//! malformed, so no host has to check it — the shell walks the mapping only to place
+//! each entry's value, and reads the one entry back once pages have been made from it.
+//! Once every binding has loaded, the pair is checked against the program — the ambient
+//! value is one the host binds and types, the field is declared on it as a list, the
+//! page type declares the named field, and the list's element is assignable to it — and
+//! the front matter is validated once. Each item then makes a page: the item preset
+//! into the named field, as loaded and never a string resolved again as data, and the
+//! type's defaults run for it, the url among them. The pages join the page table where
+//! the generator stood, in the list's order.
 
+use std::iter;
 use std::rc::Rc;
 
 use lemmon_syntax::{Span, nearest};
 
 use crate::compile::index_u32;
 use crate::decls::{Decls, no_field};
-use crate::host::Ambient;
+use crate::host::{Ambient, Host};
 use crate::types::{Type, assignable};
 use crate::value::{Map, Value};
 
@@ -134,8 +137,9 @@ impl Loader<'_> {
     /// from the list its pair `key` names: one per item, in the list's order, each
     /// joining the page table where the generator stands. Every check stops the
     /// generator where it fails, as does a default that faults for an item, so that
-    /// one mistake costs one diagnostic however long the list. An empty list makes no
-    /// pages, and says nothing.
+    /// one mistake costs one diagnostic however long the list — but the front matter's
+    /// keys are each checked before it stops, so that one mapping's mistakes are told
+    /// together. An empty list makes no pages, and says nothing.
     pub(super) fn generate(
         &mut self,
         loaded: &Loaded,
@@ -166,15 +170,23 @@ impl Loader<'_> {
         let Some(given) = self.front_matter(loaded, record, &at) else {
             return;
         };
-        if !self.leaves(&generator, &pair, given, &at) || !self.places(&generator) {
-            return;
-        }
+        let left = self.leaves(&generator, &pair, given, &at) && self.places(&generator);
+        // The item and the url are the generator's: the rest of the front matter is
+        // validated without either key, which `leaves` refused if given, so that its
+        // other mistakes are told beside that refusal, and no key twice.
+        let host: &Host = self.host;
+        let held: Vec<&str> = iter::once(&*pair.field).chain(host.url()).collect();
+        let rest: Map = given
+            .iter()
+            .filter(|(key, _)| !held.contains(&&***key))
+            .map(|(key, value)| (key.clone(), value.clone()))
+            .collect();
         let doc = Doc {
             path: generator.path,
             body: None,
         };
-        let Some(shared) = self.prepared(given, record, &at, Some(&doc), &[&pair.field])
-        else {
+        let shared = self.prepared(&rest, record, &at, Some(&doc), &held);
+        let (true, Some(shared)) = (left, shared) else {
             return;
         };
         let Some(items) = self.items(&generator, &pair) else {
@@ -212,7 +224,7 @@ impl Loader<'_> {
                 ];
                 for (field, side) in sides {
                     let value = side.map_or(Value::Null, |side| {
-                        Value::Neighbour(index_u32(first + side))
+                        Value::Neighbour(Some(index_u32(first + side)))
                     });
                     fields.push((Rc::from(field), value));
                 }
@@ -486,7 +498,6 @@ mod tests {
 
     use super::*;
     use crate::bytecode::Module;
-    use crate::host::Host;
     use crate::load::tests::{build, object, page, shell, spans};
     use crate::load::{Data, Source, Store, load};
     use crate::{SourceFile, compile};
@@ -1174,7 +1185,7 @@ mod tests {
     /// Where the page `field` of `page` names in the table, if it names one.
     fn names(page: &LoadedPage, name: &str) -> Option<u32> {
         match field(page, name) {
-            Value::Neighbour(position) => Some(*position),
+            Value::Neighbour(Some(position)) => Some(*position),
             Value::Null => None,
             other => panic!("a neighbour or null: {other:?}"),
         }
@@ -1300,32 +1311,130 @@ mod tests {
     }
 
     #[test]
-    fn withholds_a_pages_neighbours_from_a_read_the_compiler_could_not_see() {
-        // A read through a lambda's parameter is no read off `self` to the compiler, so
-        // the loader is what keeps it from finding the null a neighbour would hold
-        // before it is filled: the field is not there yet, and the read faults.
-        let site = paged().replace(
-            "  title: string = \"TILs: \" + self.topic\n",
-            "  title: string = [self].map(|p| p.prev?.topic ?? \"\").join(\"\")\n",
+    fn reports_a_generators_front_matter_keys_together_and_each_once() {
+        // The item and the url are refused by the generator and validated no further —
+        // a list is no `string` and a blank is no `url`, which would say each key twice
+        // — while the mapping's other mistakes are told beside them, not on a next run.
+        let text = "---\ntype: Topic\ntopic: [git, node]\nurl:\nprev: null\ntitel: TILs\n\
+                    for:\n  topic: site.topics\n---\n<lem.page.title>";
+        let module = compiled(&neighboured(), &paged(), &[("t.lem", text, "Topic")]);
+        let front = object(&[
+            (
+                "topic",
+                Value::list(vec![Value::str("git"), Value::str("node")]),
+            ),
+            ("url", Value::Null),
+            ("prev", Value::Null),
+            ("titel", Value::str("TILs")),
+        ]);
+        let given = Loaded {
+            spans: spans(
+                text,
+                &[
+                    ("topic", at(text, "topic: [git, node]")),
+                    ("url", at(text, "url:")),
+                    ("prev", at(text, "prev: null")),
+                    ("titel", at(text, "titel: TILs")),
+                ],
+            ),
+            ..generator("t.lem", front, key(text, "topic", "site.topics"))
+        };
+        let label = format!(
+            "\n  t.lem:{}: `for:` makes this page a generator here",
+            at(text, "topic: site.topics")
         );
-        let module = compiled(&neighboured(), &site, &[("t.lem", TOPICS, "Topic")]);
-        let shown = errors(&module, &neighboured(), vec![topics()]);
         assert_eq!(
-            shown,
+            errors(&module, &neighboured(), vec![given]),
+            [
+                format!(
+                    "t.lem:{}: `topic` is each page's item from `site.topics`, so the front \
+                     matter cannot give it{label}",
+                    at(text, "topic: [git, node]")
+                ),
+                format!(
+                    "t.lem:{}: a generated page's `url` comes from `Topic`'s default, so the \
+                     front matter cannot give it{label}",
+                    at(text, "url:")
+                ),
+                format!(
+                    "t.lem:{}: `Topic` has no field `titel`; did you mean `title`?",
+                    at(text, "titel: TILs")
+                ),
+                format!(
+                    "t.lem:{}: `prev` is a page's neighbour, which the loader fills, so the \
+                     front matter cannot give it",
+                    at(text, "prev: null")
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn says_nothing_missing_of_a_url_it_refused_where_the_type_gives_it_no_default() {
+        // The url is the generator's whether or not its type computes one, so the refusal
+        // of the key is not followed by a "missing" for the field it took away.
+        let site = SITE.replace("  url: url = url(\"/t/\" + self.topic + \"/\")\n", "");
+        let text = "---\ntype: Topic\nurl: /tils/\nfor:\n  topic: site.topics\n---\n";
+        let module = compiled(&placed(), &site, &[("t.lem", text, "Topic")]);
+        let given = Loaded {
+            spans: spans(text, &[("url", at(text, "url: /tils/"))]),
+            ..generator(
+                "t.lem",
+                object(&[("url", Value::str("/tils/"))]),
+                key(text, "topic", "site.topics"),
+            )
+        };
+        assert_eq!(
+            errors(&module, &placed(), vec![given]),
             [format!(
-                "site.lem:{}: no field `prev` on `Topic` record\n  t.lem:{}: computing \
-                 `title` for `site.topics[0]`",
-                at(&site, "«p.prev»?.topic"),
-                at(TOPICS, "topic: site.topics")
+                "t.lem:{}: a generated page's `url` comes from `Topic`'s default, so the \
+                 front matter cannot give it\n  t.lem:{}: `for:` makes this page a generator \
+                 here",
+                at(text, "url: /tils/"),
+                at(text, "topic: site.topics")
             )]
         );
+    }
+
+    /// What the compiler and the link step say of a default's read of a neighbour.
+    const OUT_OF_REACH: &str = "is out of reach of a default: the loader fills a page's \
+                                neighbours once every page of its generator is built";
+
+    #[test]
+    fn refuses_a_read_the_compiler_could_not_see_in_the_compilers_words() {
+        // Through a lambda's parameter, or off a record a default took of `self`, a read
+        // is no read off `self` to the compiler, so the loader withholds the neighbours
+        // while the defaults run: the read finds no page, never the null a neighbour
+        // holds before it is filled, and is refused as a read the compiler saw is.
+        for (default, read) in [
+            (
+                "[self].map(|p| p.prev?.topic ?? \"\").join(\"\")",
+                "«p.prev»?.topic",
+            ),
+            ("self.me?.prev?.topic ?? \"\"", "«self.me?.prev»?.topic"),
+        ] {
+            let site = paged().replace(
+                "  title: string = \"TILs: \" + self.topic\n",
+                &format!("  me: Topic? = self\n  title: string = {default}\n"),
+            );
+            let module = compiled(&neighboured(), &site, &[("t.lem", TOPICS, "Topic")]);
+            assert_eq!(
+                errors(&module, &neighboured(), vec![topics()]),
+                [format!(
+                    "site.lem:{}: `prev` {OUT_OF_REACH}\n  t.lem:{}: computing `title` for \
+                     `site.topics[0]`",
+                    at(&site, read),
+                    at(TOPICS, "topic: site.topics")
+                )]
+            );
+        }
     }
 
     #[test]
     fn keeps_a_record_a_default_took_of_itself_without_its_neighbours() {
         // A default that hands `self` on hands the record as built so far: its
-        // neighbours are not in it, and a read of one is an error at the read, never
-        // the null a stale snapshot would otherwise hold.
+        // neighbours are withheld in it, and a read of one is refused at the read,
+        // never the null a stale snapshot would otherwise hold.
         let site = paged().replace(
             "  topic: string\n",
             "  topic: string\n  me: Topic? = self\n",
@@ -1338,9 +1447,9 @@ mod tests {
         let globals = store.globals(&host, "t.lem", Some(1));
         let error =
             crate::render_page(&module, second, &store.pages, None, &globals).unwrap_err();
-        assert_eq!(error.message, "no field `prev` on `Topic` record");
+        assert_eq!(error.message, format!("`prev` {OUT_OF_REACH}"));
         // The page itself has its neighbour.
-        assert_eq!(field(second, "prev"), &Value::Neighbour(0));
+        assert_eq!(field(second, "prev"), &Value::Neighbour(Some(0)));
     }
 
     #[test]
@@ -1401,7 +1510,7 @@ mod tests {
             panic!("a record");
         };
         assert_eq!(first.fields.get("prev"), None);
-        assert_eq!(first.fields.get("next"), Some(&Value::Neighbour(1)));
+        assert_eq!(first.fields.get("next"), Some(&Value::Neighbour(Some(1))));
         let host = neighboured();
         let rendered = crate::render_page(
             &module,

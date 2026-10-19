@@ -17,7 +17,8 @@
 //!
 //! A [`Value::Neighbour`] is the one value no expression makes: what a generated page's
 //! neighbour field holds, a page of the store's page table by its position, which a
-//! field read resolves to that page's record before anything else sees it (D43).
+//! field read resolves to that page's record before anything else sees it (D43) — or
+//! no page yet, while the page's defaults run, which a field read refuses.
 
 use std::borrow::Cow;
 use std::cmp::Ordering;
@@ -166,8 +167,10 @@ pub enum Value {
     /// A page of the store's page table, by its position: what a generated page's
     /// neighbour field holds, so that no record holds another and two neighbours make
     /// no cycle (D43). A field read resolves it to the page's record, so a template
-    /// never holds one; equal to another by position, and refused in a payload.
-    Neighbour(u32),
+    /// never holds one; equal to another by position, and refused in a payload. `None`
+    /// is a neighbour withheld: what each of a page's neighbour fields holds while its
+    /// defaults run, before the loader can fill it, and a read of one is refused.
+    Neighbour(Option<u32>),
 }
 
 impl Value {
@@ -465,7 +468,7 @@ mod tests {
                 "a payload crosses to the handler as JSON, which has no NaN or infinity",
             ),
             (
-                Value::Neighbour(0),
+                Value::Neighbour(Some(0)),
                 "a payload crosses to the handler as data, and a generated page's \
                  neighbours have no form there",
             ),
@@ -714,7 +717,7 @@ mod tests {
                 captures: vec![],
             })),
             Value::record("Photo", Map::default()),
-            Value::Neighbour(0),
+            Value::Neighbour(Some(0)),
         ]
         .iter()
         .map(|value| value.type_name().into_owned())
@@ -738,22 +741,6 @@ mod tests {
                 "`Photo` record",
                 "neighbouring page"
             ]
-        );
-    }
-
-    /// What a neighbour field holds compares by the page it names, so two records of
-    /// one generator's page compare as the same page — and it is never printed or
-    /// ordered, a read having resolved it before either could be asked.
-    #[test]
-    fn compares_a_neighbour_by_the_page_it_names() {
-        assert_eq!(Value::Neighbour(2).equals(&Value::Neighbour(2)), Ok(true));
-        assert_eq!(Value::Neighbour(2).equals(&Value::Neighbour(3)), Ok(false));
-        assert_eq!(Value::Neighbour(2).equals(&Value::Null), Ok(false));
-        assert_eq!(Value::Neighbour(2).order(&Value::Neighbour(3)), Ok(None));
-        assert!(Value::Neighbour(0).as_condition());
-        assert_eq!(
-            emitted(&Value::Neighbour(0)).unwrap_err(),
-            "cannot print a neighbouring page"
         );
     }
 

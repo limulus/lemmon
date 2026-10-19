@@ -501,10 +501,11 @@ input directory.
   and read it in a default. A page type may declare one of the two without the other, and
   declares each with no default, which the fill would overwrite. A default's read of one
   is refused where it stands, or at link when it goes through a call; a read neither can
-  see — through a lambda's parameter, or a record a default took of `self` — faults at
-  the read, since a page's neighbours are not in its record while its defaults run.
-  Front matter never gives one, `null` included. A neighbour is the page itself, read
-  through, so `page.prev.next` on a page with a previous one is that page again.
+  see — through a lambda's parameter, or a record a default took of `self` — is refused
+  at the read in the same words, since a page's neighbours are withheld while its
+  defaults run. Front matter never gives one, `null` included. A neighbour is the page
+  itself, read through, so `page.prev.next` on a page with a previous one is that page
+  again.
 - **`layout`** is a field every page schema declares, `(T, html): html` for its own `T`,
   usually with a default. At load its string value resolves to a project function of that
   type, as any string does where a function type is expected; `render` renders a page by

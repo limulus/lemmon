@@ -378,8 +378,8 @@ mod pages {
                 generated: None,
             };
             vec![
-                page(article("Home", Value::Neighbour(1), Value::Null)),
-                page(article("Before", Value::Null, Value::Neighbour(0))),
+                page(article("Home", Value::Neighbour(Some(1)), Value::Null)),
+                page(article("Before", Value::Null, Value::Neighbour(Some(0)))),
             ]
         }
 

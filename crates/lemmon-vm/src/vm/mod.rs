@@ -27,6 +27,7 @@ use lemmon_syntax::Span;
 
 use crate::builtins::{self, BUILTINS, Fault, Machine, ReceiverKind};
 use crate::bytecode::{Function, MarkKey, MarkPayload, Module, Op};
+use crate::compile::neighbour_out_of_reach;
 use crate::load::LoadedPage;
 use crate::rendered::{Buffer, Fragment, Fragments, Mark, Marked, Payload, Rendered};
 use crate::value::{Closure, Map};
@@ -255,7 +256,7 @@ impl<'a> Vm<'a> {
                 record.fields.get(name).cloned().ok_or_else(|| {
                     format!("no field `{name}` on {}", receiver.type_name())
                 })?;
-            let callee = self.resolved(callee)?;
+            let callee = self.resolved(name, callee)?;
             self.stack.remove(at);
             return Ok(self.call_value(callee, argc)?);
         }
@@ -638,7 +639,7 @@ impl<'a> Vm<'a> {
                 .get(name)
                 .cloned()
                 .ok_or_else(|| format!("no field `{name}` on {}", object.type_name()))
-                .and_then(|value| self.resolved(value)),
+                .and_then(|value| self.resolved(name, value)),
             Value::Null => Err(format!("cannot read field `{name}` of null")),
             other => Err(format!(
                 "cannot read field `{name}` of a {}",
@@ -647,14 +648,20 @@ impl<'a> Vm<'a> {
         }
     }
 
-    /// `value` as a field read hands it on: a neighbour's reference resolved to the
-    /// record of the page it names, anything else as it is. A position the table does
-    /// not hold is an error rather than an index out of bounds (invariant 8): the
-    /// loader's references name pages of the store it built, so only a caller that
-    /// passed another table could reach it.
-    fn resolved(&self, value: Value) -> Result<Value, String> {
+    /// `value`, read as the field `name`, as the read hands it on: a neighbour's
+    /// reference resolved to the record of the page it names, anything else as it is.
+    /// A neighbour withheld while its page's defaults ran is refused in the compiler's
+    /// words for a default's read of one, since this is the read it could not see —
+    /// through a lambda's parameter, or a record a default took of `self` (D43). A
+    /// position the table does not hold is an error rather than an index out of bounds
+    /// (invariant 8): the loader's references name pages of the store it built, so only
+    /// a caller that passed another table could reach it.
+    fn resolved(&self, name: &str, value: Value) -> Result<Value, String> {
         let Value::Neighbour(position) = value else {
             return Ok(value);
+        };
+        let Some(position) = position else {
+            return Err(neighbour_out_of_reach(name));
         };
         self.pages
             .get(position as usize)

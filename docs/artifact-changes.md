@@ -232,9 +232,9 @@ moved it. Newest last. An entry is removed when its change has been applied.
   ancestor, the loader fills them in list order, and every other page has neither. The
   rule is a page type's alone, each field on its own, and a neighbour takes no default;
   a default's read of one is refused where it stands or at link through a call, judged
-  anew on every link rather than recorded as a fact of the unit; the fields are absent
-  from a page's record while its defaults run, so a read neither can see faults at the
-  read; and front matter never gives one, `null` included (∆99b). Where
+  anew on every link rather than recorded as a fact of the unit; the fields are withheld
+  while a page's defaults run, so a read neither can see is refused at the read in the
+  same words; and front matter never gives one, `null` included (∆99b). Where
   the text says the shell reads two names of its own, list the keys `type` and `for` and
   the declared fields `layout`, `url`, `prev`, and `next`. A page template has no `body`
   before it renders, so a record whose default reads `body` cannot type one: the link

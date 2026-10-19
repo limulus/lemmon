@@ -251,7 +251,7 @@ impl<'a> Loader<'a> {
 
     /// The neighbour fields the host names, previous then next, where the record `name`
     /// is a page's, loaded from `doc` (D43): what the loader withholds while the page's
-    /// defaults run — so a read of one that the compiler could not see faults at the
+    /// defaults run — so a read of one that the compiler could not see is refused at the
     /// read rather than finding a `null` — and fills once they have. A record that is no
     /// page's has none, whatever its fields are called; one a page type does not declare
     /// is dropped where the record is assembled, as any field it lacks is.
@@ -271,10 +271,10 @@ impl<'a> Loader<'a> {
 
     /// The fields of the record `name` that `given` settles, before any default runs:
     /// [`record`](Self::record) up to its defaults, the `by` lookups included. A field
-    /// in `held` is one the caller fills itself — a generator's item (D43) — so its
-    /// omission is neither an error nor a `null`, and so is a page's neighbour, which no
-    /// front matter may give: not even `null`, which would otherwise validate as an
-    /// optional's (D43, D37).
+    /// in `held` is the caller's — a generator's item, and its url, which only a default
+    /// gives (D43) — so its omission is neither an error nor a `null`, and so is a page's
+    /// neighbour, which no front matter may give: not even `null`, which would otherwise
+    /// validate as an optional's (D43, D37).
     pub(super) fn prepared(
         &mut self,
         given: &Map,
@@ -471,7 +471,17 @@ impl<'a> Loader<'a> {
         doc: Option<&Doc<'_>>,
         building: &Building<'_>,
     ) -> Option<Value> {
-        let mut args = vec![self.assembled(record, fields)];
+        // A page's neighbours are withheld while its defaults run (D43), so a read of
+        // one the compiler could not see finds no page, and is refused where it runs.
+        let me = match self.neighbours(record, doc) {
+            Some((previous, next)) => {
+                let withheld =
+                    [previous, next].map(|field| (Rc::from(field), Value::Neighbour(None)));
+                self.assembled(record, &[fields, &withheld].concat())
+            }
+            None => self.assembled(record, fields),
+        };
+        let mut args = vec![me];
         // What the function takes is what the compiler gave it: a default declared on
         // a page-backed record takes the document, one declared on a record above the
         // document type — which a page-backed subtype still inherits — does not.
