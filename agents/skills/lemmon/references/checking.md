@@ -39,7 +39,8 @@ What it reports, in the order it finds them:
   two plugins both map, or an asset file that collides with another output file, at the
   start of `lemmon.config.ts`, printed without source lines. Nothing compiles past one.
   The shell's `esbuild()` bundles the client scripts here, so a script esbuild cannot
-  build, a `XXXXXXXX` placeholder naming no entry, and an `env` variable that is not set
+  build, a `XXXXXXXX` placeholder naming no entry or its own bundle (even through other
+  bundles, since each is named by the names in it), and an `env` variable that is not set
   are each one of these, esbuild's message giving the script's file and position.
   The text a transform leaves is what compiles: a diagnostic in what it appended points
   past the end of the file you wrote, and its frame shows the appended text.

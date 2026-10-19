@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process'
-import { symlinkSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { mkdirSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -17,8 +18,11 @@ import {
 } from '../mocks/sites.ts'
 import { tempDir } from '../mocks/temp-dir.ts'
 
-/** esbuild's `[hash]`: eight characters of base32. */
-const HASH = '[A-Z2-7]{8}'
+/** A bundle's `[hash]`: eight characters of base32, never the placeholder it replaces. */
+const HASH = '(?!X{8})[A-Z2-7]{8}'
+
+/** The smallest WebAssembly module there is: the magic number and the version. */
+const WASM = '\0asm\u0001\0\0\0'
 
 /**
  * A project holding `files` under its input, `www`, and the context its asset hook is
@@ -52,6 +56,9 @@ function at(files: Record<string, string>, url: string): string {
   if (text === undefined) throw new Error(`no file at \`${url}\``)
   return text
 }
+
+/** The file name in `url`. */
+const nameIn = (url: string) => url.split('/').pop()!
 
 describe('esbuild()', () => {
   it('should be a plugin with an asset hook alone, named `esbuild`', () => {
@@ -91,27 +98,127 @@ describe('esbuild()', () => {
         ].sort()
       )
       // Bundled, minified, and pointing at its map, which names the sources from it.
-      const name = index.split('/').pop()!
       expect(at(files, index)).toMatch(/^var \w=\w=>\w\*2;console\.log\(\w\(2\)\);\n/)
-      expect(at(files, index)).toContain(`//# sourceMappingURL=${name}.map\n`)
+      expect(at(files, index)).toContain(`//# sourceMappingURL=${nameIn(index)}.map\n`)
       expect(JSON.parse(at(files, `${index}.map`))).toMatchObject({
         sources: ['../../../www/lib/a/twice.ts', '../../../www/lib/a/index.ts'],
       })
     })
 
-    it('should name a bundle the same in every build, by its bytes and the root it is built from', async () => {
-      const context = site({ 'lib/a/index.ts': 'console.log(1)\n' })
+    it('should name a bundle the same in every build, wherever the project is', async () => {
+      const files = {
+        'lib/a/index.ts':
+          "import { instance } from './empty.wasm'\nconsole.log(instance)\n",
+        'lib/a/empty.wasm': WASM,
+      }
+      const context = site(files)
 
       const first = await bundled(context)
       expect(await bundled(context)).toEqual(first)
-      // esbuild hashes the sources by their paths from where it runs, so the root moves
-      // every name, and the bytes stay as they were.
-      const elsewhere = await bundled({ ...context, root: context.input })
-      const [url] = Object.values(first.manifest)
-      const [moved] = Object.values(elsewhere.manifest)
-      expect(moved).not.toBe(url)
-      expect(at(elsewhere.files, moved).replace(/\w+\.js\.map/, '')).toBe(
-        at(first.files, url).replace(/\w+\.js\.map/, '')
+      // Named by what it ships as, which names its sources from itself: neither the
+      // project's own path nor the root esbuild runs from is in it.
+      expect(await bundled(site(files))).toEqual(first)
+      expect(await bundled({ ...context, root: context.input })).toEqual(first)
+    })
+
+    it('should name a module in a map from the map, not by the project’s path', async () => {
+      const context = site({
+        'lib/a/index.ts':
+          "import { instance } from './empty.wasm'\nconsole.log(instance)\n",
+        'lib/a/empty.wasm': WASM,
+      })
+
+      const { manifest, files } = await bundled(context)
+
+      // esbuild-plugin-wasm names its module by an absolute path, in the map's sources
+      // and in the code it writes for it, which the map holds too.
+      const map = at(files, `${manifest['/lib/a/index.js']}.map`)
+      expect(JSON.parse(map)).toMatchObject({
+        sources: [
+          'wasm-module:../../../www/lib/a/empty.wasm',
+          '../../../www/lib/a/index.ts',
+        ],
+      })
+      expect(map).toContain('import wasmModule from \\"../../../www/lib/a/empty.wasm\\";')
+      expect(map).not.toContain(realpathSync(context.root))
+    })
+
+    it('should name a module from a map in the root itself', async () => {
+      const context = site({
+        'index.ts':
+          "import { instance } from '../dist/empty.wasm'\nconsole.log(instance)\n",
+      })
+      const output = join(context.root, 'dist')
+      mkdirSync(output)
+      writeFileSync(join(output, 'empty.wasm'), WASM)
+
+      const { manifest, files } = await bundled({ ...context, root: output, output })
+
+      // From the map's own directory, not from `/`.
+      const map = at(files, `${manifest['/index.js']}.map`)
+      expect(JSON.parse(map)).toMatchObject({
+        sources: ['wasm-module:./empty.wasm', '../www/index.ts'],
+      })
+      expect(map).toContain('import wasmModule from \\"./empty.wasm\\";')
+    })
+
+    it('should name a bundle as limulus.net’s Eleventy build names it', async () => {
+      const context = site({
+        'lib/a/index.ts': "new Worker(new URL('./worker.XXXXXXXX.js', import.meta.url))\n",
+        'lib/a/worker.ts':
+          "import { instance } from './empty.wasm'\nconsole.log(instance)\n",
+        'lib/a/empty.wasm': WASM,
+      })
+
+      const { manifest, files } = await bundled(
+        { ...context, output: join(context.root, 'dist', 'www') },
+        { assetNames: 'assets/immutable/11ty/esbuild/[name].[hash]' }
+      )
+
+      // What limulus.net's 11ty/esbuild.ts, as of its d1dc734, writes for these sources
+      // into dist/www.
+      expect(manifest).toEqual({
+        '/lib/a/index.js': '/lib/a/index.JP4OVLGG.js',
+        '/lib/a/worker.js': '/lib/a/worker.JMWDZIAD.js',
+      })
+      expect(Object.keys(files).sort()).toEqual([
+        '/assets/immutable/11ty/esbuild/empty.FV2RY22A.wasm',
+        '/lib/a/index.JP4OVLGG.js',
+        '/lib/a/index.JP4OVLGG.js.map',
+        '/lib/a/worker.JMWDZIAD.js',
+        '/lib/a/worker.JMWDZIAD.js.map',
+      ])
+      expect(at(files, '/lib/a/index.JP4OVLGG.js')).toBe(
+        'new Worker(new URL("./worker.JMWDZIAD.js",import.meta.url));\n' +
+          '//# sourceMappingURL=index.JP4OVLGG.js.map\n'
+      )
+    })
+
+    it('should take a bundle’s name from the SHA-256 of its text, as it is named, and its map', async () => {
+      const { manifest, files } = await bundled(
+        site({ 'lib/a/index.ts': 'console.log(7)\n' })
+      )
+
+      // A digest whose first five bits are zero, which name the first character too.
+      const url = manifest['/lib/a/index.js']
+      expect(url).toBe('/lib/a/index.AXXY6SC2.js')
+      const [, hash] = nameIn(url).split('.')
+      // The comment naming its map still holds the placeholder while it is hashed.
+      const unnamed = at(files, url).replace(nameIn(url), 'index.XXXXXXXX.js')
+      expect(unnamed).toBe('console.log(7);\n//# sourceMappingURL=index.XXXXXXXX.js.map\n')
+      const digest = createHash('sha256')
+        .update(unnamed + at(files, `${url}.map`))
+        .digest()
+      // RFC 4648's base32 of the digest's first 40 bits, five to a character.
+      const bits = [...digest.subarray(0, 5)]
+        .map((byte) => byte.toString(2).padStart(8, '0'))
+        .join('')
+      const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'
+      expect(hash).toBe(
+        bits
+          .match(/.{5}/g)!
+          .map((five) => alphabet[parseInt(five, 2)])
+          .join('')
       )
     })
 
@@ -168,25 +275,30 @@ describe('esbuild()', () => {
         })
       )
 
+      // Named by what it ships as, too, with its map beside it.
       const css = manifest['/lib/a/index.css']
       expect(css).toMatch(new RegExp(`^/lib/a/index\\.${HASH}\\.css$`))
-      expect(at(files, css)).toContain('.a{color:red}')
+      expect(at(files, css)).toBe(
+        `.a{color:red}\n/*# sourceMappingURL=${nameIn(css)}.map */\n`
+      )
+      expect(JSON.parse(at(files, `${css}.map`))).toMatchObject({
+        sources: ['../../../www/lib/a/a.css'],
+      })
     })
 
     it('should instantiate a `.wasm` module an entry imports, written under `/assets/immutable/esbuild/`', async () => {
-      // The smallest module there is: the magic number and the version.
-      const wasm = '\0asm\u0001\0\0\0'
       const { manifest, files } = await bundled(
         site({
           'lib/a/index.ts':
             "import { instance } from './empty.wasm'\nconsole.log(instance)\n",
-          'lib/a/empty.wasm': wasm,
+          'lib/a/empty.wasm': WASM,
         })
       )
 
+      // Named as esbuild names it, by its bytes.
       const [url] = Object.keys(files).filter((file) => file.endsWith('.wasm'))
       expect(url).toMatch(new RegExp(`^/assets/immutable/esbuild/empty\\.${HASH}\\.wasm$`))
-      expect(at(files, url)).toBe(wasm)
+      expect(at(files, url)).toBe(WASM)
       const bundle = at(files, manifest['/lib/a/index.js'])
       expect(bundle).toContain(`"../../${url.slice(1)}"`)
       expect(bundle).toContain('WebAssembly.instantiate')
@@ -197,7 +309,7 @@ describe('esbuild()', () => {
         site({
           'app.ts':
             "import '/vendor/x.js'\nimport { instance } from './m.wasm'\nconsole.log(instance)\n",
-          'm.wasm': '\0asm\u0001\0\0\0',
+          'm.wasm': WASM,
           'lib/a/index.ts': 'console.log(1)\n',
         }),
         {
@@ -305,18 +417,17 @@ describe('esbuild()', () => {
           'lib/a/worker.ts': 'self.postMessage(1)\n',
           'lib/b/index.ts': "console.log('b')\n",
         }
-        const name = (url: string) => url.split('/').pop()!
 
         it('should take the file name its entry ships under, spliced in as written', async () => {
           const { manifest, files: built } = await bundled(site(files))
 
           // As Eleventy splices the hash in: each string as written, the same length.
-          const worker = name(manifest['/lib/a/worker.js'])
+          const worker = nameIn(manifest['/lib/a/worker.js'])
           const b = manifest['/lib/b/index.js']
           expect(at(built, manifest['/lib/a/index.js'])).toContain(
             `new Worker(new URL("./${worker}",import.meta.url));` +
               `new Worker(new URL("${worker}",import.meta.url));` +
-              `new Worker(new URL("../b/${name(b)}",import.meta.url));import("${b}");`
+              `new Worker(new URL("../b/${nameIn(b)}",import.meta.url));import("${b}");`
           )
         })
 
@@ -328,22 +439,22 @@ describe('esbuild()', () => {
           // Written as found where that still names the file, from the bundle's own URL
           // where it would not, and absolute where it was.
           const b = flat.manifest['/lib/b/index.js']
-          const worker = name(flat.manifest['/lib/a/worker.js'])
+          const worker = nameIn(flat.manifest['/lib/a/worker.js'])
           expect(at(flat.files, flat.manifest['/lib/a/index.js'])).toContain(
             `new Worker(new URL("./${worker}",import.meta.url));` +
               `new Worker(new URL("${worker}",import.meta.url));` +
-              `new Worker(new URL("./${name(b)}",import.meta.url));import("${b}");`
+              `new Worker(new URL("./${nameIn(b)}",import.meta.url));import("${b}");`
           )
           const moved = deeper.manifest['/lib/b/index.js']
           expect(moved).toMatch(new RegExp(`^/lib/b/x/index\\.${HASH}\\.js$`))
           expect(at(deeper.files, deeper.manifest['/lib/a/index.js'])).toContain(
-            `new Worker(new URL("../../b/x/${name(moved)}",import.meta.url));` +
+            `new Worker(new URL("../../b/x/${nameIn(moved)}",import.meta.url));` +
               `import("${moved}");`
           )
         })
       })
 
-      it('should be resolved after hashing, so a bundle is named by the placeholder', async () => {
+      it('should be resolved before its bundle is named, so a loader is renamed with its worker', async () => {
         const context = site({
           'lib/a/index.ts':
             "new Worker(new URL('./worker.XXXXXXXX.js', import.meta.url))\n",
@@ -354,14 +465,50 @@ describe('esbuild()', () => {
 
         const after = await bundled(context)
 
-        // As limulus.net's Eleventy build names it: a new worker, and its loader's name
-        // unchanged, though the URL in it is the new worker's.
-        const loader = before.manifest['/lib/a/index.js']
-        expect(after.manifest['/lib/a/worker.js']).not.toBe(
-          before.manifest['/lib/a/worker.js']
+        // The loader's source is unchanged, but the name in it is the new worker's, so it
+        // ships under a new name too: a cache keeping every hashed name for a year never
+        // hands out the old loader for the new worker's page.
+        const worker = after.manifest['/lib/a/worker.js']
+        expect(worker).not.toBe(before.manifest['/lib/a/worker.js'])
+        expect(after.manifest['/lib/a/index.js']).not.toBe(
+          before.manifest['/lib/a/index.js']
         )
-        expect(after.manifest['/lib/a/index.js']).toBe(loader)
-        expect(at(after.files, loader)).not.toBe(at(before.files, loader))
+        expect(at(after.files, after.manifest['/lib/a/index.js'])).toContain(
+          `new URL("./${nameIn(worker)}",import.meta.url)`
+        )
+      })
+
+      it('should fail where it closes a cycle, at the source that wrote it', async () => {
+        const context = site({
+          'lib/a/index.ts': "import '/lib/b/index.XXXXXXXX.js'\n",
+          'lib/b/index.ts': "import '/lib/c/index.XXXXXXXX.js'\n",
+          'lib/c/index.ts': "// Back to b.\nimport '/lib/b/index.XXXXXXXX.js'\n",
+        })
+
+        // Each would be named by the other's name, so neither can be; the cycle alone is
+        // named, not the bundle that led into it.
+        await expect(bundled(context)).rejects.toThrow(
+          new Error(
+            'www/lib/c/index.ts:2:8: the placeholder `/lib/b/index.XXXXXXXX.js` closes a ' +
+              'cycle, `/lib/b/index.js` -> `/lib/c/index.js` -> `/lib/b/index.js`, and a ' +
+              "bundle's name is a hash of the names in it"
+          )
+        )
+      })
+
+      it('should fail where it names its own bundle', async () => {
+        const context = site({
+          'lib/a/worker.ts':
+            "new Worker(new URL('./worker.XXXXXXXX.js', import.meta.url))\n",
+        })
+
+        await expect(bundled(context)).rejects.toThrow(
+          new Error(
+            'www/lib/a/worker.ts:1:20: the placeholder `./worker.XXXXXXXX.js` closes a ' +
+              "cycle, `/lib/a/worker.js` -> `/lib/a/worker.js`, and a bundle's name is a " +
+              'hash of the names in it'
+          )
+        )
       })
 
       it('should fail where it names no entry, at the source that wrote it', async () => {

@@ -104,8 +104,9 @@ native binary of about 9.3 MB for the platform — and `esbuild-plugin-wasm` pin
 the input, found as the build's walk finds files, is an entry, bundled on its own:
 minified, an ES module with its source map beside it, an import of `/lib/*` left for the
 browser, and a `.wasm` it imports instantiated as a module. Each bundle is written beside
-its source, named by its hash — `www/lib/x/index.ts` at `/lib/x/index.ABCD2345.js` — and a
-file a bundle imports, the `.wasm`, under `/assets/immutable/esbuild/`. The manifest maps
+its source, named by a hash of what it ships as — `www/lib/x/index.ts` at
+`/lib/x/index.ABCD2345.js` — and a file a bundle imports, the `.wasm`, under
+`/assets/immutable/esbuild/`, named as esbuild names it. The manifest maps
 each entry's URL as its source names it to the URL its bundle ships at, so a layout writes
 
 ```lem
@@ -120,21 +121,31 @@ hook, naming both sources.
 A script names another entry — to import it, or to start it as a worker — by a
 placeholder, the entry's URL with `XXXXXXXX` where the hash goes (D10):
 `import '/lib/y/index.XXXXXXXX.js'`, `new URL('./worker.XXXXXXXX.js', import.meta.url)`.
-Once every bundle is hashed, each placeholder in a string names the entry at its path,
-found from the bundle's own logical path where it is relative, and the file name that
-entry ships under is spliced in as written, as limulus.net's Eleventy build splices the
-hash in — `'worker.XXXXXXXX.js'` becomes `"worker.ABCD2345.js"`, the same length, so the
-map's columns hold. Where `entryNames` has moved the bundles, so that the spliced string
-would name another file, it becomes the URL the entry ships at instead, relative to the
-bundle's own where it was relative. One naming no entry fails the hook at the source that
-wrote it, from the root with its line and column as esbuild places its own errors — or at
-the bundle, where a `define` put it there. Because the replacing follows the hashing, a
-bundle's name does not change when only the bundle it names does. Eleventy's build also
-writes an unhashed `/lib/x/index.js` re-exporting each bundle; this one does not, since
-nothing loads one.
+Before a bundle is named, each placeholder in a string names the entry at its path, found
+from the bundle's own logical path where it is relative, and the file name that entry
+ships under — so that entry is named first — is spliced in as written, as limulus.net's
+Eleventy build splices the hash in: `'worker.XXXXXXXX.js'` becomes `"worker.ABCD2345.js"`,
+the same length, so the map's columns hold. Where `entryNames` has moved the bundles, so
+that the spliced string would name another file, it becomes the URL the entry ships at
+instead, relative to the bundle's own where it was relative. One naming no entry fails the
+hook at the source that wrote it, from the root with its line and column as esbuild
+places its own errors — or at the bundle, where a `define` put it there — and so does one
+naming its own bundle, directly or through the bundles it names, since each would need
+the other's name to be named.
+
+Then the bundle is named as that build names one: by the first eight base32 characters of
+the SHA-256 of the bundle — its last line still naming its map `index.XXXXXXXX.js.map` —
+and of its map, in which the project's own path, which `esbuild-plugin-wasm` writes for
+its module, is first made relative to the map. So an edit to a worker alone renames
+every bundle that names it, which a CDN holding each hashed name for a year needs, and no
+name depends on where the project is, so long as esbuild writes that path into the map as
+it is: one holding a `"`, a `\` or a character outside ASCII is escaped there, and stays
+absolute, as it does in Eleventy's build. Eleventy's build also writes an unhashed
+`/lib/x/index.js` re-exporting each bundle; this one does not, since nothing loads one.
 
 Each option is optional: `entryPoints`, globs from the input matched as `passthrough` globs
-are; `external`, `entryNames` and `assetNames`, as esbuild reads them; and `env`, the
+are; `external`, `entryNames` and `assetNames`, as esbuild reads them, but for the
+`[hash]` in `entryNames`, which is the name above; and `env`, the
 environment variables the scripts read as `process.env.NAME`, each replaced by its value
 in the build's environment — the one `lem` runs in, so a site keeping a value in a `.env`
 file loads it in its config, `import 'dotenv/config'` — and one the environment lacks fails
@@ -148,12 +159,11 @@ esbuild({
 })
 ```
 
-esbuild runs from the config file's directory, wherever `lem` was started, since it
-hashes each source by its path from there, and the hook resolves the directories through
+esbuild runs from the config file's directory, wherever `lem` was started, so that its
+messages name each source from there, and the hook resolves the directories through
 symbolic links first, as esbuild resolves the sources. On the limulus-dot-net port branch
 its 37 files — 18 bundles, their maps and a `.wasm` — are byte for byte Eleventy's, with
-the `11ty/` asset names above and in the same checkout, since a `.wasm` worker's map
-names its module by absolute path.
+the `11ty/` asset names above, and so are a copy's elsewhere.
 esbuild's errors fail the hook, an error at the config's start carrying esbuild's message,
 file and position; its warnings are written to standard error as esbuild words them, and
 the build goes on. Every build bundles again, `lem check` too, since `asset()` compiles

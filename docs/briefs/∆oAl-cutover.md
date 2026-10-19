@@ -39,15 +39,14 @@ config unchanged
   parity's `css-bundle` catch and `lem build` does not. Once no Eleventy output has to be
   matched, keep the `<style>` in the sprite (it applies to the whole document) and delete
   `page.lem`'s copy.
-- Two hazards the esbuild plugin (`∆d1N`) keeps because Eleventy has them, for parity:
-  `XXXXXXXX` is rewritten after hashing, so an edit to a client worker alone ships its
-  loader under the loader's old hashed name, which CloudFront serves as immutable for a
-  year — a browser that cached the loader keeps asking for the old worker; and the wasm
-  worker's source map names its module by absolute path (`wasm-module:/…/node_modules/…`),
-  so its hash depends on where the site is checked out (stable in CI, not across
-  machines). Once parity no longer binds, rewrite before hashing and strip the path. On
-  2026-10-18 Eric started fixing the first on limulus-dot-net's main instead, with lemmon's
-  plugin following in `∆EEa`.
+- Two hazards the esbuild plugin (`∆d1N`) first kept because Eleventy had them are fixed
+  on limulus-dot-net's main (`d1dc734`, 2026-10-18) and followed in the plugin (`∆EEa`),
+  so the cutover inherits neither: `XXXXXXXX` was rewritten after hashing, so an edit to a
+  client worker alone shipped its loader under the loader's old hashed name, which
+  CloudFront serves as immutable for a year; and the wasm worker's source map named its
+  module by absolute path, so its hash depended on where the site was checked out. Each
+  bundle is now named by what it ships as, the names it holds included, and its map names
+  that module relative to itself; the port compares the new names byte for byte.
 - Two photo-tooling tasks, from `∆pP5` (closed 2026-10-18): make `@sindresorhus/slugify`
   a direct dependency, since `bin/process-photos.js` imports it and it arrives today only
   through `@11ty/eleventy`; and have `process-photos.js` write the alias-keyed records the

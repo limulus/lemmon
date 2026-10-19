@@ -319,7 +319,7 @@ text other front matter, a `---` first line where it had none, or a first line o
 newline after a closing `---` that ended the file — is an error at the document's front
 matter, which stops the build before it compiles. Then each plugin's `assets` hook is
 awaited, in order, given the project's root — the config file's directory, which esbuild
-runs from, since its hashes name each source by its path from there (D45) — the input and
+runs from, so that its messages name each source from there (D45) — the input and
 output directories, whether the build writes (`lem check` does not) and the build's
 environment, the values `env("…")` bindings read, and returning `{manifest?, files?}`;
 the manifests merge, a logical path two plugins both map an error naming both. A hook
@@ -335,12 +335,15 @@ bundles every `index.ts` and `worker.ts` under the input with esbuild 0.24.0 —
 minified ES modules with source maps, `/lib/*` left to the browser, a `.wasm` import
 instantiated by `esbuild-plugin-wasm` 1.1.0, each bundle beside its source as
 `[dir]/[name].[hash]` — and maps each entry's URL as its source names it,
-`/lib/x/index.js`, to the URL its bundle ships at; each `XXXXXXXX` placeholder in a
-bundle then takes the file name the entry it names ships under, spliced in after hashing
-as limulus.net's Eleventy build splices the hash (D09, D10, D45). It bundles on every
-build, about 0.2 s of a limulus.net rebuild. With the site's `11ty/` asset names and from
-the same checkout — a `.wasm` worker's map names its module by absolute path — its files
-come out byte for byte Eleventy's.
+`/lib/x/index.js`, to the URL its bundle ships at. Each bundle is named by what it ships
+as, as limulus.net's Eleventy build names one: each `XXXXXXXX` placeholder in it takes
+the file name the entry it names ships under, that entry named first; its map names the
+root's path relative to itself; and its `[hash]` is eight base32 characters of the
+SHA-256 of the two, so a loader is renamed with its worker (D09, D10, D45). It bundles on
+every build, about 0.2 s of a limulus.net rebuild. With the site's `11ty/` asset names
+its files come out byte for byte Eleventy's, wherever the checkout is, so long as esbuild
+writes its path into the map as it is: one holding a `"`, a `\` or a character outside
+ASCII is escaped there, and stays absolute, on both sides.
 
 - Step 2's data hooks are not yet run (∆wOn), so a `plugin("…")` source is an error at
   its binding.

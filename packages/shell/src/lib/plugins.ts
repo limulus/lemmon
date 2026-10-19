@@ -86,9 +86,9 @@ export interface DocumentSource {
 export interface AssetsContext {
   /**
    * The directory the config file is in, absolute, which its `input` and `output` are
-   * relative to: the project's root, where a tool run for the site — esbuild, whose
-   * hashes name its sources from its working directory — runs as it would from the
-   * command line, wherever `lem` was started.
+   * relative to: the project's root, where a tool run for the site runs as it would
+   * from the command line, wherever `lem` was started — esbuild, whose messages name
+   * each source from it, and whose maps the shell's `esbuild()` makes relative to it.
    */
   root: string
   /** The input directory, absolute. */

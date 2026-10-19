@@ -616,9 +616,12 @@ moved it. Newest last. An entry is removed when its change has been applied.
   conventions are its defaults (`**/index.ts` and `**/worker.ts`, `/lib/*` external, the
   wasm loader, `[dir]/[name].[hash]`), a site passes its own names and `env`, the
   variables its scripts read as `process.env.NAME`, and esbuild runs from the config
-  file's directory, since its hashes name each source by its path from there. It bundles
-  on every build, `lem dev`'s too — about 0.2 s of a limulus.net rebuild — with no
-  incremental context (D45; ∆d1N).
+  file's directory, so that its messages name each source from there. Each bundle is
+  named by what it ships as, as limulus.net's Eleventy build names one: its placeholders
+  resolved first, its map naming the project's path relative to itself, and its `[hash]`
+  eight base32 characters of the SHA-256 of the two. It bundles on every build,
+  `lem dev`'s too — about 0.2 s of a limulus.net rebuild — with no incremental context
+  (D45; ∆d1N, ∆EEa).
 
 ## From Eleventy to Lemmon
 
@@ -658,10 +661,13 @@ moved it. Newest last. An entry is removed when its change has been applied.
   options become the shell's `esbuild()` with limulus.net's asset directory and token
   (`assetNames: 'assets/immutable/11ty/esbuild/[name].[hash]'`,
   `env: ['MAPBOX_PUBLIC_TOKEN']`), and its bundles come out byte for byte the same, built
-  in the same checkout. The client TypeScript keeps its `XXXXXXXX` placeholders, the
-  hashed file name spliced in after hashing as before; the transform that rewrote them in
-  every page's HTML goes, since a template writes `asset("/lib/x/index.js")`,
-  compile-checked. The unhashed
+  wherever the checkout is, if esbuild writes its path into the map as it is (one with a
+  `"`, a `\` or a character outside ASCII is escaped there, and stays absolute, on both
+  sides). The client TypeScript keeps its `XXXXXXXX` placeholders, the
+  hashed file name spliced in before the bundle holding it is named, so a loader is
+  renamed with its worker, as the site's Eleventy build has done since its `d1dc734`;
+  the transform that rewrote them in every page's HTML goes, since a template writes
+  `asset("/lib/x/index.js")`, compile-checked. The unhashed
   `/lib/x/index.js` stubs it wrote are not written: nothing loads one. A page-relative
   front-matter path cannot be an asset, so penumbra's `scripts: ./lib/index.js` becomes
-  `/penumbra/journal/<slug>/lib/index.js`, typed `asset?` (D10, D38, D45; ∆d1N).
+  `/penumbra/journal/<slug>/lib/index.js`, typed `asset?` (D10, D38, D45; ∆d1N, ∆EEa).

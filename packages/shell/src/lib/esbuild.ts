@@ -1,4 +1,5 @@
 import type { OutputFile } from 'esbuild'
+import { createHash } from 'node:crypto'
 import { realpath } from 'node:fs/promises'
 import { basename, dirname, extname, join, posix, relative, resolve, sep } from 'node:path'
 import picomatch from 'picomatch'
@@ -23,7 +24,8 @@ export interface EsbuildOptions {
   /**
    * Where each entry's bundle is written, as esbuild's `entryNames` reads it, from the
    * output directory: `'[dir]/[name].[hash]'` when omitted, beside where its source is
-   * in the input, named by a hash of its bytes.
+   * in the input. `[hash]` is the plugin's rather than esbuild's: a hash of the bundle as
+   * it ships, the names of the bundles it names included, and of its map.
    */
   entryNames?: string
   /**
@@ -52,17 +54,25 @@ export interface EsbuildOptions {
  * Each entry under the input is bundled on its own — minified, as an ES module, with a
  * source map beside it — and a `.wasm` it imports is instantiated as a module
  * (`esbuild-plugin-wasm` 1.1.0, pinned too). esbuild runs from the project's root, the
- * directory of the config file, wherever `lem` was started, since its hashes name the
- * sources from there.
+ * directory of the config file, wherever `lem` was started, so that its messages name
+ * each source from there.
  *
- * Then each bundle's placeholders are resolved, as limulus.net's Eleventy build resolves
- * them (D10): a string naming `….XXXXXXXX.js` names the entry at that path, found from
- * `/` where it starts with `/` and from the bundle's own logical path where it does not,
- * and the file name the entry ships under is spliced into the string as written — unless
- * `entryNames` has moved the bundles so that it would name another file, when the string
- * becomes the URL the entry ships at, relative to the bundle's own where it was relative.
- * This follows the hashing, so the placeholder's target is not in its bundle's name. A
- * placeholder naming no entry fails the hook, naming the source that wrote it.
+ * Then each bundle is named as limulus.net's Eleventy build names it, by what it ships
+ * as. Its placeholders are resolved first (D10): a string naming `….XXXXXXXX.js` names
+ * the entry at that path, found from `/` where it starts with `/` and from the bundle's
+ * own logical path where it does not, and the file name that entry ships under — so it
+ * is named first — is spliced into the string as written, unless `entryNames` has moved
+ * the bundles so that it would name another file, when the string becomes the URL the
+ * entry ships at, relative to the bundle's own where it was relative. The root's path,
+ * wherever a map holds it — `esbuild-plugin-wasm` names its module by an absolute path,
+ * in the map's sources and in the code it writes — becomes the way to the root from the
+ * map, as every other source is named. Then `[hash]` is the first eight base32
+ * characters of the SHA-256 of the bundle — the comment naming its map still holding the
+ * placeholder — and of its map, so a change to a worker renames every bundle that names
+ * it, and no name depends on where the project is, so long as esbuild writes that path
+ * into the map as it is: one holding a `"`, a `\` or a character outside ASCII is
+ * escaped there, and stays absolute. A placeholder naming no entry, or naming its own
+ * bundle, even through others, fails the hook at the source that wrote it.
  *
  * esbuild's errors fail the hook, which the build reports at the config's start with
  * esbuild's message; its warnings are written to standard error as esbuild words them.
@@ -79,12 +89,19 @@ export function esbuild(options: EsbuildOptions = {}): Plugin {
     env = [],
   } = options
   const isEntry = picomatch([...entryPoints], { dot: true, nocase: true })
+  // `[hash]` is filled in once each bundle is named by what it ships as. Until then the
+  // name holds the placeholder, as limulus.net's Eleventy build has it, and the comment
+  // naming the bundle's map carries that into its hash; esbuild's own hash keeps the
+  // bundles apart meanwhile, written after the name, where it is cut off exactly.
+  const hashed = entryNames.includes('[hash]')
+  const unnamed = hashed ? `${entryNames.replaceAll('[hash]', UNNAMED)}.[hash]` : entryNames
   return {
     name: 'esbuild',
     assets: async (context) => {
       const { env: environment } = context
-      // As esbuild resolves each source, so that the paths in its maps and hashes are
-      // the same however the project's own path was spelled: `/tmp` is `/private/tmp`.
+      // As esbuild resolves each source, so that the paths in its maps, and so the
+      // names, are the same however the project's own path was spelled: `/tmp` is
+      // `/private/tmp`.
       const [root, input, output] = await Promise.all(
         [context.root, context.input, context.output].map(real)
       )
@@ -111,7 +128,7 @@ export function esbuild(options: EsbuildOptions = {}): Plugin {
         assetNames,
         bundle: true,
         define,
-        entryNames,
+        entryNames: unnamed,
         entryPoints: entries.map((path) => resolve(input, path)),
         external: [...external],
         format: 'esm',
@@ -131,49 +148,114 @@ export function esbuild(options: EsbuildOptions = {}): Plugin {
       const urlOf = (file: string) =>
         `/${relative(output, resolve(root, file)).split(sep).join('/')}`
       // A source as esbuild names one in its messages: its path from the root.
-      const named = (file: string) =>
+      const sourceOf = (file: string) =>
         relative(root, resolve(root, file)).split(sep).join('/')
-      const manifest: Record<string, string> = {}
-      // The source each logical path was claimed for, and each bundle by its URL.
-      const claimed = new Map<string, string>()
-      const bundles = new Map<string, Bundle>()
-      const claim = (path: string, source: string, file: string) => {
-        const first = claimed.get(path)
+      // What ships under each logical path, in the order esbuild lists the entries, and
+      // each entry's own bundle by its logical path, which is what a placeholder names.
+      const bundles: Bundle[] = []
+      const scripts = new Map<string, Bundle>()
+      const claim = (bundle: Bundle) => {
+        const first = bundles.find(({ path }) => path === bundle.path)
         if (first !== undefined) {
           throw new Error(
-            `\`${first}\` and \`${source}\` are both bundled as \`${path}\`, and an ` +
-              'asset ships at one URL'
+            `\`${first.source}\` and \`${bundle.source}\` are both bundled as ` +
+              `\`${bundle.path}\`, and an asset ships at one URL`
           )
         }
-        claimed.set(path, source)
-        manifest[path] = urlOf(file)
+        bundles.push(bundle)
       }
       for (const [file, { entryPoint, cssBundle }] of Object.entries(metafile.outputs)) {
         if (entryPoint === undefined) continue
-        const source = named(entryPoint)
+        const source = sourceOf(entryPoint)
         const logical = relative(input, resolve(root, entryPoint)).split(sep).join('/')
         const stem = `/${logical.slice(0, logical.length - extname(logical).length)}`
         const path = `${stem}${extname(file)}`
-        claim(path, source, file)
-        bundles.set(urlOf(file), { path, source })
+        const bundle = { path, source, url: urlOf(file), entry: true }
+        claim(bundle)
+        scripts.set(path, bundle)
         // The styles its script imports, which a page links as it loads the script.
-        if (cssBundle !== undefined) claim(`${stem}.css`, source, cssBundle)
+        if (cssBundle !== undefined) {
+          claim({ path: `${stem}.css`, source, url: urlOf(cssBundle), entry: false })
+        }
       }
       const byUrl = new Map(outputFiles.map((file) => [urlOf(file.path), file]))
       const built: Record<string, Uint8Array> = {}
-      for (const { path: file, contents, text } of outputFiles) {
-        const url = urlOf(file)
-        const bundle = bundles.get(url)
-        if (bundle === undefined) {
-          built[url] = contents
-          continue
-        }
-        // Where a placeholder naming no entry was written: in the source its map shows
-        // holding it, or else — a `define` put it there — in the bundle.
+      // Writes `text`, which esbuild wrote at `url` with its map beside it, named by what
+      // the two ship as; returns the URL it ships at.
+      const ship = (url: string, text: string): string => {
+        const map = byUrl.get(`${url}.map`)!
+        // esbuild-plugin-wasm names a module by its absolute path, which would name the
+        // bundle by where the checkout is; relative to the map, as each other source is,
+        // and `./` from a map in the root itself rather than `/`.
+        const relocated = map.text.replaceAll(
+          `${root}/`,
+          `${relative(dirname(map.path), root) || '.'}/`
+        )
+        // Without esbuild's hash: a dot and eight characters, as many as the placeholder.
+        const extension = posix.extname(url)
+        const placeheld = hashed
+          ? `${url.slice(0, -`.${UNNAMED}${extension}`.length)}${extension}`
+          : url
+        // esbuild ends a bundle with the comment naming its map, renamed with the bundle.
+        const cut = text.lastIndexOf('sourceMappingURL=')
+        const [code, comment] = [text.slice(0, cut), text.slice(cut)]
+        const named = (to: string) =>
+          code + comment.replace(posix.basename(url), () => posix.basename(to))
+        const final = placeheld.replaceAll(
+          UNNAMED,
+          contentHash(named(placeheld), relocated)
+        )
+        built[final] = encoder.encode(named(final))
+        built[`${final}.map`] = encoder.encode(relocated)
+        return final
+      }
+      // The URL each bundle ships at, by its logical path, once it is named, and the
+      // bundles being named, each naming the next.
+      const shipped = new Map<string, string>()
+      const naming: string[] = []
+      const name = (bundle: Bundle): string => {
+        const done = shipped.get(bundle.path)
+        if (done !== undefined) return done
+        naming.push(bundle.path)
+        const map = byUrl.get(`${bundle.url}.map`)!
+        // Where a placeholder was written: in the source its map shows holding it, or
+        // else — a `define` put it there — in the bundle.
         const where = (written: string) =>
-          located(written, byUrl.get(`${url}.map`)!, root) ??
-          `the bundle of \`${bundle.source}\``
-        built[url] = encoder.encode(placed(text, url, bundle, manifest, where))
+          located(written, map, root) ?? `the bundle of \`${bundle.source}\``
+        const text = placed(byUrl.get(bundle.url)!.text, bundle, (path, written) => {
+          const target = scripts.get(path)
+          if (target === undefined) {
+            throw new Error(
+              `${where(written)}: the placeholder \`${written}\` names no entry point: ` +
+                `none ships at \`${path}\``
+            )
+          }
+          if (naming.includes(path)) {
+            const cycle = [...naming.slice(naming.indexOf(path)), path]
+            throw new Error(
+              `${where(written)}: the placeholder \`${written}\` closes a cycle, ` +
+                `${cycle.map((each) => `\`${each}\``).join(' -> ')}, and a bundle's ` +
+                'name is a hash of the names in it'
+            )
+          }
+          return name(target)
+        })
+        naming.pop()
+        const url = ship(bundle.url, text)
+        shipped.set(bundle.path, url)
+        return url
+      }
+      const manifest: Record<string, string> = {}
+      for (const bundle of bundles) {
+        manifest[bundle.path] = bundle.entry
+          ? name(bundle)
+          : ship(bundle.url, byUrl.get(bundle.url)!.text)
+      }
+      // What else esbuild wrote — the `.wasm` — ships as esbuild named it.
+      const rewritten = new Set(bundles.flatMap(({ url }) => [url, `${url}.map`]))
+      for (const { path, contents } of outputFiles) {
+        const url = urlOf(path)
+        if (!rewritten.has(url)) built[url] = contents
       }
       return { manifest, files: built }
     },
@@ -197,10 +279,17 @@ async function real(path: string): Promise<string> {
   }
 }
 
-/** An entry's bundle: its logical path, and its source's path from the root. */
+/**
+ * A bundle esbuild wrote: its logical path, its source's path from the root, the URL
+ * esbuild wrote it at — `XXXXXXXX` where its hash goes, and esbuild's own after the
+ * name — and whether it is an entry's own bundle rather than the styles an entry's
+ * script imports.
+ */
 interface Bundle {
   path: string
   source: string
+  url: string
+  entry: boolean
 }
 
 /**
@@ -229,34 +318,44 @@ function located(written: string, map: OutputFile, root: string): string | undef
  */
 const PLACEHOLDER = /(["'])([^"']+)\.X{8}\.js\1/g
 
+/** The placeholder, where a bundle's hash goes until it is named. */
+const UNNAMED = 'XXXXXXXX'
+
+/** RFC 4648's base32 alphabet, each character's index its value. */
+const BASE32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'
+
 /**
- * `text`, the bundle shipped at `url` of the entry `bundle` describes, with every
- * placeholder in it resolved to the entry it names in `manifest`: the file name that entry
- * ships under spliced in as written, as Eleventy splices the hash in, which keeps the
- * string's length and so the map's columns — or, where that would name another file
- * because `entryNames` moved the bundles, the entry's URL, written relative to `url`
- * where the placeholder was relative, `./` where it stays in that directory.
- *
- * @throws {Error} at what `where` says of a placeholder naming no entry.
+ * What names a bundle, as limulus.net's Eleventy build names one: the first eight
+ * characters of the base32 of the SHA-256 of `texts` as UTF-8, one after another — the
+ * digest's first 40 bits, five to a character.
+ */
+function contentHash(...texts: string[]): string {
+  const sha256 = createHash('sha256')
+  for (const text of texts) sha256.update(text, 'utf8')
+  const digits = sha256.digest().readUIntBE(0, 5).toString(32).padStart(8, '0')
+  return [...digits].map((digit) => BASE32[parseInt(digit, 32)]).join('')
+}
+
+/**
+ * `text`, the bundle `bundle`, with every placeholder in it resolved to the URL `shipped`
+ * gives for the entry it names, as `shipped(path, written)`, the entry's logical path and
+ * the placeholder as written: the file name that entry ships under spliced in as written,
+ * as Eleventy splices the hash in, which keeps the string's length and so the map's
+ * columns — or, where that would name another file because `entryNames` moved the
+ * bundles, the entry's URL, written relative to the bundle's own where the placeholder
+ * was relative, `./` where it stays in that directory.
  */
 function placed(
   text: string,
-  url: string,
-  bundle: Bundle,
-  manifest: Record<string, string>,
-  where: (written: string) => string
+  { path, url }: Bundle,
+  shipped: (path: string, written: string) => string
 ): string {
   return text.replace(PLACEHOLDER, (_match, quote: string, before: string) => {
     const absolute = before.startsWith('/')
-    const path = posix.join(absolute ? '/' : posix.dirname(bundle.path), `${before}.js`)
-    const target = manifest[path]
-    if (target === undefined) {
-      const written = `${before}.XXXXXXXX.js`
-      throw new Error(
-        `${where(written)}: the placeholder \`${written}\` names no entry point: none ` +
-          `ships at \`${path}\``
-      )
-    }
+    const target = shipped(
+      posix.join(absolute ? '/' : posix.dirname(path), `${before}.js`),
+      `${before}.${UNNAMED}.js`
+    )
     const spliced = `${before.slice(0, before.lastIndexOf('/') + 1)}${posix.basename(target)}`
     if ((absolute ? spliced : posix.join(posix.dirname(url), spliced)) === target) {
       return `${quote}${spliced}${quote}`
