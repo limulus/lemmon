@@ -37,9 +37,11 @@ the live site on Eleventy until he has reviewed it (2026-10-18). Eric sees `npm 
 report zero unexpected differences over the whole `dist/`, and a local cutover branch builds
 limulus.net with `lem`, its CloudFront config untouched, ready for his review.
 
-- `∆oAl` Cutover
-  - On a local branch Eric reviews, replace Eleventy with `lem` in limulus-dot-net, single
-    switch, no dual-serving, CloudFront config unchanged; nothing deploys
+Built on 2026-10-19 (journal entries for ∆shS, ∆zu0, ∆yOJ, ∆Zg9 and ∆oAl): `npm run parity`
+on `lemmon-port` at `d33eed8` compared every file both builds write, 140 and 158, with zero
+unexpected differences, and `lemmon-cutover` (`4ffdb74`, local, unpushed) builds the site
+with `lem` alone, accepted in fresh clones without deploying. The run and the review are
+Eric's before slice 7 starts.
 
 ### 7. Live on Lemmon
 
@@ -49,7 +51,6 @@ untouched.
 - `∆FnH` limulus.net's CI gets lemmon
   - The site depends on lemmon as `file:../lemmon`, which a CI checkout cannot resolve; the
     lemmon repo is private and nothing is published. Eric decides how before the merge
-  - needs: `∆oAl`
 
 ## After the cutover
 

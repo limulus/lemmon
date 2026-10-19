@@ -677,11 +677,16 @@ moved it. Newest last. An entry is removed when its change has been applied.
 
 - **Phases and the migration plan** — where the text sequences the work after Phase 0 as
   Phase 1 (language complete) and Phase 2 (the shell, then the plugins, then the port, then
-  parity, then cutover): it is cut instead into six slices, each ending in software Eric
+  parity, then cutover): it is cut instead into slices, each ending in software Eric
   runs and accepts in the limulus-dot-net port branch, from `lem build` over the feed posts
   to the cutover, with the parity comparator in use from the first slice. The exit criterion
   and the single cutover (D15) are unchanged; a language feature lands in the slice that
   needs it, and incremental rebuilds wait for a measured rebuild time that asks for them.
+  The cutover itself is prepared, not performed, by the sixth slice: a local branch
+  (`lemmon-cutover`) retires the parity harness after its last green run, removes
+  Eleventy in one commit whose output is byte-identical to that run's, and is accepted by
+  building fresh clones with no remote; a seventh slice decides how CI gets lemmon and
+  then Eric merges and deploys (∆oAl, ∆FnH).
 
 - **Template mapping, the CSS bundle** — where the text maps the bundle plugin: the
   `<link>` whose href is `getBundleFileUrl('css')` becomes `<lem.mark("styles")>`, which
