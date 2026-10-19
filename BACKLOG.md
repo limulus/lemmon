@@ -130,6 +130,10 @@ so it can be reproduced cold.
   - `scripts: ./lib/index.js` is offered `/lib/rum/index.js`, the nearest key by edit
     distance, not the page's own `…/<slug>/lib/index.js`; see `∆d1N`'s journal entry
 
+- `∆MX8` Trap specs ride V8's frame size
+  - The operator-chain trap in `trap.spec.ts` and `packages/core`'s `load.spec.ts` overflow the
+    `.wasm`'s stack with about 1.3× room on arm64 before V8's runs out first instead
+
 ## Someday/Maybe
 
 Standing section for work no initiative needs — ideas kept so they are not lost, usually
