@@ -140,7 +140,9 @@ outlives builds; nothing the shell holds of a hook's answer survives the build i
   not hold; the CLI prints it without a frame.
 - `lem dev` runs every asset hook on every rebuild, which for esbuild is a full bundle;
   ∆d1N measures what that costs before anything caches.
-- The content API (∆Gg3) reads front matter, which no transform can change, so a tool
-  reading it and a build agree on every field.
+- A content API (∆Gg3, parked on 2026-10-18) would read front matter, which no transform
+  can change, so a tool reading it and a build would agree on every field of the record;
+  a body it handed back would have to be the text before any transform, which `discover`
+  overwrites.
 - A transform that does more than append moves positions in diagnostics; the shell README
   and §Build pipeline say so.

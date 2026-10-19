@@ -6,7 +6,37 @@ Cutover — at zero unexpected diffs, replace Eleventy with `lem` in limulus-dot
 `dev`, `verify` scripts, CI, `11ty/` removed), single switch, no dual-serving, CloudFront
 config unchanged
 
+Decided by Eric on 2026-10-18: the switch is prepared on a local branch he reviews, and the
+live site stays on Eleventy until he merges it ("do not actually cut the live site over.
+changes to limulus-dot-net need to stay in a branch for my review"). Nothing in
+limulus-dot-net is pushed, since its CD workflow deploys a push to any branch. How CI gets
+lemmon is `∆FnH`, decided before the merge.
+
 ## Scope and constraints
+
+- The inventory mapped on 2026-10-18. Deleted: `eleventy.config.*`, `types/eleventy.d.ts`,
+  the svg-sprite patch (and then `patch-package`), `11ty/dprint.ts`, `11ty/esbuild.ts`,
+  `dprint.json`, the 35 `.webc` files, `sitemap.njk`, `dynamic-content-fallback.liquid`,
+  `_data/eleventyComputed.js`, `links/links.json`, Eleventy, its plugins, markdown-it and
+  its plugins, highlight.js, reading-time and globby, and — after the last green run —
+  `bin/parity*` with its devDependencies. Replaced: the revision updater (`∆shS`).
+  Rewritten: `package.json`'s scripts (`build` is `lem build`, `dev` today's
+  `lemmon:dev`, `wwwc` `lem check`; `lint`, `tsconfig` and vitest drop `11ty` and
+  `types`), `lemmon.config.ts`'s output to `dist/www` so `clean` and `cd.yaml`'s upload
+  path stay, `cd.yaml`'s build job alone, and the docs (CLAUDE.md, README,
+  `.claude/commands/link.md`, `.vscode/extensions.json`). Kept: `site.json`,
+  `authors.json`, `revisions.json`, `penumbra.json`, the `_lemmon/` style copies and their
+  generator. Untouched: `infra/**`, `cdk.json` and the stack snapshot. CSS bundles move
+  from `/assets/immutable/11ty/bundle/` to `/assets/immutable/bundle/`, the same CloudFront
+  behaviour; every other file keeps its name and bytes.
+- Accepted without deploying: parity's last green run over the whole output on the
+  commit before the switch, with Eleventy built under `TZ=UTC`; on the switch commit, a
+  fresh clone's `npm ci`, `npm run verify` and `TZ=UTC npm run build` with no `.env` but
+  the token in the environment; the new output byte-compared with that last Lemmon output,
+  every difference traced to a named change; two builds, from two paths, identical;
+  `git diff public/main -- infra cdk.json` empty; and the `s3 sync` plan computed locally
+  (new, changed, unchanged, left stale). `aws s3 sync --dryrun` and `cdk diff` need
+  credentials, so they are Eric's.
 
 - What readers will see change, from the parity classes that last until the cutover;
   Eric accepts the list then, and any class still firing that is not on it:
@@ -21,12 +51,21 @@ config unchanged
     `/photos/`, in `/feed/`'s cards, and on the two photos' own pages too.
   - The Source link in the header of a page template (the index pages, and the photo and
     TIL topic pages) names its `.lem` file where it named the `.webc` (`source-pill`).
+  - Heading anchors with punctuation in their text are spelled as comrak spells them: seven
+    anchors on four pages are renamed, so a link to the old one lands at the top of the
+    page.
+  - The sitemap lists `/tils/nodejs/`, which Eleventy left out, no longer lists the three
+    feeds, and gives an undated page no `lastmod` where Eleventy gave its checkout time
+    (Eric, 2026-10-18; `∆zu0`).
+  - A feed's dates are spelled in the offset each was written in (D38), where Eleventy's
+    RSS spelled the build machine's zone; every instant is the same.
   - Footnotes are comrak's, not markdown-it-footnote's (`footnote-markup`, which
     `parity:look` neutralizes): the reference reads `1` where it read `[1]`, the back
     link `↩` where it read `↩︎`, and the section loses the `section-separator` class, so
     the centred rule `main.css` draws above it goes unless the site's CSS gives
     `.footnotes` its own (decided in `∆ITg`, slice 4, rather than reproducing
-    markdown-it's markup in the core).
+    markdown-it's markup in the core). The footnote anchors are renamed on six pages
+    (`#fn-out-of-scope` for `#fn2`), so a link to one from another page must follow.
 - The sprite (`∆IvY`, the port's `lemmon/svg-sprite.ts`) strips the `<style>` inside the
   `svg-ldn` symbol because WebC hoists it into the CSS bundle, and `page.lem` carries a
   hand copy of those rules naming ids like `#elogo-p3`. svg-sprite prefixes the ids inside

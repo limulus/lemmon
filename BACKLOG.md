@@ -32,32 +32,39 @@ the index and generated pages, on 2026-10-18; their items' journal entries recor
 ### 6. Feeds, sitemap, cutover
 
 The pages that read other pages' finished output, the link check and the revisions updater
-the deploy runs, the whole-site parity run, and the switch. Eric sees `npm run parity` report zero unexpected differences over the whole `dist/`, and
-limulus.net builds and deploys with `lem` with its CloudFront config untouched.
+the deploy runs, the whole-site parity run, and the switch prepared on a branch: Eric keeps
+the live site on Eleventy until he has reviewed it (2026-10-18). Eric sees `npm run parity`
+report zero unexpected differences over the whole `dist/`, and a local cutover branch builds
+limulus.net with `lem`, its CloudFront config untouched, ready for his review.
 
+- `∆shS` `update-revisions` without Eleventy
+  - A script lists the articles and their titles as the port's `site.lem` does, so the
+    deploy records each revision as it does today, every recorded hash unchanged
 - `∆zu0` Feeds and sitemap in a second phase
   - The three feeds (rss, two atom, `/feed.xsl`) and `sitemap.xml` with video entries as
     templates rendered after every other page, reading finished output as a string source
-  - needs: `∆LsH`, `∆hvm`
 - `∆yOJ` Link and asset integrity check
-  - The link and asset integrity check over `dist/`: links resolve to written pages or
-    passthrough files, and `asset()` URLs to manifest entries, CloudFront untouched
-  - needs: `∆d1N`, `∆muD`, `∆zu0`
-- `∆Gg3` Content API
-  - `loadSite(config)` for out-of-build tools: each document's path, body and loaded record,
-    computed fields included, read back from the core by a new boundary call
-- `∆shS` Revisions plugin
-  - `revisions.json` as data feeding `lastModified`, plus the `update-revisions` command
-    reimplemented on the content API instead of spinning up Eleventy
-  - needs: `∆Gg3`
+  - Every link and `asset()` URL a build writes resolves to a file it writes, fragments
+    included, checked before anything is written so `lem check` reports it too
+  - needs: `∆zu0`
 - `∆Zg9` Whole-site parity
   - `npm run parity` over the whole `dist/` against the 11ty build, every difference in a
     forgiveness class with its count, at zero unexpected differences; the acceptance bar
-  - needs: `∆zu0`, `∆Zo7`
+  - needs: `∆zu0`
 - `∆oAl` Cutover
-  - At zero unexpected diffs, replace Eleventy with `lem` in limulus-dot-net, single switch,
-    no dual-serving, CloudFront config unchanged
-  - needs: `∆Zg9`, `∆Vhi`, `∆yOJ`, `∆shS`
+  - On a local branch Eric reviews, replace Eleventy with `lem` in limulus-dot-net, single
+    switch, no dual-serving, CloudFront config unchanged; nothing deploys
+  - needs: `∆Zg9`, `∆yOJ`, `∆shS`
+
+### 7. Live on Lemmon
+
+Eric merges the cutover branch and limulus.net deploys with `lem`, its CloudFront config
+untouched.
+
+- `∆FnH` limulus.net's CI gets lemmon
+  - The site depends on lemmon as `file:../lemmon`, which a CI checkout cannot resolve; the
+    lemmon repo is private and nothing is published. Eric decides how before the merge
+  - needs: `∆oAl`
 
 ## After the cutover
 
@@ -147,6 +154,9 @@ initiative before starting it.
   - A `lem` subcommand wrapping `bin/process-photos.js`, which `npm run photos` runs today
     without Eleventy; the first consumer of the `commands` hook
   - needs: `∆wOn`
+- `∆Gg3` Content API
+  - `loadSite(config)` for out-of-build tools: each document's loaded record, computed
+    fields included, read back from the core; parked when `∆shS` needed only a script
 - `∆SDN` Pure wasm plugin values
   - Revisit D06 ("plugins cannot inject logic") for a plugin-shipped wasm module with no
     imports, for what a template must compute on and a mark cannot carry (D42)

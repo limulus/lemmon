@@ -65,6 +65,15 @@ judge (∆Zo7), not these examples'.
   message: string?
 </lem-type>
 
+<lem-type RevisionLog>
+  revisions: [Revision]
+</lem-type>
+
+<lem-type Revisions>
+  versions: {string: any}
+  entries: {string: RevisionLog}
+</lem-type>
+
 <lem-type Article extends Page>
   title: string
   subhead: string?
@@ -85,9 +94,9 @@ judge (∆Zo7), not these examples'.
   linkDomain: string = self.linkUrl.text().split("/")[2].replace("www.", "")
 </lem-type>
 
-<lem-let photos: {string: Photo} from plugin("photos") />
+<lem-let photos: {string: Photo} from "_lemmon/photos.json" />
 <lem-let authors: {string: Author} from "_data/authors.json" />
-<lem-let revisions: {string: [Revision]} from plugin("revisions") />
+<lem-let revisions: Revisions from "_data/revisions.json" />
 <lem-let posts: [Article] from "feed/*/index.md" />
 <lem-let name: string = "limulus.net" />
 <lem-let siteUrl: url = url("https://limulus.net") />

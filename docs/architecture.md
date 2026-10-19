@@ -15,7 +15,9 @@ Two halves, one contract:
 - **Shell** — Node/TypeScript: content walker, YAML front matter (with positions), plugin
   host, esbuild driver, worker pool, dev server (the site's `dev.headers`, live reload),
   output writer (hashing conventions), CLI (`lem`). Everything site- or host-specific is
-  a plugin: photos, revisions, svg-sprite, dprint. Markdown is _not_ a plugin (D08).
+  site code: limulus.net's sprite and link-post appender are plugins beside its config,
+  and its photos and revisions load as typed data files its own scripts write (D12, as
+  built). Markdown is _not_ a plugin (D08).
 
 The same `.wasm` runs in the build, the LSP (Node process), a browser playground, and —
 later, unchanged — a Lambda (`ContentSource` seam, D14).
@@ -521,8 +523,9 @@ the site config lists, so a site can produce those names itself. A plugin that c
 name ships a `lem-fn` wrapping `mark()` for it in its `.lem`, so a layout reads
 `<lem.styles()>` and a component `<lem.diagram(…)>` (D42) — not yet (∆wOn): no plugin
 ships `.lem`, the shell's default plugin included, so a layout writes `mark("styles")`.
-The shell also exposes a content API (`loadSite(config).collection('articles')`) for
-tools like the revisions updater.
+A content API for out-of-build tools (`loadSite(config)`, reading loaded records back
+from the core) is parked as ∆Gg3: limulus.net's revisions updater lists its articles with
+a script of its own (∆shS).
 
 As built, a site lists its plugins in `lemmon.config.ts` as `plugins`, and a plugin is
 `{name, transformDocument?, assets?, marks?}` (D44, D42). Any other hook is refused at

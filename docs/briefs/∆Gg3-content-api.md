@@ -6,6 +6,15 @@ Split from `∆c4j` Plugin host on 2026-10-17 and placed in slice 6 with the rev
 (`∆shS`), its one consumer. The architecture's sketch: the shell exposes a content API
 (`loadSite(config).collection('articles')`) for tools like the revisions updater.
 
+Parked in Someday/Maybe on 2026-10-18, when mapping slice 6 found its one consumer needs a
+script instead (`∆shS`, Eric's choice). Reading a loaded record back needs the whole
+program compiled (a page record's `layout` default names a layout function) and the asset
+hooks run (four penumbra articles carry `scripts: asset?`, resolved at load, D38), so
+limulus.net's deploy step would newly need `MAPBOX_PUBLIC_TOKEN`; `json_from_value` has no
+form for `Value::Fn` (every page record's `layout`), `Neighbour` or `Marked`, each an
+`unreachable!` arm; and the updater would still apply the lem-call translation. Promote it
+when a tool needs a computed field that a script cannot reproduce in a line.
+
 ## Scope and constraints
 
 - The revisions updater hashes each article's title, subhead and body
