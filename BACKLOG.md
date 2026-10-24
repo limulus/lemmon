@@ -16,6 +16,15 @@ reshapes.
 - `∆Lj6` Every page has a type
   - A page no glob collects and no `type:` names is an error naming the fix, where today it
     renders without its layout and silently; retires the shell's per-page reload
+- `∆H7Q` One link reader for the body rebase and the link check
+  - The body pass rebases a body's links by the HTML rules the link check reads them by;
+    the Eleventy rules kept for parity, and `parse-srcset` with them, go
+- `∆FbD` `esbuild()` without `entryNames`
+  - Bundles always ship beside their sources, so the moved-bundle placeholder rewriting and
+    the hash cutting that only a custom `entryNames` needs go (D45)
+- `∆GJ9` The parity comparator leaves the shell
+  - `rendered-html.ts` returns to `scripts/lib` for the fidelity check once the cutover
+    merges and the port's parity no longer imports it from the shell's API
 
 ## limulus.net on Lemmon
 
