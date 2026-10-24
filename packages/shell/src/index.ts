@@ -39,6 +39,7 @@ export {
   type Entry,
   type EntryKind,
   type IgnoredEntry,
+  type MisnamedEntry,
   type PassthroughEntry,
   type TemplateEntry,
 } from './lib/walk.ts'

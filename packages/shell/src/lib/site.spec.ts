@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { Plugin } from './plugins.ts'
+import { FILE_START } from './program.ts'
 import { discover } from './site.ts'
 import { appending } from '../mocks/plugins.ts'
 import { configOf } from '../mocks/sites.ts'
@@ -116,6 +117,49 @@ describe('discover()', () => {
         path: 'feed/the-rebound/index.md',
         text: post,
       })
+    })
+  })
+
+  describe('a file named `.md` or `.lem` in another case', () => {
+    /** What discovering `files`, under `www/`, with `passthrough` globs reported. */
+    async function reported(files: Record<string, string>, passthrough: string[] = []) {
+      const root = tempDir(
+        Object.fromEntries(
+          Object.entries(files).map(([path, text]) => [`www/${path}`, text])
+        )
+      )
+      return (await discover(configOf(root, passthrough))).diagnostics
+    }
+
+    it('should be an error at its start, naming the file it would be', async () => {
+      const diagnostics = await reported({ 'feed/x/index.MD': '# X\n', 'nav.Lem': '' })
+
+      expect(diagnostics).toEqual([
+        {
+          path: 'feed/x/index.MD',
+          span: FILE_START,
+          severity: 'error',
+          message:
+            'only a lowercase `.md` is read, so `index.MD` would be skipped: rename it to ' +
+            '`index.md`',
+          labels: [],
+        },
+        expect.objectContaining({
+          path: 'nav.Lem',
+          message:
+            'only a lowercase `.lem` is read, so `nav.Lem` would be skipped: rename it to ' +
+            '`nav.lem`',
+        }),
+      ])
+    })
+
+    it('should be no error where a passthrough glob copies it, nor beside it', async () => {
+      const diagnostics = await reported(
+        { 'notes/README.MD': '# Notes\n', 'feed/index.md': '---\ntitle: Feed\n---\n' },
+        ['notes/**']
+      )
+
+      expect(diagnostics).toEqual([])
     })
   })
 })

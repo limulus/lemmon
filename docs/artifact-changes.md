@@ -574,11 +574,14 @@ moved it. Newest last. An entry is removed when its change has been applied.
   by position, and refused in a mark's payload at the call (∆99b).
 
 - **Build pipeline, step 1; the standard shell's `Page`** — where the text describes
-  discovery, the walk classifies each file as a document, a template, passthrough, or
-  ignored; there is no `data` kind, since a data file is read when a `from` binding names
-  it. And where `Page` is declared, `inputPath` is the source file's path from the
-  directory holding `lemmon.config.ts`, `www/feed/the-rebound/index.md`, while the core's
-  own path for the file starts at the input directory (∆x8D).
+  discovery, the walk classifies each file as a document, a template, passthrough,
+  misnamed, or ignored; there is no `data` kind, since a data file is read when a `from`
+  binding names it. Misnamed is `.md` or `.lem` in another case, `index.MD`: an error at
+  the file's start naming it in lowercase, since the core knows a document by a
+  lowercase `.md` alone, where it was ignored and the site built without it. And where
+  `Page` is declared, `inputPath` is the source file's path from the directory holding
+  `lemmon.config.ts`, `www/feed/the-rebound/index.md`, while the core's own path for the
+  file starts at the input directory (∆x8D).
 
 - **WASM API, `compile`; Build pipeline, step 3** — `compile`'s `sources` is every
   `from` binding of the program the call installed, `{name, kind, literal, collects?,

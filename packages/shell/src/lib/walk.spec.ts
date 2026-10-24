@@ -78,6 +78,22 @@ describe('walk()', () => {
     ])
   })
 
+  it('should take a `.md` or `.lem` in another case as misnamed, read with its text', async () => {
+    const entries = await walked({
+      'feed/x/index.MD': '# X\n',
+      'nav.Lem': '<lem-fn f() />\n',
+      'notes.MDX': '',
+      'site.lemon': '',
+    })
+
+    expect(entries).toEqual([
+      { kind: 'misnamed', path: 'feed/x/index.MD', text: '# X\n', extension: '.md' },
+      { kind: 'misnamed', path: 'nav.Lem', text: '<lem-fn f() />\n', extension: '.lem' },
+      { kind: 'ignored', path: 'notes.MDX' },
+      { kind: 'ignored', path: 'site.lemon' },
+    ])
+  })
+
   describe('passthrough globs', () => {
     it('should match relative to the input, as Eleventy’s do relative to it', async () => {
       const entries = await walked(
@@ -120,11 +136,12 @@ describe('walk()', () => {
 
     it('should take a document or template it matches as passthrough', async () => {
       const entries = await walked(
-        { 'assets/notes.md': '# x\n', 'assets/t.lem': '' },
+        { 'assets/notes.md': '# x\n', 'assets/t.lem': '', 'assets/README.MD': '' },
         ELEVENTY_GLOBS
       )
 
       expect(kinds(entries)).toEqual([
+        'passthrough assets/README.MD',
         'passthrough assets/notes.md',
         'passthrough assets/t.lem',
       ])

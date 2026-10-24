@@ -3,8 +3,9 @@ import { dirname, relative, sep } from 'node:path'
 
 import type { LoadedConfig } from './config.ts'
 import { readPage, type Page } from './front-matter.ts'
+import { FILE_START } from './program.ts'
 import { transformed } from './providers.ts'
-import { walk, type Entry } from './walk.ts'
+import { walk, type Entry, type MisnamedEntry } from './walk.ts'
 
 /** A site as discovery finds it, before anything is compiled. */
 export interface Site {
@@ -20,8 +21,8 @@ export interface Site {
    */
   pages: Map<string, Page>
   /**
-   * What reading the pages' front matter, and transforming the documents, reported, in
-   * path order.
+   * What reading the pages' front matter, and transforming the documents, reported, and
+   * each misnamed file's error, in path order.
    */
   diagnostics: Diagnostic[]
 }
@@ -44,6 +45,7 @@ export async function discover(config: LoadedConfig): Promise<Site> {
   const pages = new Map<string, Page>()
   const diagnostics: Diagnostic[] = []
   for (const entry of entries) {
+    if (entry.kind === 'misnamed') diagnostics.push(misnamed(entry))
     if (entry.kind === 'document' || (entry.kind === 'template' && entry.page)) {
       const read = readPage(entry.path, entry.text, { inputDir })
       diagnostics.push(...read.diagnostics)
@@ -61,4 +63,19 @@ export async function discover(config: LoadedConfig): Promise<Site> {
     }
   }
   return { config, entries, pages, diagnostics }
+}
+
+/** The refusal of a misnamed file, which names the file it would be. */
+function misnamed({ path, extension }: MisnamedEntry): Diagnostic {
+  const name = path.slice(path.lastIndexOf('/') + 1)
+  const renamed = `${name.slice(0, -extension.length)}${extension}`
+  return {
+    path,
+    span: FILE_START,
+    severity: 'error',
+    message:
+      `only a lowercase \`${extension}\` is read, so \`${name}\` would be skipped: ` +
+      `rename it to \`${renamed}\``,
+    labels: [],
+  }
 }

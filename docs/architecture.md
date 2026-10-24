@@ -208,9 +208,10 @@ not a break:
 
 ## Build pipeline
 
-1. **Discover** (shell) — walk input, classify (document/template/passthrough/ignored),
-   parse front matter with positions, load `lemmon.config.ts`. A data file is read when a
-   `from` binding names it.
+1. **Discover** (shell) — walk input, classify
+   (document/template/passthrough/misnamed/ignored), parse front matter with positions,
+   load `lemmon.config.ts`. A data file is read when a `from` binding names it; a
+   misnamed file, `.md` or `.lem` in another case, is an error at its start.
 2. **Providers** (shell) — plugin data hooks; each plugin's `transformDocument` over
    every document's body (the link-post reference appender), in plugin order, the text it
    leaves what compiles and what diagnostics are framed against; and each plugin's

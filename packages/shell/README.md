@@ -361,12 +361,14 @@ promise, and a function where a plugin belongs, a plugin factory not called.
 1. **Discover.** Walks `input` — never entering a `node_modules` or `.git` directory, the
    output, or a symbolically linked directory — and classifies each file: a `passthrough`
    glob's match is copied as it is, `.md` is a document, `.lem` a template (a page when
-   it opens with front matter, D41), and anything else is left alone until a `from`
-   binding names it. Each page's front matter is read with the `yaml` package, with a
-   span for every field path: `type:` and `for:` are read and stripped, `url` derived
-   where the front matter gives none (`feed/x/index.md` at `/feed/x/`, `index.lem` at
-   `/`), and `inputPath` added (the path from the config's directory,
-   `www/feed/x/index.md`). Each document then goes through the plugins' transforms.
+   it opens with front matter, D41), either in another case — `index.MD` — an error at
+   the file's start naming it in lowercase, since the core knows a document by a
+   lowercase `.md` alone, and anything else is left alone until a `from` binding names
+   it. Each page's front matter is read with the `yaml` package, with a span for every
+   field path: `type:` and `for:` are read and stripped, `url` derived where the front
+   matter gives none (`feed/x/index.md` at `/feed/x/`, `index.lem` at `/`), and
+   `inputPath` added (the path from the config's directory, `www/feed/x/index.md`). Each
+   document then goes through the plugins' transforms.
 2. **Assets.** Each plugin's `assets` hook, in order; the manifests merge onto the
    declaration the compile is given, and the files are claimed.
 3. **Compile**, in two calls. First the shell's own `ambient.lem` — `Page`, `Build` and

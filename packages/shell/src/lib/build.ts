@@ -74,12 +74,12 @@ export interface CheckResult {
   /**
    * The text of every file the build read, once each, by the path its diagnostics name
    * it by: each document — as the plugins' transforms left it, which is what compiled —
-   * and template the walk found, the shell's own `ambient.lem`, and each data file a
-   * binding read. Every diagnostic's own path is among them, since each is placed in a
-   * file the build read, but for the config file's: a plugin's asset hook that failed,
-   * or a file it built that cannot be written, is placed at the start of the config,
-   * which lists the plugin and is never read as text. A label may name the config too,
-   * or a passthrough file, which no step reads. These are the texts the spans were
+   * template and misnamed file the walk found, the shell's own `ambient.lem`, and each
+   * data file a binding read. Every diagnostic's own path is among them, since each is
+   * placed in a file the build read, but for the config file's: a plugin's asset hook
+   * that failed, or a file it built that cannot be written, is placed at the start of the
+   * config, which lists the plugin and is never read as text. A label may name the config
+   * too, or a passthrough file, which no step reads. These are the texts the spans were
    * computed against, so a span is shown from here rather than from the file read
    * again, which may have changed since.
    */
@@ -193,9 +193,7 @@ async function renderSite(
   const diagnostics = [...site.diagnostics]
   const texts = new Map<string, string>()
   for (const entry of site.entries) {
-    if (entry.kind === 'document' || entry.kind === 'template') {
-      texts.set(entry.path, entry.text)
-    }
+    if ('text' in entry) texts.set(entry.path, entry.text)
   }
   const passthrough = site.entries
     .filter((entry) => entry.kind === 'passthrough')

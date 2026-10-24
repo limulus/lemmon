@@ -31,6 +31,19 @@ export interface PassthroughEntry {
 }
 
 /**
+ * A file named as a document or a template but for the case of its extension —
+ * `index.MD`, `nav.Lem` — which discovery refuses rather than ignore, since the core knows
+ * a document by a lowercase `.md` alone. Read with its text, which the refusal is shown
+ * in; `extension` is the one it was meant to have.
+ */
+export interface MisnamedEntry {
+  kind: 'misnamed'
+  path: string
+  text: string
+  extension: '.md' | '.lem'
+}
+
+/**
  * Anything else — a data file, a script, Eleventy's own templates — which the walk
  * does not read. A data file is read when a `from` binding names it.
  */
@@ -43,7 +56,8 @@ export interface IgnoredEntry {
  * One file under the input directory. Its path is relative to that directory, with `/`
  * separators: the path the core knows the file by.
  */
-export type Entry = DocumentEntry | TemplateEntry | PassthroughEntry | IgnoredEntry
+export type Entry =
+  DocumentEntry | TemplateEntry | PassthroughEntry | MisnamedEntry | IgnoredEntry
 
 /** What the walk makes of a file. */
 export type EntryKind = Entry['kind']
@@ -71,11 +85,11 @@ export function skipped(
 /**
  * Every file under the config's input directory, sorted by path, each classified: a
  * file a passthrough glob matches is passthrough whatever its extension; otherwise
- * `.md` is a document, `.lem` a template, and anything else is ignored. The walk passes
- * over a `node_modules` or `.git`, and the output directory when it is inside the
- * input, so a build never reads what an earlier one wrote ({@link skipped}). A
- * symbolic link counts as the file it names, and one that names nothing fails the
- * walk; a linked directory is not followed.
+ * `.md` is a document, `.lem` a template, either in another case misnamed, and anything
+ * else is ignored. The walk passes over a `node_modules` or `.git`, and the output
+ * directory when it is inside the input, so a build never reads what an earlier one
+ * wrote ({@link skipped}). A symbolic link counts as the file it names, and one that
+ * names nothing fails the walk; a linked directory is not followed.
  */
 export async function walk(
   config: Pick<LoadedConfig, 'input' | 'output' | 'passthrough'>
@@ -84,12 +98,15 @@ export async function walk(
   return await Promise.all(
     (await files(config)).map(async (path): Promise<Entry> => {
       if (isPassthrough(path)) return { kind: 'passthrough', path }
-      if (path.endsWith('.md')) return { kind: 'document', path, text: await read(path) }
-      if (path.endsWith('.lem')) {
-        const text = await read(path)
+      const named = /\.(?:md|lem)$/i.exec(path)?.[0]
+      if (named === undefined) return { kind: 'ignored', path }
+      const text = await read(path)
+      if (named === '.md') return { kind: 'document', path, text }
+      if (named === '.lem') {
         return { kind: 'template', path, text, page: findFrontMatter(text) !== undefined }
       }
-      return { kind: 'ignored', path }
+      const extension = named.toLowerCase() as MisnamedEntry['extension']
+      return { kind: 'misnamed', path, text, extension }
     })
   )
 

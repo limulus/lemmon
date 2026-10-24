@@ -1852,6 +1852,25 @@ describe('build()', () => {
       ])
     })
 
+    it('should stop at a post whose `.md` is in another case, which the glob would miss', async () => {
+      const post = '---\ntitle: C\n---\nHello c.\n'
+      const { result } = await built({ ...SITE, 'posts/c.MD': post })
+
+      expect(result.pages).toEqual([])
+      expect(result.diagnostics).toEqual([
+        {
+          path: 'posts/c.MD',
+          span: START,
+          severity: 'error',
+          message:
+            'only a lowercase `.md` is read, so `c.MD` would be skipped: rename it to `c.md`',
+          labels: [],
+        },
+      ])
+      // Its error is shown in the file it was placed in, as every diagnostic's is.
+      expect(result.texts.get('posts/c.MD')).toBe(post)
+    })
+
     it('should refuse a site with no `site.lem`', async () => {
       const { 'site.lem': _, ...files } = SITE
 
