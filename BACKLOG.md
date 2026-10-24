@@ -13,6 +13,10 @@ Standing initiative for reshaping working code. It comes first so that document 
 gives a refactor priority: reshaping is cheapest before more code is built on what it
 reshapes.
 
+- `∆Lj6` Every page has a type
+  - A page no glob collects and no `type:` names is an error naming the fix, where today it
+    renders without its layout and silently; retires the shell's per-page reload
+
 ## limulus.net on Lemmon
 
 Exit criterion (architecture doc 3, D15): `lem build` over a Lemmon-ported limulus-dot-net
@@ -95,7 +99,7 @@ esbuild plugin added its 200 ms (∆d1N's journal); on 2026-10-18, 421 ms for al
 - `∆MlD` Reconcile the architecture artifacts
   - Apply every entry in `docs/artifact-changes.md` to the three Claude Artifacts Eric owns
     and clear the ledger; applied once, after the cutover, so this is deliberately last
-  - needs: `∆oAl`, `∆V7i`, `∆5MM`, `∆xBO`, `∆Qr2`
+  - needs: `∆oAl`, `∆V7i`, `∆5MM`, `∆xBO`, `∆Qr2`, `∆Lj6`
 
 ## Defects
 
