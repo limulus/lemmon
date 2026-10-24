@@ -1,4 +1,5 @@
-import hljs, { type Language } from 'highlight.js'
+import type { HLJSApi, Language } from 'highlight.js'
+import { createRequire } from 'node:module'
 
 import type { Plugin } from './plugins.ts'
 
@@ -42,9 +43,18 @@ export function highlighter(options: HighlighterOptions = {}): Plugin {
   if (!Array.isArray(excluded)) {
     throw new TypeError('`exclude` of `highlighter()` must be a list of language names')
   }
+  // Loaded here rather than where this module is, which every value a config imports
+  // from the shell loads, so that only a site listing this plugin loads highlight.js;
+  // and required, since the keys it claims are known when the config loads.
+  const hljs = createRequire(import.meta.url)('highlight.js') as HLJSApi
+  const languages = new Set(
+    hljs
+      .listLanguages()
+      .flatMap((name) => [name, ...((hljs.getLanguage(name) as Language).aliases ?? [])])
+  )
   const exclude = new Set(excluded)
   for (const key of exclude) {
-    if (!LANGUAGES.has(key)) {
+    if (!languages.has(key)) {
       throw new TypeError(
         `\`highlighter()\` cannot exclude \`${key}\`, which is no language or ` +
           'alias highlight.js has'
@@ -56,7 +66,7 @@ export function highlighter(options: HighlighterOptions = {}): Plugin {
     marks: [
       {
         name: 'code',
-        keys: [...LANGUAGES].filter((key) => !exclude.has(key)),
+        keys: [...languages].filter((key) => !exclude.has(key)),
         payload: 'Code',
         keyedBy: 'language',
         produce: ({ marks }) =>
@@ -73,10 +83,3 @@ export function highlighter(options: HighlighterOptions = {}): Plugin {
     ],
   }
 }
-
-/** Every name and alias highlight.js knows a language by, each once. */
-const LANGUAGES: ReadonlySet<string> = new Set(
-  hljs
-    .listLanguages()
-    .flatMap((name) => [name, ...((hljs.getLanguage(name) as Language).aliases ?? [])])
-)

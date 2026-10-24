@@ -1,5 +1,6 @@
 import type { Mark } from '@limulus/lemmon-core'
 import hljs from 'highlight.js'
+import { spawnSync } from 'node:child_process'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
@@ -73,6 +74,30 @@ describe('highlighter()', () => {
     // `ls` and `ml` are each the alias of two languages.
     expect(new Set(keys).size).toBe(keys.length)
     expect(keys.filter((key) => hljs.getLanguage(key) === undefined)).toEqual([])
+  })
+
+  it('should load highlight.js only when it is called, not when the shell is imported', () => {
+    // In a process of its own, since this one has loaded highlight.js to compare with.
+    const child = `
+      import { createRequire } from 'node:module'
+      const require = createRequire(import.meta.url)
+      const loaded = () =>
+        Object.keys(require.cache).some((file) => file.includes('/highlight.js/lib/'))
+      const { highlighter } = await import(process.argv[1])
+      console.log('imported:', loaded())
+      highlighter()
+      console.log('called:', loaded())
+    `
+    const shell = new URL('../index.ts', import.meta.url).href
+
+    const { status, stdout } = spawnSync(
+      process.execPath,
+      ['--conditions=source', '--input-type=module', '--eval', child, shell],
+      { encoding: 'utf8' }
+    )
+
+    expect(status).toBe(0)
+    expect(stdout).toBe('imported: false\ncalled: true\n')
   })
 
   describe('a code block', () => {

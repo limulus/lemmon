@@ -108,12 +108,12 @@ language's other names stay claimed until listed too:
 plugins: [bundler(), highlighter({ exclude: ['rust', 'rs'] }), rustHighlighter()]
 ```
 
-highlight.js loads its 192 grammars, about 30 ms, when `lemmon.config.ts` imports a value
-from `@limulus/lemmon-shell` — `bundler` as much as `highlighter` — whether or not the site
-lists it; the `lem` bin never imports the package's entry point, and a type-only import,
-`import type { Config }`, is erased. It compiles a language's grammar the first time a
-block names it, and highlighting is not cached: on the limulus-dot-net port branch its
-eight blocks take about 8 ms in the first build and 1 ms in each rebuild.
+highlight.js loads its 192 grammars, about 30 ms, when the config calls `highlighter()`,
+since the keys it claims are known when the config loads; importing the package loads
+none, so a site that does not list it never pays for them. It compiles a language's
+grammar the first time a block names it, and highlighting is not cached: on the
+limulus-dot-net port branch its eight blocks take about 8 ms in the first build and 1 ms
+in each rebuild.
 
 ### `esbuild(options?)`
 
