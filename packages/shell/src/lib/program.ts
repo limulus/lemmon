@@ -13,6 +13,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import picomatch from 'picomatch'
 
+import { hasError } from './diagnostics.ts'
 import type { Page } from './front-matter.ts'
 import { claimsOf, type Plugin } from './plugins.ts'
 import type { Site } from './site.ts'
@@ -225,11 +226,6 @@ export async function compileSite(
   if (hasError(diagnostics)) return { diagnostics }
   const payloads = new Map(second.payloads.map((payload) => [payload.id, payload]))
   return { program: { sources: first.sources, pages, payloads }, diagnostics }
-}
-
-/** Whether any of `diagnostics` is an error. */
-export function hasError(diagnostics: Diagnostic[]): boolean {
-  return diagnostics.some((diagnostic) => diagnostic.severity === 'error')
 }
 
 /**

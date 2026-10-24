@@ -10,6 +10,7 @@ import {
   type YAMLMap,
 } from 'yaml'
 
+import { hasError } from './diagnostics.ts'
 import { SourceText, splitsSurrogatePair } from './source-text.ts'
 
 /** A table of spans by field path, as {@link LoadedValue.spans} keys it. */
@@ -81,7 +82,7 @@ export class YamlWalk {
 
   /** Whether the walk has reported an error. */
   get failed(): boolean {
-    return this.#diagnostics.some((d) => d.severity === 'error')
+    return hasError(this.#diagnostics)
   }
 
   /**

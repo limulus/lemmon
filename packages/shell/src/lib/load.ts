@@ -9,7 +9,8 @@ import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
 import { contains } from './config.ts'
-import { hasError, type CompiledPage, type Program } from './program.ts'
+import { hasError } from './diagnostics.ts'
+import type { CompiledPage, Program } from './program.ts'
 import { readData } from './yaml-values.ts'
 
 /** What a build knows about itself: the value `build` is bound to. */

@@ -12,6 +12,7 @@ import { strict as assert } from 'node:assert'
 import { Buffer } from 'node:buffer'
 
 import type { LoadedConfig } from './config.ts'
+import { hasError } from './diagnostics.ts'
 import { forEntry } from './front-matter.ts'
 import { checkLinks } from './link-check.ts'
 import { envelope, withBodies, type Environment } from './load.ts'
@@ -22,7 +23,7 @@ import {
   type Plugin,
   type ProducedFile,
 } from './plugins.ts'
-import { compileSite, FILE_START, hasError, pageSpan, type Program } from './program.ts'
+import { compileSite, FILE_START, pageSpan, type Program } from './program.ts'
 import { provided, type AssetFile } from './providers.ts'
 import { rebaseLinks } from './rebase.ts'
 import { discover } from './site.ts'
