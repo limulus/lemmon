@@ -468,6 +468,7 @@ const isObject = (value: unknown): value is Record<string, unknown> =>
 export const isName = (value: unknown): value is string =>
   typeof value === 'string' && value !== '' && !/\p{Cs}/u.test(value)
 
+/** Field names as a message lists them. */
 export const fields = (names: readonly string[]): string =>
   names.map((name) => `\`${name}\``).join(', ')
 

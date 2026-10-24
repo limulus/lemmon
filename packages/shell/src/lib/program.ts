@@ -255,7 +255,7 @@ function heldTwice(path: string, page: Page, holders: FromBinding[]): Diagnostic
 }
 
 /** How a message lists names: `a and b`, `a, b, and c`. */
-const LIST = new Intl.ListFormat('en', { type: 'conjunction' })
+export const LIST = new Intl.ListFormat('en', { type: 'conjunction' })
 
 /**
  * The refusal of a `for:` key on a page no `type:` and no glob types: a template's

@@ -9,7 +9,7 @@ import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
 import { contains } from './config.ts'
-import type { CompiledPage, Program } from './program.ts'
+import { hasError, type CompiledPage, type Program } from './program.ts'
 import { readData } from './yaml-values.ts'
 
 /** What a build knows about itself: the value `build` is bound to. */
@@ -106,9 +106,7 @@ export async function envelope(
       if (read.loaded !== undefined) sources[source.name] = read.loaded
     }
   }
-  if (diagnostics.some((diagnostic) => diagnostic.severity === 'error')) {
-    return { diagnostics }
-  }
+  if (hasError(diagnostics)) return { diagnostics }
   const pages = compiled
     .filter((page) => page.record !== undefined && page.binding === undefined)
     .map(entryOf)

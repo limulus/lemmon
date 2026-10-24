@@ -11,7 +11,7 @@ import { Buffer } from 'node:buffer'
 
 import { cssLinks, htmlLinks, xmlLinks, type Link } from './link-scan.ts'
 import { pageName } from './plugins.ts'
-import { FILE_START } from './program.ts'
+import { FILE_START, LIST } from './program.ts'
 import {
   outputFile,
   type Found,
@@ -272,8 +272,6 @@ function places(ats: string[]): string {
   for (const at of ats) counts.set(at, (counts.get(at) ?? 0) + 1)
   return LIST.format([...counts].map(([at, n]) => `\`${at}\`${OFTEN[n] ?? ` ${n} times`}`))
 }
-
-const LIST = new Intl.ListFormat('en', { type: 'conjunction' })
 
 /** How often a place holds a url, by the count, where a message says it in a word. */
 const OFTEN: readonly string[] = ['', '', ' twice']

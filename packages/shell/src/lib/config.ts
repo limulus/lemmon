@@ -3,7 +3,7 @@ import { validateHeaderName, validateHeaderValue } from 'node:http'
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
-import { validatePlugins, type Plugin } from './plugins.ts'
+import { fields, validatePlugins, type Plugin } from './plugins.ts'
 
 /**
  * What a site's `lemmon.config.ts` exports by default:
@@ -189,16 +189,16 @@ function validated(file: string, exported: unknown): LoadedConfig {
   if (typeof exported !== 'object' || exported === null || Array.isArray(exported)) {
     throw new ConfigError(file, 'the default export must be an object')
   }
-  const fields = exported as Record<string, unknown>
-  for (const field of Object.keys(fields)) {
+  const config = exported as Record<string, unknown>
+  for (const field of Object.keys(config)) {
     if (!FIELDS.includes(field)) {
-      const message = `unknown field \`${field}\`; a config has ${listed(FIELDS)}`
+      const message = `unknown field \`${field}\`; a config has ${fields(FIELDS)}`
       throw new ConfigError(file, message, { field })
     }
   }
   const root = dirname(file)
-  const input = resolve(root, directory(file, fields, 'input'))
-  const output = resolve(root, directory(file, fields, 'output'))
+  const input = resolve(root, directory(file, config, 'input'))
+  const output = resolve(root, directory(file, config, 'output'))
   if (!statSync(input, { throwIfNoEntry: false })?.isDirectory()) {
     throw new ConfigError(file, `\`input\` names no directory: ${input}`, {
       field: 'input',
@@ -212,19 +212,16 @@ function validated(file: string, exported: unknown): LoadedConfig {
     file,
     input,
     output,
-    ...origin(file, fields.origin),
-    served: served(file, fields.served),
-    passthrough: globs(file, fields.passthrough),
-    plugins: plugins(file, fields.plugins),
-    dev: dev(file, fields.dev),
+    ...origin(file, config.origin),
+    served: served(file, config.served),
+    passthrough: globs(file, config.passthrough),
+    plugins: plugins(file, config.plugins),
+    dev: dev(file, config.dev),
   }
 }
 
-/** Field names as a message lists them. */
-const listed = (fields: readonly string[]) => fields.map((name) => `\`${name}\``).join(', ')
-
-function directory(file: string, fields: Record<string, unknown>, field: string): string {
-  const value = fields[field]
+function directory(file: string, config: Record<string, unknown>, field: string): string {
+  const value = config[field]
   if (value === undefined) {
     throw new ConfigError(file, `\`${field}\` is required`, { field })
   }
@@ -342,7 +339,7 @@ function dev(file: string, value: unknown): LoadedConfig['dev'] {
   if (!isPlainObject(value)) throw refused('`dev` must be a plain object, `{…}`')
   for (const field of Object.keys(value)) {
     if (!DEV_FIELDS.includes(field)) {
-      throw refused(`unknown field \`dev.${field}\`; \`dev\` has ${listed(DEV_FIELDS)}`)
+      throw refused(`unknown field \`dev.${field}\`; \`dev\` has ${fields(DEV_FIELDS)}`)
     }
   }
   const { headers } = value
