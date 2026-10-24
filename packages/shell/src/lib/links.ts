@@ -59,20 +59,33 @@ export const LINKS: ReadonlyMap<string, readonly string[]> = new Map([
 
 /**
  * The candidates of `value`, a `srcset`, as `parse-srcset` reads them, and the descriptor
- * of each it refused — which it would otherwise say on standard output, past the streams
- * `lem` writes its diagnostics to, naming no file.
+ * of each it refused, by {@link refusal} — which it would otherwise say on standard
+ * output, past the streams `lem` writes its diagnostics to, naming no file.
  */
 export function srcset(value: string): { candidates: Candidate[]; refused: string[] } {
   const refused: string[] = []
   const log = console.log
   console.log = (message: string) => {
-    refused.push(/ at '(.*)'\.$/s.exec(message)![1])
+    refused.push(refusal(value, message))
   }
   try {
     return { candidates: parseSrcset(value), refused }
   } finally {
     console.log = log
   }
+}
+
+/**
+ * The descriptor named by `message`, which `parse-srcset` 1.0.2 logs on refusing a
+ * candidate of `value` as `Invalid srcset descriptor found in '<value>' at '<descriptor>'.`
+ * — read past that prefix, since `value` may hold ` at '` itself. A message of any other
+ * shape is kept whole, so that another release's wording reads oddly in the warning rather
+ * than throwing out of the parse.
+ */
+export function refusal(value: string, message: string): string {
+  const prefix = `Invalid srcset descriptor found in '${value}' at '`
+  const rest = message.startsWith(prefix) ? message.slice(prefix.length) : ''
+  return rest.endsWith("'.") ? rest.slice(0, -2) : message
 }
 
 /**
