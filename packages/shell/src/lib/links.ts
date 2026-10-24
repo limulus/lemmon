@@ -1,11 +1,13 @@
 /**
  * Where a page's markup holds urls, as `@11ty/posthtml-urls` reads them for Eleventy: the
- * attributes, by the element they stand on, and how a `srcset` and a `ping` list theirs.
- * The body pass rebases what this names (D46), and the link check reads the table and
- * the `srcset` candidates (D47), splitting a `ping` as HTML does instead.
+ * attributes, by the element they stand on, and how a `srcset` and a `ping` list theirs;
+ * and the walk over its elements that both readers make. The body pass rebases what this
+ * names (D46), and the link check reads the table and the `srcset` candidates (D47),
+ * splitting a `ping` as HTML does instead.
  */
 
 import { createRequire } from 'node:module'
+import type { DefaultTreeAdapterTypes as Tree } from 'parse5'
 
 /** One candidate of a `srcset`: its url, and the descriptors it was written with. */
 export interface Candidate {
@@ -97,4 +99,29 @@ export function pings(value: string): string[] {
     .split(',')
     .map((url) => url.trim())
     .filter((url) => url !== '')
+}
+
+/**
+ * Each element under `root`, a tree parse5 parsed, in document order, with whether it
+ * stands inside a `<template>`'s content, which is walked too though it is no part of the
+ * document. Walked with a stack of its own, since markup may nest deeper than the call
+ * stack goes (invariant 8).
+ */
+export function* elements(
+  root: Tree.ParentNode
+): Generator<[Tree.Element | Tree.Template, boolean]> {
+  const pending: [Tree.Element | Tree.Template, boolean][] = []
+  const push = (parent: Tree.ParentNode, inert: boolean): void => {
+    for (let i = parent.childNodes.length - 1; i >= 0; i--) {
+      const child = parent.childNodes[i]
+      if ('tagName' in child) pending.push([child, inert])
+    }
+  }
+  push(root, false)
+  for (let next = pending.pop(); next !== undefined; next = pending.pop()) {
+    yield next
+    const [element, inert] = next
+    if ('content' in element) push(element.content, true)
+    else push(element, inert)
+  }
 }

@@ -6,9 +6,9 @@
  * it stays as the core rendered it.
  */
 
-import { parseFragment, type DefaultTreeAdapterTypes as Tree } from 'parse5'
+import { parseFragment } from 'parse5'
 
-import { LINKS, pings, srcset } from './links.ts'
+import { elements, LINKS, pings, srcset } from './links.ts'
 
 /**
  * What a rebase could not do, which the attribute it stands in shows: `at` is the element
@@ -68,17 +68,8 @@ export function rebaseLinks(body: string, url: string, origin?: string): Rebased
   // By start offset: an element the parser reconstructs carries the location of the one
   // it copied, so two elements can name one attribute in the text.
   const splices = new Map<number, { end: number; text: string }>()
-  // Walked in document order with a stack of its own, since a body may nest deeper than
-  // the call stack goes (invariant 8).
-  const pending: (Tree.Element | Tree.Template)[] = []
-  const push = (parent: Tree.ParentNode): void => {
-    for (let i = parent.childNodes.length - 1; i >= 0; i--) {
-      const child = parent.childNodes[i]
-      if ('tagName' in child) pending.push(child)
-    }
-  }
-  push(parseFragment(body, { sourceCodeLocationInfo: true, scriptingEnabled: false }))
-  for (let child = pending.pop(); child !== undefined; child = pending.pop()) {
+  const options = { sourceCodeLocationInfo: true, scriptingEnabled: false }
+  for (const [child] of elements(parseFragment(body, options))) {
     const names = LINKS.get(child.tagName) ?? []
     const location = child.sourceCodeLocation
     for (const { name, value, prefix } of child.attrs) {
@@ -91,7 +82,6 @@ export function rebaseLinks(body: string, url: string, origin?: string): Rebased
       const { startOffset, endOffset } = location.attrs![name]
       splices.set(startOffset, { end: endOffset, text: `${name}="${escaped(rebased)}"` })
     }
-    push('content' in child ? child.content : child)
   }
   let rebased = body
   for (const [start, { end, text }] of [...splices].sort(([a], [b]) => b - a)) {

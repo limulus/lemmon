@@ -8,9 +8,9 @@
 import { tokenize, TokenType, type CSSToken } from '@csstools/css-tokenizer'
 import { DOMParser, type Document, type Element, type Node } from '@xmldom/xmldom'
 import { isUtf8 } from 'node:buffer'
-import { parse, type DefaultTreeAdapterTypes as Tree } from 'parse5'
+import { parse } from 'parse5'
 
-import { LINKS, srcset } from './links.ts'
+import { elements, LINKS, srcset } from './links.ts'
 
 /** A url an output file holds, as written, with where it stands and its base. */
 export interface Link {
@@ -70,19 +70,7 @@ export function htmlLinks(text: string, url: string): HtmlLinks {
   const targets = new Set<string>()
   let base: string | undefined
   const add = (at: string) => (link: string) => found.push({ url: link, at })
-  // Walked in document order with a stack of its own, since a page may nest deeper than
-  // the call stack goes (invariant 8): each element with whether it is inside a
-  // `<template>`'s content, whose ids are no part of the document.
-  const pending: [Tree.Element | Tree.Template, boolean][] = []
-  const push = (parent: Tree.ParentNode, inert: boolean): void => {
-    for (let i = parent.childNodes.length - 1; i >= 0; i--) {
-      const child = parent.childNodes[i]
-      if ('tagName' in child) pending.push([child, inert])
-    }
-  }
-  push(parse(text, { scriptingEnabled: false }), false)
-  for (let next = pending.pop(); next !== undefined; next = pending.pop()) {
-    const [child, inert] = next
+  for (const [child, inert] of elements(parse(text, { scriptingEnabled: false }))) {
     const { tagName } = child
     const attribute = (name: string) =>
       child.attrs.find((attr) => attr.prefix === undefined && attr.name === name)?.value
@@ -129,8 +117,6 @@ export function htmlLinks(text: string, url: string): HtmlLinks {
       const css = child.childNodes.map((text) => ('value' in text ? text.value : ''))
       for (const link of cssLinks(css.join(''))) add('<style>')(link.url)
     }
-    if ('content' in child) push(child.content, true)
-    else push(child, inert)
   }
   const resolvedAgainst = base ?? url
   return { links: found.map((link) => ({ ...link, base: resolvedAgainst })), targets }
