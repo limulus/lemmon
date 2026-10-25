@@ -1,5 +1,5 @@
 //! What a function reads and calls, recorded as it is lowered, so the link step can
-//! order what the loader runs (D37, ∆HF0).
+//! order what the loader runs (D37, `∆HF0`).
 //!
 //! A collector is open while a `lem-fn` or a function the loader itself runs is being
 //! lowered, and stays open through every lambda inside it: a lambda's reads are its
@@ -215,7 +215,7 @@ mod tests {
     }
 
     /// Functions whose uses the tests below read: what the link step closes a
-    /// default's calls through (∆HF0).
+    /// default's calls through (`∆HF0`).
     const FNS: &str = "<lem-type Photo>\n  alt: string\n</lem-type>\n\
                        <lem-type A>\n  first: string\n  hero: Photo?\n  words: [string]\n\
                        </lem-type>\n\

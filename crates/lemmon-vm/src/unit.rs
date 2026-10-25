@@ -68,11 +68,11 @@ pub struct Unit {
     /// ([`Host::for_file`](crate::Host::for_file)).
     pub page_shaped: bool,
     /// The functions the loader runs for the records this file declares: each field's
-    /// default (∆iCW). Part of this unit and no consumer's: a default is not part of
+    /// default (`∆iCW`). Part of this unit and no consumer's: a default is not part of
     /// a type's shape fact.
     pub defaults: Vec<DefaultFn>,
     /// The `by` indexes of the records this file declares: each the ambient field a
-    /// string in data resolves through (∆eag). A unit's own, like `defaults`.
+    /// string in data resolves through (`∆eag`). A unit's own, like `defaults`.
     pub indexes: Vec<IndexDecl>,
     /// The top-level bindings of this file when it is the one the host reads an
     /// ambient value from — what supplies each, in binding order. Empty elsewhere.
@@ -80,7 +80,7 @@ pub struct Unit {
     /// What each function whose body the loader may run reads and calls, by its index
     /// here: every top-level `lem-fn`, and the functions behind `defaults` and
     /// `bindings`. The link step closes these through calls to order the loader's
-    /// work (∆HF0). Part of this unit alone, like `defaults`: a body is never a
+    /// work (`∆HF0`). Part of this unit alone, like `defaults`: a body is never a
     /// consumer's fact.
     pub uses: BTreeMap<u32, Uses>,
     /// Where the record was named — the `type:` key's value when the host said, else
@@ -145,7 +145,7 @@ pub enum Supplied {
 
 /// What one function of a unit reads and calls — the notes the link step closes
 /// through calls, so that a default calling a `lem-fn` that reads a sibling is ordered
-/// after that sibling instead of faulting at load (∆HF0).
+/// after that sibling instead of faulting at load (`∆HF0`).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Uses {
     /// What is read, inside a lambda of the body as much as in the body itself.
@@ -169,7 +169,7 @@ pub enum Access {
     Ambient { value: Rc<str>, field: Rc<str> },
     /// An ambient value read whole: `page`, handed on or returned. Orders a binding
     /// after the value like a field read does, and is how a default that reaches an
-    /// ambient value through a call is found (D37, ∆eag).
+    /// ambient value through a call is found (D37, `∆eag`).
     Whole(Rc<str>),
 }
 

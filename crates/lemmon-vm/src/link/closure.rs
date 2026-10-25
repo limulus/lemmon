@@ -1,4 +1,4 @@
-//! Closing what a loader-run function reads through the calls it makes (∆HF0, D37).
+//! Closing what a loader-run function reads through the calls it makes (`∆HF0`, D37).
 //!
 //! For the loader's order, a default or a computed binding that calls a `lem-fn` reads
 //! whatever that function reads: off the record it was handed, off ambient values, and
@@ -7,7 +7,7 @@
 //! in hand, works it out here: per project function, the reads its body makes closed
 //! through its calls; then per step, its own reads plus each callee's, with a read off
 //! a parameter translated through what the step handed that parameter. What a default
-//! may not read at all — any ambient value (∆eag) — the link step refuses when it
+//! may not read at all — any ambient value (`∆eag`) — the link step refuses when it
 //! arrives this way. Only a call written as `f(…)` is followed. A function named as a
 //! value — stored in a field, handed to a builtin — is a value like any other, and a
 //! call through a value names nothing.
@@ -136,7 +136,7 @@ fn through<'a>(
 
 /// What a record step's plan carries of its closed reads: the fields of `self`. An
 /// ambient value, a field of one or the whole, is no part of a default's scope
-/// (∆eag) — the link step has refused it — and a step has no parameter to have read
+/// (`∆eag`) — the link step has refused it — and a step has no parameter to have read
 /// off.
 pub(super) fn own_reads(closed: &[Closed]) -> Vec<Rc<str>> {
     closed

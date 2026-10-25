@@ -1,4 +1,4 @@
-//! The loader's plans, built at link (D37, ∆HF0).
+//! The loader's plans, built at link (D37, `∆HF0`).
 //!
 //! [`plans`] turns the functions each unit compiled for the loader into the module's
 //! tables: every declared record's defaults and `by` indexes, each taken from the
@@ -11,7 +11,7 @@
 //! binding that needs itself, reported at the first one on the cycle. Three rules about
 //! what a loader-run function may read are enforced here as well, because only the link
 //! step has a function's reads followed through the calls it makes: a default or a
-//! computed binding that reaches an ambient value it may not read (∆eag), a default of
+//! computed binding that reaches an ambient value it may not read (`∆eag`), a default of
 //! a page record that reaches one of its neighbour fields, and a page template whose
 //! record's plan reads `body` (D43).
 
@@ -68,7 +68,7 @@ struct Places<'a> {
     positions: &'a BTreeMap<&'a str, usize>,
     function_offsets: &'a [u32],
     /// Every project function's reads closed through its calls, for the steps' own
-    /// closing (∆HF0).
+    /// closing (`∆HF0`).
     closure: &'a ReadClosure,
 }
 
@@ -101,10 +101,10 @@ impl Places<'_> {
     /// index come from the nearest declaration in the chain that gives one: a
     /// redeclaration changes the default (D32), and one that gives none leaves the
     /// ancestor's in force. The steps are relocated into the module and ordered by
-    /// what each reads through `self`, the calls it makes followed (∆HF0); a field
+    /// what each reads through `self`, the calls it makes followed (`∆HF0`); a field
     /// that reads itself through others is a link error at the field, since no order
     /// could run it, and so is one that reaches an ambient value through a call,
-    /// since a default reads only the record it builds (∆eag).
+    /// since a default reads only the record it builds (`∆eag`).
     fn record_plans(&self, diagnostics: &mut Vec<Diagnostic>) -> Vec<RecordPlan> {
         let mut plans = Vec::new();
         for export in self.index.types() {
@@ -272,7 +272,7 @@ impl Places<'_> {
     /// — one per value, at `span` in `path`, for the field or binding `subject`. Read
     /// directly, the compiler refused it where it stood, in the same words, and no
     /// program with that error links; through a call, only the link step can see it,
-    /// and names the call (∆HF0).
+    /// and names the call (`∆HF0`).
     fn refuse_reach(
         &self,
         closed: &[Closed],
@@ -399,7 +399,7 @@ impl Places<'_> {
 
     /// The plan for the bindings file `file`, read as `value`: its bindings in load
     /// order. A computed binding follows the siblings it reads, the calls it makes
-    /// followed (∆HF0); a `from` binding follows every sibling the records its value
+    /// followed (`∆HF0`); a `from` binding follows every sibling the records its value
     /// may hold look a string up in while they load — through `extends` and through
     /// field types, since a subtype's or a nested record's index resolves too. A
     /// binding that needs itself is a link error at the binding, and so is a

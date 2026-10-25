@@ -115,7 +115,7 @@ impl Core {
     /// which is what a render's `code` mark names. `sources` is every `from` binding of
     /// the program a clean relink installed, `{name, kind, literal, collects?, path,
     /// span}` in the order its bindings file declares them — what the host fulfils in
-    /// `loadData`, and which documents it compiles as which record (∆muD) — and empty
+    /// `loadData`, and which documents it compiles as which record (`∆muD`) — and empty
     /// when the call installed no program.
     ///
     /// `host` is the ambient declaration, JSON `{ambient, document?, entry?, url?,

@@ -1,13 +1,13 @@
 //! What a file leaves the loader to do before any render (D37): run the function behind
-//! every field default the records it declares carry (∆iCW), and index the map an
-//! ambient value holds, where a field is declared `by` one (∆eag).
+//! every field default the records it declares carry (`∆iCW`), and index the map an
+//! ambient value holds, where a field is declared `by` one (`∆eag`).
 //!
 //! [`Compiler::function_for_loader`] is the shape every such function takes — the
 //! parameters the loader will hand it bound, and what its body reads and calls recorded
 //! ([`uses`](super::uses)) — and the bindings file's computed bindings take it too, from
 //! [`items`](super::items). Which ambient values one of them may read is
 //! [`refused_at_load`]'s one rule, asked by the walk where a read stands
-//! ([`expr`](super::expr)) and again by the link step when a call reaches one (∆HF0);
+//! ([`expr`](super::expr)) and again by the link step when a call reaches one (`∆HF0`);
 //! that a page's default reads none of its neighbour fields is
 //! [`neighbour_out_of_reach`]'s, asked the same two ways (D43).
 
@@ -26,7 +26,7 @@ use crate::unit::{DefaultFn, IndexDecl};
 
 impl Compiler<'_> {
     /// Compiles the loader's function for every field default the records this file
-    /// declares carry (∆iCW), and records every `by` index (∆eag). A default is
+    /// declares carry (`∆iCW`), and records every `by` index (`∆eag`). A default is
     /// checked against its field's type and runs with `self` — the record being
     /// built, as the declaring type — and, on a record that extends the host's
     /// document type, `path` and `body` as well. An index names a field of an
@@ -277,10 +277,10 @@ pub(crate) enum Runs {
 /// Why the ambient value `name` is not there for a function the loader runs as
 /// `runs`, if it is not — `document` being the host's document value: a default reads
 /// only the record it builds, since a record's plan depends on its own declarations
-/// alone (∆eag), and the document value is bound per page, so a computed binding,
-/// which runs before any page is, may not read that one (∆iCW). One rule and one
+/// alone (`∆eag`), and the document value is bound per page, so a computed binding,
+/// which runs before any page is, may not read that one (`∆iCW`). One rule and one
 /// sentence, said by the compiler where the read stands and by the link step when a
-/// call reaches it (∆HF0).
+/// call reaches it (`∆HF0`).
 pub(crate) fn refused_at_load(
     runs: Runs,
     document: Option<&str>,

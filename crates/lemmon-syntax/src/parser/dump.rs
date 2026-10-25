@@ -3,7 +3,7 @@
 //! What the golden corpus compares against (`tests/corpus`, invariant 9). [`dump`] shows
 //! every node and token with its byte range; [`tag_dump`] projects the same tree down to
 //! the tag boundaries alone, which is the shape `tree-sitter-lemmon` must agree with
-//! (∆5MM). Both take a [`Parse`] rather than source, so that a document's tree —
+//! (`∆5MM`). Both take a [`Parse`] rather than source, so that a document's tree —
 //! assembled by [`parse_document`](crate::parse_document), not parsed — dumps the same
 //! way as a template's.
 //!

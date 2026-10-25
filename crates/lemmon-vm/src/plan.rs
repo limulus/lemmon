@@ -1,4 +1,4 @@
-//! What a module tells the loader to run: the plan behind `loadData` (∆iCW,
+//! What a module tells the loader to run: the plan behind `loadData` (`∆iCW`,
 //! `docs/language.md` §Schemas, §Ambient types).
 //!
 //! A schema's computed defaults and the bindings file's computed bindings are
@@ -7,7 +7,7 @@
 //! function of its own unit and records what it reads; [`link`](crate::link()) joins
 //! those into the tables here, in the order the reads dictate, and refuses a cycle as
 //! it refuses an unresolved import. A field's `by` index is no function: it names one
-//! field of one ambient value, and the loader indexes that map as loaded (∆eag). The
+//! field of one ambient value, and the loader indexes that map as loaded (`∆eag`). The
 //! loader then runs each table front to back and never has to reason about order
 //! itself.
 //!
@@ -50,7 +50,7 @@ pub struct Step {
 }
 
 /// One field's `by value.field` index: the map a string the loaded data gives for the
-/// field resolves through, named as a field of an ambient value (∆eag). Resolved
+/// field resolves through, named as a field of an ambient value (`∆eag`). Resolved
 /// before any default runs, since a default may read the field.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Index {
@@ -83,7 +83,7 @@ pub enum Fulfilled {
     /// An `= expr` or capture binding: the loader runs the function, once every
     /// ambient value it reads — a field of one, or the value whole, its calls
     /// followed — is loaded. A default makes no such read: it reads only the record
-    /// it builds (∆eag), so a step's reads are field names of `self`.
+    /// it builds (`∆eag`), so a step's reads are field names of `self`.
     Computed { func: u32, reads: Vec<Rc<str>> },
 }
 

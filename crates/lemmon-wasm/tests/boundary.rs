@@ -68,7 +68,7 @@ fn names_a_code_blocks_payload_by_the_id_compile_sent() {
 
 /// What `compile` sends for files that compiled clean, write no code block, and have
 /// no bindings file: `{diagnostics, payloads, sources}` with all three empty (D42,
-/// ∆muD).
+/// `∆muD`).
 const CLEAN: &str = r#"{"diagnostics":[],"payloads":[],"sources":[]}"#;
 
 /// The diagnostics of a `compile` reply, for a program whose bindings file reports

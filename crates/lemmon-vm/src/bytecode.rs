@@ -252,7 +252,7 @@ pub struct Module {
     /// through where a function type is expected (`layout: article`).
     pub exports: Vec<Exported>,
     /// What the loader does for each declared record: its defaults, in dependency
-    /// order (∆iCW), and the ambient maps its `by` indexes name (∆eag).
+    /// order (`∆iCW`), and the ambient maps its `by` indexes name (`∆eag`).
     pub records: Vec<RecordPlan>,
     /// One plan per ambient value the host reads from a file the program has, in the
     /// host's declaration order.

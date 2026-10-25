@@ -45,7 +45,7 @@ pub struct Label {
 /// Something wrong with the source, pointed at precisely.
 ///
 /// A message and the span it is about, with a severity and any secondary spans worth
-/// pointing at (∆VNk). Codes wait for a consumer. Every diagnostic carries a span — a
+/// pointing at (`∆VNk`). Codes wait for a consumer. Every diagnostic carries a span — a
 /// throw without one is a bug.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Diagnostic {

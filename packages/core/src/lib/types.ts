@@ -193,7 +193,7 @@ export interface FromBinding {
  * payload of every code block they write, each once, and every `from` binding of the
  * program the call installed, in the order its bindings file declares them — none
  * where the call installed no program, or the program has no bindings file. `facts`
- * (∆Qr2) is an additive field that arrives with that item.
+ * (`∆Qr2`) is an additive field that arrives with that item.
  */
 export interface CompileResult {
   diagnostics: Diagnostic[]
@@ -414,7 +414,7 @@ export type Fragments = Record<string, Fragment[]>
  * The page is bytes and not a string because a mark's offsets name those bytes, and
  * because escaping a page into the reply's JSON and parsing it back costs more than the
  * render. A host that wants a string decodes once, after {@link resolveMarks} has
- * spliced (D42). `deps` (∆xBO) is an additive field that arrives with that item.
+ * spliced (D42). `deps` (`∆xBO`) is an additive field that arrives with that item.
  */
 export interface RenderResult {
   html: Uint8Array | null

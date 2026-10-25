@@ -1,4 +1,4 @@
-//! The placeholder gate (∆DA2).
+//! The placeholder gate (`∆DA2`).
 //!
 //! A stage that does not exist yet is refused with a diagnostic — "not supported yet"
 //! in the parser, "not here yet" in the compiler — and described in the docs with a

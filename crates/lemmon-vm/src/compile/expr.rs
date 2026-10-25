@@ -169,7 +169,7 @@ impl Compiler<'_> {
     }
 
     /// Lowers a reference to `token`; `whole` says the value itself is what is read,
-    /// which for an ambient value is noted for the loader's order (∆HF0).
+    /// which for an ambient value is noted for the loader's order (`∆HF0`).
     fn name_read(&mut self, token: &SyntaxToken, whole: bool) -> Type {
         let span = token.span();
         match self.resolve(token.text()) {
@@ -272,7 +272,7 @@ impl Compiler<'_> {
     /// The enum `object.…` reads a variant off, when `object` is a bare name the
     /// project declares as one. The type namespace answers `Name.x` before the value
     /// namespace does, so `Placement.hero` means the same thing wherever it stands,
-    /// whatever a local of that spelling holds (∆EN6).
+    /// whatever a local of that spelling holds (`∆EN6`).
     pub(super) fn enum_object(&self, object: &Expr) -> Option<Rc<str>> {
         let Expr::Name(name) = object else {
             return None;

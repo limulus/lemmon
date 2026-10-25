@@ -237,7 +237,7 @@ struct Compiler<'a> {
     narrowings: Vec<(narrowing::Path, Type)>,
     /// What the function being compiled reads and calls — open while a function the
     /// loader may run is being lowered, a top-level `lem-fn` or a loader-run one, and
-    /// through every lambda inside it (∆iCW, ∆HF0).
+    /// through every lambda inside it (`∆iCW`, `∆HF0`).
     uses: Option<Collecting>,
     /// The top-level bindings of the bindings file lowered so far, by name — the list a
     /// repeat is checked against, since they are fields and not locals in any scope.

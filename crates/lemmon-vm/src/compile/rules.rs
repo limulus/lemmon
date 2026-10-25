@@ -205,7 +205,7 @@ fn field(ty: &Type, name: &str, decls: &dyn Decls) -> Rule {
 
 /// "a `string` has no field `slugfy`", and — when a method of that type is one typo
 /// away — the call form it was reaching for. A builtin type has fields in neither
-/// spelling, so the only reading of `s.slugfy` worth offering is a method (∆eHR).
+/// spelling, so the only reading of `s.slugfy` worth offering is a method (`∆eHR`).
 fn no_field_but_maybe_a_method(ty: &Type, name: &str) -> String {
     let mut out = format!("a `{ty}` has no field `{name}`");
     if let Some(kind) = ReceiverKind::of(ty)
@@ -490,7 +490,7 @@ pub(super) fn type_test(subject: &Type, name: &str, decls: &dyn Decls) -> Rule {
     }
 }
 
-/// The dotted variant rule (D32, revised by ∆EN6): `.hero` is a variant of whichever
+/// The dotted variant rule (D32, revised by `∆EN6`): `.hero` is a variant of whichever
 /// enum is expected where it stands, and of nothing else. Where no enum is expected it
 /// has none to belong to — the refusal names the qualified spelling, which needs no
 /// expectation and so works wherever the dotted one does not.

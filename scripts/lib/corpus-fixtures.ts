@@ -6,7 +6,7 @@
  * directory a case sits in says what it is about, not what it produces — `host/pages/`
  * holds error cases, and a case that a language change turns from clean to broken stays
  * where it is. A harness that reads the path instead compiles a deliberate error and
- * dies on it, which is ∆Bhz: `document/front-matter/unclosed.md` became an error case in
+ * dies on it, which is `∆Bhz`: `document/front-matter/unclosed.md` became an error case in
  * place, and the benchmark broke at the commit that blessed it and stayed broken until
  * someone ran it by hand.
  *
@@ -85,7 +85,7 @@ function isError(line: string, path: string): boolean {
 
 /**
  * The fixtures whose blessed expectation shows no error — the ones a harness may compile
- * and render without a diagnostic. Warnings do not disqualify a case (∆VNk): cases
+ * and render without a diagnostic. Warnings do not disqualify a case (`∆VNk`): cases
  * under `render/` and `document/` warn and render clean, some of them outside any
  * `warnings/` directory.
  *

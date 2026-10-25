@@ -7,7 +7,7 @@
 //! annotation.
 //!
 //! An entry that takes a function runs it through the VM mid-instruction ([`Machine`]), so
-//! an error inside the function keeps the function's own span (invariant 8, ∆987).
+//! an error inside the function keeps the function's own span (invariant 8, `∆987`).
 
 use std::rc::Rc;
 

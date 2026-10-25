@@ -1,10 +1,10 @@
 /**
- * The ∆xWs proof: renders limulus.net's `the-rebound` post end to end through the WASM
+ * The `∆xWs` proof: renders limulus.net's `the-rebound` post end to end through the WASM
  * core — document mode for the post body, then a base→page→article layout chain — and
  * holds the result against the 11ty-built reference in tests/fidelity/the-rebound/.
  *
  * The two pages are compared as what a browser would render, not as bytes (D28,
- * ∆Ma4): parse5 trees, attributes by value, text after white-space processing. Every
+ * `∆Ma4`): parse5 trees, attributes by value, text after white-space processing. Every
  * remaining difference must be one of the forgiveness classes below (markdown-engine
  * and WebC deltas the harness accepts), and each must fire exactly as often as
  * `EXPECTED_FORGIVEN` says; anything else exits non-zero.
@@ -252,7 +252,7 @@ const FORGIVENESS: Forgiveness[] = [
  * How often each class is expected to fire, checked in both modes. A class that forgives
  * fewer differences than this already fails, because the one it stopped absorbing
  * becomes unexpected; a class that starts absorbing more than it explains is silent
- * without these numbers, which is the half ∆xWs's retrospective says nothing made it
+ * without these numbers, which is the half `∆xWs`'s retrospective says nothing made it
  * look at. A name on one side only is a mismatch too: a new class that forgave
  * something, or one of these that forgave nothing.
  */

@@ -1,4 +1,4 @@
-//! The loader behind `loadData`: what fulfils the typed content model (∆iCW, D37,
+//! The loader behind `loadData`: what fulfils the typed content model (`∆iCW`, D37,
 //! `docs/language.md` §Schemas, §Ambient types).
 //!
 //! A host hands the loader plain values — the JSON it parsed from front matter, data

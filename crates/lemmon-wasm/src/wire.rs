@@ -172,7 +172,7 @@ pub(crate) struct HostInput {
 /// producer, the keys it covers; the record a mark of the name carries; and which field
 /// of that record holds a mark's key. A claim without `keys` covers every key of its
 /// name; one with `keys`, even an empty list, covers only those, which is how a host keeps
-/// a key no producer lists warned at (the shell sends a list for every handler, ∆F4y).
+/// a key no producer lists warned at (the shell sends a list for every handler, `∆F4y`).
 /// Several claims for one name are merged, and two naming different payloads are refused.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
@@ -770,7 +770,7 @@ impl Diagnostic {
 
 /// Everything a render returns except the page itself: the ranges the host's handlers
 /// fill, what its collect blocks gathered, and the runtime diagnostic where it failed.
-/// `deps` (∆xBO) is an additive field that arrives with that item.
+/// `deps` (`∆xBO`) is an additive field that arrives with that item.
 ///
 /// `marks` and `fragments` are `null` exactly when the render failed, which is also when
 /// there are no page bytes — an empty page is an empty section, not a missing one.
@@ -978,7 +978,8 @@ fn value_from_json(json: &serde_json::Value) -> Value {
 /// What `compile` returns (D42): the diagnostics about the files it was given, what
 /// their code blocks hand the host's producers — each payload once, whichever of the
 /// files wrote it — and, from a compile that installed a program, every `from` binding
-/// the host fulfils for it (∆muD). ∆Qr2 adds each unit's compile-time facts beside them.
+/// the host fulfils for it (`∆muD`). `∆Qr2` adds each unit's compile-time facts beside
+/// them.
 #[derive(Serialize)]
 pub(crate) struct CompileOut {
     pub(crate) diagnostics: Vec<Diagnostic>,

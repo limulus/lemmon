@@ -35,7 +35,7 @@ pub(crate) enum BindingKind {
     /// A `lem-fn`'s or lambda's parameter.
     Parameter,
     /// A name the language binds rather than the author — `self`, `path`, and `body`
-    /// in a field's default (∆iCW) — which no rule refuses and no rule warns about.
+    /// in a field's default (`∆iCW`) — which no rule refuses and no rule warns about.
     Implicit,
     /// A `lem-for`'s value, key, or index — an unused index or key is the common case,
     /// so these never warn.

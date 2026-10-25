@@ -90,7 +90,7 @@ export interface CheckResult {
 /**
  * A call into the core that never returned, which leaves the `.wasm` instance it ran in
  * unable to run anything again in this process: a trap, or an error raised inside the
- * instance, such as V8's stack overflow (∆ugN). Its `cause` is what the call threw.
+ * instance, such as V8's stack overflow (`∆ugN`). Its `cause` is what the call threw.
  * Known by the core refusing to be freed after it, since the call still holds it.
  */
 export class CoreTrapped extends Error {

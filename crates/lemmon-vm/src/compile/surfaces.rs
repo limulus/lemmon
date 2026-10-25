@@ -301,7 +301,7 @@ fn collect_declarations(
 /// that value has: one field per `lem-let`, in binding order (D30, D36).
 ///
 /// Read from the heads alone, like every other cross-file surface: a void binding
-/// declares its type, a `from` binding already had to (∆1vS), and a capture body is
+/// declares its type, a `from` binding already had to (`∆1vS`), and a capture body is
 /// `html` by its shape. The record is named by the file's own path, which no `lem-type`
 /// can collide with, so it needs no rule to keep it out of the type namespace.
 fn collect_bindings(

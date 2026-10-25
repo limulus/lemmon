@@ -63,7 +63,7 @@ impl Builtin {
 
     /// Why an opaque builtin is refused: the tail of its diagnostic, naming the backlog
     /// item that gives it meaning. The phrase and the item share a row so that the
-    /// placeholder gate (∆DA2) can see them together and fail the build once that item
+    /// placeholder gate (`∆DA2`) can see them together and fail the build once that item
     /// has landed and the refusal has outlived it. Every opaque builtin is void.
     fn unsupported(self) -> &'static str {
         match self {

@@ -48,7 +48,7 @@ const MAX_DEPTH: usize = 256;
 /// [`MAX_DEPTH`] counts frames, which cost heap; this counts the times an entry like
 /// `map` has called the VM's loop from inside its own `CallBuiltin` step, which costs
 /// the machine's own stack — `step` → the entry → [`Machine::invoke`] → `run_until` →
-/// `step` again (∆987). One cap cannot do both jobs: a page nesting components deeply
+/// `step` again (`∆987`). One cap cannot do both jobs: a page nesting components deeply
 /// wants a generous frame count, while the `.wasm` has a megabyte of native stack,
 /// pinned in `crates/lemmon-wasm/build.rs`, with no way to ask for more and no
 /// diagnostic if it runs out.

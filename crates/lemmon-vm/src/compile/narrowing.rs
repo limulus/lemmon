@@ -119,7 +119,7 @@ impl Compiler<'_> {
     }
     /// The root `expr` names bare — a local or an ambient value, parenthesised or not
     /// — the one shape whose fields decide when the loader may run a function, and
-    /// the one shape a call hands a root whole (∆HF0). Peeked, as [`Self::path_of`]
+    /// the one shape a call hands a root whole (`∆HF0`). Peeked, as [`Self::path_of`]
     /// peeks, and cheaper: nothing about the value is wanted, only its root.
     pub(super) fn bare_root(&self, expr: &Expr) -> Option<PathRoot> {
         let Expr::Name(name) = unparen(expr.clone()) else {
