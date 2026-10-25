@@ -1,13 +1,13 @@
 # D29 — Type bodies
 
-- **Status:** Accepted 2026-08-26 (∆up2); field order extended with `from` by D30 on
+- **Status:** Accepted 2026-08-26 (`∆up2`); field order extended with `from` by D30 on
   2026-08-28, and restored the same day when D30's revision moved `from` to `lem-let`
-- **Backlog item:** ∆up2
+- **Backlog item:** `∆up2`
 - **Normative text:** `docs/language.md` § Scanner (fields mode); § Types › Schemas
 
 ## Context
 
-∆up2 was the first time the parser had to read a `lem-type` body. The scanner drops back
+`∆up2` was the first time the parser had to read a `lem-type` body. The scanner drops back
 to text mode after every block head, but a field list is expression-language tokens where
 newlines matter — the scanner's two modes were one short.
 

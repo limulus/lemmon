@@ -137,9 +137,10 @@ diagnostic carries follows it on its own line, indented two spaces, as
 so in its trailer, and a rule that warns is tested on both halves — the case it fires on
 and the neighbouring name it must leave alone.
 
-`.tags` is the agreement target for `tree-sitter-lemmon` (∆5MM). A context-free grammar can
-say where a tag begins and ends; it cannot be held to the shape a Pratt parser gave a head,
-so the two parsers can be diffed here without either having to model the other's interior.
+`.tags` is the agreement target for `tree-sitter-lemmon` (`∆5MM`). A context-free grammar
+can say where a tag begins and ends; it cannot be held to the shape a Pratt parser gave a
+head, so the two parsers can be diffed here without either having to model the other's
+interior.
 
 The projection is deliberately _not_ a partition of the file. Trivia between items belongs
 to no boundary, and a void tag whose head the scanner cut ends at the last token its head

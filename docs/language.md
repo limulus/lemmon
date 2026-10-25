@@ -294,7 +294,7 @@ one cannot see the rest of the page, so the count is the VM's. It is still deter
   `R?`), and the index names a field of an ambient value declared `{string: R}` —
   `by site.photos` — checked where the field is declared. Nothing else may stand after
   `by`: the index is a pair the head declares, not an expression the loader runs, so
-  a record's plan depends on nothing a body says (∆eag). The loader looks the
+  a record's plan depends on nothing a body says (`∆eag`). The loader looks the
   front-matter string up in the map as loaded, before any default runs; a miss is a
   load error at the YAML position. A `from` binding whose records index a sibling
   loads after it, which is the one way a record shapes the site's load order; a map
@@ -309,11 +309,11 @@ one cannot see the rest of the page, so the count is the VM's. It is still deter
   type one (see **Ambient types**); on any other record those names are undefined. It
   sees no ambient value — not `site`, not `build`, not the host's document value: a record's
   plan depends on its own declarations alone, and what a page needs of the site its
-  layout reads, taking the record once it is loaded (∆eag). What a default reads
+  layout reads, taking the record once it is loaded (`∆eag`). What a default reads
   through `self` is recorded with it, and so is what it reads through the `lem-fn`s it
   calls by name, however deep: a function handed `self` whole reads its fields on the
   default's behalf, and the link step follows every such call before it orders anything
-  (∆HF0). So a field whose default reads itself through others, through a call or not,
+  (`∆HF0`). So a field whose default reads itself through others, through a call or not,
   is refused at link — the message names the call — and so is a default that reaches
   an ambient value through a call, in the words the compiler uses where the read
   stands; the loader has an order before it runs anything. Only a call written as
@@ -375,7 +375,7 @@ The standard shell (`@limulus/lemmon-shell`) ships this declaration and binds `p
 </lem-type>
 ```
 
-`draft` is D19's flag, which the shell does not yet read (∆Han): a draft is built like any
+`draft` is D19's flag, which the shell does not yet read (`∆Han`): a draft is built like any
 page.
 `inputPath` is the source file's path from the directory holding `lemmon.config.ts`, with
 `/` separators — `www/feed/the-rebound/index.md` — where the core's path starts at the
@@ -409,9 +409,9 @@ is not this: that is a document's prose as comrak rendered it at compile, as `ht
   inferred** below. At this file's top level a sibling binding is read by its bare name
   — `concat(posts, links, tils)` below — and that is the same read as `site.posts`,
   recorded for the loader's order and closed at link through the `lem-fn`s the binding
-  calls by name, as a default's reads are (∆HF0); a `lem-fn` in the file reads
+  calls by name, as a default's reads are (`∆HF0`); a `lem-fn` in the file reads
   `site.posts` as every other file does, and a default there is refused as anywhere
-  (∆eag). A binding here may not read the host's
+  (`∆eag`). A binding here may not read the host's
   document value: it is computed once, before any page is bound, and reaching it
   through a call is refused at link as reading it directly is refused where the read
   stands. The host fulfils a
@@ -854,18 +854,18 @@ the payload field that holds it — `language` on `code`. Written as a literal, 
 checked against the producers' keys while the file compiles, and one none of them covers is
 a **warning** at the key, with a did-you-mean; computed, it is read from the record at
 render, and one no producer lists keeps the default content — a mistake the build does
-not yet report (∆CxX). A claim naming no key field keys none of its marks, so they reach the
-name's keyless producer and every decorator listing no keys — which is what a bundler wants
-— and never a handler that lists keys, which is why the shell refuses keys for a name no
-handler keys by a field. What the claims said about a name *and a key* is the fact (D25), so
-a producer that starts covering one language leaves the files that named it stale, and not
-the files that named another.
+not yet report (`∆CxX`). A claim naming no key field keys none of its marks, so they reach
+the name's keyless producer and every decorator listing no keys — which is what a bundler
+wants — and never a handler that lists keys, which is why the shell refuses keys for a name
+no handler keys by a field. What the claims said about a name *and a key* is the fact (D25),
+so a producer that starts covering one language leaves the files that named it stale, and
+not the files that named another.
 
 A host that claims a name ships an ordinary `lem-fn` wrapping it —
 `<lem-fn styles(): html = mark("styles") />` — so a layout reads `<lem.styles()>` and a
 site author writes the primitive only where no wrapper exists; a plugin's component
 wraps its own mark the same way. No host ships a wrapper yet, since a plugin's `.lem`
-is not yet bound (∆wOn): the shell's default plugin, `bundler()`, ships none, so
+is not yet bound (`∆wOn`): the shell's default plugin, `bundler()`, ships none, so
 `<lem.styles()>` is an undefined name and a layout writes `<lem.mark("styles")>`.
 
 A mark travels on the value it was made in: a captured value carrying marks places them
@@ -1005,4 +1005,4 @@ provisional reading in this file and flag it in the PR:
 - markdown inside a block: a block's body is a template (D39); whether a capture may
   ever hold markdown is open, and both forms D39 considered are additive
 - raw text in templates: a `: string` capture scanned as text, and call-with-body sugar
-  over it, both additive (∆M5x, D42); a multi-line source is a fence in a document
+  over it, both additive (`∆M5x`, D42); a multi-line source is a fence in a document

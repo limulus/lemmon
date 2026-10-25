@@ -1,14 +1,14 @@
 # D43 — Generated pages and their neighbours
 
-- **Status:** Accepted 2026-09-14 while planning ∆c9S; that planning split ∆c9S into ∆Bhz
-  and ∆99b. Closes the three points D41 left open, and revises D30 (`Page` no longer
-  declares `prev`/`next`, and the shell reads the `for:` key) and D36 (the declaration
-  names the url field and the neighbour fields). As built (∆99b, 2026-10-18): the pair
-  crosses as the shell parsed it, on any page's entry, and the loader words every way it
-  can be malformed; a list whose items nothing could check is refused; a message names a
-  generated page by its item; and the other refinements noted in italics below
-- **Backlog item:** ∆Bhz (the url field, `plan()`, page templates and their `body`);
-  ∆99b (the generator key, expansion, neighbours)
+- **Status:** Accepted 2026-09-14 while planning `∆c9S`; that planning split `∆c9S` into
+  `∆Bhz` and `∆99b`. Closes the three points D41 left open, and revises D30 (`Page` no
+  longer declares `prev`/`next`, and the shell reads the `for:` key) and D36 (the
+  declaration names the url field and the neighbour fields). As built (`∆99b`, 2026-10-18):
+  the pair crosses as the shell parsed it, on any page's entry, and the loader words every
+  way it can be malformed; a list whose items nothing could check is refused; a message
+  names a generated page by its item; and the other refinements noted in italics below
+- **Backlog item:** `∆Bhz` (the url field, `plan()`, page templates and their `body`);
+  `∆99b` (the generator key, expansion, neighbours)
 - **Normative text:** `docs/language.md` § Types › Ambient types; `docs/architecture.md`
   § WASM API, § Build pipeline, § VM
 
@@ -62,7 +62,7 @@ list's value as loaded, not a string resolved again as data. A generator's front
 gives neither that field nor the url field, and names its type with `type:`. Its pages
 are built once every bindings file has loaded, so no `from` glob can hold them, and a
 glob that matches a generator is a load error at its `for:` key. An empty list makes no
-pages. _(Refined by ∆99b: the shell sends the pair as it parsed it, `{value, spans,
+pages. _(Refined by `∆99b`: the shell sends the pair as it parsed it, `{value, spans,
 valueSpans}` on the page's entry — `spans` keyed from the value as any table is, `''` the
 whole and `topic` the entry from key through value, and `valueSpans` each entry's value
 alone, so an error about the list underlines `site.tilTopics` and one about the field
@@ -88,7 +88,7 @@ loader builds them, then the pages the envelope carries on their own in its orde
 generator expanded where it stands — as a reference with that field's value. A reference is
 `{path, index?}`, `index` numbering a generator's pages from zero in list order. Two loaded
 pages at one url is a load error at the second, labelled at the first. _(Refined by
-∆99b: two pages of one generator at one url are its url default's one mistake, however
+`∆99b`: two pages of one generator at one url are its url default's one mistake, however
 many items share the url — said once, of the first two, at the `for:` entry, which both
 stand at, so with no label pointing back at it. A generated page's url diagnostics stand
 at its `for:` entry, since its pages share the front matter.)_
@@ -101,7 +101,7 @@ declared, as it checks the entry field. On a generated page the loader fills the
 previous and next pages of its generator, in list order; the first page has no previous, the
 last no next, and every page that is not generated has neither. A page of one generator
 always has that generator's type, so the declared type holds, and a photo template reads
-`page.prev.title` with nothing narrowed. _(Refined by ∆99b: the rule is a page type's
+`page.prev.title` with nothing narrowed. _(Refined by `∆99b`: the rule is a page type's
 alone — the document type and every record extending it — so a record no page has may
 declare a `prev` of any type; each neighbour field stands on its own, so a type may
 declare only `next`; and a neighbour field takes no default, which the fill would
@@ -119,7 +119,7 @@ the field yields that page's record, so no record holds another, no cycle is bui
 since the loader fills them after every page of the generator is built. The read is
 refused where it stands, or at link when it goes through a call, as a default's read of
 `page` is. Front matter cannot give one, since a page record never nests in another's
-front matter (D37). _(Refined by ∆99b: the link step asks the question anew on every
+front matter (D37). _(Refined by `∆99b`: the link step asks the question anew on every
 link rather than reading a fact the unit recorded, as it does of the url and entry
 fields, so a relink under a declaration that newly names the fields finds a direct read
 too. A page's neighbour fields hold a reference to no page while its defaults run, not
@@ -171,18 +171,18 @@ not refused.
   (`url`), and the neighbours (`prev`, `next`), which only a generated page's type
   declares.
 - D36's declaration grows two optional names; a unit that reads a neighbour field depends
-  on the declaration as a unit that read an ambient name does. _(Revised by ∆99b: not as
+  on the declaration as a unit that read an ambient name does. _(Revised by `∆99b`: not as
   a recorded fact — the link step judges every default's reads, closed through its calls,
   against the declaration on every link, which a fact would only repeat.)_
 - The store keeps its pages in the order `plan()` reports them, each with its record and
   reference, rather than one record per document path.
 - The VM gains a reference value that only a neighbour field holds and a field read
   resolves. `render` needs the store's page table beside the globals.
-- ∆Bhz builds the url field, `plan()` for static pages and documents, page templates (D41),
-  and the `body` refusal; ∆99b builds `for:`, expansion, neighbours, and `index` on the
-  reference. ∆ePP ports the photo and TIL topic pages on both _(∆ePP is now ∆hvm)_. The
-  shell's half — reading and stripping `for:`, and sending every page no glob holds in the
-  envelope's own section — belongs to the shell's front-matter reader (∆4tG).
+- `∆Bhz` builds the url field, `plan()` for static pages and documents, page templates
+  (D41), and the `body` refusal; `∆99b` builds `for:`, expansion, neighbours, and `index` on
+  the reference. `∆ePP` ports the photo and TIL topic pages on both _(`∆ePP` is now
+  `∆hvm`)_. The shell's half — reading and stripping `for:`, and sending every page no glob
+  holds in the envelope's own section — belongs to the shell's front-matter reader (`∆4tG`).
 - `docs/artifact-changes.md` records what the three artifacts must say: the photo page
   port's front matter and its `PhotoPage` neighbour fields, the declaration's new names,
   and `plan()`'s result.

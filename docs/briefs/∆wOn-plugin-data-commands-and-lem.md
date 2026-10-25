@@ -31,7 +31,7 @@ ships values or `.lem` a site cannot write itself.
 - D23's qualified access, `lem.photos.picture(…)`, meets D34, where `.` asks the receiver's
   type and nothing else; docs/language.md lets only an enum name answer `Name.x` first, and
   its own example uses `photos` both as a `from plugin("photos")` binding and as an import
-  name (∆bah). Settle that first, with its decision record.
+  name (`∆bah`). Settle that first, with its decision record.
 - The core already takes `plugin("…")` sources: parsed, reported as
   `FromBinding.kind: 'plugin'`, fulfilled by `{value}` in `DataInput.sources`, a load
   error placed at the binding (D37). The shell refuses them today (`load.ts`); how a

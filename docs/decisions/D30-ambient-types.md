@@ -4,14 +4,14 @@
   names a site declares and the checker holds to a core contract, `Page.data` for the
   site's own record, `from` as a field clause — and revised the same day, before any of it
   was implemented, to host-declared ambient types; the `from` clause parsed and
-  `lem-collection`/`lem-data` retired 2026-09-04 (∆1vS), which chose `env("…")` for
-  environment values; revised 2026-09-13 (∆RGQ) — a template's page fields are its front
+  `lem-collection`/`lem-data` retired 2026-09-04 (`∆1vS`), which chose `env("…")` for
+  environment values; revised 2026-09-13 (`∆RGQ`) — a template's page fields are its front
   matter, as a document's are, and `lem-page` is retired (D41); revised 2026-09-14 (D43) —
   `Page` declares no `prev`/`next`, a generated page's type declaring its own neighbours;
   the shell reads the `for:` key as well as `type:`, and its declaration names the url and
   neighbour fields beside the entry
-- **Backlog item:** ∆1vS (the `from` binding clause, retiring `lem-collection`/`lem-data`);
-  ∆RGQ (retiring `lem-page`, D41)
+- **Backlog item:** `∆1vS` (the `from` binding clause, retiring
+  `lem-collection`/`lem-data`); `∆RGQ` (retiring `lem-page`, D41)
 - **Normative text:** `docs/language.md` § Types › Ambient types
 
 ## Context
@@ -84,25 +84,25 @@ declaring `Page` (`url`, `inputPath`, `draft`; `prev` and `next` until D43) and 
   `for:` key, and the url and neighbour fields its declaration names.)
 - Documents are typed per file, so the shell compiles templates without front matter
   first, reads the `from` bindings `site.lem` reports, matches documents and page
-  templates (D41) to those globs, and compiles each with its record (∆4tG); ∆Bhz makes
+  templates (D41) to those globs, and compiles each with its record (`∆4tG`); `∆Bhz` makes
   `render` call the function in each page's entry field.
 - Environment values — the first form's `Build.env` — become a `from` source on `site`:
-  `<lem-let siteUrl: url from env("SITE_URL") />` (∆1vS). The same shape as
+  `<lem-let siteUrl: url from env("SITE_URL") />` (`∆1vS`). The same shape as
   `plugin("…")`, a call naming a host source with a literal argument, so the core
   still names nothing: `env.SITE_URL` would have made `env` a value the core knows,
   and a `lem-env` tag a builtin for a value the host produces. The environment reaches
   the core as data like every ambient value, and the shell resolves what it holds by
   the binding's type.
-- `lem init`'s scaffold supplies a blog's conventions, since the core has none (∆V7i).
+- `lem init`'s scaffold supplies a blog's conventions, since the core has none (`∆V7i`).
 - A subtype that redeclares `layout` with its own parameter type — `Article`'s
   `(Article, html): html` over a site base record's `(SitePage, html): html` — narrows a
   parameter, which ordinary subtyping forbids. The field is only ever called with its own
-  record, so ∆cea had to decide whether `layout` gets that rule or each leaf schema
+  record, so `∆cea` had to decide whether `layout` gets that rule or each leaf schema
   declares it. D32 decided: neither. A subtype may not redeclare a field with another
   type, so `layout` is declared once, where its self type is, and inherited below it.
 - A feed reads other pages' rendered bodies (`a.body` for each article), and `body` is
   no longer a `Page` field. A rendered document body as a value needs a form of its own
-  (∆ePP, ∆c9S). D42 gave it one: a string of the page's finished output — rendered,
+  (`∆ePP`, `∆c9S`). D42 gave it one: a string of the page's finished output — rendered,
   spliced, transformed — loaded back as a data source for a second render phase, never
   an `html` value carrying marks. D46 refined it: a document's body rendered alone and
   finished in the shell, a string in `build.bodies` by its page's url, bound before
@@ -110,4 +110,4 @@ declaring `Page` (`url`, `inputPath`, `draft`; `prev` and `next` until D43) and 
 - The spike is untouched: its ambient fields are ad hoc and unknown-typed, which is the
   fallback this decision keeps.
 - D19 and D23 gain a clause; D29's field order loses the `from` clause the first form
-  added; ∆C8d and ∆iCW are reworded.
+  added; `∆C8d` and `∆iCW` are reworded.

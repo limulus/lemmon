@@ -1,22 +1,22 @@
 # D41 — Pages from front matter
 
-- **Status:** Accepted 2026-09-13 (∆RGQ), revising D30; the generator key's name and who
-  reads it, left to ∆c9S, settled 2026-09-14 by D43 — the planning that split ∆c9S. As
-  built (∆Bhz, 2026-09-18): one textual rule finds the block in both modes, and a
+- **Status:** Accepted 2026-09-13 (`∆RGQ`), revising D30; the generator key's name and who
+  reads it, left to `∆c9S`, settled 2026-09-14 by D43 — the planning that split `∆c9S`. As
+  built (`∆Bhz`, 2026-09-18): one textual rule finds the block in both modes, and a
   block that never closes is an error at its opening line rather than a rule and
   prose, in a `.md` too; a page template renders through its layout with its output
   as the body, in one VM run with the layout —
-  settled with Eric 2026-09-17. As built (∆99b, 2026-10-18): generators, with the
+  settled with Eric 2026-09-17. As built (`∆99b`, 2026-10-18): generators, with the
   refinements D43 records
-- **Backlog item:** ∆RGQ (settled it); ∆Bhz (page templates) and ∆99b (generators) build
-  it
+- **Backlog item:** `∆RGQ` (settled it); `∆Bhz` (page templates) and `∆99b` (generators)
+  build it
 - **Normative text:** `docs/language.md` § Types › Ambient types
 
 ## Context
 
 The docs gave a `.lem` file a page-header tag, `lem-page`, whose `name = expr` bindings
 were the page's own fields — the template's counterpart to a document's front matter —
-and whose `for x in xs` clause made one page per item. Planning ∆RGQ asked why a template
+and whose `for x in xs` clause made one page per item. Planning `∆RGQ` asked why a template
 needs a tag when a document already becomes a page through front matter.
 
 limulus.net answered it. Besides its markdown, the site has eight static pages written
@@ -76,16 +76,17 @@ provisionally.
   (D37), skips the leading `---` block, and validates what the shell sends at the shell's
   positions. So the order D30 describes becomes: templates without front matter first,
   `ambient.lem` and `site.lem` among them; then documents and page templates, matched
-  against the `from` globs `site.lem` reports and compiled with their records (∆4tG).
+  against the `from` globs `site.lem` reports and compiled with their records (`∆4tG`).
 - This record left three things open, and D43 settled them: the key is `for:`, with one
   entry naming a field and an `<ambient value>.<field>` list, as a `by` head names a map;
   the shell reads and strips it as it strips `type:`; the loader checks it. D43 also
   moved neighbours from the shell's `Page` to the page types that want them.
-- ∆Bhz makes the scanner treat a `.lem` file's leading `---` block as front matter and
-  renders a page template through its layout; ∆99b expands generators and gives `plan()`
+- `∆Bhz` makes the scanner treat a `.lem` file's leading `---` block as front matter and
+  renders a page template through its layout; `∆99b` expands generators and gives `plan()`
   their pages.
 - A page with several items, such as ten posts per archive page, is additive later; both
   limulus.net generators make one page per item.
-- ∆ePP ports the photo and TIL topic pages as generator templates _(∆ePP is now ∆hvm)_.
+- `∆ePP` ports the photo and TIL topic pages as generator templates _(`∆ePP` is now
+  `∆hvm`)_.
 - `docs/artifact-changes.md` records what the three artifacts must say about page
   templates and generators.

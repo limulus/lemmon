@@ -1,13 +1,13 @@
 # D27 — Statement lines
 
-- **Status:** Accepted 2026-08-24 (∆2vO), widening the void-tag-only line rule from ∆c8h;
-  (∆1Hp) the collect tags `lem-style`, `lem-head` and `lem-script` take their line
-- **Backlog item:** ∆2vO
+- **Status:** Accepted 2026-08-24 (`∆2vO`), widening the void-tag-only line rule from
+  `∆c8h`; (`∆1Hp`) the collect tags `lem-style`, `lem-head` and `lem-script` take their line
+- **Backlog item:** `∆2vO`
 - **Normative text:** `docs/language.md` § Whitespace
 
 ## Context
 
-The line rule from ∆c8h covered void keyword tags: a `<lem-let x = e />` alone on its
+The line rule from `∆c8h` covered void keyword tags: a `<lem-let x = e />` alone on its
 line took the line with it. A block `lem-fn` or a `lem-let` capture renders nothing where
 it stands either, and once D26 landed a file of component definitions was still leaking a
 blank line per definition — `render/canonical/article-card.html` opened with six of
@@ -26,7 +26,7 @@ render their bodies and keep theirs.
 ## Alternatives considered
 
 - **File the widening as its own backlog item.** Rejected: one line of code plus docs
-  inside ∆2vO, against a second full re-bless of every `.html` if done separately.
+  inside `∆2vO`, against a second full re-bless of every `.html` if done separately.
 
 ## Consequences
 

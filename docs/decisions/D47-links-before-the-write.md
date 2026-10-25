@@ -1,9 +1,9 @@
 # D47 — Every link resolves before anything is written
 
-- **Status:** Accepted 2026-10-19, planned the same day and settled while building ∆yOJ;
+- **Status:** Accepted 2026-10-19, planned the same day and settled while building `∆yOJ`;
   moves the architecture's link/asset integrity check from Post-process, after the write,
   to a Check step before it, and retires Post-process
-- **Backlog item:** ∆yOJ
+- **Backlog item:** `∆yOJ`
 - **Normative text:** `docs/architecture.md` § Build pipeline (step 8);
   `packages/shell/README.md` § `lem build` (step 7), and the config's `served`
 
@@ -12,7 +12,7 @@
 The architecture put a link/asset integrity check in step 9, Post-process, after the
 write — against the shell's rule that every check runs before anything is written, and
 that `lem check` reports what a build would. Mapped over the limulus-dot-net port's output
-on 2026-10-18, 115 of 4,025 references were broken, across four targets; the feeds (∆zu0)
+on 2026-10-18, 115 of 4,025 references were broken, across four targets; the feeds (`∆zu0`)
 cleared 112. What remained was a redirect, `https://limulus.net/@eric`, which CloudFront's
 function answers with no file; a live content bug, `[wonderful essay](link)`; and
 `#fn2`, a footnote comrak names by its label. Reading the feeds as XML on 2026-10-19 found
@@ -142,13 +142,13 @@ that page is its own.
 
 ## Consequences
 
-- ∆yOJ builds `links.ts` (the table and the `srcset` and `ping` splitting rebase.ts held,
+- `∆yOJ` builds `links.ts` (the table and the `srcset` and `ping` splitting rebase.ts held,
   whose walk now keeps a stack of its own too),
   `link-scan.ts`, `link-check.ts`, `OutputFiles.find`, the url on each `Output`, the
   manifest's `mappedBy`, and `served`; the shell depends on `@csstools/css-tokenizer` 4
   and `@xmldom/xmldom` 0.9.
 - The pipeline's step 8 is the Check and step 9 the Write; Post-process is gone. An output
-  transform (∆fwn), when built, runs between Resolve and the Check, since the check reads
+  transform (`∆fwn`), when built, runs between Resolve and the Check, since the check reads
   what is written.
 - The limulus-dot-net port lists `served: ['/@eric']`; its feeds' alternate links end in
   `/`; make-ai-boring-again links `#fn-out-of-scope`; the essay's `(link)` is fixed on
@@ -164,4 +164,4 @@ that page is its own.
 - Cost, on a copy of the port: about 4,100 links in 59 pages, 37 asset files and 10
   stylesheets; the check takes about 65 ms in a fresh process and 40–46 ms warm, so
   `lem build` goes from about 0.75 s to 0.82 s and a `lem dev` rebuild from about 440 ms
-  to 490 ms, still under the second at which ∆xBO opens.
+  to 490 ms, still under the second at which `∆xBO` opens.

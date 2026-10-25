@@ -1,8 +1,8 @@
 # D31 — Check while lowering
 
-- **Status:** Accepted 2026-09-06 (∆C8d); the layout consequence below restated
-  2026-09-07 (∆FQw) as the walk was split across more modules
-- **Backlog item:** ∆C8d
+- **Status:** Accepted 2026-09-06 (`∆C8d`); the layout consequence below restated
+  2026-09-07 (`∆FQw`) as the walk was split across more modules
+- **Backlog item:** `∆C8d`
 - **Normative text:** `docs/language.md` § Types › Checking; `docs/architecture.md`
   § Build pipeline (step 3)
 
@@ -11,10 +11,10 @@
 The architecture set lists the core's stages as scanner → parser → checker → compiler →
 VM, and the checker was sequenced as its own backlog item after codegen. When it came to
 be written, the compiler already walked every item and head in evaluation order with one
-resolver (∆e4d) and one export index (∆e5i), and the only consumer a separate checker's
+resolver (`∆e4d`) and one export index (`∆e5i`), and the only consumer a separate checker's
 output would have had was codegen — which, for this item, needed nothing from it: no
 instruction changes when a type is known, and typed lowering (record fields by index, the
-`TypeTest` op) is ∆PCK's (landed: D35, which took `TypeTest` and left the field index
+`TypeTest` op) is `∆PCK`'s (landed: D35, which took `TypeTest` and left the field index
 as an optimisation nothing needs). A separate pass would have re-walked the tree with a
 second scoping that had to agree with codegen's, and produced a per-node type table
 nothing read.
@@ -33,8 +33,8 @@ reported, because an expression that failed types as `any` and lowering goes on.
 ## Alternatives considered
 
 - **A separate checker pass over the AST, before codegen.** Rejected: a second walk with
-  its own scoping — the two-views shape ∆e4d and ∆e5i had just removed — and a
-  `SyntaxNodePtr → Type` side table with no reader until ∆PCK (which, landed, read
+  its own scoping — the two-views shape `∆e4d` and `∆e5i` had just removed — and a
+  `SyntaxNodePtr → Type` side table with no reader until `∆PCK` (which, landed, read
   none: D35). The repo's rule that a
   recorded fact needs a consumer applied to the table as a whole.
 - **A checker over compiled units.** Rejected: bytecode has lost the shape the rules are
@@ -43,20 +43,20 @@ reported, because an expression that failed types as `any` and lowering goes on.
 
 ## Consequences
 
-- Typed lowering falls out: when ∆PCK needs a record's field index or a `TypeTest`
-  operand, the type is in hand at the emit site. (∆PCK took the `TypeTest` operand from
+- Typed lowering falls out: when `∆PCK` needs a record's field index or a `TypeTest`
+  operand, the type is in hand at the emit site. (`∆PCK` took the `TypeTest` operand from
   there; fields are still read by name — D35.)
-- The LSP's hover (∆5MM) will want a per-node type table; it is added as a recording
+- The LSP's hover (`∆5MM`) will want a per-node type table; it is added as a recording
   flag on the same walk, with its reader, not before.
 - The rules are applied where the lowering they guard happens, but they are not
   written there: the walk emits, asks, and reports, and the rules it asks — operator,
   member, index, condition, print, iteration, arity — are pure functions from types to a
-  type or a message in `compile/rules.rs`, testable without compiling a template (∆2c6).
+  type or a message in `compile/rules.rs`, testable without compiling a template (`∆2c6`).
   The relations they are built on — `Type`, `assignable`, `join` — are a module of their
   own (`crates/lemmon-vm/src/types.rs`), and annotations resolve in another. A rule that
-  needs a declaration table (∆cea's field and variant rules) takes it as an argument.
+  needs a declaration table (`∆cea`'s field and variant rules) takes it as an argument.
 - The walk is one `Compiler` across several modules, each an `impl` block of its own
-  (∆FQw): `compile/items.rs` lowers what stands in a body, `compile/expr.rs` the heads,
+  (`∆FQw`): `compile/items.rs` lowers what stands in a body, `compile/expr.rs` the heads,
   `compile/calls.rs` the argument lists among them, and `compile/narrowing.rs` what a
   condition proves for the arm it guards. What a file offers other files is read from
   its heads before any of that, in `compile/surfaces.rs`, and checked against the index

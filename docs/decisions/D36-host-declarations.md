@@ -1,12 +1,12 @@
 # D36 — The host declaration and the surfaces a file offers
 
-- **Status:** Accepted 2026-09-07 (∆Iau); revised 2026-09-14 (D43) — the declaration
+- **Status:** Accepted 2026-09-07 (`∆Iau`); revised 2026-09-14 (D43) — the declaration
   also names the field a page's url is in and the two neighbour fields. As built
-  (∆Bhz, 2026-09-18): `url` is checked at link, with the entry field, so a
+  (`∆Bhz`, 2026-09-18): `url` is checked at link, with the entry field, so a
   declaration-only change is caught on the relink that recompiles nothing. As built
-  (∆99b, 2026-10-18): `neighbours` likewise — each field's type and default, and a
+  (`∆99b`, 2026-10-18): `neighbours` likewise — each field's type and default, and a
   default's read of one, are checked at link on every link, with no fact recorded
-- **Backlog item:** ∆Iau
+- **Backlog item:** `∆Iau`
 - **Normative text:** `docs/language.md` § Ambient types (including **Declared, not
   inferred**), § Tags (`lem-let` row); `docs/architecture.md` § WASM API
 
@@ -16,7 +16,7 @@ D30 settled that the core knows no type or value by name: a host declares its am
 environment in Lemmon, compiled with the program. It left the shape of that declaration,
 and one question the implementation could not avoid — where the fields of `site` come
 from. `site` is the record of the bindings file's top-level `lem-let`s, and a `from`
-binding already declares its type (∆1vS), but a computed `= expr` binding did not.
+binding already declares its type (`∆1vS`), but a computed `= expr` binding did not.
 
 Nothing about typing such an expression is hard; the difficulty is *when* its type
 exists. Compilation runs in two phases: `prepare` reads every file's signatures and
@@ -59,7 +59,7 @@ document's front matter, since that is where a `type:` key naming it stands. A d
 the host gave no record reads the document value unknown-typed (D30), while a template
 with no front matter keeps the declared type (D41, D43).
 
-**Tagging loaded data stays with the loader (∆iCW), revising D35.** Ambient values are
+**Tagging loaded data stays with the loader (`∆iCW`), revising D35.** Ambient values are
 typed for checking here and untagged at run time, so a type test over one is still the
 render error D35 specifies.
 
@@ -83,7 +83,7 @@ render error D35 specifies.
   Rejected after it broke the base a page schema extends: the file's view answers what a
   name means *here*, and the declaration keeps answering what the host declared.
 - **Tagging ambient values from JSON in this item** (D35's original pointer). Rejected:
-  which record `page` carries is per page, and only the record store ∆iCW builds knows
+  which record `page` carries is per page, and only the record store `∆iCW` builds knows
   it; tagging without validation would be half a loader in the wrong item.
 
 ## Consequences
@@ -99,7 +99,7 @@ render error D35 specifies.
 - `tests/corpus/host/` is a fourth corpus group, compiled against the environment files
   in `host/environment/`; `render/` and `document/` keep an untyped host, which stays a
   real configuration.
-- ∆iCW inherits the tagging clause of D35 along with validation, defaults, and
+- `∆iCW` inherits the tagging clause of D35 along with validation, defaults, and
   references.
 - `docs/artifact-changes.md` carries the WASM API's declaration, the ambient-type rules,
-  and the moved tagging pointer for ∆MlD.
+  and the moved tagging pointer for `∆MlD`.

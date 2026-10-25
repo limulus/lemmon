@@ -538,14 +538,14 @@ it no glob matches anything.
 ### Not yet
 
 - **Computed mark keys.** A key a template computes and no producer lists keeps the
-  default content, unreported: ∆CxX.
+  default content, unreported: `∆CxX`.
 - **Plugins.** A plugin has no data hook and no `lem` command, it ships no `.lem` — so
   no wrapper such as `<lem.styles()>` — and a `from plugin("…")` binding is an error at
-  the binding: ∆wOn.
+  the binding: `∆wOn`.
 - **Drafts.** `draft: true` is built like any page; `--drafts` and leaving drafts out
-  are ∆Han, in Someday/Maybe.
-- **The rest of the pipeline.** No output transform (∆fwn), and no worker pool or
-  incremental rebuild (∆xBO): every build compiles and renders everything in one core,
+  are `∆Han`, in Someday/Maybe.
+- **The rest of the pipeline.** No output transform (`∆fwn`), and no worker pool or
+  incremental rebuild (`∆xBO`): every build compiles and renders everything in one core,
   `lem dev`'s rebuilds among them.
 
 ## `lem check [--config <path>]`

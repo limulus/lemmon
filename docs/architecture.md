@@ -93,7 +93,7 @@ did-you-mean, recording the answer about that word as the document's compile-tim
 A host that declares no producer for a language gets the block as comrak writes it and
 a warning at the word.
 
-∆TNT built the `compile`/`loadData`/`render` subset of that class (plus `version`), and
+`∆TNT` built the `compile`/`loadData`/`render` subset of that class (plus `version`), and
 settled the spike shapes the sketch left open — each chosen so the full form is additive,
 not a break:
 
@@ -111,11 +111,11 @@ not a break:
   the document type, strictly, since a list of the document type itself is a compile
   error at the binding's type — so the core, which knows the types, tells a glob from a
   data file and the host does not repeat the rule. `path` and `span` place the
-  binding's name, where a host reports a source it cannot fulfil (∆muD). ∆Qr2 adds
+  binding's name, where a host reports a source it cannot fulfil (`∆muD`). `∆Qr2` adds
   `facts` beside them. A declaration whose claims cannot be merged — two naming
   different payloads or key fields for one name, or a key field with no payload — is a
   thrown caller bug.
-- `DataInput` is `{ambient, sources?}` (D37, ∆iCW): `ambient` is bare JSON by any name
+- `DataInput` is `{ambient, sources?}` (D37, `∆iCW`): `ambient` is bare JSON by any name
   the host bound — an untyped host's values pass through as sent — and `sources` fulfils
   each `from` binding by name: a list of `{path, value, spans}` for a glob, one such for
   a data file, `{value}` for a plugin or env source, where `spans` maps a field path to a
@@ -165,7 +165,7 @@ not a break:
   asset and a datetime (RFC 3339) as strings, a duration as its whole seconds, and a
   record as the object of its fields in declared order; the VM refuses, at the call, a
   payload holding a mark, a function, or a float that is not a finite number. A
-  fragment is `{text, path, span}`. `deps` is omitted until ∆xBO, not stubbed. A loaded
+  fragment is `{text, path, span}`. `deps` is omitted until `∆xBO`, not stubbed. A loaded
   page renders with the host's document value bound to its own record from the store,
   its file's output passed as `body` to the entry field's function, in one run of the
   VM; any other file — a template with no front matter, or a document or page template
@@ -182,7 +182,7 @@ not a break:
   `severity` is `error` or `warning` — a program is still produced
   when the only diagnostics are warnings — and `labels` are the secondary spans, each
   `{path, span, message}`, pointing at the same kind of thing the primary span does (a
-  name, not a whole definition) (∆VNk). A `code` would be an additive field; nothing
+  name, not a whole definition) (`∆VNk`). A `code` would be an additive field; nothing
   consumes one yet. `compile`'s diagnostics describe the files passed to that call, plus
   any resident unit the relink found stale; a resident file's warnings are reported once,
   by the call that compiled it, so a shell that shows warnings keeps them per path.
@@ -240,7 +240,7 @@ not a break:
    neighbours filled once every page of it is built, and refuse two pages at one url
    (D43). Failures point at the YAML positions the shell sent with the data.
 5. **Plan** (core) — list every loaded page with its url, from the field the host named
-   (D43); deps come with ∆xBO. A file with no record — a document or
+   (D43); deps come with `∆xBO`. A file with no record — a document or
    page template no glob matched and no `type:` named — is no page: `plan()` omits it,
    and the shell renders it with `render({path})` at the url it derives.
 6. **Render × N** (core) — first the body pass (shell, D46): each document the load made
@@ -262,7 +262,7 @@ not a break:
    `esbuild()` builds — the files producers wrote — the per-page CSS bundles `bundler()`
    writes under `/assets/immutable/bundle/` — and passthrough.
 
-What `lem build` (∆muD) runs is steps 1–9, step 2 but its data hooks, in one core on one
+What `lem build` (`∆muD`) runs is steps 1–9, step 2 but its data hooks, in one core on one
 thread. `lem check` runs the same and stops before the first write, so it reports every
 diagnostic a build would, render errors, output collisions and broken links included; it
 never touches the output directory, so a write the file system refuses is found only by
@@ -429,12 +429,12 @@ its files come out byte for byte Eleventy's, wherever the checkout is, so long a
 writes its path into the map as it is: one holding a `"`, a `\` or a character outside
 ASCII is escaped there, and stays absolute, on both sides.
 
-- Step 2's data hooks are not yet run (∆wOn), so a `plugin("…")` source is an error at
+- Step 2's data hooks are not yet run (`∆wOn`), so a `plugin("…")` source is an error at
   its binding.
-- An output transform is not yet run (∆fwn): one would run over each page between steps
+- An output transform is not yet run (`∆fwn`): one would run over each page between steps
   7 and 8, since the check reads what is written.
 
-Dev incrementality, not yet built (∆xBO, ∆Qr2), comes from two reported sets, and is
+Dev incrementality, not yet built (`∆xBO`, `∆Qr2`), comes from two reported sets, and is
 built only if a full rebuild of limulus.net takes over a second. Render-reported deps:
 template edit → recompile one file, re-render dependents; content edit → `upsertRecord`,
 re-render readers; TS edit → esbuild incremental, re-render referencing pages.
@@ -465,31 +465,31 @@ The compiler reports those facts per file, and the shell's cache key is
 `hash(text) + hash(facts)`. That is the guarantee: a content edit re-runs comrak and codegen
 for that one document; the layouts and components it depends on are cache hits. A new photo
 id changes no existing unit: a record named by id is read from its map at render, and no
-unit's facts name an id (∆Hbw). Which pages then re-render — a render-time read of the
-map, or a load-time `by` resolution — is not yet answered (∆xBO).
+unit's facts name an id (`∆Hbw`). Which pages then re-render — a render-time read of the
+map, or a load-time `by` resolution — is not yet answered (`∆xBO`).
 Checking is part of compiling a unit (D31): a file is re-checked exactly when it is
 recompiled, which its text or its facts changing is what triggers.
 
-∆TNT made the split real: `lemmon-vm` compiles per file (`prepare` → `ExportIndex` →
+`∆TNT` made the split real: `lemmon-vm` compiles per file (`prepare` → `ExportIndex` →
 `compile_unit`) into a `Unit` — file-local constant pool, unit-local function indices,
 imports symbolic by name — and `link` concatenates pools with offsets into the same
 `Module` shape the VM always ran, so the VM itself never changed. The `ExportIndex` is
-the project's one answer to which file defines each project-flat name (∆e5i): each file's
+the project's one answer to which file defines each project-flat name (`∆e5i`): each file's
 exports are offered to it in turn, a name another file already owns stays that file's,
 and both `compile_unit` and `link` read that one answer rather than deriving their own.
 A refused definition is reported where its file compiles, next to the stdlib-shadowing
 warning that asks the index the same question; an import the index has no definition for
 is a spanned link diagnostic. The index has a type namespace beside the functions
-(∆cea): each file's `lem-type`/`lem-enum` declarations are offered under the same rule,
+(`∆cea`): each file's `lem-type`/`lem-enum` declarations are offered under the same rule,
 and annotations resolve to a name alone that the index gives a shape. Two kinds of fact
 live on the unit — `Unit::facts`, the imported signatures (parameter names and types and
-the return type a call was checked against, typed since ∆C8d), and `Unit::type_refs`,
+the return type a call was checked against, typed since `∆C8d`), and `Unit::type_refs`,
 the declarations of every foreign type the checking reached, each at the use that reached
 it — so a callee whose type changed under a caller, or a type whose shape changed under a
 consumer, is a link diagnostic naming the file to recompile, in that file's own order. Invariant 11 is a test:
 editing a callee's body, or a declaration's default, leaves the consumer's unit
 byte-identical. What the link step derives from every unit at once does change: since
-∆HF0 it closes each unit's recorded reads through the calls they write, project-wide, so
+`∆HF0` it closes each unit's recorded reads through the calls they write, project-wide, so
 a callee's body edit can reorder the loader's plans while changing no unit. `∆Qr2` makes the reported facts cross the boundary and the serialized
 form (`exportModule`) first-class.
 
@@ -500,8 +500,8 @@ Stack machine; serializable
 — the code, the project's type declarations, its project-flat functions by name, and
 the loader's plans: each record's default functions and the bindings file's computed
 bindings, in the order their recorded reads, closed through calls, dictate (D37,
-∆HF0), and each record's `by` indexes, the ambient fields its strings resolve through
-(∆eag) — linked from
+`∆HF0`), and each record's `by` indexes, the ambient fields its strings resolve through
+(`∆eag`) — linked from
 per-file units (above). Values are immutable and Rc'd:
 `Null | Bool | Int | Float | Str | Html | DateTime | Duration | Url | Asset | List | Map | Fn | Record | Neighbour`.
 A neighbour field holds a `Neighbour`, a reference into the store's page table by
@@ -531,21 +531,21 @@ call, which is what a handler's diagnostic points at. Runtime errors carry spans
 via the pc→span table. A builtin that takes a function (`map`, `filter`) runs it through a
 re-entrant invoke inside its `CallBuiltin` step — the VM pushes the frame and runs its loop
 again until that frame returns — so an error inside the closure keeps the closure's own
-span (∆987). That re-entry costs native stack rather than heap, so it has a cap of its
+span (`∆987`). That re-entry costs native stack rather than heap, so it has a cap of its
 own beside the frame count, sized against the megabyte of stack `crates/lemmon-wasm`'s
 build script links the `.wasm` with; the parser's nesting cap is sized against the same
-megabyte, and the boundary's ABI tests show both fit (D38, ∆vnI).
+megabyte, and the boundary's ABI tests show both fit (D38, `∆vnI`).
 
-What ∆c8h built is the untyped subset of that: `Value` without the stdlib types, which
-∆Q6L added, and no `Collect`, marked value, or `Track`. `Collect` and the marked value
-arrived with the side channels; `Track` arrives with render-reported deps (∆xBO).
-Records are checked by declaration since ∆cea, and since ∆PCK a record value is tagged
+What `∆c8h` built is the untyped subset of that: `Value` without the stdlib types, which
+`∆Q6L` added, and no `Collect`, marked value, or `Track`. `Collect` and the marked value
+arrived with the side channels; `Track` arrives with render-reported deps (`∆xBO`).
+Records are checked by declaration since `∆cea`, and since `∆PCK` a record value is tagged
 with its declared name (`Value::Record`, made by a map literal where a record is expected
 and, later, by the loader at the boundary), which `TypeTest` reads; an enum value is its
-variant's name as a string. The loader tags what it validates at `loadData` (D37, ∆iCW),
+variant's name as a string. The loader tags what it validates at `loadData` (D37, `∆iCW`),
 so a type test reaches loaded data; what still arrives untagged — an untyped host's
 values, and `page` in a document no collection matched — is `any`, and a type test over
-it is a render error (D35). The VM is the runtime for `any` (∆C8d): its type checks fire
+it is a render error (D35). The VM is the runtime for `any` (`∆C8d`): its type checks fire
 only on values the checker let through as `any`, and stay for that reason.
 
 Calibration, not promise: whole site tens of ms inside WASM; single page well under 1 ms of
@@ -556,11 +556,11 @@ VM time (that number is the Phase 0 exit criterion).
 | Role           | Choice                                                   | Notes                                                                                                                                                                                                                    |
 | -------------- | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Scanner        | `logos` 0.16                                             | `morph()` = text↔tag mode switch; a third, fields mode, lexes a `lem-type` body (D29)                                                                                                                                    |
-| Parser         | hand-written RD + Pratt                                  | Chosen in the ∆7Ib bake-off over `lelwel` 0.10 (`docs/journal/∆7Ib-parser-bake-off.md`): LL(1) forced tag names into the token vocabulary and junk out of heads, costing recovery fidelity for ~700 fewer owned lines    |
+| Parser         | hand-written RD + Pratt                                  | Chosen in the `∆7Ib` bake-off over `lelwel` 0.10 (`docs/journal/∆7Ib-parser-bake-off.md`): LL(1) forced tag names into the token vocabulary and junk out of heads, costing recovery fidelity for ~700 fewer owned lines    |
 | Syntax tree    | `rowan` 0.17 green/red CST                               | lossless + recovering; no incremental reparse needed (rust-analyzer's own conclusion). `lemmon_syntax::ast` is the typed view over it that the checker and codegen read; the CST stays for the formatter and diagnostics |
 | Diagnostics    | structured JSON + `ariadne`/`annotate-snippets` renderer | spans first-class; `line-index` 0.1 (rust-analyzer's, sharing rowan's `text-size`) turns a byte offset into an LSP position at the boundary                                                                                                                                                                                                        |
-| Markdown       | `comrak` 0.54                                            | in-core (D08); wasm32-clean. comrak with `default-features = false` + `attributes`, a heading adapter since its renderer ignores `{#id}`, and the core's own code-block adapter, which writes comrak's own markup behind a sentinel so each block becomes a `code` mark (D42). No highlighter: syntect, which D40 had highlight against the host's grammars, cost 1.95 MB of the staged `.wasm` and was removed by ∆7wK (4.21 → 2.26 MB) |
-| WASM           | `wasm-bindgen` 0.2.127, CLI direct (no wasm-pack)        | `wasm-bindgen --target web` runs in `scripts/stage-wasm.ts`: caller-supplied bytes keep loading injectable and browser-reusable, and the repo owns staging, so wasm-pack’s own package layout would only fight it (∆TNT)                                                                                                                                                                                   |
+| Markdown       | `comrak` 0.54                                            | in-core (D08); wasm32-clean. comrak with `default-features = false` + `attributes`, a heading adapter since its renderer ignores `{#id}`, and the core's own code-block adapter, which writes comrak's own markup behind a sentinel so each block becomes a `code` mark (D42). No highlighter: syntect, which D40 had highlight against the host's grammars, cost 1.95 MB of the staged `.wasm` and was removed by `∆7wK` (4.21 → 2.26 MB) |
+| WASM           | `wasm-bindgen` 0.2.127, CLI direct (no wasm-pack)        | `wasm-bindgen --target web` runs in `scripts/stage-wasm.ts`: caller-supplied bytes keep loading injectable and browser-reusable, and the repo owns staging, so wasm-pack’s own package layout would only fight it (`∆TNT`)                                                                                                                                                                                   |
 | Dates          | `jiff` 0.2                                               | `default-features = false`, `alloc` only: no clock, no system zone, no tzdb, so invariant 1 is structural rather than reviewed. Parsing, the civil calendar, RFC 3339/2822 and strftime; a `datetime` is an instant and the offset it was written in (D38) |
 | URL encoding   | `percent-encoding` 2.3                                   | one encoding pass behind `url()`. The WHATWG `url` crate was rejected: it refuses a relative reference like `/feed/` without a base, which is most of what a site composes, and pulls `idna`'s tables in (D38) |
 | Latin folding  | `unicode-normalization` 0.1                              | canonical decomposition behind `slugify`, so a letter carrying a mark slugs as the letter. Transliteration was measured and rejected: `deunicode` cost 479 KB of the `.wasm` and `any_ascii` 582 KB, to answer a question no site in the corpus asks — and `@sindresorhus/slugify`'s answer applies German's `ü`→`ue` to every language's `ü` (D38) |
@@ -602,19 +602,19 @@ whatever content a mark has, two producers on one name and key is a load error n
 both, and the shell's own `styles`/`scripts`/`head` producers ship as a default plugin
 the site config lists, so a site can produce those names itself. A plugin that claims a
 name ships a `lem-fn` wrapping `mark()` for it in its `.lem`, so a layout reads
-`<lem.styles()>` and a component `<lem.diagram(…)>` (D42) — not yet (∆wOn): no plugin
+`<lem.styles()>` and a component `<lem.diagram(…)>` (D42) — not yet (`∆wOn`): no plugin
 ships `.lem`, the shell's default plugin included, so a layout writes `mark("styles")`.
 A content API for out-of-build tools (`loadSite(config)`, reading loaded records back
-from the core) is parked as ∆Gg3: limulus.net's revisions updater lists its articles with
-a script of its own (∆shS).
+from the core) is parked as `∆Gg3`: limulus.net's revisions updater lists its articles with
+a script of its own (`∆shS`).
 
 As built, a site lists its plugins in `lemmon.config.ts` as `plugins`, and a plugin is
 `{name, transformDocument?, assets?, marks?}` (D44, D42). Any other hook is refused at
 config load, since the shell runs none of them:
 
-- `data` and `commands`: not yet built (∆wOn).
-- `transformOutput`: not yet built (∆fwn).
-- `watch` and `emit`: not yet built (∆HzB).
+- `data` and `commands`: not yet built (`∆wOn`).
+- `transformOutput`: not yet built (`∆fwn`).
+- `watch` and `emit`: not yet built (`∆HzB`).
 - `contentSources` and `markdown`: reserved seams (D14, D08) that nothing has asked for.
 
 The two hooks that run before compile (§Build pipeline, step 2):
@@ -711,9 +711,9 @@ environment variables its scripts read as `process.env.NAME` (D45).
   It compares *rendered* HTML, never bytes (D28): the shell's `renderedPage` models
   the UA stylesheet's white-space processing so that everything D26 and D28 move is
   invisible to the comparison by construction, while a changed space inside `pre` or
-  between two inline runs still fails (∆Ma4). `compareRendered` walks two such pages and
+  between two inline runs still fails (`∆Ma4`). `compareRendered` walks two such pages and
   consults a caller's forgiveness classes where it would report a difference — an
   attribute, a text run, an element one side lacks — and offers each matched pair to a
   class that may take its subtree over, counting what each forgives; `npm run parity` in
   the port branch holds every class to its expected count per page, as the fidelity
-  harness does for the-rebound (∆Zo7).
+  harness does for the-rebound (`∆Zo7`).

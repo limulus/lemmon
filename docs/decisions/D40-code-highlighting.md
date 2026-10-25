@@ -1,15 +1,15 @@
 # D40 — Code highlighting takes its grammars from the host
 
-- **Status:** Accepted 2026-09-13 (∆BfR), refining D08; superseded the same day by D42,
+- **Status:** Accepted 2026-09-13 (`∆BfR`), refining D08; superseded the same day by D42,
   which takes highlighting out of the core — a code block is a `code` mark the host's
-  handlers resolve — and ∆7wK removed what this record built. The markup contract and
+  handlers resolve — and `∆7wK` removed what this record built. The markup contract and
   the unhandled-block property survive in D42; the grammars do not
-- **Backlog item:** ∆BfR
+- **Backlog item:** `∆BfR`
 - **Normative text:** `docs/language.md` § Document mode, Code blocks
 
 ## Context
 
-D08 put syntect in the core for class-based highlighting, and ∆Ldn deferred it.
+D08 put syntect in the core for class-based highlighting, and `∆Ldn` deferred it.
 limulus.net has eight fenced blocks in its archive — TypeScript, Rust, Bash, and plain
 text — highlighted today at build time by highlight.js through markdown-it, as `hljs-*`
 classes styled by a hand-edited stylesheet. Three things came up while planning the item:
@@ -96,7 +96,7 @@ belongs with the shell's grammar set.
 
 - A different highlighter has three places to stand, none built: after render, over a
   host that declares no grammars, finding blocks by their `language-x` class; inside the
-  core as a pure wasm module (∆SDN), where it would replace only a block's body; or as
+  core as a pure wasm module (`∆SDN`), where it would replace only a block's body; or as
   grammars of its own, which are data. A highlighter choice would be a compile-time
   input and ride the same fact as the grammars.
 - syntect is still 1.97 MB of the `.wasm` for a site that highlights elsewhere; the two
@@ -109,7 +109,7 @@ belongs with the shell's grammar set.
   `.wasm`, or the reverse. bat's Hosts File grammar is one; the corpus fixtures stay well
   clear.
 - A `lem` fence warns until a host declares a grammar for it.
-- limulus.net's parity for its highlighted blocks is ∆o24's choice. markdown-it writes
+- limulus.net's parity for its highlighted blocks is `∆o24`'s choice. markdown-it writes
   `<pre><code class="hljs">` where comrak writes `class="language-x"`, so either the
   harness forgives the class and the inside of `<code>` and the site restyles for `syn-`
   classes, or highlight.js colours the blocks after render, over a host that declares no

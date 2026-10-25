@@ -1,14 +1,14 @@
 # D44 — Document and asset hooks
 
-- **Status:** Accepted 2026-10-17 (∆ETy), settled while building it; refines D06, whose
+- **Status:** Accepted 2026-10-17 (`∆ETy`), settled while building it; refines D06, whose
   trust in the shell reaches from what is done to a page after the core returns it to
   what plugins hand the core before it compiles: a document's body, and the manifest;
-  revised 2026-10-17 by D45 (∆d1N): the asset hook is given the project's root too, the
+  revised 2026-10-17 by D45 (`∆d1N`): the asset hook is given the project's root too, the
   config file's directory, since esbuild's hashes name the sources from where it runs;
-  since D45's revision (∆EEa, 2026-10-18) no bundle is named by esbuild's hash, and the
+  since D45's revision (`∆EEa`, 2026-10-18) no bundle is named by esbuild's hash, and the
   root is where esbuild's messages name the sources from and what a map's path is made
   relative to
-- **Backlog item:** ∆ETy
+- **Backlog item:** `∆ETy`
 - **Normative text:** `docs/architecture.md` § Build pipeline (step 2), § Shell plugin
   API; `packages/shell/README.md` § Plugins
 
@@ -17,9 +17,9 @@
 The architecture's plugin sketch carried `transformDocument?(doc, ctx): Document`, a
 pre-markdown text transform, and `assets?(ctx): Promise<AssetManifest>`, a logical path
 mapped to `{url, hash, deps}`. Neither was built: the shell refused every plugin field but
-`name` and `marks`. ∆c4j was split so that slice 4 builds only the hooks its items call:
-limulus.net's link-post appender (∆ITg) adds `[link]: url` definitions and a "Via"
-paragraph to a link post's markdown before it compiles, and the esbuild pipeline (∆d1N)
+`name` and `marks`. `∆c4j` was split so that slice 4 builds only the hooks its items call:
+limulus.net's link-post appender (`∆ITg`) adds `[link]: url` definitions and a "Via"
+paragraph to a link post's markdown before it compiles, and the esbuild pipeline (`∆d1N`)
 bundles client scripts and hands `compile` their URLs.
 
 What the sketch left open was the contract: what a document is to a transform, whether it
@@ -80,7 +80,7 @@ env})` is called after the transforms and before the first `compile`: the input 
 output directories, since a bundler's hashes can depend on where it writes; whether the
 build writes, since `lem check` calls it too and writes nothing; and the build's
 environment, the values `env("…")` bindings read, as a frozen copy, so that a hook and the
-site see one environment — ∆d1N's esbuild plugin is to read its `define` token there — and
+site see one environment — `∆d1N`'s esbuild plugin is to read its `define` token there — and
 a hook can be run without touching `process.env`. It returns `{manifest?, files?}`:
 logical path to finished URL, and url to contents. esbuild's API is asynchronous, so the
 hook is awaited, in plugin order.
@@ -133,14 +133,14 @@ outlives builds; nothing the shell holds of a hook's answer survives the build i
 
 ## Consequences
 
-- Hand-offs: ∆ITg writes the appender as a site plugin in the port's config, against the
-  exported `DocumentSource`, and ∆d1N an esbuild plugin that returns its outputs in memory
+- Hand-offs: `∆ITg` writes the appender as a site plugin in the port's config, against the
+  exported `DocumentSource`, and `∆d1N` an esbuild plugin that returns its outputs in memory
   as `files`, at their hashed URLs, with a manifest from each unhashed one.
 - A diagnostic's path may now be the config file, absolute, which `CheckResult.texts` does
   not hold; the CLI prints it without a frame.
 - `lem dev` runs every asset hook on every rebuild, which for esbuild is a full bundle;
-  ∆d1N measures what that costs before anything caches.
-- A content API (∆Gg3, parked on 2026-10-18) would read front matter, which no transform
+  `∆d1N` measures what that costs before anything caches.
+- A content API (`∆Gg3`, parked on 2026-10-18) would read front matter, which no transform
   can change, so a tool reading it and a build would agree on every field of the record;
   a body it handed back would have to be the text before any transform, which `discover`
   overwrites.

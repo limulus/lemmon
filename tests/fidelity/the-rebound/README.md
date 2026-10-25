@@ -1,4 +1,4 @@
-# The `the-rebound` fidelity harness (∆xWs)
+# The `the-rebound` fidelity harness (`∆xWs`)
 
 The Phase 0 proof: limulus.net's `/feed/the-rebound/` post rendered end to end from the
 WASM core — document mode for the post body, then an explicit base→page→article layout

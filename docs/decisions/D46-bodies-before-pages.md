@@ -1,9 +1,9 @@
 # D46 — Bodies render before the pages that read them
 
-- **Status:** Accepted 2026-10-19, planned 2026-10-18 and settled while building ∆zu0;
+- **Status:** Accepted 2026-10-19, planned 2026-10-18 and settled while building `∆zu0`;
   refines D42's clause on a rendered body reaching a template, and replaces the
   architecture's step 10, a second phase after every other page
-- **Backlog item:** ∆zu0
+- **Backlog item:** `∆zu0`
 - **Normative text:** `docs/architecture.md` § WASM API, § Build pipeline;
   `docs/language.md` § Ambient types; `packages/shell/README.md` § `lem build`, and the
   config's `origin`
@@ -88,7 +88,7 @@ is written `/.//` so that it names no host. A url the URL parser refuses even ag
 page's url is kept as written and warned at, at the document's front matter: a browser would
 refuse it too, and one mistyped link costs no build. A `srcset` candidate whose descriptors
 `parse-srcset` refuses is warned at the same way where the rebase drops it; what that
-library would print on standard output is said there instead. ∆yOJ's link check reads the
+library would print on standard output is said there instead. `∆yOJ`'s link check reads the
 same `origin`.
 
 **An error in the body pass stops the build before the second load**, so the error
@@ -110,7 +110,7 @@ body it then lacks. A second load that fails stops the build before any page ren
 - **An opt-in front-matter key.** Rejected: a third reserved key that saves nothing, since
   every page renders once either way, and a page not opted in still sees some value.
 - **Membership by what a page reads**, from its unit's facts. Rejected for now: facts do
-  not cross the boundary (∆Qr2), and it would only skip a pass of tens of milliseconds.
+  not cross the boundary (`∆Qr2`), and it would only skip a pass of tens of milliseconds.
 - **Bodies passed with each render.** Rejected: on limulus.net 59 renders of 126 KB each,
   about 7 MB a build, where a load sends them once.
 - **A page field the loader fills**, as it fills a generated page's neighbours (D43).
@@ -129,9 +129,9 @@ body it then lacks. A second load that fails stops the build before any page ren
   planned. Rejected by Eric: every site with a feed needs the rewrite, Eleventy ships its
   equivalent, and the origin is the site's — one config field the body pass and the link
   check both read, with no hook, async refusal or plugin-naming error path to carry.
-- **∆fwn's `transformOutput` with a body flag.** Rejected: a page transform that has to
+- **`∆fwn`'s `transformOutput` with a body flag.** Rejected: a page transform that has to
   skip pages by a flag; whether page transforms also run over bodies, as Eleventy's
-  `renderTransforms` does, is ∆fwn's to decide.
+  `renderTransforms` does, is `∆fwn`'s to decide.
 - **Absolutizing in a template, through a mark around the body.** Rejected: the mark's
   content would have to be escaped by its producer — D42's rejected `escape()` by another
   door.
@@ -145,16 +145,16 @@ body it then lacks. A second load that fails stops the build before any page ren
 
 ## Consequences
 
-- ∆zu0 builds `body` on `render`'s `PageRef`, `Build.bodies`, the body pass and the
+- `∆zu0` builds `body` on `render`'s `PageRef`, `Build.bodies`, the body pass and the
   second load, the config's `origin` and the rebase, and the port's feeds and sitemap;
   the architecture's step 10 is gone, and step 6 begins with the body pass.
 - D42's row and record gain this clause, and D30's consequence on a body's form points
   here.
-- ∆yOJ's link check runs over pages still in memory after every page has rendered, and
+- `∆yOJ`'s link check runs over pages still in memory after every page has rendered, and
   reads the config's `origin` to tell the site's own absolute links from others.
 - An untyped page's own reload re-sends every body, so each costs more by the bodies'
   size; a site types its feeds to render them without one.
-- ∆xBO: a body edit re-renders its page and every page that reads `build.bodies`; ∆Qr2's
+- `∆xBO`: a body edit re-renders its page and every page that reads `build.bodies`; `∆Qr2`'s
   facts could skip the pass when no unit reads it.
 - `body` in a default (D37) is a document's prose as comrak rendered it at compile;
   `build.bodies` holds its finished body after render. The language doc says both.

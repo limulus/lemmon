@@ -1,23 +1,23 @@
 # D35 — Runtime type tags and narrowing
 
-- **Status:** Accepted 2026-09-07 (∆PCK); revised 2026-09-07 (∆Iau) in two clauses —
+- **Status:** Accepted 2026-09-07 (`∆PCK`); revised 2026-09-07 (`∆Iau`) in two clauses —
   a narrowed path may be rooted at an ambient value, now that a host types one and no
-  binding may take its name; and tagging loaded data is the loader's alone (∆iCW),
+  binding may take its name; and tagging loaded data is the loader's alone (`∆iCW`),
   since only the record store it builds knows which page's record a document's ambient
-  value carries; revised 2026-09-08 (∆iCW, D37) — the closed ancestry table is replaced
+  value carries; revised 2026-09-08 (`∆iCW`, D37) — the closed ancestry table is replaced
   by the declaration table the module carries, walked per test, so the VM's type tests
   and the loader's validation read one table; the completeness question is closed:
   the loader fills an omitted field as a literal does, by whether its type admits `null`;
   and the tagging clause is delivered, with the untyped values it leaves as `any` named
-- **Backlog item:** ∆PCK
+- **Backlog item:** `∆PCK`
 - **Normative text:** `docs/language.md` § Tags (`lem-if`, `lem-match` rows),
   § Expressions (Literals, Type tests), § Checking (Literals, Narrowing, Type tests,
   Matching); `docs/architecture.md` § VM
 
 ## Context
 
-∆cea made the checker read records by declaration while a record value stayed a map:
-nothing produced a record before the loader (∆iCW) and runtime type tags. So `is` and
+`∆cea` made the checker read records by declaration while a record value stayed a map:
+nothing produced a record before the loader (`∆iCW`) and runtime type tags. So `is` and
 `lem-match` were refused, narrowing covered a plain optional local only, and the canonical
 corpus case carried a `lem-let` for a field it could not narrow. This item had to say what
 a record is at run time, who makes one, what a type test does with everything else, how
@@ -59,7 +59,7 @@ keyed by the binding's identity and the field names, so an inner shadow ends it.
 are immutable, which is what makes a narrowed path hold for the arm, a lambda inside
 included. Only a plain `.` extends a path; `?.` yields an optional by construction, and
 an operator (`&&`, `!`) narrows nothing. A path is rooted at a local, by the span of its
-name token, or — since ∆Iau — at an ambient value, by its name: no binding may take one
+name token, or — since `∆Iau` — at an ambient value, by its name: no binding may take one
 (D23), so nothing can shadow it and no span is needed to tell two apart.
 
 **`lem-match` on the provisional reading.** The subject is evaluated once into a slot no
@@ -79,7 +79,7 @@ have refused, which is the only sense in which they guess by type.
 ## Alternatives considered
 
 - **`false` for an untagged value under a type test.** Rejected: it hides the one data
-  problem the tag exists to expose, and loaded data is untagged until ∆iCW.
+  problem the tag exists to expose, and loaded data is untagged until `∆iCW`.
 - **Filling omitted defaulted fields in a literal.** Rejected: a default expression sees
   `body`, `path`, `self`, and `site`, which a template cannot supply; and carrying
   defaults in the declaration fact changes the cache key for something nothing in a
@@ -115,4 +115,4 @@ have refused, which is the only sense in which they guess by type.
 - D31's "record fields by index" and the architecture doc's "GetField is an index"
   describe an optimisation not taken; both are marked.
 - `docs/artifact-changes.md` carries the VM value set, the two ops, the module table,
-  and the Narrowing/Matching rules for ∆MlD.
+  and the Narrowing/Matching rules for `∆MlD`.

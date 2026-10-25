@@ -403,7 +403,7 @@ building.
   plus a record for any decision from D25 on) in the same pass, and records what the
   owning artifact must say in `docs/artifact-changes.md` — amending an earlier entry the
   change contradicts rather than appending — since the artifacts are reconciled once, at
-  the cutover (∆MlD). When a design point moves, or is decided against, grep for
+  the cutover (`∆MlD`). When a design point moves, or is decided against, grep for
   its nouns and sweep the prose the change just falsified, and write the diff's own doc
   sentences last: no gate ever reads the docs.
 

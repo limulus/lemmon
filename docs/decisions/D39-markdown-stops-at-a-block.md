@@ -1,17 +1,17 @@
 # D39 — Markdown stops at a block
 
-- **Status:** Accepted 2026-09-12 (∆Hbw), revising D07
-- **Backlog item:** ∆Hbw
+- **Status:** Accepted 2026-09-12 (`∆Hbw`), revising D07
+- **Backlog item:** `∆Hbw`
 - **Normative text:** `docs/language.md` § Document mode, items 1, 2 and 6
 
 ## Context
 
-Document mode (D07, ∆Ldn) splits a `.md` file into prose and lem-blocks, renders the
+Document mode (D07, `∆Ldn`) splits a `.md` file into prose and lem-blocks, renders the
 prose with comrak, and splices each block's output back in. What a block's *body* is
 had been left open. §Document mode promised that a capture body —
 `<lem-let note>…</lem-let>` — would itself be a document, markdown prose plus nested
 blocks, so that a component could be handed prose; the implementation made every body
-a template, as in a `.lem` file, and the doc carried a placeholder naming ∆Hbw.
+a template, as in a `.lem` file, and the doc carried a placeholder naming `∆Hbw`.
 Building the promise meant a second rule for which bodies are markdown (`lem-if`,
 `lem-for` and `lem-fn` bodies would have stayed templates), a per-line source map for
 diagnostics inside dedented prose, chunk ownership across nested bodies, and a

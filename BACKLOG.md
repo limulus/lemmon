@@ -40,7 +40,7 @@ lands inside the slice that needs it.
 Slices 1 to 3, a page from `lem build`, styled output, and the daily loop of `lem dev` and
 `lem check`, were accepted on 2026-10-17, and slices 4 and 5, every document page and then
 the index and generated pages, on 2026-10-18; their items' journal entries record them, and
-∆Oyi's records why dprint left slice 2.
+`∆Oyi`'s records why dprint left slice 2.
 
 ### 6. Feeds, sitemap, cutover
 
@@ -50,11 +50,11 @@ the live site on Eleventy until he has reviewed it (2026-10-18). Eric sees `npm 
 report zero unexpected differences over the whole `dist/`, and a local cutover branch builds
 limulus.net with `lem`, its CloudFront config untouched, ready for his review.
 
-Built on 2026-10-19 (journal entries for ∆shS, ∆zu0, ∆yOJ, ∆Zg9 and ∆oAl): `npm run parity`
-on `lemmon-port` at `d33eed8` compared every file both builds write, 140 and 158, with zero
-unexpected differences, and `lemmon-cutover` (`4ffdb74`, local, unpushed) builds the site
-with `lem` alone, accepted in fresh clones without deploying. The run and the review are
-Eric's before slice 7 starts.
+Built on 2026-10-19 (journal entries for `∆shS`, `∆zu0`, `∆yOJ`, `∆Zg9` and `∆oAl`):
+`npm run parity` on `lemmon-port` at `d33eed8` compared every file both builds write, 140
+and 158, with zero unexpected differences, and `lemmon-cutover` (`4ffdb74`, local, unpushed)
+builds the site with `lem` alone, accepted in fresh clones without deploying. The run and
+the review are Eric's before slice 7 starts.
 
 ### 7. Live on Lemmon
 
@@ -92,9 +92,9 @@ point; this is only its default place.
 
 Opens only if the full rebuild time recorded in the daily-loop slice exceeds one second;
 until then, rebuilding the whole site is the incremental build. Recorded on 2026-10-17: a
-median of 250 ms for the port's 25 documents (∆Vhi's journal), and 375 ms once slice 4's
-esbuild plugin added its 200 ms (∆d1N's journal); on 2026-10-18, 421 ms for all 55 pages
-(∆hvm's journal). Worth taking again with the feeds at the whole-site run.
+median of 250 ms for the port's 25 documents (`∆Vhi`'s journal), and 375 ms once slice 4's
+esbuild plugin added its 200 ms (`∆d1N`'s journal); on 2026-10-18, 421 ms for all 55 pages
+(`∆hvm`'s journal). Worth taking again with the feeds at the whole-site run.
 
 - `∆xBO` Render-reported deps
   - `render` reports which units and records a page read, so `lem dev` (`∆Vhi`) re-renders
@@ -139,10 +139,9 @@ so it can be reproduced cold.
 - `∆Gsn` An asset's did-you-mean points at the wrong script
   - `scripts: ./lib/index.js` is offered `/lib/rum/index.js`, the nearest key by edit
     distance, not the page's own `…/<slug>/lib/index.js`; see `∆d1N`'s journal entry
-
 - `∆MX8` Trap specs ride V8's frame size
-  - The operator-chain trap in `trap.spec.ts` and `packages/core`'s `load.spec.ts` overflow the
-    `.wasm`'s stack with about 1.3× room on arm64 before V8's runs out first instead
+  - The operator-chain trap in `trap.spec.ts` and `packages/core`'s `load.spec.ts` overflow
+    the `.wasm`'s stack with about 1.3× room on arm64 before V8's runs out first instead
 
 ## Someday/Maybe
 

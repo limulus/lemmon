@@ -1,12 +1,12 @@
 # D45 — The esbuild plugin
 
-- **Status:** Accepted 2026-10-17 (∆d1N), settled while building it; revises D44, whose
-  asset hook is now given the project's root. Revised 2026-10-18 (∆EEa) to follow
+- **Status:** Accepted 2026-10-17 (`∆d1N`), settled while building it; revises D44, whose
+  asset hook is now given the project's root. Revised 2026-10-18 (`∆EEa`) to follow
   limulus.net's Eleventy build, which changed first (its `d1dc734`): a bundle is named by
   what it ships as — its placeholders resolved first, so a loader's name follows its
   worker's, and its map naming the checkout's path relative to itself — and no longer
   by esbuild's `[hash]`
-- **Backlog item:** ∆d1N; ∆EEa (the revision)
+- **Backlog item:** `∆d1N`; `∆EEa` (the revision)
 - **Normative text:** `packages/shell/README.md` § `esbuild(options?)`, § Assets;
   `docs/architecture.md` § Build pipeline (step 2), § Shell plugin API
 
@@ -17,7 +17,7 @@ kept the `XXXXXXXX` placeholder in client TypeScript; D38 put the manifest on th
 declaration as finished URLs, and D44 built the `assets` hook to carry it. What was left
 was the plugin itself, and limulus.net's parity harness compares script URLs exactly, so
 its bundles have to be byte for byte the ones `11ty/esbuild.ts` writes: every name in
-them is a hash of what esbuild was given. _(Revised by ∆EEa: of what they ship as.)_
+them is a hash of what esbuild was given. _(Revised by `∆EEa`: of what they ship as.)_
 
 Measured on the port branch, three things move every hash. The esbuild release, and the
 wasm loader's, since both write into the bundle. The output directory's depth, since a
@@ -26,7 +26,7 @@ esbuild's working directory: with every byte of a bundle and its map unchanged, 
 `[hash]` changes when `absWorkingDir` does, because esbuild hashes each source by its
 path from there. Eleventy runs from the project's root; `lem` can be started anywhere,
 and D44's context gave a hook the input and output directories, not the root.
-_(Revised by ∆EEa: those three moved esbuild's `[hash]`, which no longer names a bundle.
+_(Revised by `∆EEa`: those three moved esbuild's `[hash]`, which no longer names a bundle.
 Of them, the releases still move a name, and the output's depth, since the map is
 hashed with the bundle; the working directory does not.)_
 
@@ -50,7 +50,7 @@ writes its own code into a worker's bundle.
 a bundle's name is a function of the project and never of the directory `lem` was started
 in. The hook resolves `root`, `input` and `output` through symbolic links first, as
 esbuild resolves each source, so a project reached through a link — `/tmp` on macOS is
-one — builds the same bytes. _(Revised by ∆EEa: a name is now a hash of the bundle and
+one — builds the same bytes. _(Revised by `∆EEa`: a name is now a hash of the bundle and
 its map, and neither holds the root's path where esbuild writes it as it is, so the root
 moves no name; esbuild still runs from it so that its messages name each source from the
 root, and the map's checkout path is made relative from it.)_
@@ -61,7 +61,7 @@ at. A CSS bundle an entry's imports produce is mapped beside it, `/lib/x/index.c
 bundles at one logical path — two entries, or an entry's styles and a CSS entry — are an
 error naming both sources.
 
-**Each bundle is named by what it ships as, as Eleventy names it** _(revised by ∆EEa;
+**Each bundle is named by what it ships as, as Eleventy names it** _(revised by `∆EEa`;
 until then placeholders resolved after esbuild's hashing, and a bundle's name did not
 change when only a bundle it names did)_. esbuild writes each entry's bundle with the
 placeholder `XXXXXXXX` where `[hash]` is in `entryNames`, as `11ty/esbuild.ts` writes
@@ -128,7 +128,7 @@ site listing the plugin pays.
   `.wasm`. Built in; a `plugins` option stays additive.
 - **esbuild from `process.cwd()`.** What Eleventy does, and byte-identical when `lem`
   runs from the project's root — and different names when it does not, the same site
-  shipping other URLs by where a shell was. Rejected. _(Revised by ∆EEa: the working
+  shipping other URLs by where a shell was. Rejected. _(Revised by `∆EEa`: the working
   directory no longer moves a name; run from it, esbuild's messages would name the
   sources from wherever a shell was, and a map's path would be made relative to it,
   absolute where the root is not under it.)_
@@ -141,15 +141,15 @@ site listing the plugin pays.
 - **Resolving placeholders before hashing**, so a loader's name follows its worker's.
   Right for a CDN that keeps every hashed name forever, and a different name for every
   bundle that names another, so the port could not compare clean. Not built; the
-  consequence is recorded below. _(Built by ∆EEa once limulus.net's Eleventy build
+  consequence is recorded below. _(Built by `∆EEa` once limulus.net's Eleventy build
   named its bundles so, the two compared byte for byte again.)_
 - **`entryNames` with the placeholder alone where `[hash]` is**, as `11ty/esbuild.ts`
-  passes `[dir]/[name].XXXXXXXX` (∆EEa). Byte for byte the same names, and esbuild
+  passes `[dir]/[name].XXXXXXXX` (`∆EEa`). Byte for byte the same names, and esbuild
   refuses two outputs at one path before anything is named: an `entryNames` without
   `[dir]` gives every `index.ts` one, and an entry's styles and a CSS entry beside it
   share theirs, which the manifest's check names better. esbuild's hash after the name
   costs a cut of nine characters.
-- **The whole chain in a cycle's error**, as Eleventy writes it (∆EEa). The bundles that
+- **The whole chain in a cycle's error**, as Eleventy writes it (`∆EEa`). The bundles that
   led into the cycle are not in it, and renaming them fixes nothing.
 - **Writing every placeholder as the absolute URL.** Simpler, and a relative
   `new URL('./worker.….js', import.meta.url)` would change bytes Eleventy writes.
@@ -179,22 +179,22 @@ site listing the plugin pays.
   byte for byte Eleventy's, called at the branch's own paths with limulus.net's `11ty/`
   asset names. A copy of the site elsewhere matches 34: the `.wasm` worker's map names
   its module as `wasm-module:<absolute path>`, so its hash, and its loader's bytes,
-  depend on where the checkout is — Eleventy's as much as Lemmon's. _(Revised by ∆EEa:
+  depend on where the checkout is — Eleventy's as much as Lemmon's. _(Revised by `∆EEa`:
   that path is relative on both sides now, since the branch merged limulus.net's
   `d1dc734`, and a copy of the site elsewhere matches all 37.)_
 - Every build bundles again: about 0.2 s of each `lem dev` rebuild on the port branch
   (0.17 s without the plugin, 0.37 s with). Nothing caches; esbuild's incremental
-  `context()` is ∆xBO's question.
+  `context()` is `∆xBO`'s question.
 - Nothing removes stale output, so each `lem dev` edit to a script leaves its earlier
   bundles in the output beside the new ones.
 - A loader's name does not follow its worker's: an edit to a worker alone ships a new
   worker and the loader under its old name, with new bytes. limulus.net's CloudFront
   serves every `/*.????????.*` as immutable for a year, so a browser holding the old
   loader goes on asking for the old worker. Eleventy ships the same today, and the port
-  inherits it unchanged (D13); the cutover (∆oAl) is where to weigh it. _(Revised by
-  ∆EEa: fixed on limulus.net's main first, and followed here, so an edit to a worker
+  inherits it unchanged (D13); the cutover (`∆oAl`) is where to weigh it. _(Revised by
+  `∆EEa`: fixed on limulus.net's main first, and followed here, so an edit to a worker
   renames every bundle that names it, through any chain of names.)_
 - A bundle cannot name itself, nor two bundles each other: each would need the other's
-  name to be named (∆EEa). A worker that starts another of itself names its own URL at
+  name to be named (`∆EEa`). A worker that starts another of itself names its own URL at
   run time, `import.meta.url`, not by a placeholder.
-- ∆Zg9's whole-site comparison meets 18 stubs in Eleventy's `dist/` that Lemmon's lacks.
+- `∆Zg9`'s whole-site comparison meets 18 stubs in Eleventy's `dist/` that Lemmon's lacks.

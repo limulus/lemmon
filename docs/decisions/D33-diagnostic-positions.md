@@ -1,7 +1,7 @@
 # D33 — Diagnostic positions
 
-- **Status:** Accepted 2026-09-07 (∆cE6)
-- **Backlog item:** ∆cE6
+- **Status:** Accepted 2026-09-07 (`∆cE6`)
+- **Backlog item:** `∆cE6`
 - **Normative text:** `docs/architecture.md` § WASM API (`Diagnostic`);
   `tests/corpus/README.md` § Positions in a trailer
 
@@ -13,8 +13,8 @@ a byte offset. The corpus trailers printed `89..94`, and blessing is a proposal 
 a fix: the whole safety mechanism is that someone reads the diff, and wrong output had been
 blessed in twice. Eric could not match a blessed trailer line to its source by eye.
 
-The same conversion is owed twice more. `lem check` (∆4tG) has to print a place in a file,
-and the LSP (∆5MM) has to hand an editor an actual position. Both live in TypeScript and
+The same conversion is owed twice more. `lem check` (`∆4tG`) has to print a place in a file,
+and the LSP (`∆5MM`) has to hand an editor an actual position. Both live in TypeScript and
 both receive the boundary's diagnostics — so if the core kept emitting byte offsets alone,
 each would convert independently, in the language where the conversion is worst: a byte
 offset into a UTF-16 column means re-encoding the source, because JavaScript string indices
@@ -52,7 +52,7 @@ trailers, which nothing reads programmatically.
   wants to slice the source wants offsets. `range` is additive, which is the boundary's
   established pattern for `severity` and `labels`.
 - **One-based positions over the boundary, matching the display.** Rejected: an off-by-one
-  in a language server is a bug the user sees on every diagnostic, and ∆5MM should be able
+  in a language server is a bug the user sees on every diagnostic, and `∆5MM` should be able
   to pass a position straight through. The `+1` belongs to whoever is printing.
 - **Character columns, or byte columns, instead of UTF-16.** Rejected: byte columns
   mislead on any non-ASCII line, which is the thing this decision exists to fix, and
@@ -65,8 +65,8 @@ trailers, which nothing reads programmatically.
 
 ## Consequences
 
-- `lem check` (∆4tG) and the LSP (∆5MM) print or forward `range` and compute nothing. The
-  reverse direction — a `Position` back to an offset, which an LSP needs for incremental
+- `lem check` (`∆4tG`) and the LSP (`∆5MM`) print or forward `range` and compute nothing.
+  The reverse direction — a `Position` back to an offset, which an LSP needs for incremental
   edits — is deliberately absent: that consumer holds the document text in TypeScript, so
   a Rust version would be a recorded fact with no reader.
 - The resident `Core` keeps a `LineIndex` per resident unit, updated in lockstep with the

@@ -1,10 +1,10 @@
 # D38 — Stdlib values and the manifest at compile
 
-- **Status:** Accepted 2026-09-11 (∆Q6L); implemented 2026-09-12 (∆Q6L). On 2026-10-17
+- **Status:** Accepted 2026-09-11 (`∆Q6L`); implemented 2026-09-12 (`∆Q6L`). On 2026-10-17
   Eric accepted for limulus.net that `readingTime()` counts what a reader sees where
   Eleventy's `reading-time` counted the markdown source, so a page near a rounding
   boundary reads a minute lower after the cutover
-- **Backlog item:** ∆Q6L
+- **Backlog item:** `∆Q6L`
 - **Normative text:** `docs/language.md` § Types, § Names & namespaces (Ambient),
   § Checking (Calls, Printing), § Schemas; `docs/architecture.md` § WASM API,
   § Build pipeline
@@ -13,7 +13,7 @@
 
 `datetime`, `duration`, `url`, and `asset` were types the checker knew and the VM had no
 values for: the loader passed their strings through untouched, and the builtin table held
-six entries that existed to prove the two ways in (∆495, ∆987). D34 said the inventory
+six entries that existed to prove the two ways in (`∆495`, `∆987`). D34 said the inventory
 would be written here.
 
 The port needs all of it. Feeds want RFC 3339 and RFC 822; layouts want a date worded the
@@ -104,8 +104,8 @@ deferred question.
   asks, and to answer it with a German rule. Cut for canonical decomposition at 26 KB.
 - **Dropping what the fold cannot handle.** Would give every non-Latin title the empty
   string, which is a core that has assumed English.
-- **The manifest via `loadData`** (∆d1N as written). `asset()` is answered while compiling,
-  so the manifest has to be there by then.
+- **The manifest via `loadData`** (`∆d1N` as written). `asset()` is answered while
+  compiling, so the manifest has to be there by then.
 - **Resolving `asset()` at render.** Would make a typo a broken link on one page rather
   than a compile error with a span (D10), and would make every unit depend on the whole
   manifest rather than on the entries it named.
@@ -114,7 +114,7 @@ deferred question.
 
 - Three dependencies, each `alloc`-only: `jiff`, `percent-encoding`,
   `unicode-normalization`, plus `unicode-segmentation`. The `.wasm` grew by about 480 KB
-  across ∆Q6L, after 479 KB was given back by cutting transliteration.
+  across `∆Q6L`, after 479 KB was given back by cutting transliteration.
 - `Value` gained four variants and stayed twenty-four bytes: `Datetime` is packed into
   sixteen rather than held as a timestamp beside an offset, because every value in the VM
   pays for the widest one.
@@ -123,14 +123,14 @@ deferred question.
 - Native recursion got a cap of its own, separate from the frame count: `sortBy` and
   `groupBy` call back into the VM, and sixty-four such levels is what a megabyte of stack
   holds. `crates/lemmon-wasm/build.rs` pins that megabyte as the stack the `.wasm` is
-  linked with (∆vnI).
+  linked with (`∆vnI`).
 - `Unit` gained `asset_refs`, a fourth kind of compile-time fact beside signatures, type
   references, and ambient bindings.
 - `Host` (the builtins' trait) gained `next_id`, the only state a builtin may ask for.
 - D37 is revised: a string in data now resolves by its declared type for `datetime`,
   `url`, and `asset` as well as for enums, functions, and `by` indexes.
-- ∆d1N is reworded: the manifest goes to the host declaration, its values are finished
+- `∆d1N` is reworded: the manifest goes to the host declaration, its values are finished
   URLs, and it is not a 1:1 port of `11ty/esbuild.ts`.
 - A photo's URL in the port must be its stored `alias` and never `title.slugify()`: those
   aliases were minted by `@sindresorhus/slugify`, so `Dürer` is `duerer` there and `durer`
-  here (∆pP5).
+  here (`∆pP5`).

@@ -22,9 +22,9 @@ Four things change in kind, not just in spelling:
 - **Layouts chain explicitly.** `layout: page` in a layout's front matter becomes the layout
   calling the next one with what it captured.
 
-The examples compile against the `site.lem` sketch below, written for them; the port (∆foi)
-designs the real one. Exact markup, class names and whitespace are the parity harness's to
-judge (∆Zo7), not these examples'.
+The examples compile against the `site.lem` sketch below, written for them; the port
+(`∆foi`) designs the real one. Exact markup, class names and whitespace are the parity
+harness's to judge (`∆Zo7`), not these examples'.
 
 ```lem site.lem
 <lem-enum Placement = hero | left | right />
@@ -161,7 +161,7 @@ judge (∆Zo7), not these examples'.
   and each photo has keys a `Photo` would have to declare; neither loads as
   `{string: Photo}`. A script that writes the declared shape beside it loads typed, as
   limulus.net's port derives `_lemmon/photos.json` with a spec that fails on drift; a
-  plugin's data hook would do the same (∆wOn, parked). `{string: any}` loads anything and
+  plugin's data hook would do the same (`∆wOn`, parked). `{string: any}` loads anything and
   checks nothing.
 - **Combining collections.** There is no list concatenation, so `collections.article` across
   `feed/`, `links/` and `tils/` needs one `from` glob that matches them all, with `type:`
@@ -352,7 +352,7 @@ page. `uniqueId(prefix)` is that counter: it counts per prefix and restarts ever
 body and layout in one run. The sprite itself is a mark a site plugin produces: limulus.net's
 `lemmon/svg-sprite.ts` builds it from `www/assets/svg/common` with svg-sprite in its
 `assets` hook, so a missing or unreadable icon stops the build, and its producer places it
-where `page.lem` writes `<lem.mark("sprite")>` (∆IvY). `tests/fidelity/the-rebound/site/
+where `page.lem` writes `<lem.mark("sprite")>` (`∆IvY`). `tests/fidelity/the-rebound/site/
 sprite.lem` inlines one by hand.
 
 ```lem components.lem

@@ -4,7 +4,7 @@ The three Claude Artifacts Eric owns — "Shell & Core", "The Lemmon Language", 
 Eleventy to Lemmon" — are the architecture record, and `docs/` is its working
 distillation. When implementation moves a design point, the repo docs change in the same
 pass and the artifact change is recorded here instead of made, so that the artifacts are
-reconciled once (∆MlD, at the end of Phase 1) rather than edited item by item.
+reconciled once (`∆MlD`, at the end of Phase 1) rather than edited item by item.
 
 One entry per change: which artifact, what to change, and the decision or backlog item that
 moved it. Newest last. An entry is removed when its change has been applied.
@@ -15,16 +15,16 @@ moved it. Newest last. An entry is removed when its change has been applied.
   an environment value the shell passes as data, resolved by the binding's type like any
   string in data. Example line for the `site.lem` block: `<lem-let siteUrl: url from
   env("SITE_URL") />`. Any mention of `Build.env` goes; environment values are a `from`
-  source on `site` (D30 revision, ∆1vS).
+  source on `site` (D30 revision, `∆1vS`).
 - **Head-shape rule** — wherever the text says `= expr` is the void marker of `lem-let`,
   add that `from` past the name is its void source form; a capture named `from` stays a
-  block (D21 as revised by D30, ∆1vS).
+  block (D21 as revised by D30, `∆1vS`).
 - **`lem-collection` / `lem-data`** — remove as tags; they are retired, and an author who
-  types one gets "unknown tag" with no did-you-mean (D30, ∆1vS).
+  types one gets "unknown tag" with no did-you-mean (D30, `∆1vS`).
 - **Names, stdlib shadowing** — where the text says a `lem-fn` or `lem-let` taking a
   stdlib name warns, say the warning fires when the name it displaces is the stdlib's: a
   parameter or loop binding never warns, and neither does a definition displacing a
-  project function, a parameter, or an outer binding (D23, ∆e4d).
+  project function, a parameter, or an outer binding (D23, `∆e4d`).
 - **Types and Checking** — add `any`, the spelled unknown, to the type list, with its
   rule (assignable both ways; every operation on it is `any`, checked by the VM at
   render time). Replace the Checking paragraph with `docs/language.md` §Checking as it
@@ -36,7 +36,7 @@ moved it. Newest last. An entry is removed when its change has been applied.
   `any` parameters, provisional), and the unused rule (`lem-let` and parameters warn,
   loop bindings do not). `{K: V}` keys are always `string`. An expression-bodied `lem-fn`
   must declare its return type (invariant 11). `.` reads records, `[]` indexes maps, and
-  a map miss is a render error like a list's (∆C8d).
+  a map miss is a render error like a list's (`∆C8d`).
 - **Records and enums** — where the type list says records are nominal with single
   `extends`, add D32's readings: a subtype may redeclare a field only with the identical
   type (to change its default), so `layout` is declared once where its self type is and
@@ -44,14 +44,14 @@ moved it. Newest last. An entry is removed when its change has been applied.
   the enum expected where it stands (arguments, annotated bindings, returns, the right
   operand of `==`/`!=`/`in` beside an enum) and `Placement.hero`
   needs no expectation, so a bare name is only ever a name and `Name.x` is the one
-  place the type namespace is read before the value one (∆EN6 revised ∆cea's bare
+  place the type namespace is read before the value one (`∆EN6` revised `∆cea`'s bare
   reading; never describe a bare variant or the shadowing it needed); an enum prints as
   its variant's name and is that name as a string at run time; a record has no printed form;
   builtin type names and the `map`/`list`/`function` spellings cannot be declared; the
   type namespace is project-flat with the value namespace's duplicate rule, and a type
   may share a name with a function. `.` on a record is typed by its declaration and its
   ancestors'; `x.f(…)` calls a record field `f` as the value it holds. Field
-  defaults and `by` indexes are not checked until the loader (∆iCW) (D32, ∆cea).
+  defaults and `by` indexes are not checked until the loader (`∆iCW`) (D32, `∆cea`).
 - **Calls, and everywhere UFCS is described** — remove it. `x.f(y)` no longer resolves to
   a project function `f(x, y)`: `.` asks the receiver's type and nothing else, so
   `photo.rendition(md, jpeg)` is written `rendition(photo, md, jpeg)`. In its place, each
@@ -62,7 +62,7 @@ moved it. Newest last. An entry is removed when its change has been applied.
   is null; on `any` the VM resolves the name at render time. Wherever the text argues
   that a pipe operator is redundant given UFCS, say instead that it is retired: methods
   answer the chaining, and `|>` cannot be written in a head at all (invariant 3)
-  (D34, ∆495).
+  (D34, `∆495`).
 - **Checking, builtins and lambdas** — where the text says a builtin has a typing rule,
   add that the rule may shape each argument from the ones before it: `xs.filter(|a| …)`
   expects `(T): bool` and yields `[T]`; `xs.map(|a| …)` expects a function of `(T)` and
@@ -70,7 +70,7 @@ moved it. Newest last. An entry is removed when its change has been applied.
   inferred, and the result is a list of what it returns. A lambda's parameter is thus
   typed from the receiver's element type without annotation, and an expected `any`
   keeps its opt-out meaning everywhere. `map` and `filter` are the first two list
-  methods; the rest arrive with the stdlib (D34, ∆987).
+  methods; the rest arrive with the stdlib (D34, `∆987`).
 - **Narrowing, type tests, matching, record literals** — wherever the text describes
   narrowing, `is`, or `lem-match`, replace it with `docs/language.md` §Checking's
   Narrowing, Type tests, and Matching bullets and the record-literal clause of Literals:
@@ -84,7 +84,7 @@ moved it. Newest last. An entry is removed when its change has been applied.
   (every variant, plus `null` for `T?`) — a record or anything else needs a default, on
   the provisional reading; a `{…}` where a record is expected is that record, every key a
   declared field, omitted optionals null, an omitted required field an error whether or
-  not it has a default (D35, ∆PCK). The `lem-if`, `lem-match`, and Type tests rows of the
+  not it has a default (D35, `∆PCK`). The `lem-if`, `lem-match`, and Type tests rows of the
   tag and expression tables say the same in brief.
 - **Ambient types, `site`** — say the top-level bindings of the file an ambient value
   reads declare their types, `= expr` bindings included, and give the rule its name:
@@ -92,12 +92,12 @@ moved it. Newest last. An entry is removed when its change has been applied.
   body — a `lem-fn`'s signature, a `lem-type`'s fields, and these. That is what invariant
   11 rests on, and it is why such a binding never warns as unused. Where the text says a
   path narrows from a local, add that it may be rooted at an ambient value too, by its
-  name (D36, D35 as revised, ∆Iau).
+  name (D36, D35 as revised, `∆Iau`).
 - **Ambient types, the entry field** — say the checker asks for `layout` where a record's
   base *is* the type the host declared its document value to be, since a field may be
   redeclared only with the same type (D32): the entry is declared once, where its self
   type is, and inherited below. Its own base may stand in for `T` — `(Page, html): html`
-  on a schema extending `Page` is a layout a family of schemas shares (D36, ∆Iau).
+  on a schema extending `Page` is a layout a family of schemas shares (D36, `∆Iau`).
 
 - **Schemas, defaults and references** — replace the two bullets on reference fields and
   computed defaults with `docs/language.md` §Schemas as it now reads: a `by` index is an
@@ -107,12 +107,12 @@ moved it. Newest last. An entry is removed when its change has been applied.
   never the host's document value; its reads are recorded and a cycle is a link error;
   `layout`'s default names a function. Drop the bullet that checks a plain string key
   against a like-named site map by convention, and the `extra: {string: any}` opt-out
-  from the extra-key rule — both were names the core would have to know (D37, ∆iCW).
+  from the extra-key rule — both were names the core would have to know (D37, `∆iCW`).
 - **Ambient types, `from` and computed bindings** — say a `from` binding stands only at
   the top level of the bindings file and its source is a string literal, `plugin("…")`,
   or `env("…")` with one string-literal argument; that a computed binding compiles to a
   function the loader runs in dependency order; and that at that file's top level a
-  sibling is read by its bare name, the same read as `site.x` (D37, ∆iCW).
+  sibling is read by its bare name, the same read as `site.x` (D37, `∆iCW`).
 - **Schemas, the loader** — where the text says how loaded data is read, say the loader
   validates by declared type and fills an omitted field with `null` exactly when its type
   admits one — a `T?`, or `any` — the rule a record literal follows; that a whole number
@@ -121,7 +121,7 @@ moved it. Newest last. An entry is removed when its change has been applied.
   exactly is an error); that a string is never `html`, since `raw()` is the only string
   that becomes one; and that a page-backed record is loaded from a document of its own
   only — never from a data file or nested in another document's front matter (D37,
-  ∆iCW).
+  `∆iCW`).
 - **Schemas, defaults through calls** — where the entry above says a default's reads are
   recorded and a cycle is a link error, add that the reads are closed through the
   `lem-fn`s the default calls by name, however deep — a function handed `self` whole
@@ -129,20 +129,20 @@ moved it. Newest last. An entry is removed when its change has been applied.
   cycle through a call is refused with the call named; that a call through a value is
   not followed and a field reached through one before the loader computed it stays a
   load error at the read; and that a default or computed binding reaching the host's
-  document value through a call is a link error at the field (D37 revised, ∆HF0).
+  document value through a call is a link error at the field (D37 revised, `∆HF0`).
 - **Schemas, reference fields** — where the text says a `by` index is an expression of
   type `{string: R}`, say it names one field of one ambient value, `by site.photos`,
   declared that type: a pair the head declares, checked against the value's
   declaration, never an expression the loader runs. The loader looks a front-matter
   string up in the map as loaded, before the record's defaults run, and a `from`
   binding loads after the siblings its records index; a map in another bindings file
-  or a later host value is a load error at the field (D37 revised, ∆eag).
+  or a later host value is a load error at the field (D37 revised, `∆eag`).
 - **Schemas, default scope** — where the entries above say a default sees the ambient
   values except the host's document value, say it sees none: `self`, and `path` and
   `body` on a page-backed record, and nothing else, directly or through a call, which
   is a link error naming the call; what a page needs of the site its layout reads. A
   `from` binding is then ordered by its records' `by` indexes alone, and a default on
-  the host's own record reads nothing of the site (D37 revised, ∆eag).
+  the host's own record reads nothing of the site (D37 revised, `∆eag`).
 - **Ambient types, load order** — say the host fulfils a `from` binding by its name
   alone, so no two bindings files may load one of the same name (a link error); that the
   host's own values load first, in the host's declaration order, then each bindings
@@ -150,7 +150,7 @@ moved it. Newest last. An entry is removed when its change has been applied.
   a bindings file loads (a load error at the step, before it runs); that once a value has
   failed no later plan runs, so the one error is the author's; and that the host's
   document value is bound as sent, untyped, since the envelope carries it only for a
-  document no collection matched (D37, ∆iCW).
+  document no collection matched (D37, `∆iCW`).
 
 - **Types, the stdlib's values** — where the text lists the builtin types, say what each
   one now *is*. A `datetime` is an instant plus the offset it was written in, printing
@@ -161,7 +161,7 @@ moved it. Newest last. An entry is removed when its change has been applied.
   declares at `compile`. Add the per-receiver method inventory D34 deferred — string,
   list, map, int, float, datetime, duration, url, html — and say that `slugify` folds
   Latin marks rather than transliterating, carrying a script it cannot fold through
-  unchanged, and that a character is a grapheme cluster throughout (D38, ∆Q6L).
+  unchanged, and that a character is a grapheme cluster throughout (D38, `∆Q6L`).
 
 - **Names, the ambient inventory** — where the text says the stdlib's ambient functions
   are `raw`, `datetime` and `url` with others to come, say the namespace is closed at
@@ -176,11 +176,11 @@ moved it. Newest last. An entry is removed when its change has been applied.
 
 - **Schemas, the computed example** — the `readingTime` line is
   `readingTime: duration = body.readingTime()`, a method on the document's `html`, not an
-  ambient function over it (D34, ∆Q6L).
+  ambient function over it (D34, `∆Q6L`).
 
 - **Fields, the did-you-mean** — a misspelled method *read* now names the call it meant
   (`s.slugfy` → "did you mean `.slugify()`?"), as a misspelled call already did; a call
-  lists the receiver's whole inventory only when no name is near (∆eHR).
+  lists the receiver's whole inventory only when no name is near (`∆eHR`).
 
 - **Document mode, items 1, 2 and 6; the `lem-let` row; the escape table** — replace
   items 1, 2 and 6 with `docs/language.md` §Document mode as it now reads: a block is a
@@ -191,11 +191,11 @@ moved it. Newest last. An entry is removed when its change has been applied.
   `lem-let` row drop "in documents the body is a document"; in the escape table say a
   fence protects prose only and `&lt;lem` is the escape inside a block. Drop both
   placeholder notes: front matter is parsed by the shell and validated by the loader
-  (D37), and that is the settled behaviour (∆Hbw). Where the text describes the `---`
+  (D37), and that is the settled behaviour (`∆Hbw`). Where the text describes the `---`
   block, say one textual rule finds it in a `.lem` file as in a `.md` — a first line of
   exactly `---` through the next such line, nothing inside scanned — and that a block
   which never closes is an error at its opening line in both modes, not a rule and prose
-  (∆Bhz).
+  (`∆Bhz`).
 
 - **Document mode, comrak configuration** — replace "syntect highlighting (class-based,
   generated theme CSS)" with a Code blocks subsection as `docs/language.md` § Code blocks
@@ -207,7 +207,7 @@ moved it. Newest last. An entry is removed when its change has been applied.
   producer claims is a warning at the word, with a did-you-mean, while compiling; what
   the claims said about that word is the document's compile-time fact; a `math` fence is
   comrak's own block and no mark, since comrak renders it before consulting any seam; the
-  core embeds no grammars and no theme (D42, superseding D40; ∆7wK).
+  core embeds no grammars and no theme (D42, superseding D40; `∆7wK`).
 
 - **Tags, Names, and Ambient types: page templates** — remove the `lem-page` row. Where
   the text describes page templates, say a `.lem` file is a page when it opens with front
@@ -217,7 +217,7 @@ moved it. Newest last. An entry is removed when its change has been applied.
   url as defaults on its type. In the `url` sentence drop `<lem-page url = … />`: `url` is
   given in front matter, or by a generator type's default. In Names, "Page-template
   bindings (lem-page, lem-let at file top level)" becomes file-top-level `lem-let`
-  bindings (D41, ∆RGQ). Give the generator its key: `for:` with one entry, a field the
+  bindings (D41, `∆RGQ`). Give the generator its key: `for:` with one entry, a field the
   page type declares and an `<ambient value>.<field>` list, read and stripped by the
   shell as `type:` is and checked at load; a generator's front matter gives neither that
   field nor `url`, and no `from` glob holds its pages. The loader words a malformed pair,
@@ -226,7 +226,7 @@ moved it. Newest last. An entry is removed when its change has been applied.
   `.values()` binding, and refuses the url field or a neighbour as the named one and a
   document with the key; a type with no url default is one error at the pair, however
   long the list; and a message names a generated page by its item, `` `tils/topics.lem`
-  for `site.tilTopics[2]` `` (∆99b). Remove `prev`/`next` from the
+  for `site.tilTopics[2]` `` (`∆99b`). Remove `prev`/`next` from the
   shell's `Page` and from the sentence calling them a page's neighbours in its
   collection: a generated page's type declares them as optionals of itself or an
   ancestor, the loader fills them in list order, and every other page has neither. The
@@ -234,17 +234,17 @@ moved it. Newest last. An entry is removed when its change has been applied.
   a default's read of one is refused where it stands or at link through a call, judged
   anew on every link rather than recorded as a fact of the unit; the fields are withheld
   while a page's defaults run, so a read neither can see is refused at the read in the
-  same words; and front matter never gives one, `null` included (∆99b). Where
+  same words; and front matter never gives one, `null` included (`∆99b`). Where
   the text says the shell reads two names of its own, list the keys `type` and `for` and
   the declared fields `layout`, `url`, `prev`, and `next`. A page template has no `body`
   before it renders, so a record whose default reads `body` cannot type one: the link
   step refuses the template where its record was named, labelled at each default —
-  inherited ones included — that reads `body` (D43, ∆Bhz). A `.lem` file with no front
+  inherited ones included — that reads `body` (D43, `∆Bhz`). A `.lem` file with no front
   matter is no page, so a record the host names for it is a compile error, and under a
   host that declares a document type its top-level output — a text run, a `<lem.x>`, a
   `lem-style` — warns once, at the first such item, since a shell never renders that
   file's entry; definitions, declarations, a top-level `lem-let`, and a host that types
-  no documents draw no warning (∆Bhz).
+  no documents draw no warning (`∆Bhz`).
 
 - **Tags, the side-channel rows; Names; Functions & components; Escaping** — drop the
   `lem-emit` row: placement is `<lem.mark("styles")>`, an ambient constructor beside
@@ -256,7 +256,7 @@ moved it. Newest last. An entry is removed when its change has been applied.
   Marks section as `docs/language.md` § Marks reads: `mark(name, payload?, default?)`
   returns `html` standing for a range the host fills, its default an `html` value passed
   capture-then-call as the *named* argument `default:` — the one named argument a builtin
-  takes, which leaves the positional slot to ∆7wK's payload — its literal name and key
+  takes, which leaves the positional slot to `∆7wK`'s payload — its literal name and key
   checked against the host's claims, a name none claims a warning and a host declaring no
   handlers silent, the claims recorded as a fact, a mark inside a fragment, a payload, or
   a default a render error,
@@ -265,22 +265,22 @@ moved it. Newest last. An entry is removed when its change has been applied.
   producer's output is the host's trust (D42).
 
 - **Deferred questions** — add raw text in templates: a `: string` capture scanned as
-  text and call-with-body sugar (`lem-with`/`lem-raw`) over it, both additive (∆M5x, D42).
+  text and call-with-body sugar (`lem-with`/`lem-raw`) over it, both additive (`∆M5x`, D42).
 
 - **Whitespace, statement lines and body normalization** — add `lem-style`, `lem-head`,
   and `lem-script` to the tags that take their line, and `lem-style`/`lem-head` bodies to
   the bodies normalized; say a body's trailing edge is found past the statements whose
   lines were taken, so a `lem-style` closing a component's body leaves no newline behind
-  (D26, D27, ∆1Hp).
+  (D26, D27, `∆1Hp`).
 
 - **Ambient types, collections** — where the text says a `from` glob's element type must
   extend `Page`, say a list of `Page` itself collects nothing and is an error at the
   binding's type, and that a page belongs to one collection, so two globs that match one
-  page are an error at the page (∆muD).
+  page are an error at the page (`∆muD`).
 - **`lem-style` example (D20)** — the card component's class is `articleCard`, named after
   its function, and its nested selectors carry an explicit `&` (`& > a`, `& img.preview`):
   a bare nested type selector is dropped by Chrome before 120 and Safari before 17.2,
-  inside D20's browser floor (∆D3R).
+  inside D20's browser floor (`∆D3R`).
 - **`readingTime()`** — say it counts what a reader sees, not the source, so a link counts
   as its words and not its URL; Eric accepted for limulus.net that this reads a minute
   under Eleventy's count near a rounding boundary (D38, 2026-10-17).
@@ -300,12 +300,12 @@ moved it. Newest last. An entry is removed when its change has been applied.
   and `sources` fulfilling each `from` binding by name (`{path, value, spans}` per
   document of a glob, one for a data file, `{value}` for a plugin or env source), with
   `spans` a field-path → boundary-span table the host computes from the YAML it
-  parsed, and the `type:` key stripped by the shell (D37, ∆iCW).
+  parsed, and the `type:` key stripped by the shell (D37, `∆iCW`).
 - **VM, the module** — where the text gives `Module`'s shape, add the loader's plans:
   `records` (each record's default and `by` functions in dependency order), `bindings`
   (one plan per bindings file, its bindings in load order), and `exports` (function
   name → index). A default, `by` index, or computed binding is an ordinary function of
-  its unit that the loader invokes; `Op` gained nothing (D37, ∆iCW).
+  its unit that the loader invokes; `Op` gained nothing (D37, `∆iCW`).
 
 - **WASM API, `compile`** — give the declaration its shape:
   `{ambient: {[name]: TypeName | {bindingsOf: path} | null}, document?, entry?}`, where
@@ -315,33 +315,33 @@ moved it. Newest last. An entry is removed when its change has been applied.
   the environment omits it — and that what each unit was compiled against is one of its
   facts, so a host that rebinds a name leaves those units stale and named for recompiling
   (D25). A core given no declaration has no ambient values at all, and `page` in a
-  template is an undefined name. Files carry `record` (D30, D36, ∆Iau).
+  template is an undefined name. Files carry `record` (D30, D36, `∆Iau`).
 - **WASM API, `Diagnostic`** — the boundary diagnostic is `{path, span, severity, message,
   labels}`: `severity` is `error` or `warning`, a program is still produced when the only
   diagnostics are warnings, and `labels` are path-qualified secondary spans. Wherever the
   text says `severity` and `code` arrive with the checker as optional fields, `severity`
   and `labels` have arrived and `code` alone is deferred. `compile`'s diagnostics describe
-  the files passed to that call, not the whole program (∆VNk).
+  the files passed to that call, not the whole program (`∆VNk`).
 - **WASM API, resident compile** — where the text describes the resident `Core`, say it
   keeps one export index of every project-flat name alongside the units, offered to as
   each file compiles: a name a resident file owns stays that file's, so a colliding
   definition is refused, blamed on the file just handed in whatever its path sorts as,
   and yields no unit — reported once, by the call that introduced it, with the last good
-  program still renderable (∆e5i).
+  program still renderable (`∆e5i`).
 
 - **Core pipeline, "checker"** — wherever the pipeline lists scanner → parser → checker →
   compiler → VM as passes, say the checker is not a pass of its own: the compiler's one
   walk types each expression as it lowers it (D31). `Unit::facts` carry typed signatures
   (parameter names and types, return type), and a callee whose type changed under a
-  caller is a link diagnostic naming the caller (∆C8d).
+  caller is a link diagnostic naming the caller (`∆C8d`).
 - **Separate compilation, facts** — where the text lists the compile-time facts, say the
   export index has a type namespace beside the functions, that a unit records a second
   kind of fact — the declaration of every foreign type its checking reached, span-free,
   at the use that reached it — and that a declaration whose shape changed under a
   consumer is a link diagnostic naming the consumer, while a default edit leaves it
   byte-identical. Records are checked by declaration, and a record value is tagged with
-  its declared name (D35, ∆PCK — the VM entry below); an enum value is a string (D32,
-  ∆cea). The boundary is unchanged.
+  its declared name (D35, `∆PCK` — the VM entry below); an enum value is a string (D32,
+  `∆cea`). The boundary is unchanged.
 - **WASM API, `compile`** — give the declaration its shape:
   `{ambient: {[name]: TypeName | {bindingsOf: path} | null}, document?, entry?}`, where
   `null` names a value without typing it (the Phase 0 spike's host), `document` says
@@ -350,20 +350,20 @@ moved it. Newest last. An entry is removed when its change has been applied.
   the environment omits it — and that what each unit was compiled against is one of its
   facts, so a host that rebinds a name leaves those units stale and named for recompiling
   (D25). A core given no declaration has no ambient values at all, and `page` in a
-  template is an undefined name. Files carry `record` (D30, D36, ∆Iau).
+  template is an undefined name. Files carry `record` (D30, D36, `∆Iau`).
 - **WASM API, `Diagnostic`** — where the text gives a diagnostic's span as `{start, end}`,
   say it is `{start, end, range}`: byte offsets *and* the same two points as LSP
   `Position`s, zero-based with `character` in UTF-16 code units. The core computes them
   because it holds the bytes; a consumer in JavaScript would have to re-encode the source
   to derive a UTF-16 column from a byte offset. Spans in the core stay bytes (invariant 8),
   and a span is placed against the text that produced its unit — not the latest text at
-  that path, which differs whenever a recompile failed (D33, ∆cE6).
+  that path, which differs whenever a recompile failed (D33, `∆cE6`).
 - **VM, builtins** — where the text describes `CallBuiltin` as a pure call over the
   argument values, say a builtin runs against the VM as a host: one that takes a function
   (`map`, `filter`) invokes it re-entrantly — the VM pushes the frame and runs its loop
   again until that frame returns, inside the one instruction — and a failure inside the
   invoked function is placed at its own instruction, not the builtin's. The frame cap
-  bounds the native recursion this adds (∆987).
+  bounds the native recursion this adds (`∆987`).
 - **VM, records and type tests** — where the text lists the value set, say a `Record`
   carries its declared type's name and its fields, read by name (`GetField` by index is
   an optimisation not taken); where it lists the ops, add `MakeRecord` (a map literal
@@ -375,8 +375,8 @@ moved it. Newest last. An entry is removed when its change has been applied.
   its runtime type's method — the agreement with the checker. The loader tags what it
   validates at `loadData`; what it leaves as sent — an untyped host's values, the host's
   document value where no loaded page stands in for it — stays untagged `any`, and
-  which record a page carries is the store's to know (D35 as revised, D36, D37, ∆Iau,
-  ∆iCW).
+  which record a page carries is the store's to know (D35 as revised, D36, D37, `∆Iau`,
+  `∆iCW`).
 - **VM, the module's tables** — where the text (and the entry above) says `Module`
   carries a name → base table (`types`), say instead it carries the project's
   declaration table (`declarations`, each with its file), its project-flat functions by
@@ -384,7 +384,7 @@ moved it. Newest last. An entry is removed when its change has been applied.
   (`documents`); `TypeTest` walks `extends` links in the declaration table, the same
   table the loader validates against. Say `Diagnostic` and `Label` carry an optional
   `range` — the host's positions, set by the loader for a file the host holds — and
-  the boundary places such a span by it rather than by an index (D37, D35 revised, ∆iCW).
+  the boundary places such a span by it rather than by an index (D37, D35 revised, `∆iCW`).
 - **WASM API, `loadData` and `render`** — where the class sketch and the boundary rules
   describe `loadData`, say its input is `{ambient, sources?, pages?}`: `ambient` bare
   JSON by the name the host bound each value, `sources` fulfilling each `from` binding
@@ -392,7 +392,7 @@ moved it. Newest last. An entry is removed when its change has been applied.
   field paths to complete spans the host computed, and `pages` the same entries for
   every page — a document or a page template — whose `type:` key typed it and no glob
   holds, loaded after every binding in the envelope's order, a page carried twice
-  refused as a caller bug and a page not carried simply not loaded (∆Bhz); that the
+  refused as a caller bug and a page not carried simply not loaded (`∆Bhz`); that the
   core validates, defaults, tags,
   and keeps the result resident as the store every render binds; that a load reporting
   an error leaves the previous data bound, as a failed compile leaves the program; and
@@ -404,11 +404,11 @@ moved it. Newest last. An entry is removed when its change has been applied.
   it: a
   template with no front matter, or a document or page template no collection matched
   and no `type:` named; a page template loads its own record as a document does (D37,
-  ∆iCW, D43).
+  `∆iCW`, D43).
 
 - **VM, the module's plans** — where the text gives `RecordPlan` as a record's ordered
   steps, add `indexes` beside them: each a field with the ambient value and field its
-  strings resolve through; a step is a default only, with no kind (∆eag).
+  strings resolve through; a step is a default only, with no kind (`∆eag`).
 
 - **WASM API, `compile` and the manifest** — where `HostDecl` is given as
   `{ambient, document?, entry?}`, add `assets?: {[logicalPath]: url}`: the manifest the
@@ -428,8 +428,8 @@ moved it. Newest last. An entry is removed when its change has been applied.
   compile time, since `compile` runs before `loadData`. A file that named an asset is
   recompiled when that asset's URL changes, and a file that named none is not. Replace
   "a new photo id invalidates only the documents whose facts named the photo index"
-  with: a new photo id changes no existing unit, and which pages re-render is ∆xBO's
-  question (D25, D38; D25 revised, ∆Hbw).
+  with: a new photo id changes no existing unit, and which pages re-render is `∆xBO`'s
+  question (D25, D38; D25 revised, `∆Hbw`).
 
 - **VM, the stdlib's values and the id counter** — `Value` carries `Datetime`, `Duration`,
   `Url` and `Asset` beside the rest, and stays twenty-four bytes: a datetime is packed
@@ -437,7 +437,7 @@ moved it. Newest last. An entry is removed when its change has been applied.
   `Value::order` so one rule serves `lt` and `sortBy`. Native re-entry has a cap of its
   own, separate from the frame count, because a builtin that calls back into the VM costs
   the machine's stack rather than the heap. The VM carries a per-prefix counter behind
-  `uniqueId`, cleared at the start of every render (D38, ∆Q6L).
+  `uniqueId`, cleared at the start of every render (D38, `∆Q6L`).
 
 - **Crates** — `jiff` (`alloc` only: no clock, no system zone, no tzdb),
   `percent-encoding`, `unicode-normalization` and `unicode-segmentation`. Say that
@@ -445,11 +445,11 @@ moved it. Newest last. An entry is removed when its change has been applied.
   `any_ascii` 582 KB — and that the `url` crate was rejected for refusing relative
   references (D38).
 
-- **VM, the native stack** — where the text (and the ∆Q6L entry above) says native
+- **VM, the native stack** — where the text (and the `∆Q6L` entry above) says native
   re-entry has a cap of its own, say both that cap and the parser's nesting cap are sized
   against a megabyte of stack, which the boundary crate pins when it links the `.wasm`
   rather than leaving it to the toolchain's default, and which the ABI tests run on
-  (∆vnI).
+  (`∆vnI`).
 
 - **WASM API, the host declaration** — add `marks?: {name, keys?, payload?, keyedBy?}[]`
   beside `assets`: the claims of the host's handlers, consumed while compiling as the
@@ -459,34 +459,34 @@ moved it. Newest last. An entry is removed when its change has been applied.
   compile-time fact per name *and key* — the answer itself, not a digest — so a producer
   that starts covering one language leaves the files that named it stale and not the
   files that named another. No grammars ride on the declaration and the core embeds none
-  (D42, superseding D40 and ∆BfR's entry; ∆7wK).
+  (D42, superseding D40 and `∆BfR`'s entry; `∆7wK`).
 
 - **WASM API, `render`** — `render` returns the page as UTF-8 bytes beside its metadata:
   `marks` (name, key, a `mark()` call's payload as JSON or a code block's payload id,
   byte range, source span) and `fragments` (the collect tags' bodies under each name),
-  with `deps` still ∆xBO's; the bulk-data rule gains the exception, with ∆RGQ's
+  with `deps` still `∆xBO`'s; the bulk-data rule gains the exception, with `∆RGQ`'s
   measurement that the page inside JSON was over half a render call.
   `@limulus/lemmon-core` ships `resolveMarks`, dispatching each mark by name and key
   before any output transform: a producer lists the keys it covers and answers only
   those — there is no wildcard producer, and one listing none answers only keyless
   marks — while a decorator runs on the keys it lists, or on every mark of its name; a
-  mark nothing answers is reported by name and key (D42, ∆7wK).
+  mark nothing answers is reported by name and key (D42, `∆7wK`).
 
 - **WASM API, `compile`** — `compile` returns `{diagnostics, payloads, sources}` rather
   than the diagnostics alone. `payloads` is every code block's `{id, language, info,
   code}`, each once, reported by the call that compiled the file whether or not the
   program relinked, since a resident unit is not compiled again. The host keeps them by
-  id, which is what a render's `code` mark names (D42, ∆7wK). `sources` is the entry
-  below (∆muD).
+  id, which is what a render's `code` mark names (D42, `∆7wK`). `sources` is the entry
+  below (`∆muD`).
 
 - **Crates, Markdown row** — drop syntect and `two-face` from the row and every "comrak +
   syntect adds ~1 MB" sentence: the core embeds no highlighter. comrak's code-block
   adapter is the core's own, writing comrak's own markup behind a sentinel so each block
   becomes a `code` mark. Keep the measurement as the reason: removing syntect took the
-  staged `.wasm` from 4.21 MB to 2.26 MB (D42, ∆7wK). Add `siphasher` for the payload
+  staged `.wasm` from 4.21 MB to 2.26 MB (D42, `∆7wK`). Add `siphasher` for the payload
   id — what a compile reports each payload under once and a render's mark names it by —
   a fixed SipHash-1-3 for a host that caches producer output on it across builds of the
-  core; the shell caches nothing on it (∆Nxd).
+  core; the shell caches nothing on it (`∆Nxd`).
 
 - **Highlighter seam** — where the text says syntect highlights code fences, say a code
   block is a `code` mark: the page holds comrak's plain escaped block, and the host's
@@ -511,9 +511,9 @@ moved it. Newest last. An entry is removed when its change has been applied.
   places the `lem-head` fragments. The shell's highlighter, `highlighter()`, is a `code`
   producer the site lists beside it, over highlight.js 11.9.0's languages by name and
   alias, writing `<pre><code class="hljs">`; its `exclude` option leaves keys to another
-  plugin's producer (∆Nxd). In the pipeline, a Resolve step between Render and Write
+  plugin's producer (`∆Nxd`). In the pipeline, a Resolve step between Render and Write
   runs each mark's producer then its decorators before any transform, caching nothing by
-  payload id, since highlighting limulus.net's code costs about 1 ms a rebuild (∆Nxd);
+  payload id, since highlighting limulus.net's code costs about 1 ms a rebuild (`∆Nxd`);
   Post-process's link/asset integrity check moves before Write as a Check step, over
   every page and file in memory, so nothing is written on a broken link (D47, below);
   Write writes the pages, then the files producers wrote, then passthrough; and
@@ -522,7 +522,7 @@ moved it. Newest last. An entry is removed when its change has been applied.
   `lemmon.config.ts`'s `origin`, and every body bound as a string in `build.bodies` by a
   second load before any page renders — where the text had a Second phase after every
   other page was written (D46). D06's "plugins
-  cannot inject logic" is scoped to the language and the core (D42; ∆F4y): what a plugin
+  cannot inject logic" is scoped to the language and the core (D42; `∆F4y`): what a plugin
   hands the core before it compiles — a document transform's body, an asset hook's
   manifest — is the shell's trust too, as what it does to a page afterwards is (D44).
 
@@ -530,7 +530,7 @@ moved it. Newest last. An entry is removed when its change has been applied.
   the page crosses as bytes beside a JSON header of its marks and fragments: a four-byte
   length, the metadata, then the page, with no page section at all where the render
   failed. Keep the measurement as the reason — escaping a page into JSON and parsing it
-  back was more than half of a render call (∆1Hp, D42).
+  back was more than half of a render call (`∆1Hp`, D42).
 
 - **VM, ops and values** — replace `Channel/EmitChannel` with `Collect { name }` (a collect
   body into the page's fragments, dedup by content) and say a mark is a value: `mark()`
@@ -543,7 +543,7 @@ moved it. Newest last. An entry is removed when its change has been applied.
   generators", and says generated pages are "a `<lem-page for photo in
   site.photos.gallery() …>` header", say a page template carries front matter like a
   document, and a generator's front matter names an ambient value's list with its `for:`
-  key, each page's other fields computed by its type's defaults (D41, ∆RGQ, D43).
+  key, each page's other fields computed by its type's defaults (D41, `∆RGQ`, D43).
 
 - **WASM API, pages** — in the class sketch, `plan()` returns `{path, index?, url?}` for
   every loaded page: each collection's in the order the loader builds them, then the
@@ -555,23 +555,23 @@ moved it. Newest last. An entry is removed when its change has been applied.
   is no generator. `HostDecl` gains `url?` and `neighbours?`, two field names;
   `DataInput` gains `pages`, the front matter of every page no glob holds, and any page's entry may carry
   its `for:` pair as the shell parsed it, `{value, spans, valueSpans}`, a glob's member
-  too, which the load refuses at the key (∆99b). `render` renders a loaded page through
+  too, which the load refuses at the key (`∆99b`). `render` renders a loaded page through
   its entry — the file's output passed as `body` to the entry field's function in one VM run
   — and any other file as its own output. In the pipeline, Plan lists loaded pages rather
   than expanding generators, which Load does (D43). Two pages at one url is a load error
   at the second page's `url` key — else at its record, as for a url a default derived,
   or at a generated page's `for:` entry — labelled at the first; two pages of one
-  generator at one url are said once, as its url default's mistake (∆99b). The document
+  generator at one url are said once, as its url default's mistake (`∆99b`). The document
   type declares the url field as `url` and every page's record the entry field as a
   layout of it, checked at link rather than while a file compiles, since neither name is
   a fact of any unit: a declaration that only renames a field relinks every unit as it
-  is, and only the link step sees the new name (∆Bhz).
+  is, and only the link step sees the new name (`∆Bhz`).
 
 - **VM, neighbour references** — where the text lists the value set, say a neighbour
   field holds a reference into the store's page table that a field read resolves to the
   page's record, so no record holds another, and `render` takes the page table beside the
   globals (D43). Only a page render is given the table; a reference is equal to another
-  by position, and refused in a mark's payload at the call (∆99b).
+  by position, and refused in a mark's payload at the call (`∆99b`).
 
 - **Build pipeline, step 1; the standard shell's `Page`** — where the text describes
   discovery, the walk classifies each file as a document, a template, passthrough,
@@ -581,7 +581,7 @@ moved it. Newest last. An entry is removed when its change has been applied.
   lowercase `.md` alone, where it was ignored and the site built without it. And where
   `Page` is declared, `inputPath` is the source file's path from the directory holding
   `lemmon.config.ts`, `www/feed/the-rebound/index.md`, while the core's own path for the
-  file starts at the input directory (∆x8D).
+  file starts at the input directory (`∆x8D`).
 
 - **WASM API, `compile`; Build pipeline, step 3** — `compile`'s `sources` is every
   `from` binding of the program the call installed, `{name, kind, literal, collects?,
@@ -593,7 +593,7 @@ moved it. Newest last. An entry is removed when its change has been applied.
   the shell matches documents against the globs `site.lem` reports, say this is how it
   learns them: the first compile — of `ambient.lem` and every template, page templates
   without their records — returns them, and the second compiles the pages as their
-  records, so a document's definitions are out of every template's sight (∆muD).
+  records, so a document's definitions are out of every template's sight (`∆muD`).
 
 - **Shape and build pipeline, the dev server** — where the text gives the dev server
   COOP/COEP headers of its own, none is built in: it adds to every response the headers
@@ -604,7 +604,7 @@ moved it. Newest last. An entry is removed when its change has been applied.
   that settles, and reloads the open pages, over a WebSocket, after a build with no error
   and every file written, until the Incrementality epic, which opens only if that full
   rebuild of limulus.net takes over a second. It reads `lemmon.config.ts` once, so a
-  change to it needs a restart (∆Vhi).
+  change to it needs a restart (`∆Vhi`).
 
 - **Shell plugin API and build pipeline, the hooks before compile** — in the `Plugin`
   sketch, `transformDocument?(doc, ctx): Document` becomes `transformDocument?(document:
@@ -623,7 +623,7 @@ moved it. Newest last. An entry is removed when its change has been applied.
   passthrough and before pages, and written with the pages; `lem check` calls the hook
   with `writes: false`. A hook's failure is an error at the start of `lemmon.config.ts`.
   The sketch's other hooks stay unbuilt: `data` and `commands`, `transformOutput`, and
-  `watch` and `emit` are refused at config load (D44; ∆ETy).
+  `watch` and `emit` are refused at config load (D44; `∆ETy`).
 
 - **Crates, Bundler row; Shell plugin API, the esbuild plugin** — the row's esbuild 0.28
   becomes 0.24.0, pinned exactly, with `esbuild-plugin-wasm` 1.1.0 beside it: what
@@ -638,7 +638,7 @@ moved it. Newest last. An entry is removed when its change has been applied.
   resolved first, its map naming the project's path relative to itself, and its `[hash]`
   eight base32 characters of the SHA-256 of the two. It bundles on every build,
   `lem dev`'s too — about 0.2 s of a limulus.net rebuild — with no incremental context
-  (D45; ∆d1N, ∆EEa).
+  (D45; `∆d1N`, `∆EEa`).
 
 - **Build pipeline, the link check; `lemmon.config.ts`** — say what the Check step (step
   8, before Write) reads, in memory: every link in the HTML (parse5, the attributes
@@ -655,7 +655,7 @@ moved it. Newest last. An entry is removed when its change has been applied.
   producer's mark, or the config's start, a manifest url once; an XML file the parser
   refuses, or not in UTF-8, is one too; `lem check` reports them and `lem dev` writes
   nothing on one. The pipeline has no Post-process step: an output transform, when built,
-  runs between Resolve and the Check (D47; ∆yOJ).
+  runs between Resolve and the Check (D47; `∆yOJ`).
 
 ## From Eleventy to Lemmon
 
@@ -689,14 +689,14 @@ moved it. Newest last. An entry is removed when its change has been applied.
   (`lemmon-cutover`) retires the parity harness after its last green run, removes
   Eleventy in one commit whose output is byte-identical to that run's, and is accepted by
   building fresh clones with no remote; a seventh slice decides how CI gets lemmon and
-  then Eric merges and deploys (∆oAl, ∆FnH).
+  then Eric merges and deploys (`∆oAl`, `∆FnH`).
 
 - **Template mapping, the CSS bundle** — where the text maps the bundle plugin: the
   `<link>` whose href is `getBundleFileUrl('css')` becomes `<lem.mark("styles")>`, which
   the shell's default plugin, `bundler()`, listed in the site's config, replaces with the
   `<link>` to the page's bundle. It is written to `/assets/immutable/bundle/`, named as
   Eleventy names one — the first ten base64url characters of the bytes' SHA-256 — so the
-  CloudFront config caching `/assets/immutable/*` is untouched (D13, D42; ∆F4y).
+  CloudFront config caching `/assets/immutable/*` is untouched (D13, D42; `∆F4y`).
 
 - **Template mapping, client scripts** — where the text maps `11ty/esbuild.ts`: its
   options become the shell's `esbuild()` with limulus.net's asset directory and token
@@ -711,7 +711,7 @@ moved it. Newest last. An entry is removed when its change has been applied.
   `asset("/lib/x/index.js")`, compile-checked. The unhashed
   `/lib/x/index.js` stubs it wrote are not written: nothing loads one. A page-relative
   front-matter path cannot be an asset, so penumbra's `scripts: ./lib/index.js` becomes
-  `/penumbra/journal/<slug>/lib/index.js`, typed `asset?` (D10, D38, D45; ∆d1N, ∆EEa).
+  `/penumbra/journal/<slug>/lib/index.js`, typed `asset?` (D10, D38, D45; `∆d1N`, `∆EEa`).
 
 - **Link checking and CloudFront** — Eleventy's build checks no link; Lemmon's refuses to
   write a site with one that names no file it writes (D47). Where the text maps the
@@ -719,4 +719,4 @@ moved it. Newest last. An entry is removed when its change has been applied.
   `served`, the paths the host answers without a file; and that the links Eleventy wrote
   which leaned on CloudFront's dot-less rewrite — the Atom feeds' alternate links,
   `https://limulus.net/tils` and `/penumbra` — are fixed at the cutover to end in `/`,
-  a reader-visible change, their `<id>`s kept as they are (∆yOJ).
+  a reader-visible change, their `<id>`s kept as they are (`∆yOJ`).

@@ -1,8 +1,8 @@
 # D28 — Whitespace is a source concern
 
-- **Status:** Accepted 2026-08-24; applied 2026-08-25 (∆Ma4), when the spike's gate
+- **Status:** Accepted 2026-08-24; applied 2026-08-25 (`∆Ma4`), when the spike's gate
   became a rendered-HTML comparison
-- **Backlog item:** ∆Ma4
+- **Backlog item:** `∆Ma4`
 - **Normative text:** `docs/language.md` § Whitespace; `docs/architecture.md` § Testing
 
 ## Context
@@ -10,7 +10,7 @@
 The Phase 0 spike's fidelity gate compared Lemmon's output bytes against WebC's. D26
 exists to stop a definition's indentation reaching the output, and that gate demanded
 another engine's indentation reach it — the two had been in contradiction since D26 was
-written, and ∆2vO planned around the gate as a fixed constraint, down to choosing the
+written, and `∆2vO` planned around the gate as a fixed constraint, down to choosing the
 hugged-body reading partly because the fixture needed it. The contradiction surfaced only
 when Eric said output whitespace does not matter to him.
 
@@ -29,7 +29,7 @@ output depend on a value's shape at run time.
 What this does *not* license is touching whitespace HTML renders — inline formatting
 contexts, `pre`/`textarea` — which is output semantics and survives byte for byte. Which
 is why a fidelity gate compares rendered HTML rather than raw bytes (D15's "normalized";
-∆Ma4 for the spike), and never by collapsing whitespace blindly.
+`∆Ma4` for the spike), and never by collapsing whitespace blindly.
 
 ## Alternatives considered
 
@@ -51,5 +51,5 @@ is why a fidelity gate compares rendered HTML rather than raw bytes (D15's "norm
 - The old harness's guard — indentation deltas on content lines must fail — moved rather
   than vanished: a changed space between two inline runs, or inside `pre`, still fails.
 - dprint leaves the harness: formatting both sides is a byte-level normalization the tree
-  diff makes moot. Its devDependencies return in the shell (∆F9l), where they belong.
+  diff makes moot. Its devDependencies return in the shell (`∆F9l`), where they belong.
 - The spike's templates were rewritten as an author would write them.

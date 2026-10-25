@@ -1,10 +1,10 @@
 # D34 — Builtin methods
 
-- **Status:** Accepted 2026-09-07 (∆495); dispatch and UFCS's removal implemented
-  2026-09-07 (∆495), the argument-shaping rule and higher-order methods (`map`, `filter`,
-  over a re-entrant invoke) 2026-09-07 (∆987); the inventory this record deferred written
-  2026-09-12 (∆Q6L, D38)
-- **Backlog item:** ∆495, ∆987
+- **Status:** Accepted 2026-09-07 (`∆495`); dispatch and UFCS's removal implemented
+  2026-09-07 (`∆495`), the argument-shaping rule and higher-order methods (`map`, `filter`,
+  over a re-entrant invoke) 2026-09-07 (`∆987`); the inventory this record deferred written
+  2026-09-12 (`∆Q6L`, D38)
+- **Backlog item:** `∆495`, `∆987`
 - **Normative text:** `docs/language.md` § Expressions (Access, Calls), § Names &
   namespaces (Ambient), § Checking (Calls, Fields)
 
@@ -13,16 +13,16 @@
 UFCS was how the stdlib was going to read. § Checking puts generics on builtins only —
 `filter`, `map`, `sortBy`, `groupBy` — and those are chained or they are nothing:
 `articles.filter(…).sortBy(…).take(5)` against `take(sortBy(filter(articles, …), …), 5)`,
-on every feed and index page of the port (∆rT5). It also let a plugin's function read as a
+on every feed and index page of the port (`∆rT5`). It also let a plugin's function read as a
 method, `photo.rendition(md, jpeg)`.
 
 The price was that `x.f(…)` asked the receiver's type *and* the enclosing scope, and
 everything that met a call had to answer to both. D32's bare variant needed an arm in the
-receiver check; ∆EN6 retired the bare variant and the dotted one inherited the arm, which
+receiver check; `∆EN6` retired the bare variant and the dotted one inherited the arm, which
 made `<lem..left.place()>` legal source. The probe that asks the scope for `f` before the
 receiver is lowered has produced two bugs on its own — a capture recorded for a name that
-compiled to nothing (∆c8h), a receiver lowered without the expectation that checked it
-(∆cea). And a call's meaning depends on a declaration in another file: a record that gains
+compiled to nothing (`∆c8h`), a receiver lowered without the expectation that checked it
+(`∆cea`). And a call's meaning depends on a declaration in another file: a record that gains
 a field `f` turns `x.f(y)` from a call of the function into a call of the field, legal
 both ways and so silent, though D25's fact recording does make the unit stale.
 
@@ -52,7 +52,7 @@ one.** A stdlib entry whose first parameter *is* the value it works on is a meth
 `xs.filter`, `s.trim`, `s.slugify`, `d.rfc3339`. One that constructs from something else,
 or casts, is an ambient function — `asset()`, `url()`, `datetime()`, `uniqueId()`, and
 `raw()`, which stays a function so the one `string` → `html` cast stays conspicuous
-(invariant 7). ∆Q6L writes the inventory against this line.
+(invariant 7). `∆Q6L` writes the inventory against this line.
 
 **Method names occupy no namespace**, as builtin `lem-*` tags do not (revising D23). A
 `lem-fn map(…)` displaces nothing and warns about nothing; the ambient value namespace
@@ -64,7 +64,7 @@ that says what the *n*th argument is expected to be given the types already in h
 arguments lower left to right. That is what makes `xs.map(|a| a.date)` take the lambda's
 parameter from the receiver's element type. It needed one more thing nothing had when this
 was decided: a builtin could not call a `Value::Fn`, so a re-entrant invoke arrived with
-it (∆987).
+it (`∆987`).
 
 **Through `?.` a method call propagates null**, as a field read does: `xs?.filter(…)` is
 optional in whatever `filter` returns.
@@ -112,22 +112,22 @@ answers — the `any` path, not a second checker.
   dynamic op that resolves the name against the runtime value. And a higher-order method
   needs the VM to run a closure and hand back its result, which `Builtin::call` — then a
   pure `fn(&[Value])` — and `Vm::call` — which only pushes a frame — could not do between
-  them; ∆987 gave a builtin the VM as a host to invoke through.
+  them; `∆987` gave a builtin the VM as a host to invoke through.
 - **No grammar change.** `xs.filter(…)` already parses as a member expression called, so
-  tree-sitter (∆5MM) and the `.cst`/`.tags` projections are untouched. The corpus's UFCS
+  tree-sitter (`∆5MM`) and the `.cst`/`.tags` projections are untouched. The corpus's UFCS
   call sites become plain calls, and `<lem-fn slug(s: string): string = s.slugify() />`
   stays exactly as written — a method now.
 - The pipe operator is **retired, not deferred**: methods answer the chaining it existed
   for, and invariant 3 forbids its spelling. Its entry leaves the deferred list in
   `docs/decisions/README.md` and `docs/language.md` § Deferred questions.
-- The work lands in two items. ∆495 is dispatch: the table, `.` resolving against the
-  receiver, UFCS's removal, `?.`, `any`, and argument-free methods. ∆987 is the
+- The work lands in two items. `∆495` is dispatch: the table, `.` resolving against the
+  receiver, UFCS's removal, `?.`, `any`, and argument-free methods. `∆987` is the
   re-entrant invoke, the argument-shaping rule, and the higher-order methods that prove
   them — one unit, because the rule has no consumer without such a method and no such
   method runs without the invoke.
-- ∆Q6L is reshaped and gains `needs: ∆987` — the inventory is written against the table,
-  not moved onto it afterwards. ∆pXO gains `needs: ∆495`, so the authoring skill is not
+- `∆Q6L` is reshaped and gains `needs: ∆987` — the inventory is written against the table,
+  not moved onto it afterwards. `∆pXO` gains `needs: ∆495`, so the authoring skill is not
   distilled from the retired call model.
-- The LSP's completion after `.` (∆5MM) is answerable from the receiver's type alone,
+- The LSP's completion after `.` (`∆5MM`) is answerable from the receiver's type alone,
   where UFCS needed the first parameter of every project function.
-- `docs/artifact-changes.md`'s UFCS entries are superseded rather than added to (∆MlD).
+- `docs/artifact-changes.md`'s UFCS entries are superseded rather than added to (`∆MlD`).

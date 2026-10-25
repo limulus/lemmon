@@ -1,13 +1,13 @@
 # D42 — Marks resolve in the host
 
-- **Status:** Accepted 2026-09-13, settled in a planning pass before ∆1Hp was built,
-  superseding D40 and retiring `lem-emit` unbuilt; ∆1Hp builds the mark and ∆7wK the
-  fence, and either adds a clause here for what the build changes. As built (∆1Hp): a
+- **Status:** Accepted 2026-09-13, settled in a planning pass before `∆1Hp` was built,
+  superseding D40 and retiring `lem-emit` unbuilt; `∆1Hp` builds the mark and `∆7wK` the
+  fence, and either adds a clause here for what the build changes. As built (`∆1Hp`): a
   name no handler claims is a warning, and a host that declares no handlers says nothing;
-  `default` is a named argument, which keeps ∆7wK's positional payload additive;
+  `default` is a named argument, which keeps `∆7wK`'s positional payload additive;
   `mark()` lowers to an `Op::Mark` rather than running as a builtin, since a builtin
   cannot reach its call's file and span; a mark and a fragment each carry the file they
-  were made in beside their span. As built (∆7wK): a claim carries its keys, the payload
+  were made in beside their span. As built (`∆7wK`): a claim carries its keys, the payload
   record, and `keyedBy`, the payload field holding a mark's key, since the plugin that
   declares the record is what knows which field it dispatches on; a unit's fact is the
   answer about a name *and* a key rather than one digest per name, so a producer gaining
@@ -22,7 +22,7 @@
   "no wildcard producer" holds in the wrapper's dispatch as in the claims; a payload
   crosses as JSON, so the VM also refuses one holding a function or a float that is not
   a finite number, and two claims naming different payloads for one name are a
-  malformed declaration. As built (∆F4y): a handler is an entry of a plugin's `marks` in
+  malformed declaration. As built (`∆F4y`): a handler is an entry of a plugin's `marks` in
   `lemmon.config.ts`, and the claims `lem build` declares are the listed plugins', so an
   omitted list declares an empty claim set and warns at every mark; the shell sends no
   name-only claim — a decorator claims its name with an empty key list, and so does a
@@ -45,7 +45,7 @@
   collected CSS, joined by newlines, to `/assets/immutable/bundle/<name>.css`, the name the
   first ten base64url characters of its SHA-256 — Eleventy's bundle form — and links it
   from every `styles` mark; no wrapping `lem-fn` ships with it, since a plugin's `.lem` is
-  ∆wOn's, so a layout writes `mark("styles")`. As built (∆Nxd): the shell's highlighter
+  `∆wOn`'s, so a layout writes `mark("styles")`. As built (`∆Nxd`): the shell's highlighter
   is `highlighter()`, a plugin a site lists beside `bundler()`, over highlight.js pinned
   at exactly 11.9.0, since another release's grammars mark the same code differently; it
   produces `code` for each name and alias of every language highlight.js has, each
@@ -54,21 +54,21 @@
   and no option for one, since a decorator can add one; a site narrows its claim with
   `exclude`, the keys it leaves to another producer, an unknown key refused; and no
   output is cached by payload id, since highlighting limulus.net's eight blocks takes
-  about 1 ms of a 160 ms rebuild. Refined by D46 (∆zu0, 2026-10-19): the string a
+  about 1 ms of a 160 ms rebuild. Refined by D46 (`∆zu0`, 2026-10-19): the string a
   template reads is not a page's finished output, rendered after every other page, but a
   document's body rendered alone, its marks resolved, and bound in `build.bodies` before
   every page renders
-- **Backlog item:** ∆1Hp (the mark, claims by name, the collect tags, the boundary);
-  ∆7wK (the `code` mark, keys and payloads, the core's highlighter removed); ∆F4y (the
-  shell's plugins, their handlers, and the default plugin); ∆Nxd (the shell's highlighter)
+- **Backlog item:** `∆1Hp` (the mark, claims by name, the collect tags, the boundary);
+  `∆7wK` (the `code` mark, keys and payloads, the core's highlighter removed); `∆F4y` (the
+  shell's plugins, their handlers, and the default plugin); `∆Nxd` (the shell's highlighter)
 - **Normative text:** `docs/language.md` § Marks, § Document mode, Code blocks;
   `docs/architecture.md` § WASM API, § Build pipeline, § Shell plugin API
 
 ## Context
 
-Three things met while planning ∆1Hp (side channels) against D40 (code highlighting).
+Three things met while planning `∆1Hp` (side channels) against D40 (code highlighting).
 
-- The ∆1Hp plan had settled that an emit is a mark, not text: `<lem-emit styles />`
+- The `∆1Hp` plan had settled that an emit is a mark, not text: `<lem-emit styles />`
   writes nothing and records a byte offset, `render` returns the page as bytes beside
   its marks, and the shell splices at each offset. Three fixed names, no payload, no
   span.
@@ -89,7 +89,7 @@ hooks, Eleventy's bundle plugin, Astro and unified, Pandoc filters, Asciidoctor'
 processors, Zola, Typst's and Extism's wasm protocols, djot), and an adversarial review
 against the invariants. Measured: the core's highlighter and its plumbing are about 680
 production and doc lines, 750 test lines, two dependencies, and 1.97 MB of the `.wasm`;
-the shell's side of the design is work ∆PgF and ∆7Xs schedule anyway.
+the shell's side of the design is work `∆PgF` and `∆7Xs` schedule anyway.
 
 ## Decision
 
@@ -152,17 +152,17 @@ wants wasm instantiates it inside its own handler; the shell defines no wasm pro
 
 ## Alternatives considered
 
-- **Point marks with no content**, as the ∆1Hp plan had them. Rejected: an unclaimed
+- **Point marks with no content**, as the `∆1Hp` plan had them. Rejected: an unclaimed
   name, a failed handler, or a host with no shell leaves a hole where a block was, and
-  `readingTime` would count no code at all, deciding ∆aaw by accident. ∆RGQ rejected
+  `readingTime` would count no code at all, deciding `∆aaw` by accident. `∆RGQ` rejected
   ranges on four grounds; its own retrospective found two wrong, and the one that
   survives — a transform before the splice invalidates them — applies to points too.
-- **The core calls plugin wasm at render time** (∆SDN's first half). Rejected for
+- **The core calls plugin wasm at render time** (`∆SDN`'s first half). Rejected for
   output: there is no direct wasm-to-wasm call, so the core would cross into JS and
   back twice per block per render, inside its synchronous call, uncacheable by the
   shell, and the boundary would need a host import. Kept for values: a mark's content
   is opaque to the template, so anything a template computes on — plurals, collation —
-  still needs the core to call out, which is what ∆SDN now names.
+  still needs the core to call out, which is what `∆SDN` now names.
 - **Post-render plugins finding blocks by class**, as D40's consequences allowed.
   Rejected: a regex over HTML fires inside code that quotes the pattern, collides with
   neighbouring transforms, and must re-derive what the core knew when it wrote the
@@ -188,30 +188,30 @@ wants wasm instantiates it inside its own handler; the shell defines no wasm pro
   pages.)_
 - **A new tag for a template mark**, `<lem-mark name>body</lem-mark>`. Rejected: a body
   is a rendered template, wrong for raw text, and a raw body needs its own scanner mode
-  and head marker either way (∆M5x).
+  and head marker either way (`∆M5x`).
 - **Call-with-body sugar** now. Deferred by Eric: a raw body's mode must be in the
   head, since the callee is not resolved when the body is scanned, and the sugar
   belongs to both body kinds together, once the port shows whether capture-then-call
-  hurts (∆M5x).
-- **Payloads inline in the render's JSON.** Rejected: ∆RGQ measured the page inside
+  hurts (`∆M5x`).
+- **Payloads inline in the render's JSON.** Rejected: `∆RGQ` measured the page inside
   the JSON reply as more than half a render call; a fence's code would pay the same in
   proportion. By reference, nothing crosses per render.
 
 ## Consequences
 
-- ∆1Hp builds the general mark under the three collect tags, `mark()`, claims by name
+- `∆1Hp` builds the general mark under the three collect tags, `mark()`, claims by name
   on the declaration, the bytes-beside-metadata boundary with marks and fragments, and
-  the handler dispatch in `@limulus/lemmon-core`; its plan is revised. ∆7wK makes
+  the handler dispatch in `@limulus/lemmon-core`; its plan is revised. `∆7wK` makes
   fences `code` marks with keys, declares `Code` in the shell's `ambient.lem`, and
   removes syntect, the grammars on the declaration, the grammar digest fact, and the
   corpus's grammar fixtures.
-- The default highlighter is a shell plugin (∆Nxd): highlight.js in JS reproduces
-  limulus.net's markup exactly, which collapses the choice ∆o24 inherited from D40.
-  ∆SDN keeps only its value-producing half. ∆5pk becomes a `code` producer for `lem`
-  built from `lemmon-syntax`. ∆aaw loses the half D40 caused, since a body's default
-  content carries no `syn-` spans. ∆ePP renders feeds in the second phase, which
-  answers D30's open question about a rendered body's form _(refined by D46: ∆zu0
-  renders them after a body pass, from `build.bodies`)_. ∆PgF gains the `marks`
+- The default highlighter is a shell plugin (`∆Nxd`): highlight.js in JS reproduces
+  limulus.net's markup exactly, which collapses the choice `∆o24` inherited from D40.
+  `∆SDN` keeps only its value-producing half. `∆5pk` becomes a `code` producer for `lem`
+  built from `lemmon-syntax`. `∆aaw` loses the half D40 caused, since a body's default
+  content carries no `syn-` spans. `∆ePP` renders feeds in the second phase, which
+  answers D30's open question about a rendered body's form _(refined by D46: `∆zu0`
+  renders them after a body pass, from `build.bodies`)_. `∆PgF` gains the `marks`
   registration and ships the shell's `styles`/`scripts`/`head` producers as a default
   plugin a site lists, so a site can produce those names itself without a collision.
 - A host that claims a name ships an ordinary `lem-fn` wrapping `mark()` for it, so a
@@ -219,11 +219,11 @@ wants wasm instantiates it inside its own handler; the shell defines no wasm pro
   nothing of those wrappers — they are project or plugin functions (D23) — and they are
   what keeps `mark()` a plugin author's primitive rather than a site author's word.
 - The `Mark` shape, the wire, and the corpus notation change before any is blessed;
-  the ∆1Hp plan's `Place`/`Placed` names, which collide with the loader's `Place`
+  the `∆1Hp` plan's `Place`/`Placed` names, which collide with the loader's `Place`
   position and `Fault::Placed`, go with it.
 - The 24-byte `Value` budget is prose in `datetime.rs` with no test behind it; a marked
   value rides behind an `Rc`, as the plan already had it.
 - Invariant 7 governs the template and the core; a handler's output is the shell's
   trust, and the invariant's wording may gain that clause when it is next touched.
 - A raw-text form in templates — a `: string` capture, and call-with-body sugar over
-  it — is deferred (∆M5x); until then a multi-line source is a fence in a document.
+  it — is deferred (`∆M5x`); until then a multi-line source is a fence in a document.

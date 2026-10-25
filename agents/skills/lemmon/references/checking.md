@@ -56,7 +56,7 @@ What it reports, in the order it finds them:
   as written.
 - **Sources it cannot fulfil**: an environment variable that is not set, a data file outside
   the input directory or not there, and a `plugin("…")` source, which nothing runs yet
-  (∆wOn) — each at its binding in `site.lem`; and a data file that does not parse, at the
+  (`∆wOn`) — each at its binding in `site.lem`; and a data file that does not parse, at the
   place in the data file.
 - **Load errors**: a misspelled or missing front-matter key, a `by` reference its map lacks,
   a bad date in YAML, a data file with keys its type does not declare, two pages at one url.
@@ -94,4 +94,4 @@ What it reports, in the order it finds them:
 What it does not cover:
 
 - **Computed mark keys.** A key a template computes is read at render, and one no producer
-  lists keeps the default content without a word: not yet reported (∆CxX).
+  lists keeps the default content without a word: not yet reported (`∆CxX`).
