@@ -500,6 +500,14 @@ pub const BUILTINS: &[Builtin] = &[
     ),
     method(
         ReceiverKind::Datetime,
+        "utc",
+        1,
+        unshaped,
+        yields_receiver,
+        time::utc,
+    ),
+    method(
+        ReceiverKind::Datetime,
         "format",
         2,
         wants_string,

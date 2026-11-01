@@ -12,4 +12,5 @@ render/errors/stdlib-calls.lem:14:26..14:31: `%Q%` is not a datetime pattern: wr
 render/errors/stdlib-calls.lem:15:26..15:30: expected `string`, got `int`
 render/errors/stdlib-calls.lem:16:9..16:31: `.rfc822` takes 0 arguments, got 1
 render/errors/stdlib-calls.lem:17:4..17:37: cannot print a `duration`
-render/errors/stdlib-calls.lem:18:9..18:23: a `datetime` has no method `text`; it has `.day()`, `.format()`, `.month()`, `.rfc3339()`, `.rfc822()`, `.year()`
+render/errors/stdlib-calls.lem:18:9..18:23: a `datetime` has no method `text`; it has `.day()`, `.format()`, `.month()`, `.rfc3339()`, `.rfc822()`, `.utc()`, `.year()`
+render/errors/stdlib-calls.lem:19:15..19:30: a `datetime` has no method `toUTC`; did you mean `.utc()`?

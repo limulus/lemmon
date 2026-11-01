@@ -152,11 +152,12 @@ harness's to judge (`∆Zo7`), not these examples'.
   `u.text().split("/")[2]`; a numeric-segment test (`/^\d+$/`) is a `lem-fn` that `replace`s
   each of the ten digits with nothing and checks what is left is empty, as the port's
   `numeric()` does. Anything past that, give the page as data.
-- **Time zones and UTC.** A datetime prints and formats in the offset it was written in
-  (D38): `toLocaleDateString(…, {timeZone: 'America/Phoenix'})` is `format("%B %-d, %Y")`
-  only because the posts are written in `-07:00`; `toISOString()` and `toUTCString()` have
-  no conversion to UTC behind them, and a printed datetime drops trailing zeros from its
-  fraction (`.42Z`, not `.420Z`).
+- **Time zones.** A datetime prints and formats in the offset it was written in (D38):
+  `toLocaleDateString(…, {timeZone: 'America/Phoenix'})` is `format("%B %-d, %Y")` only
+  because the posts are written in `-07:00`, since no zone can be named. UTC can:
+  `toISOString()` is `<lem.d.utc()>`, though a printed datetime drops trailing zeros from
+  its fraction (`.42Z`, not `.420Z`), and `toUTCString()` is `d.utc().rfc822()`, which
+  writes `+0000` and an unpadded day where JavaScript writes `GMT` and pads it.
 - **Heterogeneous data.** `photos.json` maps aliases to ids as strings beside its records,
   and each photo has keys a `Photo` would have to declare; neither loads as
   `{string: Photo}`. A script that writes the declared shape beside it loads typed, as

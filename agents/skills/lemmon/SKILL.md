@@ -101,8 +101,8 @@ Builtin methods (§ Types):
 - `{string: V}`: `keys()`, `values()`, `has(key)`. `int`: `abs()`. `float`: `abs()`,
   `round()`, `floor()`, `fixed(places)`. `url`: `text()`. `html`: `readingTime()`.
 - `datetime`: `format("%B %-d, %Y")` (strftime), `rfc3339()`, `rfc822()`, `year()`,
-  `month()`, `day()`, read in the offset it was written in. `duration`: `minutes()`,
-  `seconds()`.
+  `month()`, `day()`, read in the offset it was written in; `utc()` is the same moment in
+  UTC, for a feed or a sitemap. `duration`: `minutes()`, `seconds()`.
 
 ## Types
 
@@ -123,7 +123,8 @@ deferred), so write `1.0 / 3.0`.
   anything else needs `<lem-default>` (the provisional reading; the rules are deferred).
 - **`any`** opts out: accepted everywhere, checked by the VM at render.
 - **`datetime`** is a moment plus its written offset: `2024-11-24` (midnight UTC) or
-  `2024-11-24 11:35:00 -07:00`. No offset or a zone name is refused; no arithmetic.
+  `2024-11-24 11:35:00 -07:00`, which `utc()` rewrites at offset zero. No offset or a zone
+  name is refused; no arithmetic.
 
 ## Records, enums and `site.lem`
 

@@ -155,7 +155,8 @@ moved it. Newest last. An entry is removed when its change has been applied.
 - **Types, the stdlib's values** — where the text lists the builtin types, say what each
   one now *is*. A `datetime` is an instant plus the offset it was written in, printing
   RFC 3339 in that offset and comparing by the instant alone, with no time-zone database
-  and a named zone refused rather than read for its offset; a `duration` is whole seconds
+  and a named zone refused rather than read for its offset, and `utc()` the same instant
+  rewritten at offset zero, for a feed or a sitemap (`∆QZz`); a `duration` is whole seconds
   with no printed form; a `url` is text percent-encoded once, idempotently, with `text()`
   to compose another from; an `asset` is a path resolved against the manifest the host
   declares at `compile`. Add the per-receiver method inventory D34 deferred — string,

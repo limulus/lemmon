@@ -16,3 +16,4 @@
 <p><lem.published.rfc822("%Y")></p>
 <p><lem.raw("a word").readingTime()></p>
 <p><lem.published.text()></p>
+<pubDate><lem.published.toUTC().rfc822()></pubDate>

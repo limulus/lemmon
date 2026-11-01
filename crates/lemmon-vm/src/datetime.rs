@@ -4,7 +4,8 @@
 //! `2026-04-04T10:30:00-07:00` and `2026-04-04T17:30:00Z` are one moment written twice.
 //! The offset is kept beside the instant because a site displays the time an author
 //! meant: printing gives back the offset that was written, and the civil accessors
-//! answer in it rather than in UTC.
+//! answer in it rather than in UTC. [`Datetime::utc`] is the one way to UTC: the same
+//! instant at offset zero, for a feed or a sitemap, whose reader is a program.
 //!
 //! No time zone, only an offset. The core has no time-zone database — bundling one
 //! would put four hundred kilobytes of data in the `.wasm` and a yearly update in the
@@ -23,7 +24,8 @@ use jiff::fmt::{rfc2822, strtime};
 use jiff::tz::Offset;
 use jiff::{Timestamp, Zoned, civil};
 
-/// A moment, and the offset the source wrote it in.
+/// A moment, and the offset it is written in: the one the source wrote, or zero once
+/// [`Datetime::utc`] has rewritten it.
 ///
 /// Held decomposed rather than as a [`Timestamp`] beside an [`Offset`], which would be
 /// twenty-four bytes and make every [`Value`](crate::Value) in the VM eight bytes wider
@@ -106,6 +108,17 @@ impl Datetime {
         i64::from(self.civil().day())
     }
 
+    /// The same instant written at offset zero, which every method then reads it
+    /// through. Offset zero is fixed, as every offset is, and the instant does not move,
+    /// so this needs no time-zone database and is no arithmetic (module docs).
+    #[must_use]
+    pub fn utc(self) -> Self {
+        Self {
+            offset_seconds: 0,
+            ..self
+        }
+    }
+
     /// The RFC 2822 date an RSS `pubDate` wants — `Sat, 4 Apr 2026 10:30:00 -0700` —
     /// in the offset this was written in. RFC 822 itself allows a two-digit year and
     /// RFC 2822 narrowed it to four, which is what a feed reader expects today.
@@ -168,7 +181,7 @@ impl Datetime {
         self.timestamp().to_zoned(self.offset().to_time_zone())
     }
 
-    /// The offset this was written in.
+    /// The offset this is written in.
     fn offset(&self) -> Offset {
         Offset::from_seconds(self.offset_seconds).expect("an offset this was built from")
     }
@@ -366,6 +379,42 @@ mod tests {
         assert_eq!(evening.timestamp().to_string(), "2026-04-05T06:30:00Z");
         assert_eq!(evening.offset(), Offset::from_hours(-7).unwrap());
         assert_eq!(parse("1969-07-20").year(), 1969);
+    }
+
+    #[test]
+    fn writes_the_same_instant_at_offset_zero_in_utc() {
+        let evening = parse("2026-04-04T23:30:00-07:00");
+        assert_eq!(evening.utc().to_string(), "2026-04-05T06:30:00Z");
+        assert_eq!(evening.utc(), evening);
+    }
+
+    #[test]
+    fn reads_the_calendar_utc_has_turned_to_once_in_utc() {
+        let evening = parse("2026-04-04T23:30:00-07:00").utc();
+        assert_eq!(
+            (evening.year(), evening.month(), evening.day()),
+            (2026, 4, 5)
+        );
+        assert_eq!(
+            evening.rfc2822(),
+            Ok("Sun, 5 Apr 2026 06:30:00 +0000".to_owned())
+        );
+    }
+
+    #[test]
+    fn keeps_a_fraction_of_a_second_in_utc() {
+        assert_eq!(
+            parse("2026-04-04T10:30:00.5-07:00").utc().to_string(),
+            "2026-04-04T17:30:00.5Z"
+        );
+    }
+
+    #[test]
+    fn writes_a_moment_before_the_epoch_in_utc() {
+        assert_eq!(
+            parse("1969-07-20T20:17:00.25-04:00").utc().to_string(),
+            "1969-07-21T00:17:00.25Z"
+        );
     }
 
     #[test]

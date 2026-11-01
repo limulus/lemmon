@@ -1,8 +1,9 @@
 //! What a `datetime` and a `duration` carry.
 //!
-//! A datetime's methods all read it through the offset it was written in (`datetime.rs`),
-//! never through UTC: a site shows the day its author meant, and the last half-hour of
-//! a day on the west coast is already tomorrow in UTC.
+//! A datetime's methods read it through the offset it was written in (`datetime.rs`),
+//! not through UTC: a site shows the day its author meant, and the last half-hour of a
+//! day on the west coast is already tomorrow in UTC. `utc()` is how a template asks for
+//! UTC by name, for a feed or a sitemap, whose reader is a program.
 //!
 //! There is no arithmetic here — no `d + duration`, no difference of two datetimes. The
 //! port does not need it, and it would settle the number model (`docs/language.md`
@@ -44,6 +45,12 @@ pub(super) fn rfc822(_vm: &mut dyn Machine, args: &[Value]) -> Result<Value, Fau
         .rfc2822()
         .map(Value::str)
         .map_err(Fault::from)
+}
+
+/// `d.utc()`: the same moment in UTC, for what a program reads — an RSS `pubDate` as
+/// `d.utc().rfc822()`, an Atom `<updated>` or a sitemap `<lastmod>` as `<lem.d.utc()>`.
+pub(super) fn utc(_vm: &mut dyn Machine, args: &[Value]) -> Result<Value, Fault> {
+    Ok(Value::Datetime(moment("utc", args)?.utc()))
 }
 
 /// `d.format(pattern)`: strftime, so that a site words a date the way it words one —
@@ -114,6 +121,16 @@ mod tests {
         assert_eq!(
             on(ReceiverKind::Datetime, "rfc822", &[published()]),
             Value::str("Sat, 4 Apr 2026 10:30:00 -0700")
+        );
+    }
+
+    #[test]
+    fn writes_the_moment_in_utc_for_a_feed_to_print() {
+        let utc = on(ReceiverKind::Datetime, "utc", &[published()]);
+        assert_eq!(utc, published());
+        assert_eq!(
+            on(ReceiverKind::Datetime, "rfc822", &[utc]),
+            Value::str("Sat, 4 Apr 2026 17:30:00 +0000")
         );
     }
 
@@ -197,7 +214,7 @@ mod tests {
 
     #[test]
     fn refuses_a_receiver_only_an_any_call_could_have_handed_it() {
-        for name in ["rfc3339", "rfc822", "format", "year", "month", "day"] {
+        for name in ["rfc3339", "rfc822", "utc", "format", "year", "month", "day"] {
             let entry = of(ReceiverKind::Datetime, name);
             let args = [Value::str("2026-04-04"), Value::str("%Y")];
             assert_eq!(

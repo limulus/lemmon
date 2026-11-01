@@ -8,3 +8,8 @@
   <pubDate><lem.published.rfc822()></pubDate>
   <updated><lem.launched.rfc3339()></updated>
 </item>
+<item>
+  <pubDate><lem.published.utc().rfc822()></pubDate>
+  <updated><lem.published.utc()></updated>
+</item>
+<p>in UTC it is already the <lem.published.utc().day()>th</p>

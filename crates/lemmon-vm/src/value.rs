@@ -146,7 +146,7 @@ pub enum Value {
     /// Trusted markup carrying marks — named ranges the host fills after the render
     /// (D42). Behind an `Rc` so that a `Value` stays 24 bytes (D38).
     Marked(Rc<Marked>),
-    /// A moment, and the offset it was written in; equal and ordered by the moment.
+    /// A moment, and the offset it is written in; equal and ordered by the moment.
     Datetime(Datetime),
     /// A span of time, in whole seconds. Has no printed form: a site says how it wants
     /// one read, `readingTime.minutes()`.

@@ -199,8 +199,9 @@ the checker's question, not the parser's.
 
 - `html` is trusted markup: produced by block-bodied functions, markdown rendering, and
   `raw()`. Emitted verbatim.
-- `datetime` is a moment and the UTC offset it was written in. Printing gives RFC 3339
-  in that offset (`Z` where it is UTC); equality and ordering read the moment alone, so
+- `datetime` is a moment and a UTC offset: the one it was written in, or zero once
+  `utc()` has rewritten it. Printing gives RFC 3339 in that offset (`Z` where it is
+  UTC); equality and ordering read the moment alone, so
   `2026-04-04T10:30:00-07:00` and `2026-04-04T17:30:00Z` are one value. A string becomes
   one by `datetime("…")` or by standing where the type is declared — a date
   (`2024-11-24`, midnight UTC), or a date and time with an offset, whose separators may
@@ -233,7 +234,7 @@ is a compile error naming the nearest it has.
 | `{string: V}` | `keys() values() has(key)` |
 | `int` | `abs()` |
 | `float` | `abs() round() floor() fixed(places)` |
-| `datetime` | `rfc3339() rfc822() format(pattern)` · `year() month() day()` |
+| `datetime` | `rfc3339() rfc822() format(pattern)` · `year() month() day()` · `utc()` |
 | `duration` | `seconds() minutes()` |
 | `url` | `text()` |
 | `html` | `readingTime()` |
@@ -247,9 +248,13 @@ breaking a word on one; it is not a transliteration, so a script it cannot fold 
 rather than guessed at and a Japanese title gives a Japanese slug. `round` and `floor` refuse a `float` no `int` holds instead of saturating,
 and `fixed` writes exactly the decimals asked for, a half going to the even digit.
 
-A datetime's methods all read it through the offset it was written in, never through
-UTC: the last half-hour of a day on the west coast is already tomorrow in UTC, and
-`day()` gives the day its author meant. `rfc3339()` is what printing gives, as a string
+A datetime's methods read it through the offset it was written in, not through UTC: the
+last half-hour of a day on the west coast is already tomorrow in UTC, and `day()` gives
+the day its author meant. `utc()` asks for UTC by name: the same moment rewritten at
+offset zero, which every method then reads it through — what a feed or a sitemap, whose
+reader is a program, spells its dates in (`d.utc().rfc822()`, `<lem.d.utc()>`). Offset
+zero needs no time-zone database and moves no instant, so it is neither a zone nor
+arithmetic. `rfc3339()` is what printing gives, as a string
 to pass on; `rfc822()` is the form an RSS `pubDate` wants, and refuses a year before 1,
 for which that format has no spelling. `format(pattern)` is strftime —
 `format("%B %-d, %Y")` is

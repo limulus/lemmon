@@ -3,8 +3,9 @@
 - **Status:** Accepted 2026-09-11 (`∆Q6L`); implemented 2026-09-12 (`∆Q6L`). On 2026-10-17
   Eric accepted for limulus.net that `readingTime()` counts what a reader sees where
   Eleventy's `reading-time` counted the markdown source, so a page near a rounding
-  boundary reads a minute lower after the cutover
-- **Backlog item:** `∆Q6L`
+  boundary reads a minute lower after the cutover. `utc()` was added 2026-11-01 (`∆QZz`),
+  for limulus.net's feeds and sitemap
+- **Backlog item:** `∆Q6L`, `∆QZz`
 - **Normative text:** `docs/language.md` § Types, § Names & namespaces (Ambient),
   § Checking (Calls, Printing), § Schemas; `docs/architecture.md` § WASM API,
   § Build pipeline
@@ -26,7 +27,11 @@ D10, which the docs recorded as arriving with `loadData` — too late to check a
 that offset, `Z` where that is UTC, and compares by the instant alone, so one moment
 written in two offsets is one value. The offset is kept because a site shows the time its
 author meant: the civil accessors answer in it, and a post filed at 23:30 on the west
-coast is the fourth there while the instant is already the fifth.
+coast is the fourth there while the instant is already the fifth. `utc()` is the one way
+out of the written offset: the same instant rewritten at offset zero, for a feed or a
+sitemap, whose reader is a program and reads UTC (`∆QZz`). Offset zero is a fixed offset
+like any other and the instant does not move, so it needs no time-zone database and is no
+arithmetic.
 
 There is no time-zone database. A string naming a zone is refused rather than read for its
 offset with its DST rules ignored. `jiff` supplies the calendar with
