@@ -14,10 +14,16 @@ must carry its `.wasm`.
 Eric chose on 2026-10-18 to decide this before merging the cutover branch rather than in
 slice 6, since nothing deploys in that slice.
 
+On 2026-11-01 Eric decided the route: Lemmon goes public (`∆P6l`) and its packages are
+published to npm (`∆PiI`). A private npm package, as limulus.net's CD already installs for
+`@limulus/penumbra` with its `NPM_TOKEN`, was ruled out because Eric cannot create new
+private npm packages, and the other route that kept lemmon private, building it in the
+site's CD, was set aside for going public.
+
 ## Scope and constraints
 
-- The routes found then: a restricted npm publish of both packages (CD already passes an
-  `NPM_TOKEN`), which needs release tooling the repo has not chosen; building lemmon in CD
-  (a token for the private repo, Rust, `wasm-bindgen-cli` at the pinned version); or a
-  vendored tarball in limulus-dot-net, which makes lemmon's built code public.
+- The site installs the published `@limulus/lemmon-shell` in place of `file:../lemmon`.
+- Lemmon's packages are published through npm's trusted publishing (`∆PiI`). They are
+  public, so the site's `npm ci` installs them with no token; its `NPM_TOKEN` stays for
+  `@limulus/penumbra`.
 - Codespaces and any other fresh checkout of limulus-dot-net meet the same wall.
