@@ -56,6 +56,10 @@ and 158, with zero unexpected differences, and `lemmon-cutover` (`4ffdb74`, loca
 builds the site with `lem` alone, accepted in fresh clones without deploying. The run and
 the review are Eric's before slice 7 starts.
 
+- `∆QZz` Feed and sitemap dates in UTC
+  - The feeds and the sitemap print every date in UTC, as Eleventy's did, where they now
+    print the offset it was written in; Lemmon has no way to print a datetime in UTC yet
+
 ### 7. Live on Lemmon
 
 Eric merges the cutover branch and limulus.net deploys with `lem`, its CloudFront config
@@ -108,7 +112,7 @@ esbuild plugin added its 200 ms (`∆d1N`'s journal); on 2026-10-18, 421 ms for 
 - `∆MlD` Reconcile the architecture artifacts
   - Apply every entry in `docs/artifact-changes.md` to the three Claude Artifacts Eric owns
     and clear the ledger; applied once, after the cutover, so this is deliberately last
-  - needs: `∆oAl`, `∆V7i`, `∆5MM`, `∆xBO`, `∆Qr2`, `∆Lj6`
+  - needs: `∆oAl`, `∆V7i`, `∆5MM`, `∆xBO`, `∆Qr2`, `∆Lj6`, `∆QZz`
 
 ## Defects
 
