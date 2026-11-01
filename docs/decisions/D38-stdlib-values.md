@@ -29,7 +29,7 @@ written in two offsets is one value. The offset is kept because a site shows the
 author meant: the civil accessors answer in it, and a post filed at 23:30 on the west
 coast is the fourth there while the instant is already the fifth. `utc()` is the one way
 out of the written offset: the same instant rewritten at offset zero, for a feed or a
-sitemap, whose reader is a program and reads UTC (`∆QZz`). Offset zero is a fixed offset
+sitemap, whose reader is a program (`∆QZz`). Offset zero is a fixed offset
 like any other and the instant does not move, so it needs no time-zone database and is no
 arithmetic.
 

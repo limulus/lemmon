@@ -1,9 +1,9 @@
 //! What a `datetime` and a `duration` carry.
 //!
-//! A datetime's methods read it through the offset it was written in (`datetime.rs`),
+//! A datetime's methods read it through the offset it is written in (`datetime.rs`),
 //! not through UTC: a site shows the day its author meant, and the last half-hour of a
-//! day on the west coast is already tomorrow in UTC. `utc()` is how a template asks for
-//! UTC by name, for a feed or a sitemap, whose reader is a program.
+//! day on the west coast is already tomorrow in UTC. `utc()` rewrites that offset to
+//! zero, where a template wants UTC by name.
 //!
 //! There is no arithmetic here — no `d + duration`, no difference of two datetimes. The
 //! port does not need it, and it would settle the number model (`docs/language.md`
@@ -68,8 +68,8 @@ pub(super) fn format(_vm: &mut dyn Machine, args: &[Value]) -> Result<Value, Fau
     }
 }
 
-/// `d.year()`, `d.month()`, `d.day()`: the civil calendar in the written offset — a
-/// copyright line's year, a permalink's month.
+/// `d.year()`, `d.month()`, `d.day()`: the civil calendar in the offset it is written
+/// in — a copyright line's year, a permalink's month.
 pub(super) fn year(_vm: &mut dyn Machine, args: &[Value]) -> Result<Value, Fault> {
     Ok(Value::Int(moment("year", args)?.year()))
 }

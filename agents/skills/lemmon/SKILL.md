@@ -122,8 +122,8 @@ deferred), so write `1.0 / 3.0`.
 - **Matching** is exhaustive only over an enum (every variant, and `null` for `E?`);
   anything else needs `<lem-default>` (the provisional reading; the rules are deferred).
 - **`any`** opts out: accepted everywhere, checked by the VM at render.
-- **`datetime`** is a moment plus its written offset: `2024-11-24` (midnight UTC) or
-  `2024-11-24 11:35:00 -07:00`, which `utc()` rewrites at offset zero. No offset or a zone
+- **`datetime`** is a moment plus its written offset, which `utc()` rewrites at offset
+  zero: `2024-11-24` (midnight UTC) or `2024-11-24 11:35:00 -07:00`. No offset or a zone
   name is refused; no arithmetic.
 
 ## Records, enums and `site.lem`

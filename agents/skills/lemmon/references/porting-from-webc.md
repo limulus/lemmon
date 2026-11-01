@@ -154,10 +154,11 @@ harness's to judge (`∆Zo7`), not these examples'.
   `numeric()` does. Anything past that, give the page as data.
 - **Time zones.** A datetime prints and formats in the offset it was written in (D38):
   `toLocaleDateString(…, {timeZone: 'America/Phoenix'})` is `format("%B %-d, %Y")` only
-  because the posts are written in `-07:00`, since no zone can be named. UTC can:
-  `toISOString()` is `<lem.d.utc()>`, though a printed datetime drops trailing zeros from
-  its fraction (`.42Z`, not `.420Z`), and `toUTCString()` is `d.utc().rfc822()`, which
-  writes `+0000` and an unpadded day where JavaScript writes `GMT` and pads it.
+  because the posts are written in `-07:00`, since no zone can be named. Offset zero is
+  `utc()`: `toISOString()` is `<lem.d.utc()>`, though a printed datetime drops trailing
+  zeros from its fraction (`.42Z` where JavaScript writes `.420Z`, and `:00Z` where it
+  writes `:00.000Z`), and `toUTCString()` is `d.utc().rfc822()`, which writes `+0000` and an
+  unpadded day where JavaScript writes `GMT` and pads it.
 - **Heterogeneous data.** `photos.json` maps aliases to ids as strings beside its records,
   and each photo has keys a `Photo` would have to declare; neither loads as
   `{string: Photo}`. A script that writes the declared shape beside it loads typed, as

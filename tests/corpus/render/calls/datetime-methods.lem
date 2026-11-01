@@ -1,5 +1,6 @@
 <lem-let published = datetime("2026-04-04T23:30:00-07:00") />
 <lem-let launched = datetime("2024-11-24") />
+<lem-let revised: datetime? = null />
 
 <time datetime="<lem.published.rfc3339()>"><lem.published.format("%B %-d, %Y")></time>
 <p>filed under <lem.published.year()>/<lem.published.month()>/<lem.published.day()></p>
@@ -10,6 +11,6 @@
 </item>
 <item>
   <pubDate><lem.published.utc().rfc822()></pubDate>
-  <updated><lem.published.utc()></updated>
+  <updated><lem.(revised ?? published).utc()></updated>
 </item>
 <p>in UTC it is already the <lem.published.utc().day()>th</p>
