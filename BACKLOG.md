@@ -53,12 +53,10 @@ limulus.net with `lem`, its CloudFront config untouched, ready for his review.
 Built on 2026-10-19 (journal entries for `∆shS`, `∆zu0`, `∆yOJ`, `∆Zg9` and `∆oAl`):
 `npm run parity` on `lemmon-port` at `d33eed8` compared every file both builds write, 140
 and 158, with zero unexpected differences, and `lemmon-cutover` (`4ffdb74`, local, unpushed)
-builds the site with `lem` alone, accepted in fresh clones without deploying. The run and
+builds the site with `lem` alone, accepted in fresh clones without deploying. On
+2026-11-01 the feeds and the sitemap went back to UTC (`∆QZz`'s journal entry). The run and
 the review are Eric's before slice 7 starts.
 
-- `∆QZz` Feed and sitemap dates in UTC
-  - The feeds and the sitemap print every date in UTC, as Eleventy's did, where they now
-    print the offset it was written in; Lemmon has no way to print a datetime in UTC yet
 - `∆GUI` limulus.net uses `@limulus/blur-hash`
   - The site's own `<blur-hash>` element, with two races live today, gives way to the
     package made to fix them
