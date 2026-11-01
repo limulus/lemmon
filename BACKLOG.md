@@ -59,6 +59,9 @@ the review are Eric's before slice 7 starts.
 - `∆QZz` Feed and sitemap dates in UTC
   - The feeds and the sitemap print every date in UTC, as Eleventy's did, where they now
     print the offset it was written in; Lemmon has no way to print a datetime in UTC yet
+- `∆GUI` limulus.net uses `@limulus/blur-hash`
+  - The site's own `<blur-hash>` element, with two races live today, gives way to the
+    package made to fix them
 
 ### 7. Live on Lemmon
 
