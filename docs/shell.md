@@ -385,33 +385,33 @@ promise, and a function where a plugin belongs, a plugin factory not called.
    is matched against those globs (with the passthrough glob semantics, so case aside),
    and then all pages — documents and page templates — compile in one call, each as its
    own `type:` or as the record of the glob that holds it. A page two globs match is an
-   error at the page. Documents compile only in the second call, so what a document
-   (`.md`) defines is invisible to every template, with front matter or without. The
-   first call's declaration carries the plugins' claims, so the core warns at the marks.
+   error at the page, and so is one no glob holds that names no `type:`, since nothing
+   would check its front matter or give it a layout (D48): it is placed at its front
+   matter, or at the file's start where it has none, and names both fixes — a `type:`,
+   or a glob in `site.lem` that collects it. One with `for:` is refused at the key
+   instead, in D43's words: a template's generator has no type to make its pages of, and
+   a document is no generator at all. A refused page is left out of the second call, and
+   the build stops before it; a document whose front matter never closes is not refused
+   but compiled without a record, so that the core reports the unclosed front matter.
+   Documents compile only in the second call, so what a document (`.md`) defines is
+   invisible to every template, with front matter or without. The first call's
+   declaration carries the plugins' claims, so the core warns at the marks.
 4. **Load.** `build` is `{time, generator, bodies}` — the clock as RFC 3339 in UTC,
    `Lemmon` with the core's version, and no bodies yet, `{}`. A glob's binding is the
    front matter of the pages it holds; a data file (JSON or YAML) is read from `input`
    with positions, and one whose path leads outside `input` is an error at its binding;
    `env("X")` is the variable's text.
-   Every page no glob holds whose `type:` named its record is carried on its own, a
-   generator with its `for:` key beside its front matter — the value as read, with
-   spans for the whole of it, its entry, and the list alone — which the core checks and
-   expands into one page per item (D43). A glob's member carries its key too, which the
-   core refuses, since no glob can hold a generator. A page with `for:` and no `type:`,
-   which no glob holds, is an error at the key, and is not compiled as a page: a
-   template's generator has no type to make its pages of, and a document is no
-   generator at all.
+   Every page no glob holds is carried on its own, typed by its `type:`, a generator
+   with its `for:` key beside its front matter — the value as read, with spans for the
+   whole of it, its entry, and the list alone — which the core checks and expands into
+   one page per item (D43). A glob's member carries its key too, which the core refuses,
+   since no glob can hold a generator.
 5. **Plan and render.** After the body pass, below, every loaded page renders through
    its layout, in the plan's order: a generator's pages each by its index, at the url its
    type's default gave it.
    A diagnostic names a generated page by its item — `` `photos/photo.lem` for
    `site.gallery[3]` `` — and a render's runtime error on one is labelled so at the
-   generator's `for:` entry. A page no glob
-   holds and no `type:` names has no schema: it renders its own output, with `page` its
-   front matter as read, loaded on its own before it renders. Each of those loads
-   re-sends and re-validates the whole envelope, every body among it, so the cost grows
-   with the untyped pages times the size of the site: 18 of 25 pages on the
-   limulus-dot-net port branch cost about 0.35 s in all while they were untyped.
+   generator's `for:` entry.
 
    **The body pass** (D46) runs first. Each document the load made — each page the plan
    lists whose file is a `.md` — renders its body alone, its own output without its layout,
@@ -534,8 +534,8 @@ Any error, at any step, stops the build before it writes a file, and `lem` exits
 warnings are printed and the build goes on. A write the file system then refuses — a file
 an earlier build left where a directory is needed, say — is reported as
 `lem: could not write <file>: …`, exit 1, and the output may hold what was written before
-it. A site needs a `site.lem` without front matter in `input`, even an empty one: without
-it no glob matches anything.
+it. A site needs a `site.lem` without front matter in `input`, since its globs type every
+page that names no `type:` of its own: without it no glob matches anything.
 
 ### Still to build
 

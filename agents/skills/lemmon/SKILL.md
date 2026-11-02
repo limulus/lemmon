@@ -132,7 +132,8 @@ The standard shell (`@limulus/lemmon-shell`, whose `lem build` writes the site) 
 every file with its `ambient.lem`, which declares `Page` (`url: url`, `inputPath: string`,
 `draft: bool = false`), `Build` (`time`, `generator`, `bodies`) and `Code`. It binds `page`
 (the page being rendered), `build`, and `site`, the record of `site.lem`'s top-level
-bindings; a site needs a `site.lem` in its input directory, even an empty one.
+bindings; a site needs a `site.lem` in its input directory, whose globs type every page
+that names no `type:`.
 `build.bodies` is a `{string: string}` of every document's finished body by its page's url
 — what a feed prints, `<lem.build.bodies[post.url.text()]>`, escaped once, its links made
 absolute against the config's `origin` — rendered before any page renders, so it is empty
@@ -404,8 +405,11 @@ Prose inside an element: a blank line on each side lets the markdown run.
   `lemmon.config.ts` beside `bundler()`, claims every language highlight.js has, by name
   and alias, spelled as it spells them (`ts`, not `TS`). A language no producer claims
   warns. Write about Lemmon in a fence, a code span, or as `&lt;lem`.
-- **A page no glob matched and no `type:` named** has `page: any` and renders its own
-  output, with no layout.
+- **A page no glob matched and no `type:` named** is an error (D48): give it a `type:`, or
+  add a glob to `site.lem` that collects it. A page that wants no layout takes a type whose
+  layout passes its body through, and that layout warns that its record is never used
+  unless it reads a field: how to mark a parameter unused on purpose is
+  not yet settled (`∆gsV`).
 
 ## Checking your work
 

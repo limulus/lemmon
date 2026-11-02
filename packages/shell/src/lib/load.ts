@@ -34,7 +34,7 @@ export interface Envelope {
  * The envelope that loads `program` (step 4 of the build pipeline, D37): `build` as the
  * shell's own value, with no bodies yet — the value the body pass renders under, before
  * {@link withBodies} adds them (D46) — every `from` binding fulfilled by its kind, and in
- * `pages` every page no glob holds whose `type:` named its record — a generator with its
+ * `pages` every page no glob holds, typed by its `type:` (D48) — a generator with its
  * `for:` key, which the core expands into its pages (D43).
  *
  * A glob's binding is the front matter of the pages it holds, in path order; a data
@@ -108,9 +108,7 @@ export async function envelope(
     }
   }
   if (hasError(diagnostics)) return { diagnostics }
-  const pages = compiled
-    .filter((page) => page.record !== undefined && page.binding === undefined)
-    .map(entryOf)
+  const pages = compiled.filter((page) => page.binding === undefined).map(entryOf)
   const ambient = {
     build: { time: build.time.toISOString(), generator: build.generator, bodies: {} },
   }

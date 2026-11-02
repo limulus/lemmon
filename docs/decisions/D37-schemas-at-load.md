@@ -10,7 +10,9 @@
   at the read; revised 2026-09-10 (`∆eag`) — a `by` index names one field of one
   ambient value and compiles to no function, and a default reads no ambient value: a
   record's plan depends on its own declarations alone, and a `from` binding is
-  ordered by its records' indexes
+  ordered by its records' indexes; revised 2026-11-01 (D48) — the standard shell sends no
+  document value, since every page it renders is loaded, and the as-sent value stays for
+  hosts that send one
 - **Backlog item:** `∆iCW`, `∆HF0`, `∆eag`
 - **Normative text:** `docs/language.md` § Schemas, § Ambient types;
   `docs/architecture.md` § WASM API (`loadData`, as it grows), § VM
@@ -108,7 +110,9 @@ that for the renders no loaded document stands in for — a document no collecti
 matched, whose `page` is unknown-typed (D30), and a template, whose `page` is the
 declared type — so the loader binds it as sent, one value for all of them, and
 `render` binds the document value from the store for a loaded document, else from the
-envelope. A template's `page` is therefore checked by the compiler and not by the loader; a
+envelope. A template's `page` is therefore checked by the compiler and not by the
+loader. Since D48 the standard shell sends none: it refuses a document no collection
+matched, and every page it renders is loaded. A
 page template loads its own record as a document does once `∆Bhz` lands, and a template with
 no front matter keeps the envelope's value. Loading proceeds in one order — the host's own
 values in its declaration order, then each bindings file — and no function runs over a value

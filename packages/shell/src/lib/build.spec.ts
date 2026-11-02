@@ -79,14 +79,14 @@ describe('build()', () => {
       const { result, dir } = await built(SITE)
       const generator = `Lemmon ${(await loadCore()).version}`
 
-      // The loaded pages in the plan's order — the glob's, then the page its own
-      // `type:` named — then the document nothing typed.
+      // The loaded pages in the plan's order: each glob's, then the page its own
+      // `type:` named.
       expect(result).toEqual({
         pages: [
           'posts/a/index.html',
           'posts/b/index.html',
-          'index.html',
           'notes/loose/index.html',
+          'index.html',
         ],
         assets: [],
         produced: [],
@@ -114,27 +114,12 @@ describe('build()', () => {
       })
     })
 
-    it('should bind each untyped page to its own front matter', async () => {
-      const { result, dir } = await built({
-        ...SITE,
-        'notes/loose.md': '---\ntitle: One\n---\n<lem.page.title>\n',
-        'notes/other.md': '---\ntitle: Two\n---\n<lem.page.title>\n',
-      })
-
-      expect(result.diagnostics).toEqual([])
-      expect(tree(join(dir, 'dist/notes'))).toEqual({
-        'loose/index.html': 'One\n',
-        'other/index.html': 'Two\n',
-      })
-    })
-
     it('should write a page at the file its url names, and the bytes as rendered', async () => {
       const { result, dir } = await built({
         ...SITE,
         'feed.lem':
           '---\ntype: Home\ntitle: Café ’\nurl: /feed.txt\n---\n<lem.page.title>\n',
         'posts/a b.md': '---\ntitle: Café\n---\n',
-        'notes/a b.md': 'Café\n',
       })
 
       const written = tree(join(dir, 'dist'))
@@ -143,9 +128,6 @@ describe('build()', () => {
       // `/posts/a%20b/` — and its file is named by what the encoding stands for.
       expect(result.pages).toContain('posts/a b/index.html')
       expect(written['posts/a b/index.html']).toMatch(/^<title>Café · hi/)
-      // A page no record typed keeps the url the shell derived, which never passed
-      // through the core, and is written at the same kind of name.
-      expect(written['notes/a b/index.html']).toBe('<p>Café</p>\n')
     })
 
     it('should write a page its own `type:` gives a subtype, in its glob', async () => {
@@ -234,16 +216,16 @@ describe('build()', () => {
       const { result, dir } = await built(GENERATING)
 
       expect(result.diagnostics).toEqual([])
-      // Where the generator stands in the plan — after the glob's pages and the home
+      // Where the generator stands in the plan — after the globs' pages and the home
       // page, in path order — in its list's order.
       expect(result.pages).toEqual([
         'posts/a/index.html',
         'posts/b/index.html',
+        'notes/loose/index.html',
         'index.html',
         'tils/git/index.html',
         'tils/nodejs/index.html',
         'tils/rust/index.html',
-        'notes/loose/index.html',
       ])
       const written = tree(join(dir, 'dist/tils'))
       const links = (file: string) =>
@@ -658,18 +640,6 @@ describe('build()', () => {
         )
       })
     })
-
-    it('should resolve an untyped page as a loaded one', async () => {
-      const { result, dir } = await built(
-        { ...files, 'notes/loose.md': '```ts\nlet y\n```\n' },
-        { plugins: [inline, tsHighlighter] }
-      )
-
-      expect(result.diagnostics).toEqual([])
-      expect(tree(join(dir, 'dist'))['notes/loose/index.html']).toBe(
-        '<pre class="ts">let y</pre>\n'
-      )
-    })
   })
 
   describe('files a producer writes', () => {
@@ -1015,17 +985,6 @@ describe('build()', () => {
       ])
     })
 
-    it('should give an untyped page every body, its reload carrying them', async () => {
-      const loose = '---\ntitle: Loose\n---\n<lem.build.bodies["/posts/b/"]>\n'
-      const { result, text } = await wrote(
-        { ...SITE, 'notes/loose.md': loose },
-        'notes/loose/index.html'
-      )
-
-      expect(result.diagnostics).toEqual([])
-      expect(text).toBe('&lt;p&gt;Hello b.&lt;/p&gt;\n\n')
-    })
-
     describe('a body’s links', () => {
       const post =
         '---\ntitle: A\n---\nSee [the other](../b/#top), [a note](#fn), and ' +
@@ -1142,7 +1101,7 @@ describe('build()', () => {
         expect(result.diagnostics).toEqual([])
         // The body of `posts/b.md` as the body pass rendered it, and then its page.
         expect(text).toContain('<item>0\n</item>')
-        expect(page).toContain('<main><h1>B</h1>\n\n2\n</main>')
+        expect(page).toContain('<main><h1>B</h1>\n\n3\n</main>')
       })
 
       it('should fail the first load where it indexes one, before any body exists', async () => {
@@ -1877,6 +1836,21 @@ describe('build()', () => {
       await expect(built(files)).rejects.toThrow(SiteError)
     })
 
+    it('should refuse a page nothing types, and write no other (D48)', async () => {
+      const about = '---\ntitle: About\n---\n<lem.page.title>\n'
+      const errors = await refused({ ...SITE, 'about.md': about })
+
+      expect(errors).toEqual([
+        expect.objectContaining({
+          path: 'about.md',
+          span: at(about, 'title: About'),
+          message: expect.stringMatching(
+            /^no glob in `site.lem` collects this page,/
+          ) as string,
+        }),
+      ])
+    })
+
     it('should report a compile error in a template, and compile no page', async () => {
       const broken = '<lem-fn broken()><lem.nope></lem-fn>\n'
       const errors = await refused({
@@ -1966,34 +1940,31 @@ describe('build()', () => {
 
     it('should report a url that names no file in the output', async () => {
       const query = '---\nurl: /notes?draft\n---\n'
-      const number = '---\nurl: 3\n---\n'
-      const errors = await refused({
-        ...SITE,
-        'notes/loose.md': query,
-        'notes/number.md': number,
-      })
+      const errors = await refused({ ...SITE, 'notes/loose.md': query })
 
-      const names = 'names no file in the output directory'
       expect(errors).toEqual([
         expect.objectContaining({
           path: 'notes/loose.md',
           span: at(query, 'url: /notes?draft'),
-          message: expect.stringContaining(`the url "/notes?draft" ${names}`) as string,
-        }),
-        expect.objectContaining({
-          path: 'notes/number.md',
-          span: at(number, 'url: 3'),
-          message: expect.stringContaining(`the url 3 ${names}`) as string,
+          message: expect.stringContaining(
+            'the url "/notes?draft" names no file in the output directory'
+          ) as string,
         }),
       ])
     })
 
     it('should refuse two pages, or a page and a passthrough file, at one file', async () => {
       const css = '---\nurl: /assets/site.css\n---\n'
+      // Each a url other than the one the other page has, which the core would refuse,
+      // for the same file.
+      const twin = '---\nurl: /posts/a/index.html\n---\n'
+      const early = '---\nurl: /notes/z/index.html\n---\n'
       const errors = await refused({
         ...SITE,
         'notes/loose.md': css,
-        'posts/a/index.md': 'No front matter.\n',
+        'notes/twin.md': twin,
+        'notes/a.md': early,
+        'notes/z.md': 'No front matter.\n',
       })
 
       expect(errors).toEqual([
@@ -2012,9 +1983,8 @@ describe('build()', () => {
           ],
         },
         {
-          path: 'posts/a/index.md',
-          // With no front matter to point at, the page is placed at its start.
-          span: START,
+          path: 'notes/twin.md',
+          span: at(twin, 'url: /posts/a/index.html'),
           severity: 'error',
           message: '`posts/a/index.html` is written by `posts/a.md` already',
           labels: [
@@ -2023,6 +1993,20 @@ describe('build()', () => {
               // The first page's url was derived, so it is placed at its front matter.
               span: at(SITE['posts/a.md'], 'title: A\nhero: sunset'),
               message: 'the first to write there, as `posts/a/index.html`',
+            },
+          ],
+        },
+        {
+          path: 'notes/z.md',
+          // With no front matter to point at, the page is placed at its start.
+          span: START,
+          severity: 'error',
+          message: '`notes/z/index.html` is written by `notes/a.md` already',
+          labels: [
+            {
+              path: 'notes/a.md',
+              span: at(early, 'url: /notes/z/index.html'),
+              message: 'the first to write there, as `notes/z/index.html`',
             },
           ],
         },
@@ -2093,8 +2077,8 @@ describe('build()', () => {
       const errors = await refused(
         {
           ...SITE,
-          'feed.md': feed,
-          'feed/x.md': 'X\n',
+          'notes/a-feed.md': feed,
+          'notes/b-x.md': '---\nurl: /feed/x/\n---\n',
           'notes/post.md': post,
           'notes/robots.md': robots,
           'robots.txt': 'User-agent: *\n',
@@ -2106,9 +2090,10 @@ describe('build()', () => {
         errors.map(({ path, message, labels }) => [path, message, labels[0].path])
       ).toEqual([
         [
-          'feed/x.md',
-          '`feed/x/index.html` would be inside `feed`, which `feed.md` writes as a file',
-          'feed.md',
+          'notes/b-x.md',
+          '`feed/x/index.html` would be inside `feed`, which `notes/a-feed.md` writes as ' +
+            'a file',
+          'notes/a-feed.md',
         ],
         [
           'notes/post.md',
@@ -2234,11 +2219,11 @@ describe('check()', () => {
 
     expect(result.pages).toEqual([])
     expect(result.diagnostics).toEqual([
-      expect.objectContaining({ path: 'index.lem', message: 'no key "nope"' }),
       expect.objectContaining({
         path: 'notes/loose.md',
         span: at(css, 'url: /assets/site.css'),
       }),
+      expect.objectContaining({ path: 'index.lem', message: 'no key "nope"' }),
     ])
     expect(existsSync(join(dir, 'dist'))).toBe(false)
   })

@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest'
 
 import { formatted, run, USAGE } from './cli.ts'
 import { AMBIENT_FILE, FILE_START as START } from './program.ts'
-import { ENV, PASSTHROUGH, project, SITE, SITE_LEM } from '../mocks/sites.ts'
+import { BARE_LEM, ENV, PASSTHROUGH, project, SITE, SITE_LEM } from '../mocks/sites.ts'
 import { at } from '../mocks/spans.ts'
 import { tempDir } from '../mocks/temp-dir.ts'
 
@@ -138,7 +138,7 @@ describe('run()', () => {
     })
 
     it('should count one in the singular, and read the system clock by default', async () => {
-      const cwd = project({ 'site.lem': '', 'a.md': '<lem.build.time.year()>\n' })
+      const cwd = project({ 'site.lem': BARE_LEM, 'a.md': '<lem.build.time.year()>\n' })
 
       expect(await lem(['build'], cwd, { now: null })).toEqual({
         code: 0,
@@ -161,7 +161,7 @@ describe('run()', () => {
       const site = (...urls: string[]) =>
         tempDir({
           'lemmon.config.ts': config(...urls),
-          'www/site.lem': '',
+          'www/site.lem': BARE_LEM,
           'www/a.md': '<lem.mark("styles")>\n',
           'www/b.md': '<lem.mark("styles")>\n',
         })
@@ -193,7 +193,11 @@ describe('run()', () => {
       const BUILDS =
         "async () => ({ manifest: { 'app.js': '/app.1.js' }, files: { '/app.1.js': 'run()' } })"
       const site = (lemmonConfig: string, page = '<lem.asset("app.js")>\n') =>
-        tempDir({ 'lemmon.config.ts': lemmonConfig, 'www/site.lem': '', 'www/a.md': page })
+        tempDir({
+          'lemmon.config.ts': lemmonConfig,
+          'www/site.lem': BARE_LEM,
+          'www/a.md': page,
+        })
 
       it('should count the asset files beside the pages, and the produced files after', async () => {
         const one = site(config(BUILDS))
@@ -233,7 +237,7 @@ describe('run()', () => {
     it('should read the config --config names, from the working directory', async () => {
       const cwd = tempDir({
         'site/lemmon.config.ts': "export default { input: 'src', output: 'out' }",
-        'site/src/site.lem': '',
+        'site/src/site.lem': BARE_LEM,
         'site/src/a.md': '',
       })
 
@@ -301,7 +305,7 @@ describe('run()', () => {
           'a plugin source',
           { 'site.lem': `${SITE_LEM}<lem-let more: string from plugin("more") />\n` },
           ENV,
-          'www/site.lem:19:10: error: `more` loads `plugin("more")`, and plugins are not ' +
+          'www/site.lem:29:10: error: `more` loads `plugin("more")`, and plugins are not ' +
             'supported yet (∆wOn)',
         ],
         [
@@ -363,7 +367,7 @@ describe('run()', () => {
     it('should exit 0 when every diagnostic is a warning', async () => {
       const ran = await lem(
         ['build'],
-        project({ ...SITE, 'feed/b.md': '---\nwhen: !!timestamp 2024\n---\n' })
+        project({ ...SITE, 'notes/b.md': '---\ntitle: !!timestamp 2024\n---\n' })
       )
 
       expect(ran.code).toBe(0)
@@ -441,7 +445,7 @@ describe('run()', () => {
           "export default { input: 'www', output: 'dist', plugins: [{ name: 'sheets', " +
           "marks: [{ name: 'styles', produce: ({ marks, write }) => { " +
           "write('/s.css', '.a {}'); return marks.map(() => '<link>') } }] }] }",
-        'www/site.lem': '',
+        'www/site.lem': BARE_LEM,
         'www/a.md': '<lem.mark("styles")>\n',
       })
 
@@ -488,15 +492,15 @@ describe('run()', () => {
     })
 
     it('should print its warnings and exit 0 where nothing is an error', async () => {
-      const cwd = project({ ...SITE, 'feed/b.md': '---\nwhen: !!timestamp 2024\n---\n' })
+      const cwd = project({ ...SITE, 'notes/b.md': '---\ntitle: !!timestamp 2024\n---\n' })
 
       expect(await lem(['check'], cwd)).toEqual({
         code: 0,
         stdout: 'checked 5 pages\n',
         stderr: [
-          'www/feed/b.md:2:7: warning: Unresolved tag: tag:yaml.org,2002:timestamp',
-          '> 2 | when: !!timestamp 2024',
-          '    |       ^^^^^^^^^^^',
+          'www/notes/b.md:2:8: warning: Unresolved tag: tag:yaml.org,2002:timestamp',
+          '> 2 | title: !!timestamp 2024',
+          '    |        ^^^^^^^^^^^',
           '',
         ].join('\n'),
       })
@@ -515,7 +519,7 @@ describe('run()', () => {
     it('should read the config --config names, and report one it cannot load', async () => {
       const cwd = tempDir({
         'site/lemmon.config.ts': "export default { input: 'src', output: 'out' }",
-        'site/src/site.lem': '',
+        'site/src/site.lem': BARE_LEM,
         'site/src/a.md': '',
       })
 

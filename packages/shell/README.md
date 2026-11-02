@@ -90,8 +90,8 @@ HTML:
 </lem-fn>
 ```
 
-`index.lem` is the home page. A `.lem` file with front matter is a page, and `type:` names
-its type:
+`index.lem` is the home page. A `.lem` file with front matter is a page, and every page has
+a type, from a glob or named by its own `type:` — a page with neither is an error:
 
 ```html
 ---

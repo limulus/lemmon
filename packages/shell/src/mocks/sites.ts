@@ -52,10 +52,32 @@ export function tree(dir: string): Record<string, string> {
 }
 
 /**
+ * A page type for pages that want no layout around them (D48): every page has a type,
+ * and a `Memo`'s layout passes its body through, but for a draft's marker — read so that
+ * the layout reads its record, which a layout that ignores it is warned for until `∆gsV`.
+ */
+export const MEMO_LEM = `<lem-type Memo extends Page>
+  title: string = ""
+  linkUrl: string?
+  layout: (Memo, html): html = memo
+</lem-type>
+
+<lem-fn memo(m: Memo, body: html)>
+  <lem-if m.draft>(a draft) </lem-if><lem.body>
+</lem-fn>
+`
+
+/**
+ * The bindings file of a minimal site: {@link MEMO_LEM} and a glob that makes every
+ * document a `Memo`.
+ */
+export const BARE_LEM = `${MEMO_LEM}<lem-let pages: [Memo] from "**/*.md" />\n`
+
+/**
  * The bindings file of a small typed site: a `Post` collection whose posts may name a
- * hero from a data file, a `Home` page type, a site motto from the environment, and a
+ * hero from a data file, a `Home` page type, a site motto from the environment, a
  * two-step layout chain — each `Post` and `Home` rendered through its own layout,
- * which wraps `base`.
+ * which wraps `base` — and the notes, `Memo`s rendered as they are.
  */
 export const SITE_LEM = `<lem-type Photo>
   caption: string
@@ -75,6 +97,7 @@ export const SITE_LEM = `<lem-type Photo>
 <lem-let posts: [Post] from "posts/*.md" />
 <lem-let photos: {string: Photo} from "_data/photos.json" />
 <lem-let motto: string from env("MOTTO") />
+${MEMO_LEM}<lem-let notes: [Memo] from "notes/*.md" />
 `
 
 /** The layouts the site's types render through. */
@@ -102,8 +125,8 @@ export const LAYOUTS_LEM = `<lem-fn base(title: string, body: html)>
 
 /**
  * The whole site, by path under the input: the bindings and layouts above, two posts
- * the glob holds, a home page template its own `type:` names, a document nothing
- * types, the photo index, a stylesheet for a passthrough glob to copy, and a WebC
+ * the glob holds, a home page template its own `type:` names, a note the notes glob
+ * holds, the photo index, a stylesheet for a passthrough glob to copy, and a WebC
  * component the walk ignores.
  */
 export const SITE: Record<string, string> = {

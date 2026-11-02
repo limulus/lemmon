@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url'
 import picomatch from 'picomatch'
 
 import { hasError } from './diagnostics.ts'
-import type { Page } from './front-matter.ts'
+import { findFrontMatter, opensFrontMatter, type Page } from './front-matter.ts'
 import { claimsOf, type Plugin } from './plugins.ts'
 import type { Site } from './site.ts'
 
@@ -96,10 +96,10 @@ export interface CompiledPage {
   page: Page
   /**
    * The record the page was compiled as: the one its own `type:` named, else the one
-   * the glob that holds it collects. A page with neither has no schema, renders its
-   * own output with `page` unknown-typed (D30), and is loaded nowhere.
+   * the glob that holds it collects. Every page has one, since the shell refuses a page
+   * with neither (D48).
    */
-  record?: string
+  record: string
   /** The `from` binding whose glob holds the page, if one does. */
   binding?: string
 }
@@ -134,8 +134,9 @@ export interface Compiled {
  * bindings and the record each glob collects. The second compiles every page —
  * documents and page templates — matched against the collecting globs, as its record.
  * An error in the first call stops the second, since no page can be typed without the
- * globs; a warning does not. A page whose front matter has `for:` and that no `type:`
- * and no glob types is an error at the key, and is not compiled as a page (D43).
+ * globs; a warning does not. A page that no `type:` and no glob types is an error, and
+ * is left out of the second call (D48): at its `for:` key where it has one (D43), else
+ * at its front matter.
  *
  * Documents compile only in the second call, so what a document (`.md`) defines is
  * invisible to every template, with front matter or without: the first call is where
@@ -146,7 +147,7 @@ export interface Compiled {
  *
  * @throws {SiteError} when the input has no {@link BINDINGS_FILE}: the declaration
  *   names it whatever the site holds, and without it no glob matches anything, so
- *   every document would render as it is, without its layout, far from the cause.
+ *   every page would be refused for having no type, far from the cause.
  */
 export async function compileSite(
   core: Core,
@@ -182,7 +183,7 @@ export async function compileSite(
       // The walk matches passthrough globs case-insensitively, as Eleventy does, and a
       // case-insensitive file system cannot tell `Posts/` from `posts/`: a collection
       // glob matches the same way, or one spelling of a directory would collect and
-      // the other render untyped.
+      // the other be refused as untyped.
       matches: picomatch(source.literal, { dot: true, nocase: true }),
     }))
   const pages = new Map<string, CompiledPage>()
@@ -204,16 +205,19 @@ export async function compileSite(
     }
     const binding = holders.at(0)?.source
     const record = page.record?.name ?? binding?.collects
-    // A generator with a record goes to the core, which checks its `for:` key at load
-    // and refuses one a glob holds; one with none has no type to make its pages of, and
-    // no record to compile it as, so the core would never see it (D43).
-    if (page.for !== undefined && record === undefined) {
-      diagnostics.push(untyped(entry.path, entry.kind, page.for.spans['']))
+    if (record === undefined) {
+      // A document whose front matter never closes reads as having none, and the core
+      // refuses it in its own words once it has the text; refused here as untyped, it
+      // would be told to add the `type:` it may already have.
+      if (opensFrontMatter(entry.text) && findFrontMatter(entry.text) === undefined) {
+        files.push({ path: entry.path, text: entry.text })
+      } else {
+        diagnostics.push(untyped(entry.path, entry.kind, page))
+      }
       continue
     }
     pages.set(entry.path, { page, record, binding: binding?.name })
-    const file: SourceFileInput = { path: entry.path, text: entry.text }
-    if (record !== undefined) file.record = record
+    const file: SourceFileInput = { path: entry.path, text: entry.text, record }
     if (page.record !== undefined) {
       const { start, end } = page.record.span
       file.recordSpan = { start, end }
@@ -254,22 +258,37 @@ function heldTwice(path: string, page: Page, holders: FromBinding[]): Diagnostic
 export const LIST = new Intl.ListFormat('en', { type: 'conjunction' })
 
 /**
- * The refusal of a `for:` key on a page no `type:` and no glob types: a template's
- * generator has to name its pages' type, and a document is no generator at all — said
- * in the core's words for a document it is given with the key, since the mistake is the
- * same whether or not the page has a type (D43).
+ * The refusal of a page no `type:` and no glob types (D48): it has no schema to check
+ * its front matter and no layout to render it through, so the second call never has it.
+ * One with a `for:` key is refused at the key instead, in D43's words, since a
+ * generator with no type has none to make its pages of — and a document is no generator
+ * at all, said in the core's words for a document it is given with the key, as the
+ * mistake is the same whether or not the page has a type. A generator with a record
+ * goes to the core, which checks the key at load and refuses one a glob holds.
  */
-function untyped(path: string, kind: 'document' | 'template', span: Span): Diagnostic {
+function untyped(path: string, kind: 'document' | 'template', page: Page): Diagnostic {
+  if (page.for !== undefined) {
+    return {
+      path,
+      span: page.for.spans[''],
+      severity: 'error',
+      message:
+        kind === 'document'
+          ? 'a document is one page, of its own prose, so it takes no `for:` key: a ' +
+            'generator is a page template'
+          : '`for:` makes this page a generator, and a generator names the type of its ' +
+            'pages with `type:`',
+      labels: [],
+    }
+  }
   return {
     path,
-    span,
+    span: pageSpan(page),
     severity: 'error',
     message:
-      kind === 'document'
-        ? 'a document is one page, of its own prose, so it takes no `for:` key: a ' +
-          'generator is a page template'
-        : '`for:` makes this page a generator, and a generator names the type of its ' +
-          'pages with `type:`',
+      `no glob in \`${BINDINGS_FILE}\` collects this page, and it names no \`type:\`, so ` +
+      'nothing checks its front matter or gives it a layout: give it a `type:`, or add a ' +
+      `glob to \`${BINDINGS_FILE}\` that collects it`,
     labels: [],
   }
 }

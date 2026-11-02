@@ -426,7 +426,8 @@ is not this: that is a document's prose as comrak rendered it at compile, as `ht
   loader leaves as sent: the envelope carries it for the renders no loaded page stands
   in for — a document or page template no collection matched and no `type:` named,
   whose `page` is unknown-typed, and a template with no front matter, whose `page` is
-  the declared type — so it is bound as sent, not validated.
+  the declared type — so it is bound as sent, not validated. It serves a host that sends
+  one; the standard shell sends none, since every page it renders is loaded (D48).
 - **A page no glob holds is carried in the envelope's `pages`**: the front matter of
   every document or page template whose `type:` key named its record, with its path.
   They load after every binding, in the envelope's order, so a `by` index in one reads
@@ -456,8 +457,11 @@ is not this: that is a document's prose as comrak rendered it at compile, as `ht
   depends on it as a compile-time fact (D25); the core checks what it can see — that the
   name is a declared record, and that it extends the type the document value has — and
   reports at the front matter, which is where the key that may have named it stands. A
-  document no glob matches and no `type:` names has no schema: `page` is unknown-typed,
-  and it renders its own output, with no layout.
+  page no glob matches and no `type:` names has no schema, and the standard shell
+  refuses it, at its front matter or the file's start, before it compiles as a page: "no
+  glob in `site.lem` collects this page, and it names no `type:`, …" (D48). The core still
+  compiles a document with no record, `page` unknown-typed, rendering its own output with
+  no layout, for a host with no schemas — a playground, an editor.
 - **A template is a page when it has front matter** (D41). A `.lem` file that opens with a
   `---` block is typed as a document is — by the collection whose glob matched it, or by a
   `type:` key — its front matter is its record, and the template's output is the body its

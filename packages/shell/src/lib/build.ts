@@ -2,7 +2,6 @@ import {
   loadCore,
   type Core,
   type Diagnostic,
-  type JsonValue,
   type Label,
   type Mark,
   type PageRef,
@@ -52,8 +51,7 @@ export interface BuildOptions {
 export interface CheckResult {
   /**
    * Each page's file, relative to the output directory, in the order rendered: every
-   * page the core loaded, in its plan's order, then every page no record typed, in
-   * path order. Empty when an error stopped the build.
+   * page the core loaded, in its plan's order. Empty when an error stopped the build.
    */
   pages: string[]
   /**
@@ -127,13 +125,8 @@ export interface BuildResult extends CheckResult {
  * nothing removes — is reported as the result's `failure`, and the output may hold what
  * was written before it.
  *
- * A page whose record the core loaded renders through its layout. A page no glob held
- * and no `type:` named has no schema, so it renders its own output with `page` bound
- * to its front matter as read (D30, D37): `page` is bound as sent, one value per load,
- * so each such page is loaded on its own before it renders. Each of those loads
- * re-sends and re-validates the whole envelope, the bodies included, so their cost grows
- * with the untyped pages times the size of the site: 18 of 25 pages on the
- * limulus-dot-net port branch cost about 0.35 s in all while they were untyped.
+ * Every page has a record, or the compile refused it (D48), so every page is loaded
+ * once, with the site, and renders through its layout.
  *
  * @throws {SiteError} when the input has no `site.lem`.
  * @throws {CoreTrapped} when a call into the core never returned.
@@ -250,13 +243,6 @@ async function renderSite(
     diagnostics.push(...core.loadData(data))
     if (hasError(diagnostics)) return failed
     for (const page of planned(core)) renderer.render(page)
-    for (const [path, compiledPage] of program.pages) {
-      if (compiledPage.record !== undefined) continue
-      const { value } = compiledPage.page.loaded
-      const ambient = { ...data.ambient, page: value }
-      diagnostics.push(...core.loadData({ ...data, ambient }))
-      renderer.render({ path, url: value.url })
-    }
     if (hasError(diagnostics)) return failed
     const { outputs, produced } = renderer
     // Last, over every byte the build would write: the links in it (D47).
@@ -402,7 +388,7 @@ class Renderer {
    * diagnostic of its render is labelled there with the item it was made from, so that
    * a fault every page shares is told apart page by page (D43).
    */
-  render({ path, index, url }: PageRef & { url: JsonValue }): void {
+  render({ path, index, url }: PageRef & { url: string }): void {
     const page = this.#program.pages.get(path)
     assert(page !== undefined, 'every planned page was compiled by this build')
     let generated: Generated | undefined
@@ -413,7 +399,7 @@ class Renderer {
       generated = { index, list }
       at = span
     }
-    const file = typeof url === 'string' ? outputFile(url) : undefined
+    const file = outputFile(url)
     if (file === undefined) {
       const of = generated === undefined ? '' : ` of ${pageName(path, generated)}`
       this.#diagnostics.push({
@@ -453,8 +439,7 @@ class Renderer {
     const marks = { path, generated, plugins: this.#plugins, payloads }
     const resolved = resolvePage(rendered, marks)
     this.#diagnostics.push(...resolved.diagnostics)
-    // A url that names a file is a string.
-    this.outputs.push({ file, url: url as string, bytes: resolved.bytes })
+    this.outputs.push({ file, url, bytes: resolved.bytes })
     const subject = { page: path, generated }
     for (const produced of resolved.files) this.#produce(subject, produced)
   }

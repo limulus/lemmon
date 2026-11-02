@@ -78,7 +78,9 @@ Each document or page template carries its `record`: the element type of the `fr
 binding whose glob matched it, or the type a `type:` key names, which the checker
 requires to extend that element type — or, where no glob matched, the document value's
 type. The unit depends on that type as a compile-time fact (D25). A document
-without one compiles with `page` unknown-typed, which is how the spike renders today.
+without one compiles with `page` unknown-typed, which is how a host with no schemas
+renders one; the shell gives every page a record, and refuses a page it has none for
+(D48).
 
 Code blocks are marks (D42). Every code block but a `math` fence, which comrak renders
 before consulting any seam, is a `code` mark keyed by its language word, with the info
@@ -170,7 +172,8 @@ not a break:
   its file's output passed as `body` to the entry field's function, in one run of the
   VM; any other file — a template with no front matter, or a document or page template
   no collection matched and no `type:` named — renders its own output, reading the value
-  the envelope carried, if it did, as sent (D37). With `body`, a loaded page renders as
+  the envelope carried, if it did, as sent (D37): a host's case, not the shell's, which
+  renders only loaded pages (D48). With `body`, a loaded page renders as
   far as that output and stops: what its layout would be given, with the marks and
   fragments standing in it and its `uniqueId`s counted as the page counts them, since the
   page renders its body first; a file that is no page renders as it does without it.
@@ -240,9 +243,8 @@ not a break:
    neighbours filled once every page of it is built, and refuse two pages at one url
    (D43). Failures point at the YAML positions the shell sent with the data.
 5. **Plan** (core) — list every loaded page with its url, from the field the host named
-   (D43); deps come with `∆xBO`. A file with no record — a document or
-   page template no glob matched and no `type:` named — is no page: `plan()` omits it,
-   and the shell renders it with `render({path})` at the url it derives.
+   (D43); deps come with `∆xBO`. A file with no record is no page, and `plan()` omits
+   it; the shell compiles none, so the plan lists every page it renders (D48).
 6. **Render × N** (core) — first the body pass (shell, D46): each document the load made
    renders its body alone, `render({path, body: true})`, its marks resolved as step 7
    resolves a page's and its links made absolute against the config's `origin`, and the
@@ -278,12 +280,8 @@ other — the same file, the same but for case or Unicode form, or a file where 
 needs a directory — and every link in what it would write checked (step 8, below) before
 the first is written, so any error stops the build before it writes; a write the file
 system then refuses is reported, and the output may hold what was written before it. A
-page no glob matched and no `type:` named renders with `page` its own front matter, each
-such page loaded on its own before it renders, since a load binds one document value;
-each of those loads re-sends and re-validates the whole envelope, every body in
-`build.bodies` among it, so the cost grows with the untyped pages times the size of the
-site — 18 of 25 pages on the limulus-dot-net port branch cost about 0.35 s in all while
-they were untyped; it types every page now. Step 7 runs as each
+page no glob matched and no `type:` named is an error at step 3 (D48), so every page is
+loaded once, with the site. Step 7 runs as each
 page renders, with the handlers of the plugins `lemmon.config.ts` lists, whose claims step
 3's first call declared — an empty list for a site listing none, which warns at every mark.
 A plugin list two producers would answer one mark under, or whose handlers name two
@@ -349,7 +347,7 @@ labelled as rendering the body before any body exists — and its page, rendered
 every body; a computed binding runs at both loads. An error in the pass stops the build
 before the second load, so that no page, feed or binding reports a body's error again as the
 body it lacks, and an error in the second load stops it before any page renders. Page
-templates, generated pages and documents no record typed have no body in the map.
+templates and generated pages have no body in the map.
 
 Step 8 (D47) runs once every page has rendered and resolved with no error, so that it
 reports the author's fault and not one downstream of it: a page that failed has claimed its

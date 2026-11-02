@@ -1,10 +1,17 @@
-import { loadCore } from '@limulus/lemmon-core'
+import { loadCore, type Span } from '@limulus/lemmon-core'
 import { readFileSync } from 'node:fs'
 import { isAbsolute, join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 import type { Plugin } from './plugins.ts'
-import { AMBIENT_FILE, compileSite, HOST, SiteError, type Compiled } from './program.ts'
+import {
+  AMBIENT_FILE,
+  compileSite,
+  FILE_START,
+  HOST,
+  SiteError,
+  type Compiled,
+} from './program.ts'
 import { discover } from './site.ts'
 import { copy, inline, shell, tsHighlighter } from '../mocks/plugins.ts'
 import {
@@ -67,6 +74,7 @@ describe('compileSite()', () => {
       ['posts', 'file', 'Post'],
       ['photos', 'file', undefined],
       ['motto', 'env', undefined],
+      ['notes', 'file', 'Memo'],
     ])
   })
 
@@ -83,7 +91,7 @@ describe('compileSite()', () => {
       })
     ).toEqual([
       ['index.lem', 'Home', undefined],
-      ['notes/loose.md', undefined, undefined],
+      ['notes/loose.md', 'Memo', 'notes'],
       // The glob matches as passthrough's do, dotfiles included.
       ['posts/.dot.md', 'Post', 'posts'],
       ['posts/a.md', 'Post', 'posts'],
@@ -100,7 +108,63 @@ describe('compileSite()', () => {
     expect(await typed({ ...files, 'Posts/c.md': '---\ntitle: C\n---\n' })).toEqual([
       ['Posts/c.md', 'Post', 'posts'],
       ['index.lem', 'Home', undefined],
-      ['notes/loose.md', undefined, undefined],
+      ['notes/loose.md', 'Memo', 'notes'],
+    ])
+  })
+
+  it('should type a page by its own `type:` alone, or by a glob alone', async () => {
+    const about = '---\ntype: Home\ntitle: About\n---\n'
+    const { 'posts/a.md': _a, 'posts/b.md': _b, 'index.lem': _i, ...files } = SITE
+
+    expect(await typed({ ...files, 'about.md': about })).toEqual([
+      ['about.md', 'Home', undefined],
+      ['notes/loose.md', 'Memo', 'notes'],
+    ])
+  })
+
+  it('should refuse a page no glob collects and no `type:` names, at its front matter, once', async () => {
+    // A document with front matter, one without, and a page template.
+    const about = '---\ntitle: About\n---\nProse\n'
+    const card = '---\ntitle: Card\n---\n<p>card</p>\n'
+    const { program, diagnostics } = await compiled({
+      ...SITE,
+      'about.md': about,
+      'bare.md': 'Prose\n',
+      'card.lem': card,
+    })
+
+    const refusal = (path: string, span: Span) => ({
+      path,
+      span,
+      severity: 'error',
+      message:
+        'no glob in `site.lem` collects this page, and it names no `type:`, so nothing ' +
+        'checks its front matter or gives it a layout: give it a `type:`, or add a glob ' +
+        'to `site.lem` that collects it',
+      labels: [],
+    })
+    expect(program).toBeUndefined()
+    expect(diagnostics).toEqual([
+      refusal('about.md', at(about, 'title: About')),
+      refusal('bare.md', FILE_START),
+      refusal('card.lem', at(card, 'title: Card')),
+    ])
+  })
+
+  it('should leave a document whose front matter never closes to the core, which says so', async () => {
+    // Read as having no front matter, it has no `type:` to the shell, though the author
+    // wrote one.
+    const about = '---\ntype: Home\ntitle: About\n\nProse\n'
+    const { program, diagnostics } = await compiled({ ...SITE, 'about.md': about })
+
+    expect(program).toBeUndefined()
+    expect(diagnostics).toEqual([
+      expect.objectContaining({
+        path: 'about.md',
+        span: at(about, '---'),
+        severity: 'error',
+        message: 'front matter opened here has no closing `---` line',
+      }),
     ])
   })
 
@@ -255,11 +319,11 @@ describe('compileSite()', () => {
       // A document is no generator, so `type:` is no remedy: the core says the same of
       // one it is given with a type.
       const prose = '---\nfor:\n  title: site.titles\n---\nProse\n'
-      const { diagnostics } = await compiled({ ...SITE, 'notes/topic.md': prose })
+      const { diagnostics } = await compiled({ ...SITE, 'topic.md': prose })
 
       expect(diagnostics).toEqual([
         expect.objectContaining({
-          path: 'notes/topic.md',
+          path: 'topic.md',
           span: at(prose, 'title: site.titles'),
           message:
             'a document is one page, of its own prose, so it takes no `for:` key: a ' +

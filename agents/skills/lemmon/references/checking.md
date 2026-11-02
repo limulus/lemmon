@@ -23,11 +23,11 @@ rebuilds it):
 node --conditions=source /path/to/lemmon/packages/shell/bin/lem.ts check
 ```
 
-A document is typed the way the shell types it: by its `type:` key, or else by the `from`
-glob in `site.lem` that matches its path from the input directory. A document nothing types
-compiles with `page` as `any` and its field reads go unchecked; that is the
-page-without-a-record case, not a pass. The site needs a `site.lem` in its input directory,
-even an empty one.
+A page — a document, or a template with front matter — is typed the way the shell types it:
+by its `type:` key, or else by the `from` glob in `site.lem` that matches its path from the
+input directory. A page nothing types is an error at its front matter, naming both fixes.
+The site needs a `site.lem` in its input directory, whose globs type every page that names
+no `type:`.
 
 What it reports, in the order it finds them:
 
@@ -45,8 +45,10 @@ What it reports, in the order it finds them:
   The text a transform leaves is what compiles: a diagnostic in what it appended points
   past the end of the file you wrote, and its frame shows the appended text.
 - **Compile errors**: everything the checker finds, in every `.lem` first — page templates
-  among them, compiled without their records so a layout sees what they define — then in the
-  pages as their records. A template never sees what a document (`.md`) defines.
+  among them, compiled without their records so a layout sees what they define — then the
+  pages the shell cannot type, before any compiles: one two globs match, one nothing types,
+  and a generator with no `type:` — and then the pages, as their records. A template never
+  sees what a document (`.md`) defines.
 - **Mark warnings**: a `mark()` name no plugin the config lists claims, with a
   did-you-mean, and a literal key none of their producers lists. A site listing no plugins
   is warned at every mark. The shell's default plugin, `bundler()`, claims `styles`,

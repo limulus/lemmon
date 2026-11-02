@@ -2,7 +2,8 @@
 
 - **Status:** Accepted 2026-10-19, planned 2026-10-18 and settled while building `∆zu0`;
   refines D42's clause on a rendered body reaching a template, and replaces the
-  architecture's step 10, a second phase after every other page
+  architecture's step 10, a second phase after every other page; its passages on the
+  reload of a page no record typed hold until D48, which refuses such a page
 - **Backlog item:** `∆zu0`
 - **Normative text:** `docs/architecture.md` § WASM API, § Build pipeline;
   `docs/language.md` § Ambient types; `docs/shell.md` § `lem build`, and the
@@ -52,7 +53,8 @@ runs at both loads, so one that indexes a body fails the first load, and a toler
 — `has`, `keys()`, a `lem-for` — sees `{}` there and every body at the second. A layout
 renders after the body pass and reads every body, its own page's among them. A document
 no glob holds and no `type:` names is no page `plan()` lists, so it has no body; its page
-renders after a reload that carries every body, as does each page with no record.
+renders after a reload that carries every body, as does each page with no record (until
+D48, which refuses such a page).
 
 **Every page renders after the body pass.** Nothing decides membership — no key, no
 analysis of what a page reads: the pass renders documents' bodies only, and every page
@@ -153,7 +155,8 @@ body it then lacks. A second load that fails stops the build before any page ren
 - `∆yOJ`'s link check runs over pages still in memory after every page has rendered, and
   reads the config's `origin` to tell the site's own absolute links from others.
 - An untyped page's own reload re-sends every body, so each costs more by the bodies'
-  size; a site types its feeds to render them without one.
+  size; a site types its feeds to render them without one (until D48, which retires the
+  reload).
 - `∆xBO`: a body edit re-renders its page and every page that reads `build.bodies`; `∆Qr2`'s
   facts could skip the pass when no unit reads it.
 - `body` in a default (D37) is a document's prose as comrak rendered it at compile;

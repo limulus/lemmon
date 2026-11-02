@@ -46,7 +46,7 @@ describe('envelope()', () => {
     expect(data?.ambient).toEqual({
       build: { time: '2026-10-15T12:00:00.000Z', generator: 'Lemmon 0.0.0', bodies: {} },
     })
-    expect(Object.keys(data?.sources ?? {})).toEqual(['posts', 'photos', 'motto'])
+    expect(Object.keys(data?.sources ?? {})).toEqual(['posts', 'photos', 'motto', 'notes'])
     // A glob's pages in path order, as discovery read their front matter.
     expect(data?.sources?.posts).toEqual([
       {
@@ -77,7 +77,7 @@ describe('envelope()', () => {
     })
     // An environment value has no file behind it.
     expect(data?.sources?.motto).toEqual({ value: 'hi' })
-    // The home page its own `type:` named; the untyped note is no page to load.
+    // The home page its own `type:` named; the note is its glob's, and is not here.
     expect(data?.pages?.map((page) => page.path)).toEqual(['index.lem'])
   })
 
@@ -289,7 +289,7 @@ describe('withBodies()', () => {
       build: { time: '2026-10-15T12:00:00.000Z', generator: 'Lemmon 0.0.0', bodies },
     })
     expect({ ...second, ambient: data?.ambient }).toEqual(data)
-    // The first envelope is untouched: an untyped page's reload spreads the second.
+    // The first envelope is untouched: the second is a copy of it, not an edit.
     expect(data?.ambient?.build).toMatchObject({ bodies: {} })
   })
 })

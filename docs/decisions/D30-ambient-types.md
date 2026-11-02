@@ -9,7 +9,9 @@
   matter, as a document's are, and `lem-page` is retired (D41); revised 2026-09-14 (D43) —
   `Page` declares no `prev`/`next`, a generated page's type declaring its own neighbours;
   the shell reads the `for:` key as well as `type:`, and its declaration names the url and
-  neighbour fields beside the entry
+  neighbour fields beside the entry; revised 2026-11-01 (D48) — the standard shell refuses
+  a page no glob matches and no `type:` names, which the core still renders unknown-typed
+  for a host with no schemas
 - **Backlog item:** `∆1vS` (the `from` binding clause, retiring
   `lem-collection`/`lem-data`); `∆RGQ` (retiring `lem-page`, D41)
 - **Normative text:** `docs/language.md` § Types › Ambient types
@@ -40,7 +42,8 @@ declaring `Page` (`url`, `inputPath`, `draft`; `prev` and `next` until D43) and 
 - A document's type is the element type of the collection whose glob matched it; a
   `type:` front-matter key may name a subtype of it instead. The shell passes the type per
   file, and the document's unit depends on it as a compile-time fact (D25). A document
-  no glob matches and no `type:` names is unknown-typed and renders.
+  no glob matches and no `type:` names is unknown-typed and renders; since D48 the
+  standard shell refuses one, and only a host with no schemas renders it.
 - `layout` is a field every page schema declares, `(T, html): html` for its own `T`,
   resolved from a string by its expected type at load like any such string. The shell
   names it as the entry field, and `render` calls it with the page and its rendered body.

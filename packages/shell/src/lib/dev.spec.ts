@@ -24,7 +24,7 @@ import {
   type Page,
   type Running,
 } from '../mocks/dev.ts'
-import { ENV, PASSTHROUGH, project, SITE } from '../mocks/sites.ts'
+import { BARE_LEM, ENV, PASSTHROUGH, project, SITE } from '../mocks/sites.ts'
 import { until } from '../mocks/until.ts'
 
 const TAG = '<script type="module" src="/.lemmon/reload.js"></script>'
@@ -180,7 +180,7 @@ describe('lem dev', { timeout: 30_000 }, () => {
       )
 
       unlinkSync(lock)
-      writeFileSync(join(cwd, 'www/site.lem'), '')
+      writeFileSync(join(cwd, 'www/site.lem'), BARE_LEM)
       await reloadedTo(page, '<p>A, locked</p>', dev)
     } finally {
       page?.close()
@@ -253,17 +253,17 @@ describe('lem dev', { timeout: 30_000 }, () => {
 
   it('should rebuild an edit to the file a link in the input names', async () => {
     const cwd = project(
-      { ...SITE, 'shared/c.md': '---\ntitle: C\n---\nHello c.\n' },
+      { ...SITE, 'notes/c.md': '---\ntitle: C\n---\nHello c.\n' },
       PASSTHROUGH
     )
-    symlinkSync('../shared/c.md', join(cwd, 'www/posts/c.md'))
+    symlinkSync('../notes/c.md', join(cwd, 'www/posts/c.md'))
     const dev = started(cwd, ['--port', '0'], ENV)
     let page: Page | undefined
     try {
       await dev.serving()
       page = await dev.open('/posts/c/')
 
-      writeFileSync(join(cwd, 'www/shared/c.md'), '---\ntitle: C\n---\nLinked, c.\n')
+      writeFileSync(join(cwd, 'www/notes/c.md'), '---\ntitle: C\n---\nLinked, c.\n')
 
       await reloadedTo(page, 'Linked, c.', dev)
     } finally {
