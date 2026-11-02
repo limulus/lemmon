@@ -48,8 +48,9 @@ Repo docs are the working distillation; read them before writing code:
 
 The full architecture record (with diagrams, migration plan, and rationale) lives in three
 Claude Artifacts Eric keeps privately — "Shell & Core", "The Lemmon Language", and "From
-Eleventy to Lemmon" — so the repo docs are the public record. Where a repo doc seems to
-contradict itself, ask Eric; the artifacts win.
+Eleventy to Lemmon" — so the repo docs are the public record, and they become the whole
+record once `∆JXK` retires the artifacts. Where a repo doc seems to contradict itself, ask
+Eric, and settle it in the repo doc.
 
 ## Invariants
 
@@ -406,12 +407,9 @@ building.
   tense, rots unseen. Landing a stage therefore includes sweeping the placeholders that
   name it.
 - A syntax or semantics change updates `docs/language.md` and `docs/decisions/` (the row,
-  plus a record for any decision from D25 on) in the same pass, and records what the
-  owning artifact must say in `docs/artifact-changes.md` — amending an earlier entry the
-  change contradicts rather than appending — since the artifacts are reconciled once, at
-  the cutover (`∆MlD`). When a design point moves, or is decided against, grep for
-  its nouns and sweep the prose the change just falsified, and write the diff's own doc
-  sentences last: no gate ever reads the docs.
+  plus a record for any decision from D25 on) in the same pass. When a design point
+  moves, or is decided against, grep for its nouns and sweep the prose the change just
+  falsified, and write the diff's own doc sentences last: no gate ever reads the docs.
 
 ## Committing
 

@@ -2,12 +2,14 @@
 
 The three Claude Artifacts Eric keeps privately — "Shell & Core", "The Lemmon Language",
 and "From Eleventy to Lemmon" — are the architecture record, and `docs/` is its working
-distillation. When implementation moves a design point, the repo docs change in the same
-pass and the artifact change is recorded here instead of made, so that the artifacts are
-reconciled once (`∆MlD`, at the end of Phase 1) rather than edited item by item.
+distillation. Until 2026-11-01, when implementation moved a design point, the repo docs
+changed in the same pass and the artifact change was recorded here instead of made, for
+one reconciliation at the end. The artifacts are now being retired rather than reconciled
+(`∆JXK`), so this ledger is frozen: no entry is added, and none is applied. Each says what
+its artifact gets wrong, which is what the retirement must not carry into the repo docs.
 
 One entry per change: which artifact, what to change, and the decision or backlog item that
-moved it. Newest last. An entry is removed when its change has been applied.
+moved it. Newest last.
 
 ## The Lemmon Language
 

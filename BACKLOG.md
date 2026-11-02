@@ -113,12 +113,11 @@ esbuild plugin added its 200 ms (`∆d1N`'s journal); on 2026-10-18, 421 ms for 
   - `compile` reports each unit's compile-time facts so `∆muD` keys its unit cache on
     `hash(text) + hash(facts)` and a content edit never recompiles its layouts (D25, D42)
 
-### Reconcile the architecture artifacts
+### Retire the architecture artifacts
 
-- `∆MlD` Reconcile the architecture artifacts
-  - Apply every entry in `docs/artifact-changes.md` to the three Claude Artifacts Eric owns
-    and clear the ledger; applied once, after the cutover, so this is deliberately last
-  - needs: `∆oAl`, `∆V7i`, `∆5MM`, `∆xBO`, `∆Qr2`, `∆Lj6`, `∆QZz`
+- `∆JXK` Retire the architecture artifacts
+  - The repo docs take in what only the three private Claude Artifacts hold, D01–D24's
+    rationale, the diagrams and the migration plan, so that the docs are the whole record
 
 ## Defects
 
