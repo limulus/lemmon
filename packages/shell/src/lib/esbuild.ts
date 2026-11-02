@@ -200,10 +200,11 @@ export function esbuild(options: EsbuildOptions = {}): Plugin {
         const [code, comment] = [text.slice(0, cut), text.slice(cut)]
         const named = (to: string) =>
           code + comment.replace(posix.basename(url), () => posix.basename(to))
-        const final = placeheld.replaceAll(
-          UNNAMED,
-          contentHash(named(placeheld), relocated)
-        )
+        // The placeholder in the file name alone, the last: a directory may be spelled
+        // like one.
+        const at = placeheld.lastIndexOf(UNNAMED)
+        const hash = contentHash(named(placeheld), relocated)
+        const final = placeheld.slice(0, at) + hash + placeheld.slice(at + UNNAMED.length)
         built[final] = encoder.encode(named(final))
         built[`${final}.map`] = encoder.encode(relocated)
         return final

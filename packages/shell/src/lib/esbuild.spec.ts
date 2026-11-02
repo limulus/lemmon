@@ -132,6 +132,16 @@ describe('esbuild()', () => {
       })
     })
 
+    it('should leave a placeholder’s characters in the bundle’s directory as they are', async () => {
+      const { manifest } = await bundled(
+        site({ 'lib/XXXXXXXX/index.ts': 'console.log(1)\n' })
+      )
+
+      expect(manifest['/lib/XXXXXXXX/index.js']).toMatch(
+        new RegExp(`^/lib/XXXXXXXX/index\\.${HASH}\\.js$`)
+      )
+    })
+
     it('should name a bundle the same in every build, wherever the project is', async () => {
       const files = {
         'lib/a/index.ts':
