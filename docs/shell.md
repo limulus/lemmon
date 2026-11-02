@@ -148,13 +148,13 @@ Before a bundle is named, each placeholder in a string names the entry at its pa
 from the bundle's own logical path where it is relative, and the file name that entry
 ships under — so that entry is named first — is spliced in as written, as limulus.net's
 Eleventy build splices the hash in: `'worker.XXXXXXXX.js'` becomes `"worker.ABCD2345.js"`,
-the same length, so the map's columns hold. Where `entryNames` has moved the bundles, so
-that the spliced string would name another file, it becomes the URL the entry ships at
-instead, relative to the bundle's own where it was relative. One naming no entry fails the
-hook at the source that wrote it, from the root with its line and column as esbuild
-places its own errors — or at the bundle, where a `define` put it there — and so does one
-naming its own bundle, directly or through the bundles it names, since each would need
-the other's name to be named.
+the same length, so the map's columns hold. A `.` or `..` segment resolves as a browser
+resolves it, but a path holding an empty segment, `'/lib//y/…'`, names no entry, since the
+browser would ask for another URL than the entry's. One naming no entry fails the hook at
+the source that wrote it, from the root with its line and column as esbuild places its own
+errors — or at the bundle, where a `define` put it there — and so does one naming its own
+bundle, directly or through the bundles it names, since each would need the other's name
+to be named.
 
 Then the bundle is named as that build names one: by the first eight base32 characters of
 the SHA-256 of the bundle — its last line still naming its map `index.XXXXXXXX.js.map` —
@@ -166,14 +166,14 @@ it is: one holding a `"`, a `\` or a character outside ASCII is escaped there, a
 absolute, as it does in Eleventy's build. Eleventy's build also writes an unhashed
 `/lib/x/index.js` re-exporting each bundle; this one does not, since nothing loads one.
 
-Each option is optional: `entryPoints`, globs from the input matched as `passthrough` globs
-are; `external`, `entryNames` and `assetNames`, as esbuild reads them, but for the
-`[hash]` in `entryNames`, which is the name above; and `env`, the
-environment variables the scripts read as `process.env.NAME`, each replaced by its value
-in the build's environment — the one `lem` runs in, so a site keeping a value in a `.env`
-file loads it in its config, `import 'dotenv/config'` — and one the environment lacks fails
-the hook, naming it. limulus.net keeps Eleventy's asset directory, which a worker's bundle
-names, and its map's token:
+Each option is optional, and one it does not take is refused when the config loads:
+`entryPoints`, globs from the input matched as `passthrough` globs are; `external` and
+`assetNames`, as esbuild reads them; and `env`, the environment variables the scripts read
+as `process.env.NAME`, each replaced by its value in the build's environment — the one
+`lem` runs in, so a site keeping a value in a `.env` file loads it in its config,
+`import 'dotenv/config'` — and one the environment lacks fails the hook, naming it.
+limulus.net keeps Eleventy's asset directory, which a worker's bundle names, and its
+map's token:
 
 ```ts
 esbuild({

@@ -5,8 +5,10 @@
   limulus.net's Eleventy build, which changed first (its `d1dc734`): a bundle is named by
   what it ships as — its placeholders resolved first, so a loader's name follows its
   worker's, and its map naming the checkout's path relative to itself — and no longer
-  by esbuild's `[hash]`
-- **Backlog item:** `∆d1N`; `∆EEa` (the revision)
+  by esbuild's `[hash]`. Revised 2026-11-01 (`∆FbD`) to drop `entryNames`, which no site
+  set: every bundle ships beside its source, a placeholder is always spliced in as
+  written, and an option the plugin does not take is refused when the config loads
+- **Backlog item:** `∆d1N`; `∆EEa` (the revision); `∆FbD` (the second revision)
 - **Normative text:** `docs/shell.md` § `esbuild(options?)`, § Assets;
   `docs/architecture.md` § Build pipeline (step 2), § Shell plugin API
 
@@ -37,7 +39,9 @@ defaults** — every `index.ts` and `worker.ts` under the input an entry, `/lib/
 the browser, a `.wasm` import instantiated by `esbuild-plugin-wasm`, each bundle written
 beside its source as `[dir]/[name].[hash]` — minified ES modules with source maps. A site
 passes what is its own: entry globs, externals, entry and asset names, and `env`, the
-environment variables its scripts read as `process.env.NAME`. The asset names default to
+environment variables its scripts read as `process.env.NAME`. _(Revised by `∆FbD`: asset
+names alone; every bundle is written beside its source, and an option the plugin does not
+take is refused when the config loads.)_ The asset names default to
 `/assets/immutable/esbuild/`; limulus.net passes Eleventy's `assets/immutable/11ty/esbuild/`
 to keep its `.wasm` URL, and with it the hash of the worker that names it.
 
@@ -67,8 +71,11 @@ change when only a bundle it names did)_. esbuild writes each entry's bundle wit
 placeholder `XXXXXXXX` where `[hash]` is in `entryNames`, as `11ty/esbuild.ts` writes
 `[dir]/[name].XXXXXXXX`, and its own `[hash]` after the name, which keeps two bundles
 apart until they are named — an `entryNames` without `[dir]` would give two `index.ts`
-one path — and is cut off before anything is hashed. Then each bundle is named, and a
-bundle named by a placeholder is named first:
+one path — and is cut off before anything is hashed. _(Revised by `∆FbD`: the name is
+always `[dir]/[name].XXXXXXXX` and esbuild's `[hash]`. Two `index.ts` no longer share a
+path, but `index.ts` and `index.tsx` beside it still do, and esbuild would refuse them
+before the manifest's check names both sources, so its hash stays.)_ Then each bundle is
+named, and a bundle named by a placeholder is named first:
 
 - **Its placeholders are resolved.** A string naming `….XXXXXXXX.js` names the entry at
   that path — from `/` where it starts with `/`, from the bundle's own logical path where
@@ -76,7 +83,9 @@ bundle named by a placeholder is named first:
   written, as Eleventy splices the hash in: `'worker.…'` stays without a `./`, and the
   string keeps its length, so the map's columns hold. Only where `entryNames` has moved
   the bundles, so that the spliced string would name another file, does it become the
-  URL the entry ships at, relative to the bundle's own where it was relative.
+  URL the entry ships at, relative to the bundle's own where it was relative. _(Revised
+  by `∆FbD`: never; every bundle ships beside its source, so the spliced string names
+  the file its entry ships as.)_
 - **Its map names the checkout's path relative to itself.** Every `<root>/` in the map's
   text becomes the way from the map's directory to the root, as `11ty/esbuild.ts`
   rewrites its working directory — `./` from a map in the root itself, where Eleventy's
@@ -148,7 +157,9 @@ site listing the plugin pays.
   refuses two outputs at one path before anything is named: an `entryNames` without
   `[dir]` gives every `index.ts` one, and an entry's styles and a CSS entry beside it
   share theirs, which the manifest's check names better. esbuild's hash after the name
-  costs a cut of nine characters.
+  costs a cut of nine characters. _(Revised by `∆FbD`: without `entryNames`, two entries
+  at one logical path, `index.ts` and `index.tsx`, and an entry's styles beside a CSS
+  entry are what it still keeps apart.)_
 - **The whole chain in a cycle's error**, as Eleventy writes it (`∆EEa`). The bundles that
   led into the cycle are not in it, and renaming them fixes nothing.
 - **Writing every placeholder as the absolute URL.** Simpler, and a relative
@@ -167,6 +178,13 @@ site listing the plugin pays.
 - **Writing a relative placeholder from the bundle's own URL always.** One rule rather
   than two, and `'worker.XXXXXXXX.js'` would become `"./worker.….js"`, a string Eleventy
   never wrote, two bytes longer, moving every map column after it.
+- **Keeping `entryNames`** (`∆FbD`). It let a site move its bundles away from their
+  sources, which none did — limulus.net passes `assetNames` and `env` alone — and it
+  alone needed a placeholder rewritten as its entry's URL, where a moved bundle made the
+  spliced string name another file. Dropped, and that rewrite with it.
+- **Dropping esbuild's hash after the name too** (`∆FbD`). No cut; but esbuild would
+  refuse two entries at one path itself, naming an output file, `index.XXXXXXXX.js`, and
+  the manifest's check that names both sources would never be reached.
 
 ## Consequences
 
@@ -198,3 +216,9 @@ site listing the plugin pays.
   name to be named (`∆EEa`). A worker that starts another of itself names its own URL at
   run time, `import.meta.url`, not by a placeholder.
 - `∆Zg9`'s whole-site comparison meets 18 stubs in Eleventy's `dist/` that Lemmon's lacks.
+- A placeholder written from `/` with a dot segment, `'/lib/a/../b/index.XXXXXXXX.js'`, is
+  spliced in as written, as a relative one already was and as Eleventy splices it, where
+  before `∆FbD` it became its entry's URL; a browser resolves the `..` to the same file.
+  One holding an empty segment, `'/lib//b/…'` or `'//lib/…'`, names no entry, written or
+  relative, since a browser would ask for another URL, or another host, than the join
+  that would have found one; Eleventy fails on those too. limulus.net writes none.

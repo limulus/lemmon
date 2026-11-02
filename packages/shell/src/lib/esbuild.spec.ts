@@ -69,6 +69,21 @@ describe('esbuild()', () => {
     expect(claimsOf([plugin])).toEqual([])
   })
 
+  it('should refuse an option it does not take, naming those it does', () => {
+    const options = { entryNames: '[dir]/[name].[hash]' } as unknown as EsbuildOptions
+
+    expect(() => esbuild(options)).toThrow(
+      new TypeError(
+        '`esbuild()` cannot take `entryNames`, which is none of its options: ' +
+          '`entryPoints`, `external`, `assetNames`, `env`'
+      )
+    )
+    // Every one it does take, at once.
+    expect(() =>
+      esbuild({ entryPoints: ['*.ts'], external: [], assetNames: '[name]', env: ['A'] })
+    ).not.toThrow()
+  })
+
   describe('its asset hook', () => {
     it('should bundle each `index.ts` and `worker.ts`, mapping each to the URL it ships at', async () => {
       const { manifest, files } = await bundled(
@@ -304,7 +319,7 @@ describe('esbuild()', () => {
       expect(bundle).toContain('WebAssembly.instantiate')
     })
 
-    it('should take its entries, externals and names from its options', async () => {
+    it('should take its entries, externals and asset names from its options', async () => {
       const { manifest, files } = await bundled(
         site({
           'app.ts':
@@ -312,21 +327,15 @@ describe('esbuild()', () => {
           'm.wasm': WASM,
           'lib/a/index.ts': 'console.log(1)\n',
         }),
-        {
-          entryPoints: ['*.ts'],
-          external: ['/vendor/*'],
-          entryNames: 'js/[name]',
-          assetNames: 'media/[name]',
-        }
+        { entryPoints: ['*.ts'], external: ['/vendor/*'], assetNames: 'media/[name]' }
       )
 
-      expect(manifest).toEqual({ '/app.js': '/js/app.js' })
-      expect(Object.keys(files).sort()).toEqual([
-        '/js/app.js',
-        '/js/app.js.map',
-        '/media/m.wasm',
-      ])
-      expect(at(files, '/js/app.js')).toMatch(/^import"\/vendor\/x\.js";/)
+      const app = manifest['/app.js']
+      expect(manifest).toEqual({
+        '/app.js': expect.stringMatching(new RegExp(`^/app\\.${HASH}\\.js$`)),
+      })
+      expect(Object.keys(files).sort()).toEqual([app, `${app}.map`, '/media/m.wasm'])
+      expect(at(files, app)).toMatch(/^import"\/vendor\/x\.js";/)
     })
 
     it('should refuse two entries bundled at one logical path', async () => {
@@ -408,48 +417,26 @@ describe('esbuild()', () => {
       })
 
       describe('relative to the bundle’s own path', () => {
-        const files = {
-          'lib/a/index.ts':
-            "new Worker(new URL('./worker.XXXXXXXX.js', import.meta.url))\n" +
-            "new Worker(new URL('worker.XXXXXXXX.js', import.meta.url))\n" +
-            "new Worker(new URL('../b/index.XXXXXXXX.js', import.meta.url))\n" +
-            "import('/lib/b/index.XXXXXXXX.js')\n",
-          'lib/a/worker.ts': 'self.postMessage(1)\n',
-          'lib/b/index.ts': "console.log('b')\n",
-        }
-
         it('should take the file name its entry ships under, spliced in as written', async () => {
-          const { manifest, files: built } = await bundled(site(files))
+          const { manifest, files } = await bundled(
+            site({
+              'lib/a/index.ts':
+                "new Worker(new URL('./worker.XXXXXXXX.js', import.meta.url))\n" +
+                "new Worker(new URL('worker.XXXXXXXX.js', import.meta.url))\n" +
+                "new Worker(new URL('../b/index.XXXXXXXX.js', import.meta.url))\n" +
+                "import('/lib/b/index.XXXXXXXX.js')\n",
+              'lib/a/worker.ts': 'self.postMessage(1)\n',
+              'lib/b/index.ts': "console.log('b')\n",
+            })
+          )
 
           // As Eleventy splices the hash in: each string as written, the same length.
           const worker = nameIn(manifest['/lib/a/worker.js'])
           const b = manifest['/lib/b/index.js']
-          expect(at(built, manifest['/lib/a/index.js'])).toContain(
+          expect(at(files, manifest['/lib/a/index.js'])).toContain(
             `new Worker(new URL("./${worker}",import.meta.url));` +
               `new Worker(new URL("${worker}",import.meta.url));` +
               `new Worker(new URL("../b/${nameIn(b)}",import.meta.url));import("${b}");`
-          )
-        })
-
-        it('should be the URL its entry ships at where `entryNames` moved the bundles', async () => {
-          const context = site(files)
-          const flat = await bundled(context, { entryNames: '[name].[hash]' })
-          const deeper = await bundled(context, { entryNames: '[dir]/x/[name].[hash]' })
-
-          // Written as found where that still names the file, from the bundle's own URL
-          // where it would not, and absolute where it was.
-          const b = flat.manifest['/lib/b/index.js']
-          const worker = nameIn(flat.manifest['/lib/a/worker.js'])
-          expect(at(flat.files, flat.manifest['/lib/a/index.js'])).toContain(
-            `new Worker(new URL("./${worker}",import.meta.url));` +
-              `new Worker(new URL("${worker}",import.meta.url));` +
-              `new Worker(new URL("./${nameIn(b)}",import.meta.url));import("${b}");`
-          )
-          const moved = deeper.manifest['/lib/b/index.js']
-          expect(moved).toMatch(new RegExp(`^/lib/b/x/index\\.${HASH}\\.js$`))
-          expect(at(deeper.files, deeper.manifest['/lib/a/index.js'])).toContain(
-            `new Worker(new URL("../../b/x/${nameIn(moved)}",import.meta.url));` +
-              `import("${moved}");`
           )
         })
       })
@@ -524,6 +511,37 @@ describe('esbuild()', () => {
           new Error(
             'www/lib/a/start.ts:3:22: the placeholder `./gone.XXXXXXXX.js` names no entry ' +
               'point: none ships at `/lib/a/gone.js`'
+          )
+        )
+      })
+
+      it('should be spliced in as written where it climbs, as a browser resolves it alike', async () => {
+        const context = site({
+          'lib/a/index.ts':
+            "new Worker(new URL('/lib/a/../b/worker.XXXXXXXX.js', import.meta.url))\n",
+          'lib/b/worker.ts': 'self.postMessage(1)\n',
+        })
+
+        const { files, manifest } = await bundled(context)
+
+        const worker = manifest['/lib/b/worker.js']
+        expect(at(files, manifest['/lib/a/index.js'])).toContain(
+          `new URL("/lib/a/../b/${nameIn(worker)}",import.meta.url)`
+        )
+      })
+
+      it('should fail where an empty segment keeps it from naming the entry a join would', async () => {
+        const context = site({
+          'lib/a/index.ts':
+            "new Worker(new URL('/lib//b/worker.XXXXXXXX.js', import.meta.url))\n",
+          'lib/b/worker.ts': 'self.postMessage(1)\n',
+        })
+
+        // A browser asks for `/lib//b/…`, which is not where `lib/b/worker.ts` ships.
+        await expect(bundled(context)).rejects.toThrow(
+          new Error(
+            'www/lib/a/index.ts:1:20: the placeholder `/lib//b/worker.XXXXXXXX.js` names ' +
+              'no entry point: none ships at `/lib//b/worker.js`'
           )
         )
       })

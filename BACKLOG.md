@@ -20,8 +20,8 @@ reshapes.
   - The body pass rebases a body's links by the HTML rules the link check reads them by;
     the Eleventy rules kept for parity, and `parse-srcset` with them, go
 - `∆FbD` `esbuild()` without `entryNames`
-  - Bundles always ship beside their sources, so the moved-bundle placeholder rewriting and
-    the hash cutting that only a custom `entryNames` needs go (D45)
+  - Bundles always ship beside their sources, so the moved-bundle placeholder rewriting
+    that only a custom `entryNames` needs goes (D45)
 - `∆GJ9` The parity comparator leaves the shell
   - `rendered-html.ts` returns to `scripts/lib` for the fidelity check before the first
     release, once `lemmon-port`'s last parity run no longer needs it from the shell's API

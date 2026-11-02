@@ -672,8 +672,8 @@ plugins: [bundler(), highlighter({ exclude: ['rust', 'rs'] }), rustHighlighter()
 ```
 
 Its esbuild plugin, `esbuild(options?)`, is an `assets` hook listed the same way, whose
-options are a site's own entry globs, externals, entry and asset names, and the
-environment variables its scripts read as `process.env.NAME` (D45).
+options are a site's own entry globs, externals, asset names, and the environment
+variables its scripts read as `process.env.NAME` (D45).
 
 ## Editor tooling (day one, D16)
 

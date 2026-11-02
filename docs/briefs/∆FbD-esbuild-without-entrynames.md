@@ -12,6 +12,12 @@ a placeholder as a relative URL when the bundle it names has moved.
 Eric decided on 2026-10-24 to drop `entryNames` alone; `entryPoints` and `external` are
 simple and stay.
 
+(corrected on 2026-11-01: the hash cutting stays, now unconditional; only the `hashed`
+flag that made it optional goes. Without esbuild's own `[hash]` after the placeholder,
+two entries at one logical path, such as `index.ts` and `index.tsx` beside it, collide
+inside esbuild, which names one output file, before the plugin's own check can refuse
+them naming both sources. D45's alternatives already gave that reason.)
+
 ## Scope and constraints
 
 - Bundles always ship beside their sources (`[dir]/[name].[hash]`); the code only a custom

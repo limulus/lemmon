@@ -510,6 +510,21 @@ describe('loadConfig()', () => {
       expect(loaded.plugins.map((p) => p.name)).toEqual(['bundler', 'site'])
     })
 
+    it('should refuse a config calling `esbuild()` with an option it does not take', async () => {
+      const shell = new URL('../index.ts', import.meta.url).href
+      const error = await refusal(
+        `import { esbuild } from '${shell}'\n${listing("[esbuild({ entryNames: '[name]' })]")}`
+      )
+
+      // Thrown as the config's module runs, so no field is to blame.
+      expect(error.field).toBeUndefined()
+      expect(error.message).toBe(
+        `${error.file}: could not be loaded: TypeError: \`esbuild()\` cannot take ` +
+          '`entryNames`, which is none of its options: `entryPoints`, `external`, ' +
+          '`assetNames`, `env`'
+      )
+    })
+
     it('should refuse two producers of one key, and take producers whose keys are apart', async () => {
       const hljs = plugin('hljs', produces('code', "'ts', 'js'"))
 
