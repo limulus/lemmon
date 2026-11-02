@@ -7,7 +7,7 @@ lives depends on when the decision was made:
 
 - **D01–D24** were settled in the Aug 2026 architecture sessions; their rationale is in the
   three-artifact set ("Shell & Core", "The Lemmon Language", "From Eleventy to Lemmon"),
-  owned by Eric.
+  which Eric keeps privately.
 - **D25 onward** were settled during implementation, and each has a record in this
   directory — `Dnn-slug.md`, linked from its ID — with context, the decision, alternatives
   considered, and consequences. The exact rule lives in `docs/language.md` or

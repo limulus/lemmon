@@ -7,7 +7,7 @@
   worker's, and its map naming the checkout's path relative to itself — and no longer
   by esbuild's `[hash]`
 - **Backlog item:** `∆d1N`; `∆EEa` (the revision)
-- **Normative text:** `packages/shell/README.md` § `esbuild(options?)`, § Assets;
+- **Normative text:** `docs/shell.md` § `esbuild(options?)`, § Assets;
   `docs/architecture.md` § Build pipeline (step 2), § Shell plugin API
 
 ## Context

@@ -1,8 +1,7 @@
 name: Continuous Integration
 
-# Publishing is deliberately absent: nothing here is released yet, and how a monorepo's
-# packages get versioned and published (semantic-release or otherwise) is an open
-# question. Re-add a publish job when the first release is planned.
+# Publishing is absent: nothing here is released yet. The packages will be released by
+# semantic-release through npm's trusted publishing (∆PiI), whose publish job lands here.
 #
 # Shape: build the wasm once, consume it many times. `wasm` produces the artifact and
 # `wasm-check` exercises it on every node version, so each runtime is tested against the

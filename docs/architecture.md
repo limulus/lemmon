@@ -1,7 +1,7 @@
 # Lemmon architecture
 
-Working distillation of the "Shell & Core" artifact for implementation sessions. Decision
-IDs (D01…) refer to `docs/decisions/README.md`.
+Working distillation of the private "Shell & Core" artifact for implementation sessions.
+Decision IDs (D01…) refer to `docs/decisions/README.md`.
 
 ## Shape
 

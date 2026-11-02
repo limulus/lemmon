@@ -41,7 +41,7 @@
     "email": "eric@limulus.net",
     "url": "https://limulus.net/"
   },
-  "license": "UNLICENSED",
+  "license": "MIT",
   "bugs": {
     "url": "https://github.com/limulus/lemmon/issues"
   },

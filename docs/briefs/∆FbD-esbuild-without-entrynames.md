@@ -15,5 +15,5 @@ simple and stay.
 ## Scope and constraints
 
 - Bundles always ship beside their sources (`[dir]/[name].[hash]`); the code only a custom
-  `entryNames` needs goes, with its specs, and D45 and the shell README are revised.
+  `entryNames` needs goes, with its specs, and D45 and `docs/shell.md` are revised.
 - Byte-identical output for limulus.net, which `npm run parity` checks on `lemmon-port`.

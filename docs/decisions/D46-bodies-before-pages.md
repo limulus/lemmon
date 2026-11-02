@@ -5,7 +5,7 @@
   architecture's step 10, a second phase after every other page
 - **Backlog item:** `∆zu0`
 - **Normative text:** `docs/architecture.md` § WASM API, § Build pipeline;
-  `docs/language.md` § Ambient types; `packages/shell/README.md` § `lem build`, and the
+  `docs/language.md` § Ambient types; `docs/shell.md` § `lem build`, and the
   config's `origin`
 
 ## Context

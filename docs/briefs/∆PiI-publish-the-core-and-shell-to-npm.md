@@ -34,3 +34,11 @@ versions from it (`CLAUDE.md`, Committing).
   after it (`CLAUDE.md`, Commands), which a publish job could consume.
 - `CLAUDE.md` says nothing is released, so a retired name or tag needs no alias or
   deprecation message; that stops being true with the first release.
+- npm packs the `LICENSE` beside a package's own manifest, not the workspace root's, so
+  each published package needs its own copy.
+- The text that says the packages are not on npm, which no placeholder gate reads:
+  `docs/shell.md`'s "Running from a checkout", `CLAUDE.md`'s "distributed via npm once
+  `∆PiI` publishes it" and its "nothing is released yet", and the publish note at the top
+  of `.github/workflows/ci.yaml`. The READMEs say nothing of it: they are written for the
+  published packages, and carry only a notice that Lemmon is in early development, with
+  frequent major releases and significant breaking changes (Eric, 2026-11-01).

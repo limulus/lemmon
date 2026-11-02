@@ -5,7 +5,7 @@
   to a Check step before it, and retires Post-process
 - **Backlog item:** `∆yOJ`
 - **Normative text:** `docs/architecture.md` § Build pipeline (step 8);
-  `packages/shell/README.md` § `lem build` (step 7), and the config's `served`
+  `docs/shell.md` § `lem build` (step 7), and the config's `served`
 
 ## Context
 

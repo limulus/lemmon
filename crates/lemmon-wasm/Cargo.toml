@@ -4,6 +4,7 @@ description = "wasm-bindgen boundary for the Lemmon core"
 version.workspace = true
 edition.workspace = true
 repository.workspace = true
+license.workspace = true
 publish.workspace = true
 
 # `rlib` alongside `cdylib` is required, not decorative: without it `cargo test` cannot

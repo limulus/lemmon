@@ -44,7 +44,7 @@ Measured on 2026-10-24 against lemmon `b2d4350`:
   shell's rule; whether the corpus keeps the core's view or mirrors the shell decides
   whether they change.
 - Docs: ~65 lines across D30, D36, D37, D43, D46, the decision index, language.md,
-  architecture.md, the shell README, the skill and checking.md, artifact-changes.md, and
+  architecture.md, `docs/shell.md`, the skill and checking.md, artifact-changes.md, and
   the `∆Han` brief, plus a new decision record.
 - limulus.net has no untyped page.
 

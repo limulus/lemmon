@@ -1,7 +1,7 @@
 # Artifact changes
 
-The three Claude Artifacts Eric owns — "Shell & Core", "The Lemmon Language", and "From
-Eleventy to Lemmon" — are the architecture record, and `docs/` is its working
+The three Claude Artifacts Eric keeps privately — "Shell & Core", "The Lemmon Language",
+and "From Eleventy to Lemmon" — are the architecture record, and `docs/` is its working
 distillation. When implementation moves a design point, the repo docs change in the same
 pass and the artifact change is recorded here instead of made, so that the artifacts are
 reconciled once (`∆MlD`, at the end of Phase 1) rather than edited item by item.

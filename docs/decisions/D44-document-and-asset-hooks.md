@@ -10,7 +10,7 @@
   relative to
 - **Backlog item:** `∆ETy`
 - **Normative text:** `docs/architecture.md` § Build pipeline (step 2), § Shell plugin
-  API; `packages/shell/README.md` § Plugins
+  API; `docs/shell.md` § Plugins
 
 ## Context
 
@@ -144,5 +144,5 @@ outlives builds; nothing the shell holds of a hook's answer survives the build i
   can change, so a tool reading it and a build would agree on every field of the record;
   a body it handed back would have to be the text before any transform, which `discover`
   overwrites.
-- A transform that does more than append moves positions in diagnostics; the shell README
+- A transform that does more than append moves positions in diagnostics; `docs/shell.md`
   and §Build pipeline say so.

@@ -4,6 +4,7 @@ description = "Case discovery and expectation blessing for the golden corpus"
 version.workspace = true
 edition.workspace = true
 repository.workspace = true
+license.workspace = true
 publish.workspace = true
 
 [dependencies]

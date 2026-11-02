@@ -4,7 +4,8 @@ Lemmon is a static site generator and a typed, tag-based template language. A
 Node/TypeScript **shell** owns files, processes, plugins, and the dev server; a Rust
 **core** (scanner → parser → bytecode compiler that checks as it lowers → VM, plus comrak
 for markdown, its code blocks left as marks for the shell's highlighters) is compiled to
-WebAssembly and does everything deterministic. Distributed via npm; open source.
+WebAssembly and does everything deterministic. Open source under MIT; distributed via npm
+once `∆PiI` publishes it.
 Its first production site is limulus.net, which it will take over from Eleventy + WebC once
 a parity harness shows zero unexpected output diffs.
 
@@ -34,6 +35,9 @@ Repo docs are the working distillation; read them before writing code:
 - `docs/language.md` — the language: scanner, tags, expressions, types, namespaces, document
   mode. Keep open while working on the core.
 - `docs/architecture.md` — core/shell split, WASM API, pipeline, VM, crate choices.
+- `docs/shell.md` — the shell in full: `lem`'s commands, the config, the plugins and their
+  hooks, every build step. The normative text for D44–D47; the package READMEs are
+  written for npm readers and only introduce it.
 - `agents/skills/lemmon/SKILL.md` — the author's reference for writing `.lem`, distilled
   from `docs/language.md`, with a WebC-to-Lemmon porting guide beside it. Read it before
   writing Lemmon; it also loads as the `lemmon` skill through `.claude/skills/`.
@@ -43,8 +47,9 @@ Repo docs are the working distillation; read them before writing code:
   either ad hoc.
 
 The full architecture record (with diagrams, migration plan, and rationale) lives in three
-Claude Artifacts owned by Eric — "Shell & Core", "The Lemmon Language", and "From Eleventy
-to Lemmon". Ask Eric for access if a repo doc seems to contradict itself; the artifacts win.
+Claude Artifacts Eric keeps privately — "Shell & Core", "The Lemmon Language", and "From
+Eleventy to Lemmon" — so the repo docs are the public record. Where a repo doc seems to
+contradict itself, ask Eric; the artifacts win.
 
 ## Invariants
 
@@ -106,7 +111,7 @@ tests/fidelity/         the-rebound's sources and its 11ty reference page; see i
 scripts/                repo tooling run by npm scripts (wasm staging + check, the
                         fidelity harness); scripts/lib/ is the logic they share, covered
                         like a package
-docs/                   language.md, architecture.md, decisions/, journal/, plans/
+docs/                   language.md, architecture.md, shell.md, decisions/, journal/, plans/
 agents/skills/lemmon/   the Lemmon authoring skill (SKILL.md + references/)
 ```
 
@@ -134,9 +139,10 @@ are sized to it, so raising either means re-running `npm run rust:wasm:test`, wh
 `verify` does not include.
 
 Published packages use the `@limulus` scope, named `@limulus/lemmon-<part>` (D18). Root and
-packages are all `"private": true` and CI has no publish job: nothing is released yet, and
-release tooling is undecided, so a retired name or tag needs no alias or deprecation
-message. Do not publish anything, or re-enable publishing, without Eric.
+packages are all `"private": true` and CI has no publish job: nothing is released yet, so a
+retired name or tag needs no alias or deprecation message. `∆PiI` releases the core and the
+shell by semantic-release through trusted publishing. Do not publish anything, or
+re-enable publishing, without Eric.
 
 ## Commands
 
@@ -208,8 +214,8 @@ timing modes are not in the pre-push gate: CI's `verify` job runs `wasm:bench` a
 `verify:js`, as the marshalling record, and `test:fidelity -- --time` — the only thing
 that checks the 1 ms/page criterion — runs only by hand.
 
-`lem build` is real: in a directory with a `lemmon.config.ts` (`packages/shell/README.md`
-describes it), the bin at `packages/shell/bin/lem.ts` runs the plugins the config lists
+`lem build` is real: in a directory with a `lemmon.config.ts` (`docs/shell.md` describes
+it), the bin at `packages/shell/bin/lem.ts` runs the plugins the config lists
 over each document's text and for their asset files, compiles the site in two calls — the
 assets' manifest on its declaration — loads it, renders each document's body alone and
 loads again with every body in `build.bodies`, its links rebased on the config's `origin`

@@ -3,6 +3,11 @@
   "version": "0.0.0",
   "private": true,
   "description": "Lemmon core: typed wrapper around the Rust/WASM compiler and VM",
+  "keywords": [
+    "lemmon",
+    "template-language",
+    "webassembly"
+  ],
   "module": "dist/esm/index.js",
   "types": "dist/types/index.d.ts",
   "exports": {
@@ -30,7 +35,7 @@
     "email": "eric@limulus.net",
     "url": "https://limulus.net/"
   },
-  "license": "UNLICENSED",
+  "license": "MIT",
   "bugs": {
     "url": "https://github.com/limulus/lemmon/issues"
   },

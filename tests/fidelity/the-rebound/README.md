@@ -30,7 +30,10 @@ pass and applies no budget.
   `{% renderTemplate 'webc' %}<article-photo …>{% endrenderTemplate %}` block becomes a
   single-line lem call, `<lem.articlePhoto("…", placement: "…")>`.
 - `fixtures/reference.html` — the Eleventy-built `dist/www/feed/the-rebound/index.html`,
-  byte-for-byte.
+  byte-for-byte but for its SVG sprite: the ten Font Awesome icons in it are emptied, each
+  `<symbol>` kept without its attribution comment and `<path>`, so that the repo holds
+  no third-party content. `sprite.lem` empties the same ten, so the comparison still sees
+  every symbol's id and `viewBox` and every `<use>` of one.
 - `fixtures/data.json` — the ambient payload (`site`, `page`, `build`): every computed
   value the 11ty pipeline derives at build time (dates in all their formats, photo
   renditions from `photos.json`, revision history, reading times, hashed asset URLs, the
@@ -42,9 +45,10 @@ The reference and `data.json` are a matched pair: the recommended cards, bundle 
 and desc counters all come from the same build. To refresh, rebuild limulus-dot-net
 (`npm run build` there), copy the built page over `fixtures/reference.html`, and re-derive
 the affected `data.json` values from it. `sprite.lem`'s symbol block comes verbatim from
-the same build. A refresh can change how often a forgiveness class fires; if it does, the
-harness fails until `EXPECTED_FORGIVEN` in `scripts/render-the-rebound.ts` and the counts
-below say the new numbers.
+the same build. Then empty each Font Awesome `<symbol>` in both files again, since the
+build brings the icons back. A refresh can change how often a forgiveness class fires; if
+it does, the harness fails until `EXPECTED_FORGIVEN` in `scripts/render-the-rebound.ts`
+and the counts below say the new numbers.
 
 ## Ported layouts (`site/`)
 

@@ -1,8 +1,9 @@
 # The Lemmon language
 
-Implementation-grade reference, distilled from the architecture set ("The Lemmon
-Language" artifact). Normative for the core; where this file and code disagree, one of
-them has a bug. Decision IDs (D01…) refer to `docs/decisions/README.md`.
+Implementation-grade reference, distilled from "The Lemmon Language", one of the three
+private Claude Artifacts that hold the architecture record. Normative for the core; where
+this file and code disagree, one of them has a bug. Decision IDs (D01…) refer to
+`docs/decisions/README.md`.
 
 Two source kinds:
 

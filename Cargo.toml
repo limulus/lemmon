@@ -8,6 +8,7 @@ members = ["crates/*"]
 version = "0.0.0"
 edition = "2024"
 repository = "https://github.com/limulus/lemmon"
+license = "MIT"
 publish = false
 
 # Only crates actually in use are pinned here. The vetted choices for the stages still to

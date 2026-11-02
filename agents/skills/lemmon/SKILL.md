@@ -16,7 +16,7 @@ metadata:
 A working author's reference distilled from `docs/language.md`, which is normative and holds
 the depth (cited below as §). Where the two disagree the compiler wins, so check what you
 write (`references/checking.md`). Never invent syntax: a form shown neither here nor in the
-language doc is a question for Eric, not a guess. Porting WebC? Read
+language doc is a question to ask, not a guess. Porting WebC? Read
 `references/porting-from-webc.md` as well.
 
 ## Rules every tag obeys

@@ -2,7 +2,7 @@
 
 ## Background
 
-Recorded on 2026-10-18 from the review of `∆99b`. `packages/shell/README.md` documents it:
+Recorded on 2026-10-18 from the review of `∆99b`. `docs/shell.md` documents it:
 neither `lem dev` nor `lem build` removes anything from the output, so a deleted or moved
 page's file stays there and `lem dev` goes on serving it, and every edit to a client script
 leaves its old hashed bundle beside the new one. Generators make it common in the daily
