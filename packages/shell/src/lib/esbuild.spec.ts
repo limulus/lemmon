@@ -84,6 +84,18 @@ describe('esbuild()', () => {
     ).not.toThrow()
   })
 
+  it('should refuse options that are not an object, naming what they are', () => {
+    for (const [options, what] of [
+      [null, 'null'],
+      [['entryPoints'], 'a list'],
+      ['entryPoints', 'a string'],
+    ] as const) {
+      expect(() => esbuild(options as unknown as EsbuildOptions)).toThrow(
+        new TypeError(`\`esbuild()\` takes its options as an object, not ${what}`)
+      )
+    }
+  })
+
   describe('its asset hook', () => {
     it('should bundle each `index.ts` and `worker.ts`, mapping each to the URL it ships at', async () => {
       const { manifest, files } = await bundled(

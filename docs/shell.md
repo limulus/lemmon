@@ -102,9 +102,10 @@ read it: it keeps comrak's `<pre><code class="language-TS">`, and is warned at w
 did-you-mean, `ts`. So is any language highlight.js lacks; a block naming none keeps
 comrak's block unremarked.
 
-`options.exclude` lists keys it leaves to another plugin, each one it would claim — an
-unknown one is refused when the config loads — and each matched as written, so a
-language's other names stay claimed until listed too:
+`options.exclude`, its one option — any other is refused when the config loads, as
+`esbuild()` refuses one — lists keys it leaves to another plugin, each one it would claim
+— an unknown one is refused too — and each matched as written, so a language's other names
+stay claimed until listed too:
 
 ```ts
 plugins: [bundler(), highlighter({ exclude: ['rust', 'rs'] }), rustHighlighter()]

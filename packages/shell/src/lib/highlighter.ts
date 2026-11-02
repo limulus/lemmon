@@ -1,7 +1,7 @@
 import type { HLJSApi, Language } from 'highlight.js'
 import { createRequire } from 'node:module'
 
-import type { Plugin } from './plugins.ts'
+import { takesOnly, type Plugin } from './plugins.ts'
 
 /** How a site narrows what {@link highlighter} claims. */
 export interface HighlighterOptions {
@@ -33,12 +33,13 @@ export interface HighlighterOptions {
  * one naming none, keep the block the core wrote, and a language no plugin claims is
  * warned at.
  *
- * Throws a `TypeError`, which the config load reports, for an `exclude` that is not a
- * list — a string would be read as its characters, `'r'` un-claiming R — and for an
- * excluded key it would not have claimed, so a misspelling does not leave the language
- * claimed.
+ * Throws a `TypeError`, which the config load reports, for an option it does not take,
+ * for an `exclude` that is not a list — a string would be read as its characters, `'r'`
+ * un-claiming R — and for an excluded key it would not have claimed, so a misspelling
+ * does not leave the language claimed.
  */
 export function highlighter(options: HighlighterOptions = {}): Plugin {
+  takesOnly('highlighter', options, ['exclude'] satisfies (keyof HighlighterOptions)[])
   const { exclude: excluded = [] } = options
   if (!Array.isArray(excluded)) {
     throw new TypeError('`exclude` of `highlighter()` must be a list of language names')

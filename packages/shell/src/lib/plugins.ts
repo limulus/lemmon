@@ -473,6 +473,33 @@ export const fields = (names: readonly string[]): string =>
   names.map((name) => `\`${name}\``).join(', ')
 
 /**
+ * Refuses the options given to the plugin factory `factory` unless they are an object of
+ * the `known` options alone: a config runs with its types stripped, so an option a
+ * factory does not take, a misspelling among them, would otherwise be ignored without a
+ * word. Throws a `TypeError`, which the config load reports.
+ */
+export function takesOnly(
+  factory: string,
+  options: unknown,
+  known: readonly string[]
+): void {
+  if (!isObject(options)) {
+    throw new TypeError(
+      `\`${factory}()\` takes its options as an object, not ` +
+        (Array.isArray(options) ? 'a list' : shown(options))
+    )
+  }
+  for (const option of Object.keys(options)) {
+    if (!known.includes(option)) {
+      throw new TypeError(
+        `\`${factory}()\` cannot take \`${option}\`, which is none of its options: ` +
+          fields(known)
+      )
+    }
+  }
+}
+
+/**
  * What `plugins` claim (D42), which `lem build` declares to the core: one claim per
  * handler, in the order listed — a producer's name with the keys it lists, a decorator's
  * name with none. Each claim carries a key list, empty where the handler lists no keys,

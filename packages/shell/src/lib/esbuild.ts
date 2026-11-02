@@ -4,7 +4,7 @@ import { realpath } from 'node:fs/promises'
 import { basename, dirname, extname, join, posix, relative, resolve, sep } from 'node:path'
 import picomatch from 'picomatch'
 
-import { encoder, fields, type Plugin } from './plugins.ts'
+import { encoder, takesOnly, type Plugin } from './plugins.ts'
 import { files } from './walk.ts'
 
 /** How a site shapes what {@link esbuild} bundles, and where it ships it. */
@@ -82,14 +82,7 @@ const OPTIONS: readonly string[] = [
  * that a misspelling is not ignored where a config runs with its types stripped.
  */
 export function esbuild(options: EsbuildOptions = {}): Plugin {
-  for (const option of Object.keys(options)) {
-    if (!OPTIONS.includes(option)) {
-      throw new TypeError(
-        `\`esbuild()\` cannot take \`${option}\`, which is none of its options: ` +
-          fields(OPTIONS)
-      )
-    }
-  }
+  takesOnly('esbuild', options, OPTIONS)
   const {
     entryPoints = ['**/index.ts', '**/worker.ts'],
     external = ['/lib/*'],

@@ -159,6 +159,16 @@ describe('highlighter()', () => {
       )
     })
 
+    it('should refuse an option it does not take, as a misspelling of `exclude`', () => {
+      const options = { exlude: ['rust'] } as unknown as { exclude: string[] }
+
+      expect(() => highlighter(options)).toThrow(
+        new TypeError(
+          '`highlighter()` cannot take `exlude`, which is none of its options: `exclude`'
+        )
+      )
+    })
+
     it('should refuse an `exclude` that is not a list, whose characters would be keys', () => {
       const refusal = new TypeError(
         '`exclude` of `highlighter()` must be a list of language names'
