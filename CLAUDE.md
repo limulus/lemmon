@@ -19,7 +19,7 @@ generated pages, on 2026-10-18, and the sixth, feeds, sitemap and the cutover pr
 a local branch, on 2026-11-07; the seventh, the site live on Lemmon, follows the refactors.
 The language runs end to end — scanner → parser → typed AST → compiler → VM, with `.md`
 through document mode — and what each stage settled is the decision index
-(`docs/decisions/README.md`, D01–D47), which is the status. The shape to hold in mind:
+(`docs/decisions/README.md`, D01–D48), which is the status. The shape to hold in mind:
 the checker is the compiler's own walk (D31); a host declares the ambient environment a
 program compiles in, and `loadData` validates the host's data against the declared
 schemas (D30, D36, D37); each file compiles to its own `Unit`, and a link step joins
