@@ -60,13 +60,9 @@ at `28dde17`. The run and the review are Eric's before slice 7 starts.
 Eric merges the cutover branch and limulus.net deploys with `lem`, its CloudFront config
 untouched.
 
-- `∆P6l` Lemmon goes public
-  - An MIT license, a root README, and docs and package metadata written for public
-    readers, so that Eric can open the repo and its packages can be published
 - `∆PiI` Publish the core and shell to npm
   - Both ship built code, the core with its `.wasm` and the shell's `lem` as JavaScript,
     released from lemmon's CI by `semantic-release` through trusted publishing
-  - needs: `∆P6l`
 - `∆FnH` limulus.net's CI gets lemmon
   - The site installs the published `@limulus/lemmon-shell` in place of `file:../lemmon`,
     which a CI checkout cannot resolve
