@@ -32,28 +32,15 @@ pipeline, §Shell plugin API); the port lives in limulus-dot-net on a branch whi
 green on main, and that branch is where every slice is accepted. A language or core feature
 lands inside the slice that needs it.
 Slices 1 to 3, a page from `lem build`, styled output, and the daily loop of `lem dev` and
-`lem check`, were accepted on 2026-10-17, and slices 4 and 5, every document page and then
-the index and generated pages, on 2026-10-18; their items' journal entries record them, and
-`∆Oyi`'s records why dprint left slice 2.
-
-### 6. Feeds, sitemap, cutover
-
-The feeds and sitemap, the link check and the revisions updater the deploy runs, the
-whole-site parity run, and the switch prepared on a branch: Eric keeps
-the live site on Eleventy until he has reviewed it (2026-10-18). Eric sees `npm run parity`
-report zero unexpected differences over the whole `dist/`, and a local cutover branch builds
-limulus.net with `lem`, its CloudFront config untouched, ready for his review.
-
-Built on 2026-10-19 (journal entries for `∆shS`, `∆zu0`, `∆yOJ`, `∆Zg9` and `∆oAl`):
-`npm run parity` on `lemmon-port` at `d33eed8` compared every file both builds write, 140
-and 158, with zero unexpected differences, and `lemmon-cutover` (`4ffdb74`, local, unpushed)
-builds the site with `lem` alone, accepted in fresh clones without deploying. On
-2026-11-01 the feeds and the sitemap went back to UTC and the site's `<blur-hash>` gave way
-to `@limulus/blur-hash` (journal entries for `∆QZz` and `∆GUI`), putting `lemmon-cutover`
-at `28dde17`. The run and the review are Eric's before slice 7 starts.
+`lem check`, were accepted on 2026-10-17, slices 4 and 5, every document page and then the
+index and generated pages, on 2026-10-18, and slice 6, the feeds, the sitemap and the
+cutover prepared on a local branch, on 2026-11-07; their items' journal entries record
+them, `∆Oyi`'s records why dprint left slice 2, and `∆H7Q`'s records the last parity run.
 
 ### 7. Live on Lemmon
 
+What Eric checks before the merge, the S3 and CDK dry runs, the logo on a P3 and an sRGB
+display, and the merge commit's subject, is listed in `∆oAl`'s journal entry.
 Eric merges the cutover branch and limulus.net deploys with `lem`, its CloudFront config
 untouched.
 
