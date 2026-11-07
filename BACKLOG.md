@@ -116,6 +116,14 @@ esbuild plugin added its 200 ms (`∆d1N`'s journal); on 2026-10-18, 421 ms for 
   - `compile` reports each unit's compile-time facts so `∆muD` keys its unit cache on
     `hash(text) + hash(facts)` and a content edit never recompiles its layouts (D25, D42)
 
+### Large sites
+
+What a site much larger than limulus.net needs from the build.
+
+- `∆mRe` Builds that hold no site in memory
+  - Each page's links and ids are taken as it renders and the page written to a temporary
+    directory swapped in at the end, so memory no longer grows with the site's output
+
 ### Retire the architecture artifacts
 
 - `∆JXK` Retire the architecture artifacts
