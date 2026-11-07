@@ -239,6 +239,15 @@ describe('rebaseLinks()', () => {
       )
     })
 
+    it('should say once that it keeps a url the parser copies with its element', () => {
+      const body = '<b><a href="http://exa mple/"><i>q</b>r</i></a>'
+
+      expect(rebaseLinks(body, PAGE, ORIGIN)).toEqual({
+        body,
+        unrebased: [{ at: '<a href>', url: 'http://exa mple/' }],
+      })
+    })
+
     describe('a `srcset`', () => {
       it('should leave one whose every candidate parses on its own as written', () => {
         const body =

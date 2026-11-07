@@ -92,8 +92,10 @@ export function rebaseLinks(body: string, url: string, origin?: string): Rebased
     return text + value.slice(from)
   }
   // By start offset: an element the parser reconstructs carries the location of the one
-  // it copied, so two elements can name one attribute in the text.
+  // it copied, so two elements can name one attribute in the text, which is rebased, and
+  // warned at, once.
   const splices = new Map<number, { end: number; text: string }>()
+  const seen = new Set<number>()
   const options = { sourceCodeLocationInfo: true, scriptingEnabled: false }
   for (const [child] of elements(parseFragment(body, options))) {
     // An element with no location is one the parser made, its attributes copied from
@@ -105,10 +107,12 @@ export function rebaseLinks(body: string, url: string, origin?: string): Rebased
       attributes.set(link.key, [...(attributes.get(link.key) ?? []), link])
     }
     for (const [key, links] of attributes) {
+      const { startOffset, endOffset } = location.attrs![key]
+      if (seen.has(startOffset)) continue
+      seen.add(startOffset)
       const { value } = links[0]
       const rebased = rewritten(value, links)
       if (rebased === value) continue
-      const { startOffset, endOffset } = location.attrs![key]
       splices.set(startOffset, { end: endOffset, text: `${key}="${escaped(rebased)}"` })
     }
   }
