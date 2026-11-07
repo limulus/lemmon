@@ -13,9 +13,6 @@ Standing initiative for reshaping working code. It comes first so that document 
 gives a refactor priority: reshaping is cheapest before more code is built on what it
 reshapes.
 
-- `∆H7Q` One link reader for the body rebase and the link check
-  - The body pass rebases a body's links by the HTML rules the link check reads them by;
-    the Eleventy rules kept for parity, and `parse-srcset` with them, go
 - `∆GJ9` The parity comparator leaves the shell
   - `rendered-html.ts` returns to `scripts/lib` for the fidelity check before the first
     release, once `lemmon-port`'s last parity run no longer needs it from the shell's API
