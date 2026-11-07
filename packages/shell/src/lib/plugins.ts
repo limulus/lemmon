@@ -18,11 +18,11 @@ import type { Environment } from './load.ts'
 /**
  * A plugin, as a site's `lemmon.config.ts` lists it under `plugins`. Its hooks in this
  * shell are {@link transformDocument}, {@link assets} and {@link marks} (D44, D42); any
- * other field is refused when the config loads, so that a hook nothing runs is never
- * loaded in silence.
+ * other field is refused when the config loads, or when `build()` is given it, so that a
+ * hook nothing runs is never loaded in silence.
  */
 export interface Plugin {
-  /** What a refusal at config load, or a hook's failure, calls this plugin. */
+  /** What a refusal of it, or a hook's failure, calls this plugin. */
   name: string
   /**
    * Its document transform (D44): given each document (`.md`) whose front matter read,

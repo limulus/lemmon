@@ -18,6 +18,7 @@ import { envelope, withBodies, type Environment } from './load.ts'
 import {
   pageName,
   resolvePage,
+  validatePlugins,
   type Generated,
   type Plugin,
   type ProducedFile,
@@ -128,6 +129,12 @@ export interface BuildResult extends CheckResult {
  * Every page has a record, or the compile refused it (D48), so every page is loaded
  * once, with the site, and renders through its layout.
  *
+ * The config's plugins are checked first, as a config file's are when it loads: a
+ * config written in code, as a plugin's spec writes one, would otherwise build with a
+ * plugin that `lem build` refuses.
+ *
+ * @throws {TypeError} when `config.plugins` is not what a config file may list, saying
+ *   why.
  * @throws {SiteError} when the input has no `site.lem`.
  * @throws {CoreTrapped} when a call into the core never returned.
  */
@@ -156,6 +163,8 @@ export async function build(
  * collisions and the broken links among them, and the output directory is not touched.
  * The asset hooks are told the build writes nothing.
  *
+ * @throws {TypeError} when `config.plugins` is not what a config file may list, saying
+ *   why.
  * @throws {SiteError} when the input has no `site.lem`.
  * @throws {CoreTrapped} when a call into the core never returned.
  */
@@ -183,6 +192,8 @@ async function renderSite(
   options: BuildOptions,
   writes: boolean
 ): Promise<{ result: CheckResult; rendered?: Rendered }> {
+  // A config may be written in code rather than loaded, so its plugins are checked here.
+  validatePlugins(config.plugins)
   const site = await discover(config)
   const diagnostics = [...site.diagnostics]
   const texts = new Map<string, string>()

@@ -1511,7 +1511,7 @@ describe('build()', () => {
 
       it('should refuse a url that names no file, at the config’s start', async () => {
         const { errors, config } = await refusedFiles(
-          shipping({ files: { 'lib/x.js': '' } })
+          shipping({ files: { 'lib/x.js': '' } }, 'other')
         )
 
         expect(errors).toEqual([
@@ -1520,7 +1520,7 @@ describe('build()', () => {
             span: START,
             severity: 'error',
             message:
-              "the `shipping` plugin's `assets` hook returns a file at the url " +
+              "the `other` plugin's `assets` hook returns a file at the url " +
               '"lib/x.js", which names no file in the output directory: a file\'s url is ' +
               'a path from `/`, without an empty, `.` or `..` segment, a percent-encoded ' +
               '`/` or `\\`, a query, or a fragment',
@@ -1531,7 +1531,7 @@ describe('build()', () => {
 
       it('should refuse a file where a passthrough file is, labelled at it', async () => {
         const { errors, config } = await refusedFiles(
-          shipping({ files: { '/assets/site.css': '' } })
+          shipping({ files: { '/assets/site.css': '' } }, 'other')
         )
 
         expect(errors).toEqual([
@@ -1540,7 +1540,7 @@ describe('build()', () => {
             span: START,
             severity: 'error',
             message:
-              "the `shipping` plugin's `assets` hook returns a file at " +
+              "the `other` plugin's `assets` hook returns a file at " +
               '`/assets/site.css`, and `assets/site.css` is written by the passthrough ' +
               'file `assets/site.css` already',
             labels: [
@@ -1859,6 +1859,28 @@ describe('build()', () => {
       const { 'site.lem': _, ...files } = SITE
 
       await expect(built(files)).rejects.toThrow(SiteError)
+    })
+
+    it('should refuse a plugin a config file could not list, before running any', async () => {
+      // A config written in code, as a plugin's spec writes one, is never loaded, and two
+      // plugins of one name are well typed: only the load refused them.
+      const ran: string[] = []
+      const stamp = (text: string): Plugin => ({
+        name: 'stamp',
+        transformDocument: ({ body }) => {
+          ran.push(text)
+          return body + text
+        },
+      })
+      const error: unknown = await built(SITE, { plugins: [stamp('a'), stamp('b')] }).catch(
+        (thrown: unknown) => thrown
+      )
+
+      expect(error).toBeInstanceOf(TypeError)
+      expect((error as Error).message).toBe(
+        'two plugins are named `stamp`; each needs its own, which is what a message calls it'
+      )
+      expect(ran).toEqual([])
     })
 
     it('should refuse a page nothing types, and write no other (D48)', async () => {
@@ -2230,6 +2252,15 @@ describe('check()', () => {
     expect(result).toEqual({ ...wrote, texts: expect.any(Map) as Map<string, string> })
     expect(result.texts).toEqual(wrote.texts)
     expect(existsSync(join(dir, 'dist'))).toBe(false)
+  })
+
+  it('should refuse a plugin a config file could not list, as a build does', async () => {
+    const dir = project(SITE, PASSTHROUGH)
+    const config = configOf(dir, PASSTHROUGH, [{ name: 'twice' }, { name: 'twice' }])
+    const checking = check(config, { now: NOW, env: ENV })
+
+    await expect(checking).rejects.toBeInstanceOf(TypeError)
+    await expect(checking).rejects.toThrow('two plugins are named `twice`')
   })
 
   it('should render every page, finding what only rendering finds', async () => {

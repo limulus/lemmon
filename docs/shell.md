@@ -215,8 +215,10 @@ types those name:
   the `CheckResult` it extends, `WriteError` (a result's `failure`), and the errors it
   throws, `SiteError` and `CoreTrapped`.
 
-Loading a config, the check `lem check` runs, the walk and the front-matter reader are
-the `lem` command's own.
+`build()` checks the config's plugins as a config file's are checked when it loads, so
+a plugin that `lem build` would refuse, such as two plugins of one name, is refused with a
+`TypeError` before any runs, rather than passing its spec. Loading a config, the check
+`lem check` runs, the walk and the front-matter reader are the `lem` command's own.
 
 ### Document transforms
 
