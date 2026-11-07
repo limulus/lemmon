@@ -13,9 +13,6 @@ Standing initiative for reshaping working code. It comes first so that document 
 gives a refactor priority: reshaping is cheapest before more code is built on what it
 reshapes.
 
-- `∆GJ9` The parity comparator leaves the shell
-  - `rendered-html.ts` returns to `scripts/lib` for the fidelity check before the first
-    release, once `lemmon-port`'s last parity run no longer needs it from the shell's API
 - `∆mM6` The shell exports what a site needs
   - Its API stops exporting internals such as `walk`, `readData` and the front-matter
     readers, so the first release promises only what a site's config and plugins use
