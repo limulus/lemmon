@@ -200,9 +200,23 @@ site that does not list the plugin never loads it.
 A plugin is `{name, transformDocument?, assets?, marks?}`: a name its errors and warnings
 call it by, a document transform and an asset hook that run before anything compiles
 (D44), and the mark handlers that fill each page's marks after it renders (D42). Any other
-field is refused when the config loads, since this shell runs no other hook. The types
-are exported: `Plugin`, `DocumentSource`, `AssetsContext`, `Assets`, `PluginHandler`,
-`ProducerContext` and `DecoratorContext`.
+field is refused when the config loads, since this shell runs no other hook.
+
+The package exports only what a site's config, its plugins and their specs use, with the
+types those name:
+
+- for the config, `Config` and `DevConfig`, and the shell's plugins, `bundler()`,
+  `highlighter()` and `esbuild()`, with `HighlighterOptions` and `EsbuildOptions`;
+- for a plugin, `Plugin`, `DocumentSource`, `AssetsContext`, `Assets`, `PluginHandler`,
+  `ProducerContext` and `DecoratorContext`, with `Environment` and the core's `Mark`,
+  `MarkContext`, `Fragment` and `JsonValue`;
+- for a plugin's spec, `build(config, options)`, which builds a site as `lem build`
+  does from a `LoadedConfig` written in code, with `BuildOptions`, `BuildResult` and
+  the `CheckResult` it extends, `WriteError` (a result's `failure`), and the errors it
+  throws, `SiteError` and `CoreTrapped`.
+
+Loading a config, the check `lem check` runs, the walk and the front-matter reader are
+the `lem` command's own.
 
 ### Document transforms
 
