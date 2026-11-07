@@ -422,26 +422,36 @@ promise, and a function where a plugin belongs, a plugin factory not called.
    resolves the same marks and warns there; a file a producer writes for it is checked and
    written as a page's is, named for "the body of" the document, so a document that places
    `mark("styles")` in its own text gets a bundle of its own fragments, which only
-   `build.bodies` links to. Its links are then made absolute against `origin` by the rule
-   Eleventy's HTML base plugin applies to a feed's content: in the attributes
-   `@11ty/posthtml-urls` walks for it — `href`, `src`, `srcset`, `poster`, `cite`, `action`,
-   `formaction`, `data` and `ping` on the elements that hold one — a url the URL parser
-   reads on its own is kept, trimmed, and any other is resolved against the page's url, its
-   query kept, where Eleventy drops it; where the config names no `origin`, it is made a
+   `build.bodies` links to. Its links are then made absolute against `origin`: each url
+   step 7 reads in an element's attributes, and a `<base href>`, is stripped of ASCII
+   whitespace; one the URL parser reads on its own is then kept, and any other is resolved
+   against the page's url, its query kept; where the config names no `origin`, it is made a
    path from `/` instead, which names the same thing from any page of the site, and a url
-   naming a host of its own is kept. The body is parsed with parse5 and only an attribute
-   that changes is rewritten — a `srcset` candidate by candidate, parsed by `parse-srcset`
-   1.0.2 as posthtml-urls parses it, pinned, 10 KB of JavaScript with no dependencies. A url
-   the URL parser refuses is kept as written and warned at, at the document's front matter,
-   as is a `srcset` candidate whose descriptors do not parse, which the rewrite drops; a
-   document whose url names no file is left to its page's render, which reports it. Then the
-   core loads again with every body a string in `build.bodies`, by its page's url as
-   `url.text()` writes it, so a feed template prints `<lem.build.bodies[post.url.text()]>`,
-   escaped once. While the bodies render the map is empty: a document whose own body indexes
-   it fails there, at the read, labelled at its front matter as rendering the body before
-   any body exists, and a computed binding in `site.lem` runs at both loads. An error in the
-   pass stops the build before the second load, and one in the second load before any page
-   renders.
+   naming a host of its own is kept. A url that is only a fragment is kept where its element
+   embeds what it names — any SVG element's `href` or `xlink:href` but an `a`'s, as in
+   `<use href="#icon">`, and a `style` attribute's urls, as in `url(#clip)` — since it names
+   part of the body itself, which a reader of the body would not load from the origin; an
+   `<a href="#fn1">` is resolved like any other. A `<style>`'s text is left as written,
+   though step 7 reads it. The body is parsed with parse5, and only an attribute holding a
+   url that changes is written anew, with only that url changed in its value, so a
+   `srcset`'s descriptors and commas, a `ping`'s spacing and the rest of a `style` say what
+   they said; the attribute is double-quoted and its character references decoded, and every
+   byte of the body outside such attributes stays as rendered. A url in CSS is written as a
+   single-quoted string, and a refresh's url has its quotes percent-encoded, since HTML's
+   refresh steps end a quoted url at its quote and a page's url holds `'` as it is. A url
+   the URL parser refuses is kept as written and warned at, at the document's front matter.
+   A `srcset` is read by HTML's rules with `@prettier/parse-srcset` 3 (11 KB of JavaScript,
+   no dependencies), which refuses the whole value where any candidate's descriptors do not
+   parse — HTML drops that candidate alone — so such a `srcset` is kept as written, its urls
+   unrebased, and the pass says nothing of it: step 7 refuses it, as an error, on the page
+   that prints the body. A document whose url names no file is left to its page's render,
+   which reports it. Then the core loads again with every body a string in `build.bodies`,
+   by its page's url as `url.text()` writes it, so a feed template prints
+   `<lem.build.bodies[post.url.text()]>`, escaped once. While the bodies render the map is
+   empty: a document whose own body indexes it fails there, at the read, labelled at its
+   front matter as rendering the body before any body exists, and a computed binding in
+   `site.lem` runs at both loads. An error in the pass stops the build before the second
+   load, and one in the second load before any page renders.
 6. **Resolve.** As each page renders, its marks are filled by the plugins' handlers, in
    the order the plugins and their handlers are listed. A handler that throws, or returns
    anything but its content, is a warning at the mark, which keeps the content it had —
@@ -454,26 +464,29 @@ promise, and a function where a plugin belongs, a plugin factory not called.
    kind is read — HTML parsed with parse5 as a browser parses it, CSS tokenized with
    `@csstools/css-tokenizer` 4 (CSS Syntax 3; 18 KB of JavaScript), XML parsed with
    `@xmldom/xmldom` 0.9 (about 280 KB), neither with dependencies of its own — and every
-   url an asset hook's manifest maps. In HTML a link is an attribute `@11ty/posthtml-urls`
-   walks, as the body pass reads them (`href`, `src`, each `srcset` candidate, `poster`,
-   `cite`, `action`, `formaction`, `data`, and each of a `ping`'s urls, split at
-   whitespace as HTML splits them), resolved against the first `<base href>`; a refreshing
-   `meta`'s url; any SVG element's `href` or `xlink:href` (`use`, `image`, `feImage`,
-   `a`); an Open Graph url's `content` (`og:url`, and `og:image`, `og:video` and
-   `og:audio` in each spelling); and each `url()` and `@import` in a `<style>` or a
-   `style` attribute. In CSS a link is a `url()`, and an `@import`'s string, against the
-   stylesheet's own url, so a `data:` URI holding `url(%23clip)` is one link that is
-   skipped. In XML it is an `xml-stylesheet` instruction's `href` before the root, any
-   element's `href` or `xlink:href`, and the text of an RSS `link` without one, an RSS
-   channel image's `url`, a sitemap `loc` or `*_loc`, and a `guid` unless
-   `isPermaLink="false"`, each against its nearest `xml:base`; an Atom `id` is no link,
-   and a feed's escaped content is checked on its page. An XML file is an error where the
-   parser reports any error or warning in it but a U+FFFD, where it declares an encoding
-   other than UTF-8, or where it is not UTF-8, since none of its links can be read; the
-   parser expands no entity a document declares. JavaScript, an inline script's text, an
-   SVG paint's `url(#…)`, an HTML page whose name does not end `.html`, and passthrough
-   files of any kind are not read. Every tree is walked with a stack of its own, so no
-   nesting overflows the call stack.
+   url an asset hook's manifest maps. In HTML a link is a url in an attribute that holds
+   one, on the elements of `@11ty/posthtml-urls`' table (`href`, `src`, each `srcset`
+   candidate, `poster`, `cite`, `action`, `formaction`, `data`, and each of a `ping`'s urls,
+   split at whitespace as HTML splits them), resolved against the first `<base href>`; a
+   refreshing `meta`'s url; any SVG element's `href` or `xlink:href` (`use`, `image`,
+   `feImage`, `a`); an Open Graph url's `content` (`og:url`, and `og:image`, `og:video` and
+   `og:audio` in each spelling); and each `url()` and `@import` in a `<style>` or a `style`
+   attribute — what the body pass rebases, but a `<style>`'s. A `srcset` that
+   `@prettier/parse-srcset` refuses is an error, once per page for each element, attribute
+   and value, as an XML file whose links cannot be read is (below): none of its links can be
+   checked, while a browser drops only the candidate at fault and loads the rest. In CSS a
+   link is a `url()`, and an `@import`'s string, against the stylesheet's own url, so a
+   `data:` URI holding `url(%23clip)` is one link that is skipped. In XML it is an
+   `xml-stylesheet` instruction's `href` before the root, any element's `href` or
+   `xlink:href`, and the text of an RSS `link` without one, an RSS channel image's `url`, a
+   sitemap `loc` or `*_loc`, and a `guid` unless `isPermaLink="false"`, each against its
+   nearest `xml:base`; an Atom `id` is no link, and a feed's escaped content is checked on
+   its page. An XML file is an error where the parser reports any error or warning in it but
+   a U+FFFD, where it declares an encoding other than UTF-8, or where it is not UTF-8, since
+   none of its links can be read; the parser expands no entity a document declares.
+   JavaScript, an inline script's text, an SVG paint's `url(#…)`, an HTML page whose name
+   does not end `.html`, and passthrough files of any kind are not read. Every tree is
+   walked with a stack of its own, so no nesting overflows the call stack.
 
    A link the URL parser refuses, one in a scheme other than `http` and `https`, one on
    another host than `origin`'s, and a path `served` lists are skipped; `http://` and

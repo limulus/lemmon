@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
 import { rebaseLinks } from './rebase.ts'
 
@@ -13,6 +13,10 @@ const rooted = (body: string) => rebaseLinks(body, PAGE).body
 
 /** The value `body`'s one `href` holds once rebased with an origin. */
 const href = (value: string) => absolute(`<a href="${value}">x</a>`)
+
+/** `path` on {@link ORIGIN}, from {@link PAGE} where it does not start with `/`. */
+const on = (path: string) =>
+  path.startsWith('/') ? `${ORIGIN}${path}` : `${ORIGIN}${PAGE}${path}`
 
 describe('rebaseLinks()', () => {
   describe('with an origin', () => {
@@ -34,7 +38,7 @@ describe('rebaseLinks()', () => {
       )
     })
 
-    it('should keep a relative url’s query, which Eleventy drops', () => {
+    it('should keep a relative url’s query', () => {
       expect(href('?page=2')).toBe(
         '<a href="https://limulus.net/feed/the-rebound/?page=2">x</a>'
       )
@@ -60,12 +64,15 @@ describe('rebaseLinks()', () => {
       }
     })
 
-    it('should trim a url, as Eleventy does, before it rebases or keeps it', () => {
+    it('should strip a url of ASCII whitespace, and no other, before it rebases or keeps it', () => {
       expect(href(' /x ')).toBe('<a href="https://limulus.net/x">x</a>')
       expect(href('\n https://example.com/ ')).toBe('<a href="https://example.com/">x</a>')
+      expect(href('\u00a0/x')).toBe(
+        '<a href="https://limulus.net/feed/the-rebound/%C2%A0/x">x</a>'
+      )
     })
 
-    it('should rebase every attribute posthtml-urls rebases for Eleventy', () => {
+    it('should rebase every attribute of the table posthtml-urls walks', () => {
       const table: [string, string][] = [
         ['a', 'href'],
         ['area', 'href'],
@@ -100,10 +107,49 @@ describe('rebaseLinks()', () => {
       }
     })
 
-    it('should leave what is no link in its table: another attribute, a custom element, a meta refresh', () => {
+    it('should rebase a refreshing `meta`’s url inside its content, and leave the rest', () => {
+      expect(absolute(`<meta http-equiv="Refresh" content="0; url='./w' ">`)).toBe(
+        `<meta http-equiv="Refresh" content="0; url='https://limulus.net/feed/the-rebound/w' ">`
+      )
+      const waiting = '<meta http-equiv="refresh" content="30">'
+
+      expect(absolute(waiting)).toBe(waiting)
+    })
+
+    it('should percent-encode the quotes of a refresh’s url, which would end it', () => {
+      const body = `<meta http-equiv="refresh" content="0; url='./#top'">`
+
+      expect(rebaseLinks(body, "/posts/it's/", ORIGIN).body).toBe(
+        `<meta http-equiv="refresh" content="0; url='https://limulus.net/posts/it%27s/#top'">`
+      )
+      expect(rebaseLinks(body, "/posts/it's/").body).toBe(
+        `<meta http-equiv="refresh" content="0; url='/posts/it%27s/#top'">`
+      )
+      // Kept, as a url that parses on its own, but stripped of the space before it.
+      expect(
+        absolute(`<meta http-equiv="refresh" content="0; url=' https://x/&quot;'">`)
+      ).toBe(`<meta http-equiv="refresh" content="0; url='https://x/%22'">`)
+    })
+
+    it('should rebase an Open Graph url’s content', () => {
+      expect(absolute('<meta property="og:image" content="./a.jpg">')).toBe(
+        '<meta property="og:image" content="https://limulus.net/feed/the-rebound/a.jpg">'
+      )
+    })
+
+    it('should rebase a `meta`’s content an Open Graph property reads whole as one url, though it refreshes too', () => {
+      const both = (content: string) =>
+        `<meta http-equiv="refresh" property="og:url" content="${content}">`
+
+      // Its refresh's url, which starts after the time, is in it and goes with it.
+      expect(absolute(both('0;./w'))).toBe(both(`${ORIGIN}${PAGE}0;./w`))
+    })
+
+    it('should leave what holds no url: another attribute, a custom element, a `meta` that does not refresh, `og:title`', () => {
       const body =
         '<a title="./x" data-href="./y">a</a><x-link href="./z"></x-link>' +
-        '<meta http-equiv="refresh" content="0; url=./w">'
+        '<meta http-equiv="content-type" content="./w"><meta name="description" ' +
+        'content="./d"><meta property="og:title" content="./t">'
 
       expect(absolute(body)).toBe(body)
     })
@@ -135,8 +181,8 @@ describe('rebaseLinks()', () => {
         '<a href="https://limulus.net/feed/the-rebound/x">x</a><a href="http://exa mple/">'
       )
       expect(unrebased).toEqual([
-        { kind: 'refused', at: '<a href>', url: 'http://exa mple/' },
-        { kind: 'refused', at: '<a href>', url: 'http://exa mple/z' },
+        { at: '<a href>', url: 'http://exa mple/' },
+        { at: '<a href>', url: 'http://exa mple/z' },
       ])
     })
 
@@ -168,6 +214,20 @@ describe('rebaseLinks()', () => {
       expect(absolute(before)).toBe(after)
     })
 
+    it('should leave what the check reads but the rebase does not: a `<style>`’s text', () => {
+      const body = '<style>p { background: url(./b.png) } @import "./a.css";</style>'
+
+      expect(absolute(body)).toBe(body)
+    })
+
+    it('should leave what neither reads: an SVG paint, script text, a CSS comment', () => {
+      const body =
+        '<svg><rect fill="url(#e)" stroke="url(./s.svg#g)"/></svg>' +
+        '<script>fetch("./x.json")</script><p style="/* url(./a.png) */ color: red">p</p>'
+
+      expect(absolute(body)).toBe(body)
+    })
+
     it('should rebase an attribute once where the parser copies its element', () => {
       // The `a` is reopened inside the `i` the `b` closes around, carrying its location;
       // and made again inside the `p` it is closed across, with none.
@@ -187,55 +247,136 @@ describe('rebaseLinks()', () => {
         expect(absolute(body)).toBe(body)
       })
 
-      it('should drop a candidate whose descriptors do not parse from one it rewrites, as Eleventy does, and say so', () => {
-        const log = vi.spyOn(console, 'log')
-        const srcset = 'a.jpg 1x, b.jpg 2q'
-
-        expect(rebaseLinks(`<img srcset="${srcset}">`, PAGE, ORIGIN)).toEqual({
-          body: '<img srcset="https://limulus.net/feed/the-rebound/a.jpg 1x">',
-          unrebased: [{ kind: 'dropped', at: '<img srcset>', srcset, descriptor: '2q' }],
-        })
-        // What `parse-srcset` would have printed is said here instead.
-        expect(log).not.toHaveBeenCalled()
-        log.mockRestore()
-      })
-
-      it('should leave one it does not rewrite as written, a candidate that does not parse and all', () => {
-        const body = '<img srcset="https://x/a.jpg 1x, https://x/b.jpg 2q">'
-        const log = console.log
-
-        expect(rebaseLinks(body, PAGE, ORIGIN)).toEqual({ body, unrebased: [] })
-        // Taken over only while `parse-srcset` runs.
-        expect(console.log).toBe(log)
-      })
-
-      it('should rebase each candidate where one is relative, joined as Eleventy joins them', () => {
+      it('should rebase each candidate in place, its descriptors, commas and spacing kept', () => {
         expect(absolute('<img srcset="a.jpg 1x,https://pho.limulus.net/b.jpg 2x">')).toBe(
-          '<img srcset="https://limulus.net/feed/the-rebound/a.jpg 1x, ' +
-            'https://pho.limulus.net/b.jpg 2x">'
+          `<img srcset="${on('a.jpg')} 1x,https://pho.limulus.net/b.jpg 2x">`
         )
-        expect(absolute('<source srcset="/s.webp 640w 480h, /l.webp 1280w">')).toBe(
-          '<source srcset="https://limulus.net/s.webp 640w 480h, ' +
-            'https://limulus.net/l.webp 1280w">'
+        expect(
+          absolute('<source srcset="/s.webp 640w 480h,  /l.webp 1280w,\n /x.webp">')
+        ).toBe(
+          `<source srcset="${on('/s.webp')} 640w 480h,  ${on('/l.webp')} 1280w,\n ` +
+            `${on('/x.webp')}">`
         )
-        expect(absolute('<img srcset="/a.jpg">')).toBe(
-          '<img srcset="https://limulus.net/a.jpg">'
+        expect(absolute('<img srcset="/a.jpg">')).toBe(`<img srcset="${on('/a.jpg')}">`)
+      })
+
+      it('should read one with its character references decoded, and write it escaped', () => {
+        expect(absolute('<img srcset="a.jpg?w=1&amp;h=2 1x,&#10;b.jpg 2x">')).toBe(
+          `<img srcset="${on('a.jpg')}?w=1&amp;h=2 1x,\n${on('b.jpg')} 2x">`
         )
+      })
+
+      it('should keep one whose candidates the parser refuses byte for byte, saying nothing, which the check reports', () => {
+        const body =
+          '<img srcset=\'a.jpg 1x, b.jpg 2q\' src=./c.png><img srcset="./d.jpg 0w">'
+
+        expect(rebaseLinks(body, PAGE, ORIGIN)).toEqual({
+          body: `<img srcset='a.jpg 1x, b.jpg 2q' src="${on('c.png')}"><img srcset="./d.jpg 0w">`,
+          unrebased: [],
+        })
+      })
+
+      it('should leave one of only whitespace and commas, which holds no url', () => {
+        const body = '<img srcset=" , " src="./a.png">'
+
+        expect(rebaseLinks(body, PAGE, ORIGIN)).toEqual({
+          body: `<img srcset=" , " src="${on('a.png')}">`,
+          unrebased: [],
+        })
       })
     })
 
     describe('a `ping`', () => {
-      it('should rebase each url, joined by commas', () => {
-        expect(absolute('<a href="https://x/" ping="/p,  ./q,">x</a>')).toBe(
-          '<a href="https://x/" ping="https://limulus.net/p, ' +
-            'https://limulus.net/feed/the-rebound/q">x</a>'
+      it('should rebase each url at whitespace, in place, its spacing kept', () => {
+        expect(absolute('<a href="https://x/" ping="/p\t./q  ">x</a>')).toBe(
+          `<a href="https://x/" ping="${on('/p')}\t${on('q')}  ">x</a>`
+        )
+      })
+
+      it('should keep a comma inside the url it stands in', () => {
+        expect(absolute('<a href="https://x/" ping="/p,/q">x</a>')).toBe(
+          `<a href="https://x/" ping="${on('/p,/q')}">x</a>`
         )
       })
 
       it('should leave one whose every url parses on its own as written', () => {
-        const body = '<a href="https://x/" ping="https://p/,https://q/">x</a>'
+        const body = '<a href="https://x/" ping="https://p/  https://q/">x</a>'
 
         expect(absolute(body)).toBe(body)
+      })
+    })
+
+    describe('an SVG `href`', () => {
+      it('should rebase any SVG element’s `href` or `xlink:href`, written under its name', () => {
+        const body =
+          '<svg><use href="sprite.svg#i"/><image xlink:href="./i.png"/>' +
+          '<filter><feImage href="/f.png"/></filter>' +
+          '<a href="./y" xlink:href="./x"><text>t</text></a></svg>'
+
+        expect(absolute(body)).toBe(
+          `<svg><use href="${on('sprite.svg#i')}"/><image xlink:href="${on('i.png')}"/>` +
+            `<filter><feImage href="${on('/f.png')}"/></filter>` +
+            `<a href="${on('y')}" xlink:href="${on('x')}"><text>t</text></a></svg>`
+        )
+      })
+
+      it('should keep a fragment alone where the element embeds it, and rebase one an `a` goes to', () => {
+        const kept = '<svg><use href="#i"/><use xlink:href="#j"/><symbol id="i"/></svg>'
+
+        expect(absolute(kept)).toBe(kept)
+        // A fragment alone once stripped, and kept so.
+        expect(absolute('<svg><use href=" #i "/></svg>')).toBe(
+          '<svg><use href="#i"/></svg>'
+        )
+        expect(
+          absolute('<svg><a href="#x"><text>t</text></a><a xlink:href="#y"/></svg>')
+        ).toBe(
+          `<svg><a href="${on('#x')}"><text>t</text></a><a xlink:href="${on('#y')}"/></svg>`
+        )
+      })
+    })
+
+    describe('a `style` attribute', () => {
+      it('should rebase a bare `url()` and a string, writing each single-quoted in place', () => {
+        const body =
+          '<p style="background: url(./c.png) no-repeat; mask: url( &quot;/d.svg&quot; )">p</p>'
+
+        expect(absolute(body)).toBe(
+          `<p style="background: url('${on('c.png')}') no-repeat; ` +
+            `mask: url( '${on('/d.svg')}' )">p</p>`
+        )
+      })
+
+      it('should write the rest of the value as it reads, its double quotes escaped', () => {
+        expect(
+          absolute(`<p style='font-family: "Fira Code"; background: url(./bg.png)'>p</p>`)
+        ).toBe(
+          `<p style="font-family: &quot;Fira Code&quot;; background: url('${on('bg.png')}')">` +
+            'p</p>'
+        )
+      })
+
+      it('should escape what the CSS string it writes cannot hold as it is', () => {
+        expect(absolute(`<p style='background: url("./it&apos;s.png")'>p</p>`)).toBe(
+          `<p style="background: url('${on("it\\'s.png")}')">p</p>`
+        )
+        // Kept, as a url that parses on its own, but stripped of the space before it; each
+        // newline CSS reads, a line feed, form feed or carriage return, by its code point.
+        expect(
+          absolute(
+            `<p style="background: url(' https://x.example/a\\A b\\C c\\D d.png')">p</p>`
+          )
+        ).toBe(`<p style="background: url('https://x.example/a\\a b\\c c\\d d.png')">p</p>`)
+      })
+
+      it('should keep a fragment alone, which names part of the body, and a `data:` url', () => {
+        const kept =
+          '<p style="clip-path: url(#c); background: url(data:image/png;base64,AAAA)">p</p>'
+
+        expect(absolute(kept)).toBe(kept)
+        expect(absolute('<p style="clip-path: url(c.svg#c)">p</p>')).toBe(
+          `<p style="clip-path: url('${on('c.svg#c')}')">p</p>`
+        )
       })
     })
 
@@ -244,18 +385,8 @@ describe('rebaseLinks()', () => {
 
       expect(rebaseLinks(body, PAGE, ORIGIN)).toEqual({
         body: body.replace('./b', 'https://limulus.net/feed/the-rebound/b'),
-        unrebased: [{ kind: 'refused', at: '<img src>', url: 'http://exa mple.com/a.png' }],
+        unrebased: [{ at: '<img src>', url: 'http://exa mple.com/a.png' }],
       })
-    })
-
-    it('should leave a namespaced attribute, SVG’s `xlink:href`, as Eleventy does', () => {
-      const alone = '<svg><a xlink:href="#a"><text>t</text></a></svg>'
-      const both = '<svg><a href="./y" xlink:href="./x"><text>t</text></a></svg>'
-
-      expect(absolute(alone)).toBe(alone)
-      expect(absolute(both)).toBe(
-        both.replace('href="./y"', 'href="https://limulus.net/feed/the-rebound/y"')
-      )
     })
 
     it('should take an element named as an object’s own property for no link', () => {
@@ -276,8 +407,8 @@ describe('rebaseLinks()', () => {
         '<a href="/feed/the-rebound/?page=2">x</a>'
       )
       expect(rooted('<a href="#fn1">x</a>')).toBe('<a href="/feed/the-rebound/#fn1">x</a>')
-      expect(rooted('<img srcset="a.jpg 2x">')).toBe(
-        '<img srcset="/feed/the-rebound/a.jpg 2x">'
+      expect(rooted('<img srcset="a.jpg 2x, /b.jpg 3x">')).toBe(
+        '<img srcset="/feed/the-rebound/a.jpg 2x, /b.jpg 3x">'
       )
     })
 
@@ -289,7 +420,7 @@ describe('rebaseLinks()', () => {
       expect(rooted(body)).toBe(body)
     })
 
-    it('should trim a url it leaves', () => {
+    it('should strip a url it leaves', () => {
       expect(rooted('<a href=" /photos/ ">p</a>')).toBe('<a href="/photos/">p</a>')
     })
 
@@ -313,7 +444,7 @@ describe('rebaseLinks()', () => {
 
       expect(rebaseLinks(body, PAGE)).toEqual({
         body,
-        unrebased: [{ kind: 'refused', at: '<a href>', url: 'http://exa mple.com/' }],
+        unrebased: [{ at: '<a href>', url: 'http://exa mple.com/' }],
       })
     })
   })

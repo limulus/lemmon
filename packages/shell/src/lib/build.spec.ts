@@ -1047,22 +1047,25 @@ describe('build()', () => {
         expect(result.pages).toHaveLength(5)
       })
 
-      it('should warn at a `srcset` candidate the rebase drops, and at none it keeps', async () => {
+      it('should say nothing of a `srcset` whose candidates the parser refuses, which its page’s check reports, and nothing of one it reads', async () => {
         const post = (srcset: string) => `---\ntitle: A\n---\n<img srcset="${srcset}">\n`
-        const dropping = post('../../assets/site.css 1x, b.jpg 2q')
-        const { result } = await built({ ...SITE, 'posts/a.md': dropping })
-        const kept = post('https://x/a.jpg 1x, https://x/b.jpg 2q')
-        const { result: left } = await built({ ...SITE, 'posts/a.md': kept })
+        const refusing = post('../../assets/site.css 1x, b.jpg 2q')
+        const files = { ...SITE, 'posts/a.md': refusing, 'feed.lem': FEED }
+        const { result } = await built(files, { origin: 'https://ex.com' })
+        const read = post('../../assets/site.css 1x, https://x/b.jpg 2x')
+        const { result: left } = await built({ ...SITE, 'posts/a.md': read })
 
+        // Once, from the page's check: the body pass, which keeps it as written, is silent.
+        expect(result.pages).toEqual([])
         expect(result.diagnostics).toEqual([
           {
             path: 'posts/a.md',
-            span: at(dropping, 'title: A'),
-            severity: 'warning',
+            span: at(refusing, 'title: A'),
+            severity: 'error',
             message:
-              'the body of `posts/a.md` holds `<img srcset>` as "../../assets/site.css 1x, ' +
-              'b.jpg 2q", whose descriptor `2q` does not parse, so its candidate is dropped ' +
-              'from the body as the others are rebased, as Eleventy drops it',
+              '`posts/a.md` holds `<img srcset>` as "../../assets/site.css 1x, b.jpg 2q", ' +
+              "where a candidate's descriptors do not parse, so none of its links can be " +
+              'checked',
             labels: [],
           },
         ])
@@ -1768,6 +1771,28 @@ describe('build()', () => {
           labels: [],
         },
       ])
+    })
+
+    it('should refuse a `srcset` the parser refuses, whose links it cannot read, once on each page a layout writes it', async () => {
+      const srcset = '/missing.jpg 1x, /b.jpg 2q'
+      const layouts = LAYOUTS_LEM.replace(
+        '<main>',
+        `<img srcset="${srcset}"><img srcset="${srcset}">\n  <main>`
+      )
+      expect(layouts).not.toBe(LAYOUTS_LEM)
+      const files = { ...SITE, 'layouts.lem': layouts }
+      const errors = await refused(files)
+      const dir = project(files, PASSTHROUGH)
+      const checked = await check(configOf(dir, PASSTHROUGH), { now: NOW, env: ENV })
+
+      expect(errors.map(({ path, message }) => [path, message])).toEqual(
+        ['posts/a.md', 'posts/b.md', 'index.lem'].map((path) => [
+          path,
+          `\`${path}\` holds \`<img srcset>\` as "/missing.jpg 1x, /b.jpg 2q", where a ` +
+            "candidate's descriptors do not parse, so none of its links can be checked",
+        ])
+      )
+      expect(checked.diagnostics).toEqual(errors)
     })
 
     it('should refuse an XML page the XML parser refuses, whose links it cannot read', async () => {

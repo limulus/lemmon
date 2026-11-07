@@ -1,40 +1,26 @@
 /**
- * Where a page's markup holds urls, as `@11ty/posthtml-urls` reads them for Eleventy: the
- * attributes, by the element they stand on, and how a `srcset` and a `ping` list theirs;
- * and the walk over its elements that both readers make. The body pass rebases what this
- * names (D46), and the link check reads the table and the `srcset` candidates (D47),
- * splitting a `ping` as HTML does instead.
+ * Where a page's markup holds urls, as HTML reads them: the attributes, by the element
+ * they stand on, and how a `srcset` and a `ping` list theirs, each url with where it
+ * stands in the value; and the walk over its elements. The link check reads them (D47),
+ * and the body pass rebases what it reads (D46).
  */
 
-import { createRequire } from 'node:module'
+import parseSrcset from '@prettier/parse-srcset'
 import type { DefaultTreeAdapterTypes as Tree } from 'parse5'
 
-/** One candidate of a `srcset`: its url, and the descriptors it was written with. */
-export interface Candidate {
+/** A url in a value, and where it stands there: its UTF-16 offsets, the end exclusive. */
+export interface Located {
   url: string
-  /** Its width descriptor, `640w`. */
-  w?: number
-  /** Its height descriptor, `480h`. */
-  h?: number
-  /** Its pixel density descriptor, `2x`. */
-  d?: number
+  start: number
+  end: number
 }
 
 /**
- * `parse-srcset` 1.0.2, which posthtml-urls parses a `srcset` with for Eleventy: the
- * candidates by the WHATWG algorithm, one whose descriptors do not parse left out and said
- * so with `console.log`. Required, since it ships no types and none are published for it.
- */
-const parseSrcset = createRequire(import.meta.url)('parse-srcset') as (
-  input: string
-) => Candidate[]
-
-/**
  * The attributes holding a url, by the element they stand on: the table
- * `@11ty/posthtml-urls` walks for Eleventy, but its `meta` `content`, which only a
- * refreshing `http-equiv` makes a url. Keyed by the tag name alone, as there, so an SVG
- * `<a href>` is in it and a custom element's `href` is not; a namespaced attribute, SVG's
- * `xlink:href`, is in no row.
+ * `@11ty/posthtml-urls` walks, but its `meta` `content`, which only a refreshing
+ * `http-equiv` makes a url. Keyed by the tag name alone, as there, so an SVG `<a href>` is
+ * in it and a custom element's `href` is not; a namespaced attribute, SVG's `xlink:href`,
+ * is in no row.
  */
 export const LINKS: ReadonlyMap<string, readonly string[]> = new Map([
   ['a', ['href', 'ping']],
@@ -60,45 +46,40 @@ export const LINKS: ReadonlyMap<string, readonly string[]> = new Map([
 ])
 
 /**
- * The candidates of `value`, a `srcset`, as `parse-srcset` reads them, and the descriptor
- * of each it refused, by {@link refusal} — which it would otherwise say on standard
- * output, past the streams `lem` writes its diagnostics to, naming no file.
+ * The urls of `value`, a `srcset`, by HTML's rules for parsing one, which
+ * `@prettier/parse-srcset` follows; or `undefined` where it refuses the value, which it
+ * does whole where any candidate's descriptors do not parse — HTML drops that candidate
+ * alone. A value of nothing but whitespace and commas has no candidates, and the library
+ * throws at that too, so it is not asked.
  */
-export function srcset(value: string): { candidates: Candidate[]; refused: string[] } {
-  const refused: string[] = []
-  const log = console.log
-  console.log = (message: string) => {
-    refused.push(refusal(value, message))
-  }
+export function srcset(value: string): Located[] | undefined {
+  if (/^[\t\n\f\r ,]*$/.test(value)) return []
   try {
-    return { candidates: parseSrcset(value), refused }
-  } finally {
-    console.log = log
+    return parseSrcset(value).map(({ source }) => ({
+      url: source.value,
+      start: source.startOffset,
+      end: source.startOffset + source.value.length,
+    }))
+  } catch {
+    return undefined
   }
 }
 
 /**
- * The descriptor named by `message`, which `parse-srcset` 1.0.2 logs on refusing a
- * candidate of `value` as `Invalid srcset descriptor found in '<value>' at '<descriptor>'.`
- * — read past that prefix, since `value` may hold ` at '` itself. A message of any other
- * shape is kept whole, so that another release's wording reads oddly in the warning rather
- * than throwing out of the parse.
+ * The urls of `value`, a `ping`, as HTML reads them: a set of tokens separated by ASCII
+ * whitespace.
  */
-export function refusal(value: string, message: string): string {
-  const prefix = `Invalid srcset descriptor found in '${value}' at '`
-  const rest = message.startsWith(prefix) ? message.slice(prefix.length) : ''
-  return rest.endsWith("'.") ? rest.slice(0, -2) : message
+export function tokens(value: string): Located[] {
+  return [...value.matchAll(/[^\t\n\f\r ]+/g)].map(({ 0: url, index: start }) => ({
+    url,
+    start,
+    end: start + url.length,
+  }))
 }
 
-/**
- * The urls of `value`, a `ping`, as posthtml-urls lists them for the body pass: split at
- * commas, trimmed.
- */
-export function pings(value: string): string[] {
-  return value
-    .split(',')
-    .map((url) => url.trim())
-    .filter((url) => url !== '')
+/** `url` without the ASCII whitespace HTML strips from either end of one. */
+export function stripped(url: string): string {
+  return url.replace(/^[\t\n\f\r ]+|[\t\n\f\r ]+$/g, '')
 }
 
 /**

@@ -2,15 +2,16 @@
  * The links an output file holds, read as its kind is read (D47): an HTML page parsed as a
  * browser parses it, a stylesheet tokenized, an XML document parsed — never a pattern over
  * the text, so a url inside a comment, a string or another url is not one — each with the
- * base it resolves against, and the ids an HTML page's fragments can name.
+ * base it resolves against, and the ids an HTML page's fragments can name. The body pass
+ * rebases the urls an element's attributes hold as the check reads them here (D46).
  */
 
 import { tokenize, TokenType, type CSSToken } from '@csstools/css-tokenizer'
 import { DOMParser, type Document, type Element, type Node } from '@xmldom/xmldom'
 import { isUtf8 } from 'node:buffer'
-import { parse } from 'parse5'
+import { parse, type DefaultTreeAdapterTypes as Tree } from 'parse5'
 
-import { elements, LINKS, srcset } from './links.ts'
+import { elements, LINKS, srcset, tokens, type Located } from './links.ts'
 
 /** A url an output file holds, as written, with where it stands and its base. */
 export interface Link {
@@ -21,9 +22,17 @@ export interface Link {
   base: string
 }
 
-/** What an HTML page links to, and what its fragments can name. */
+/**
+ * What an HTML page links to, what it holds whose links cannot be read, and what its
+ * fragments can name.
+ */
 export interface HtmlLinks {
   links: Link[]
+  /**
+   * Each `srcset` that `@prettier/parse-srcset` refuses, as it stands and as written, in
+   * document order: no link in it can be read, so none can be checked.
+   */
+  unreadable: { at: string; srcset: string }[]
   /**
    * Every `id` in the document, and every `name` of an HTML `a` in it — what a fragment
    * can indicate, by HTML's rule for the indicated part of a document — but those inside
@@ -31,6 +40,43 @@ export interface HtmlLinks {
    */
   targets: Set<string>
 }
+
+/**
+ * A url an element's attribute holds, as the link check reads it, with what the body pass
+ * needs to rewrite it in place: `start` and `end` are its offsets into `value`.
+ */
+export interface AttributeUrl extends Located {
+  kind: 'url'
+  /** The attribute, as parse5's source locations name it: `href`, `xlink:href`. */
+  key: string
+  /** The attribute's value, its character references decoded. */
+  value: string
+  /** The element and attribute, `<a href>`, or which `meta` it is. */
+  at: string
+  /** The CSS token that holds it, in a `style` attribute. */
+  token?: CssToken
+  /** Whether it is a refreshing `meta`'s url, which a quote may end. */
+  refresh?: true
+  /**
+   * Whether it names what its element embeds — any SVG element's `href` but an `a`'s, a
+   * `style` attribute's urls — rather than a document to go to.
+   */
+  embedded: boolean
+}
+
+/**
+ * A `srcset` that `@prettier/parse-srcset` refuses, since a candidate's descriptors do not
+ * parse, so that no url is read from it.
+ */
+export interface RefusedSrcset {
+  kind: 'refused'
+  key: string
+  value: string
+  at: string
+}
+
+/** What an element's attribute holds that links: a url, or a `srcset` refused whole. */
+export type AttributeLink = AttributeUrl | RefusedSrcset
 
 /**
  * The Open Graph properties whose `content` is a url: the page's own, and its image's,
@@ -55,79 +101,109 @@ const XML = 'http://www.w3.org/XML/1998/namespace'
 /**
  * The links of `text`, an HTML page served at `url`, parsed as a document with scripting
  * off — as the body pass parses a body, so a `<noscript>`'s content is markup — and the
- * ids its fragments can name. A link is a url in an attribute {@link LINKS} lists, each
- * `srcset` candidate on its own and a `ping`'s urls split as HTML splits them, at
- * whitespace; but `<base href>`, which sets the base the others resolve against — the
+ * ids its fragments can name. A link is a url {@link attributeLinks} reads in an element's
+ * attributes, but `<base href>`, which sets the base the others resolve against — the
  * first one's in the document, resolved against `url`, or `url` itself where the URL
- * parser refuses it. And a refreshing `meta`'s url, any SVG element's `href` or
- * `xlink:href` (`use`, `image`, `feImage`, `a` …), an Open Graph url's `content`, and
- * each `url()` and `@import` of a `<style>`'s text and of a `style` attribute. A
- * `<template>`'s content is walked for links. An inline `<script>`'s text and an SVG
- * paint's `url(#…)` are not read.
+ * parser refuses it — and each `url()` and `@import` of a `<style>`'s text; a `srcset`
+ * whose candidates it refuses is returned beside them, unread. A `<template>`'s content
+ * is walked for links. An inline `<script>`'s text and an SVG paint's `url(#…)` are not
+ * read.
  */
 export function htmlLinks(text: string, url: string): HtmlLinks {
   const found: Omit<Link, 'base'>[] = []
+  const unreadable: HtmlLinks['unreadable'] = []
   const targets = new Set<string>()
   let base: string | undefined
-  const add = (at: string) => (link: string) => found.push({ url: link, at })
   for (const [child, inert] of elements(parse(text, { scriptingEnabled: false }))) {
     const { tagName } = child
-    const attribute = (name: string) =>
-      child.attrs.find((attr) => attr.prefix === undefined && attr.name === name)?.value
     if (!inert) {
-      const id = attribute('id')
+      const id = attribute(child, 'id')
       if (id !== undefined && id !== '') targets.add(id)
-      const name = tagName === 'a' && child.namespaceURI === HTML && attribute('name')
+      const name =
+        tagName === 'a' && child.namespaceURI === HTML && attribute(child, 'name')
       if (name) targets.add(name)
       // The first `base` with an `href` sets the base, or leaves it `url` where the URL
       // parser refuses it.
-      const href = tagName === 'base' ? attribute('href') : undefined
+      const href = tagName === 'base' ? attribute(child, 'href') : undefined
       if (href !== undefined && base === undefined) {
         base = URL.canParse(href, url) ? new URL(href, url).href : url
       }
     }
-    const rows = LINKS.get(tagName) ?? []
-    for (const { name, value, prefix } of child.attrs) {
-      const at = `<${tagName} ${prefix === undefined ? '' : `${prefix}:`}${name}>`
-      if (prefix === undefined && name === 'style') {
-        for (const link of cssLinks(value)) add(at)(link.url)
+    for (const link of attributeLinks(child)) {
+      if (link.kind === 'refused') unreadable.push({ at: link.at, srcset: link.value })
+      // A `base`'s `href` sets the base rather than linking, but its `style` links.
+      else if (tagName !== 'base' || link.token !== undefined) {
+        found.push({ url: link.url, at: link.at })
       }
-      // In SVG, `href` is a link wherever it stands, bare or as `xlink:href`, the one
-      // prefix the parser gives it.
-      const svg = child.namespaceURI === SVG && name === 'href'
-      if (!svg && (prefix !== undefined || !rows.includes(name) || tagName === 'base')) {
-        continue
-      }
-      if (name === 'srcset') srcset(value).candidates.forEach((c) => add(at)(c.url))
-      else if (name === 'ping') tokens(value).forEach(add(at))
-      else add(at)(value)
-    }
-    if (tagName === 'meta') {
-      const content = attribute('content')
-      const property = attribute('property')
-      if (content !== undefined && property !== undefined && OPEN_GRAPH.has(property)) {
-        add(`<meta property="${property}" content>`)(content)
-      }
-      const refresh = attribute('http-equiv')?.toLowerCase() === 'refresh'
-      const target = refresh && content !== undefined ? refreshUrl(content) : undefined
-      if (target !== undefined) add('<meta http-equiv="refresh" content>')(target)
     }
     if (tagName === 'style') {
       // An SVG `style`'s comments are nodes of their own, which hold no CSS.
       const css = child.childNodes.map((text) => ('value' in text ? text.value : ''))
-      for (const link of cssLinks(css.join(''))) add('<style>')(link.url)
+      for (const link of cssLinks(css.join(''))) {
+        found.push({ url: link.url, at: '<style>' })
+      }
     }
   }
   const resolvedAgainst = base ?? url
-  return { links: found.map((link) => ({ ...link, base: resolvedAgainst })), targets }
+  const links = found.map((link) => ({ ...link, base: resolvedAgainst }))
+  return { links, unreadable, targets }
 }
 
 /**
- * The urls of `value`, a `ping`, as HTML reads them: a set of tokens separated by ASCII
- * whitespace. (The body pass splits one at commas instead, as posthtml-urls does.)
+ * Each url `element`'s attributes hold, in the order they stand, as HTML reads them: one
+ * in an attribute {@link LINKS} lists, `<base href>` among them, each `srcset` candidate
+ * on its own — or the `srcset` refused, where a candidate's descriptors do not parse —
+ * and a `ping`'s urls split at whitespace; any SVG element's `href` or `xlink:href`
+ * (`use`, `image`, `feImage`, `a` …); and each `url()` and `@import` of a `style`
+ * attribute, where it stands; then a refreshing `meta`'s url, and an Open Graph url's
+ * `content`. Those of one attribute come in the order they start, and none stands inside
+ * another but a refreshing `meta`'s url, where the `meta` names an Open Graph property too.
  */
-function tokens(value: string): string[] {
-  return value.split(/[\t\n\f\r ]+/).filter((token) => token !== '')
+export function* attributeLinks(element: Tree.Element): Generator<AttributeLink> {
+  const { tagName } = element
+  const rows = LINKS.get(tagName) ?? []
+  for (const { name, value, prefix } of element.attrs) {
+    const key = prefix === undefined ? name : `${prefix}:${name}`
+    const at = `<${tagName} ${key}>`
+    if (prefix === undefined && name === 'style') {
+      for (const { url, start, end, token } of cssLinks(value)) {
+        yield { kind: 'url', key, value, at, url, start, end, token, embedded: true }
+      }
+    }
+    // In SVG, `href` is a link wherever it stands, bare or as `xlink:href`, the one
+    // prefix the parser gives it.
+    const svg = element.namespaceURI === SVG && name === 'href'
+    if (!svg && (prefix !== undefined || !rows.includes(name))) continue
+    const row = { kind: 'url', key, value, at, embedded: svg && tagName !== 'a' } as const
+    if (name === 'srcset') {
+      const candidates = srcset(value)
+      if (candidates === undefined) yield { kind: 'refused', key, value, at }
+      else for (const candidate of candidates) yield { ...row, ...candidate }
+    } else if (name === 'ping') {
+      for (const token of tokens(value)) yield { ...row, ...token }
+    } else yield { ...row, url: value, start: 0, end: value.length }
+  }
+  const content = tagName === 'meta' ? attribute(element, 'content') : undefined
+  if (content === undefined) return
+  const row = { kind: 'url', key: 'content', value: content, embedded: false } as const
+  const property = attribute(element, 'property')
+  if (property !== undefined && OPEN_GRAPH.has(property)) {
+    const at = `<meta property="${property}" content>`
+    yield { ...row, at, url: content, start: 0, end: content.length }
+  }
+  const refresh = attribute(element, 'http-equiv')?.toLowerCase() === 'refresh'
+  const target = refresh ? refreshUrl(content) : undefined
+  if (target !== undefined) {
+    yield { ...row, at: '<meta http-equiv="refresh" content>', ...target, refresh: true }
+  }
+}
+
+/** The value of `element`'s attribute `name`, which no prefix names, if it has one. */
+function attribute(element: Tree.Element, name: string): string | undefined {
+  const named = element.attrs.find(
+    (attr) => attr.prefix === undefined && attr.name === name
+  )
+  return named?.value
 }
 
 /**
@@ -135,7 +211,7 @@ function tokens(value: string): string[] {
  * declarative refresh steps: a time, then a `;` or `,` or whitespace, then the url,
  * optionally after `url=` and inside quotes, which end it.
  */
-export function refreshUrl(content: string): string | undefined {
+export function refreshUrl(content: string): Located | undefined {
   const time = /^[\t\n\f\r ]*[.\d]+/.exec(content)
   if (time === null) return undefined
   let rest = content.slice(time[0].length)
@@ -144,33 +220,54 @@ export function refreshUrl(content: string): string | undefined {
   rest = rest.replace(/^[\t\n\f\r ]*[;,]?[\t\n\f\r ]*/, '')
   if (rest === '') return undefined
   rest = rest.replace(/^url[\t\n\f\r ]*=[\t\n\f\r ]*/i, '')
+  // Each step above took from the front, so what is left ends where `content` does.
+  const start = content.length - rest.length
   const quote = /^["']/.exec(rest)?.[0]
-  if (quote === undefined) return rest
+  if (quote === undefined) return { url: rest, start, end: content.length }
   const quoted = rest.slice(1)
   const end = quoted.indexOf(quote)
-  return end === -1 ? quoted : quoted.slice(0, end)
+  const url = end === -1 ? quoted : quoted.slice(0, end)
+  return { url, start: start + 1, end: start + 1 + url.length }
+}
+
+/** How CSS wrote a url: a bare `url(…)`, which is one token, or a string. */
+export type CssToken = 'url' | 'string'
+
+/** A url in CSS, where it stands, and the token that holds it, which its offsets span. */
+export interface CssLink extends Located {
+  /** `url()` or `@import`. */
+  at: string
+  token: CssToken
 }
 
 /**
  * The urls `css` names, each with where it stands: as CSS Syntax tokenizes it, a `url()`
  * written bare or with a string, `src()` with a string, and `@import`'s string or url —
  * so the `url(%23clip)` inside an SVG `data:` URI held in a string is no url of its own.
- * Each stands at `url()` or `@import`.
+ * Each stands at `url()` or `@import`, and spans its token, quotes or `url(` and all.
  */
-export function cssLinks(css: string): Omit<Link, 'base'>[] {
+export function cssLinks(css: string): CssLink[] {
   const tokens = tokenize({ css }).filter(
     (token) => token[0] !== TokenType.Whitespace && token[0] !== TokenType.Comment
   )
-  const links: Omit<Link, 'base'>[] = []
+  const links: CssLink[] = []
+  // A token's end is the offset of its last character, where a `Located`'s is past it.
+  const link = (token: CSSToken, at: string, kind: CssToken, url: string): CssLink => ({
+    url,
+    at,
+    start: token[2],
+    end: token[3] + 1,
+    token: kind,
+  })
   tokens.forEach((token, i) => {
     const at = imported(tokens[i - 1]) ? '@import' : 'url()'
-    if (token[0] === TokenType.URL) links.push({ url: token[4].value, at })
+    if (token[0] === TokenType.URL) links.push(link(token, at, 'url', token[4].value))
     const next = tokens[i + 1] as CSSToken | undefined
     if (next?.[0] !== TokenType.String) return
     if (token[0] === TokenType.Function && /^(?:url|src)$/i.test(token[4].value)) {
-      links.push({ url: next[4].value, at })
+      links.push(link(next, at, 'string', next[4].value))
     }
-    if (imported(token)) links.push({ url: next[4].value, at: '@import' })
+    if (imported(token)) links.push(link(next, '@import', 'string', next[4].value))
   })
   return links
 }

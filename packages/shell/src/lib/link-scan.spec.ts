@@ -57,6 +57,19 @@ describe('htmlLinks()', () => {
       ])
     })
 
+    it('should read no link from a `srcset` whose candidates the parser refuses, and say where it stands', () => {
+      const html =
+        '<img srcset="/a.jpg 1x, /b.jpg 2q" src="/c.jpg"><template>' +
+        '<source srcset="/d.webp 0w"></template><img srcset="/e.jpg 1x">'
+      const { links, unreadable } = htmlLinks(html, PAGE)
+
+      expect(links.map(({ url }) => url)).toEqual(['/c.jpg', '/e.jpg'])
+      expect(unreadable).toEqual([
+        { at: '<img srcset>', srcset: '/a.jpg 1x, /b.jpg 2q' },
+        { at: '<source srcset>', srcset: '/d.webp 0w' },
+      ])
+    })
+
     it('should split a `ping` at whitespace, as HTML does, and not at commas', () => {
       expect(linked('<a href="/d/" ping="/p1, /p2">d</a>')).toEqual([
         ['/d/', '<a href>'],
@@ -145,6 +158,14 @@ describe('htmlLinks()', () => {
       expect(links).toEqual([{ url: 'x', at: '<a href>', base: PAGE }])
     })
 
+    it('should be no link of its own, where a `style` on its `base` links all the same', () => {
+      const html = '<base href="/b/" style="background: url(s.png)">'
+
+      expect(htmlLinks(html, PAGE).links).toEqual([
+        { url: 's.png', at: '<base style>', base: 'https://limulus.net/b/' },
+      ])
+    })
+
     it('should be the first `<base href>`’s, for links before it too, and not the next’s', () => {
       const { links } = htmlLinks(
         '<a href="x">x</a><base href="/other/"><base href="/third/"><a href="y">y</a>',
@@ -217,18 +238,25 @@ describe('htmlLinks()', () => {
 })
 
 describe('refreshUrl()', () => {
+  /** The url `content` names, and what its offsets cover in `content`. */
+  const refreshed = (content: string) => {
+    const { url, start, end } = refreshUrl(content)!
+    return [url, content.slice(start, end)]
+  }
+
   it('should read the url after the time, `url=` and any quotes', () => {
-    expect(refreshUrl('5; url=/a')).toBe('/a')
-    expect(refreshUrl('  0;URL = "/a b" c')).toBe('/a b')
-    expect(refreshUrl("0, '/b'")).toBe('/b')
-    expect(refreshUrl('0 /c')).toBe('/c')
-    expect(refreshUrl('.5;/d')).toBe('/d')
-    expect(refreshUrl("1.5; url='/e")).toBe('/e')
+    expect(refreshed('5; url=/a')).toEqual(['/a', '/a'])
+    expect(refreshed('  0;URL = "/a b" c')).toEqual(['/a b', '/a b'])
+    expect(refreshed("0, '/b'")).toEqual(['/b', '/b'])
+    expect(refreshed('0 /c')).toEqual(['/c', '/c'])
+    expect(refreshed('.5;/d')).toEqual(['/d', '/d'])
+    expect(refreshed("1.5; url='/e")).toEqual(['/e', '/e'])
+    expect(refreshed('0; url=')).toEqual(['', ''])
   })
 
   it('should read a url that does not spell `url=` from where it starts', () => {
-    expect(refreshUrl('0; urn:x')).toBe('urn:x')
-    expect(refreshUrl('0; url /f')).toBe('url /f')
+    expect(refreshed('0; urn:x')).toEqual(['urn:x', 'urn:x'])
+    expect(refreshed('0; url /f')).toEqual(['url /f', 'url /f'])
   })
 
   it('should read no url where the content names none, or is no refresh', () => {
@@ -240,30 +268,41 @@ describe('refreshUrl()', () => {
 })
 
 describe('cssLinks()', () => {
+  /** The links `css` names, each with the text of the token that holds it. */
+  const linksIn = (css: string) =>
+    cssLinks(css).map(({ url, at, token, start, end }) => ({
+      url,
+      at,
+      token,
+      text: css.slice(start, end),
+    }))
+
   it('should read a `url()` bare or with a string, and `src()` with a string', () => {
-    expect(cssLinks('url(/a.png)')).toEqual([{ url: '/a.png', at: 'url()' }])
+    expect(linksIn('url(/a.png)')).toEqual([
+      { url: '/a.png', at: 'url()', token: 'url', text: 'url(/a.png)' },
+    ])
     expect(
-      cssLinks("a { b: url( '/b.png' ); c: URL(\"/c.png\"); d: src('/d.png') }")
+      linksIn("a { b: url( '/b.png' ); c: URL(\"/c.png\"); d: src('/d.png') }")
     ).toEqual([
-      { url: '/b.png', at: 'url()' },
-      { url: '/c.png', at: 'url()' },
-      { url: '/d.png', at: 'url()' },
+      { url: '/b.png', at: 'url()', token: 'string', text: "'/b.png'" },
+      { url: '/c.png', at: 'url()', token: 'string', text: '"/c.png"' },
+      { url: '/d.png', at: 'url()', token: 'string', text: "'/d.png'" },
     ])
   })
 
   it('should read `@import`’s string or url', () => {
     const css = '@import "/a.css"; @IMPORT url(/b.css) screen; @import url("/c.css");'
 
-    expect(cssLinks(css)).toEqual([
-      { url: '/a.css', at: '@import' },
-      { url: '/b.css', at: '@import' },
-      { url: '/c.css', at: '@import' },
+    expect(linksIn(css)).toEqual([
+      { url: '/a.css', at: '@import', token: 'string', text: '"/a.css"' },
+      { url: '/b.css', at: '@import', token: 'url', text: 'url(/b.css)' },
+      { url: '/c.css', at: '@import', token: 'string', text: '"/c.css"' },
     ])
   })
 
   it('should read a url’s escapes as CSS does', () => {
-    expect(cssLinks('a { b: url(/a\\20 b.png) }')).toEqual([
-      { url: '/a b.png', at: 'url()' },
+    expect(linksIn('a { b: url(/a\\20 b.png) }')).toEqual([
+      { url: '/a b.png', at: 'url()', token: 'url', text: 'url(/a\\20 b.png)' },
     ])
   })
 
@@ -271,9 +310,9 @@ describe('cssLinks()', () => {
     const svg = "data:image/svg+xml,%3Csvg%3E%3Crect clip-path='url(%23clip)'/%3E%3C/svg%3E"
     const css = `a { b: url("${svg}"), url(/c.png) }`
 
-    expect(cssLinks(css)).toEqual([
-      { url: svg, at: 'url()' },
-      { url: '/c.png', at: 'url()' },
+    expect(linksIn(css)).toEqual([
+      { url: svg, at: 'url()', token: 'string', text: `"${svg}"` },
+      { url: '/c.png', at: 'url()', token: 'url', text: 'url(/c.png)' },
     ])
   })
 
@@ -282,7 +321,15 @@ describe('cssLinks()', () => {
       "/* url(/a.png) */ @font-face { src: url(/f.woff2) format('woff2') } " +
       'a { b: url(/c d.png); content: "url(/e.png)" }'
 
-    expect(cssLinks(css)).toEqual([{ url: '/f.woff2', at: 'url()' }])
+    expect(linksIn(css)).toEqual([
+      { url: '/f.woff2', at: 'url()', token: 'url', text: 'url(/f.woff2)' },
+    ])
+  })
+
+  it('should place a url by UTF-16 offsets, past a character outside the BMP', () => {
+    expect(linksIn("a::before { content: '😀' } b { c: url(/d.png) }")).toEqual([
+      { url: '/d.png', at: 'url()', token: 'url', text: 'url(/d.png)' },
+    ])
   })
 })
 

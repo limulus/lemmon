@@ -454,7 +454,7 @@ class Renderer {
    * rendering the body then. Resolving it reports only errors, since its page resolves
    * the same marks and warns there; each file its producers wrote is taken as a page's
    * is, named as the body's. A link it cannot rebase is kept as written and warned at,
-   * at its front matter, as is a `srcset` candidate the rebase dropped.
+   * at its front matter.
    */
   body(path: string, url: string): string | undefined {
     // A body is keyed by its page's url, which the page's render refuses, and reports.
@@ -478,13 +478,9 @@ class Renderer {
     const { body, unrebased } = rebaseLinks(UTF8.decode(resolved.bytes), url, this.#origin)
     for (const problem of unrebased) {
       const message =
-        problem.kind === 'refused'
-          ? `${named} links to ${JSON.stringify(problem.url)} in \`${problem.at}\`, ` +
-            "which the URL parser refuses even against its page's url, so the body keeps " +
-            'it as written'
-          : `${named} holds \`${problem.at}\` as ${JSON.stringify(problem.srcset)}, ` +
-            `whose descriptor \`${problem.descriptor}\` does not parse, so its candidate is ` +
-            'dropped from the body as the others are rebased, as Eleventy drops it'
+        `${named} links to ${JSON.stringify(problem.url)} in \`${problem.at}\`, ` +
+        "which the URL parser refuses even against its page's url, so the body keeps " +
+        'it as written'
       this.#diagnostics.push({ path, span: at, severity: 'warning', message, labels: [] })
     }
     return body

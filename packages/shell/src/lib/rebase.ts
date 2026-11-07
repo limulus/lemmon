@@ -1,25 +1,24 @@
 /**
- * Rebases a document's body for reading on another page (D46): every link in it made
- * absolute against the site's origin, by the rule Eleventy's HTML base plugin applies to
- * a feed's content, or root-relative where the site names no origin. The body is parsed
- * with parse5 and only the attributes that change are rewritten, so every other byte of
- * it stays as the core rendered it.
+ * Rebases a document's body for reading on another page (D46): every url the link check
+ * reads in its elements' attributes (D47) made absolute against the site's origin, or
+ * root-relative where the site names no origin. The body is parsed with parse5, and only
+ * an attribute holding a url that changes is written anew — double-quoted, its character
+ * references decoded — so every byte outside those stays as the core rendered it.
  */
 
 import { parseFragment } from 'parse5'
 
-import { elements, LINKS, pings, srcset } from './links.ts'
+import { attributeLinks, type AttributeLink, type AttributeUrl } from './link-scan.ts'
+import { elements, stripped } from './links.ts'
 
 /**
- * What a rebase could not do, which the attribute it stands in shows: `at` is the element
- * and attribute, `<a href>`. A url the URL parser refuses, even against the page's url,
- * is kept as written; and a `srcset` candidate whose descriptors do not parse is dropped
- * from the attribute, which its other candidates' rebasing wrote anew — `srcset` the value
- * as written, `descriptor` the one `parse-srcset` refused.
+ * A url the URL parser refuses, even against the page's url, which a rebase keeps as
+ * written: `at` is the element and attribute that hold it, `<a href>`.
  */
-export type Unrebased =
-  | { kind: 'refused'; at: string; url: string }
-  | { kind: 'dropped'; at: string; srcset: string; descriptor: string }
+export interface Unrebased {
+  at: string
+  url: string
+}
 
 /** A body rebased, with what could not be. */
 export interface Rebased {
@@ -29,31 +28,40 @@ export interface Rebased {
 
 /**
  * `body`, the body of the page at `url` — a path from `/`, as `plan()` reports it — with
- * every link its elements hold rebased for reading on another page:
+ * every url {@link attributeLinks} reads in its elements' attributes rebased for reading
+ * on another page, each stripped of the ASCII whitespace HTML strips from a url first:
  *
- * - a url the URL parser reads on its own — `https:`, `mailto:`, `data:` — is kept,
- *   trimmed;
+ * - a url that is only a fragment is kept where its element embeds what it names — an
+ *   SVG `<use href="#icon">`, a `style` attribute's `url(#clip)` — since it names part of
+ *   the body itself, which a reader would not load from another document;
+ * - a url the URL parser reads on its own — `https:`, `mailto:`, `data:` — is kept;
  * - with `origin`, any other is resolved against the page's url on that origin, whole,
  *   so `../x/#a`, `./x.pdf`, `#fn1`, `/y` and `//cdn/z` all become absolute;
  * - with none, a url that does not start with `/` and names no host of its own is
  *   resolved against the page's url and becomes its path, query and fragment, so it still
- *   names what it named, read anywhere on the site; any other is kept, trimmed.
+ *   names what it named, read anywhere on the site; any other is kept.
  *
- * A `srcset`'s candidates and a `ping`'s urls are rebased one by one, and the attribute is
- * rewritten as Eleventy writes it — candidates `url[ Nw][ Nh][ Nx]`, both joined by
- * `, ` — where one of them changed, and left as written where none did. What could not be
- * rebased is reported beside the body rather than thrown, so that one link a reader's
- * browser would refuse too costs no build.
+ * Each url that changes is written over itself in its attribute's value — a `srcset`'s
+ * descriptors and commas, a `ping`'s spacing and the rest of a `style` kept, a url in CSS
+ * written as a string, a refresh's url with its quotes percent-encoded — and an attribute
+ * where one changed is written anew, double-quoted, its character references decoded;
+ * one where none did is left as written, and so is a `<style>`'s text, which the check
+ * reads, and a `srcset` `@prettier/parse-srcset` refuses, which the check reports. A url
+ * the URL parser refuses is reported beside the body rather than thrown, so that one link
+ * a reader's browser would refuse too costs no build.
  */
 export function rebaseLinks(body: string, url: string, origin?: string): Rebased {
   const unrebased: Unrebased[] = []
-  const rebase = (value: string, at: string): string => {
-    const trimmed = value.trim()
+  const rebase = ({ url: value, at, embedded }: AttributeUrl): string => {
+    const trimmed = stripped(value)
+    // `use` loads no other origin's document, and CSS reads a `url(#…)` in the one that
+    // holds it: rebased, either would name what no reader of the body loads.
+    if (embedded && trimmed.startsWith('#')) return trimmed
     if (URL.canParse(trimmed)) return trimmed
     if (origin === undefined && trimmed.startsWith('/')) return trimmed
     const base = `${origin ?? PLACEHOLDER}${url}`
     if (!URL.canParse(trimmed, base)) {
-      unrebased.push({ kind: 'refused', at, url: trimmed })
+      unrebased.push({ at, url: trimmed })
       return value
     }
     const resolved = new URL(trimmed, base)
@@ -65,22 +73,43 @@ export function rebaseLinks(body: string, url: string, origin?: string): Rebased
     // As the URL serializer writes a path starting `//` with no host to read it as one.
     return (pathname.startsWith('//') ? `/.${pathname}` : pathname) + search + hash
   }
+  /** `value`, an attribute's, with each of `links`, the urls it holds, rebased. */
+  const rewritten = (value: string, links: AttributeLink[]): string => {
+    let text = ''
+    let from = 0
+    for (const link of links) {
+      // A `srcset` the parser refuses is kept as written, and said nothing of: the link
+      // check fails the build at it, on the page that prints the body.
+      if (link.kind === 'refused') continue
+      // Only a refreshing `meta`'s url stands inside another, the `content` an Open Graph
+      // property it names too reads whole: where that was rebased, this one is gone.
+      if (link.start < from) continue
+      const rebased = rebase(link)
+      if (rebased === link.url) continue
+      text += value.slice(from, link.start) + written(rebased, link)
+      from = link.end
+    }
+    return text + value.slice(from)
+  }
   // By start offset: an element the parser reconstructs carries the location of the one
   // it copied, so two elements can name one attribute in the text.
   const splices = new Map<number, { end: number; text: string }>()
   const options = { sourceCodeLocationInfo: true, scriptingEnabled: false }
   for (const [child] of elements(parseFragment(body, options))) {
-    const names = LINKS.get(child.tagName) ?? []
+    // An element with no location is one the parser made, its attributes copied from
+    // one it has, which rebases them.
     const location = child.sourceCodeLocation
-    for (const { name, value, prefix } of child.attrs) {
-      // An element with no location is one the parser made, its attributes copied from
-      // one it has, which rebases them.
-      if (prefix !== undefined || !names.includes(name) || location == null) continue
-      const at = `<${child.tagName} ${name}>`
-      const rebased = rewritten(name, value, at, rebase, unrebased)
+    if (location == null) continue
+    const attributes = new Map<string, AttributeLink[]>()
+    for (const link of attributeLinks(child)) {
+      attributes.set(link.key, [...(attributes.get(link.key) ?? []), link])
+    }
+    for (const [key, links] of attributes) {
+      const { value } = links[0]
+      const rebased = rewritten(value, links)
       if (rebased === value) continue
-      const { startOffset, endOffset } = location.attrs![name]
-      splices.set(startOffset, { end: endOffset, text: `${name}="${escaped(rebased)}"` })
+      const { startOffset, endOffset } = location.attrs![key]
+      splices.set(startOffset, { end: endOffset, text: `${key}="${escaped(rebased)}"` })
     }
   }
   let rebased = body
@@ -97,39 +126,20 @@ const PLACEHOLDER = 'http://page.invalid'
 const OTHER = 'http://other.invalid'
 
 /**
- * The value of the attribute `name`, standing at `at`, with each url in it rebased by
- * `rebase`: a `srcset` candidate by candidate, a `ping` url by url, any other whole. A list
- * is joined anew only where a url in it changed; a `srcset` candidate `parse-srcset`
- * refuses is then dropped, and said so in `unrebased`.
+ * `url` as it is written over the url `link` held: as it is, but where CSS held it, as a
+ * string, inside `url()` where the url was bare — single-quoted, so that the attribute's
+ * double quotes need no escaping, with `'` and `\` escaped, and a newline by its code
+ * point, since one would end the string — and where it is a refresh's, with each quote
+ * percent-encoded, since HTML's refresh steps end a quoted url at the quote it opened
+ * with, and a page's url holds `'` as it is.
  */
-function rewritten(
-  name: string,
-  value: string,
-  at: string,
-  rebase: (url: string, at: string) => string,
-  unrebased: Unrebased[]
-): string {
-  if (name === 'srcset') {
-    const { candidates, refused } = srcset(value)
-    const urls = candidates.map(({ url }) => rebase(url, at))
-    if (urls.every((url, i) => url === candidates[i].url)) return value
-    for (const descriptor of refused) {
-      unrebased.push({ kind: 'dropped', at, srcset: value, descriptor })
-    }
-    return candidates
-      .map(({ w, h, d }, i) => {
-        const descriptor = (n: number | undefined, unit: string) =>
-          n === undefined ? '' : ` ${n}${unit}`
-        return urls[i] + descriptor(w, 'w') + descriptor(h, 'h') + descriptor(d, 'x')
-      })
-      .join(', ')
-  }
-  if (name === 'ping') {
-    const urls = pings(value)
-    const rebased = urls.map((url) => rebase(url, at))
-    return rebased.every((url, i) => url === urls[i]) ? value : rebased.join(', ')
-  }
-  return rebase(value, at)
+function written(url: string, { token, refresh }: AttributeUrl): string {
+  if (refresh) return url.replaceAll("'", '%27').replaceAll('"', '%22')
+  if (token === undefined) return url
+  const string = url
+    .replace(/['\\]/g, '\\$&')
+    .replace(/[\n\f\r]/g, (newline) => `\\${newline.charCodeAt(0).toString(16)} `)
+  return token === 'url' ? `url('${string}')` : `'${string}'`
 }
 
 /** `value` as a double-quoted attribute value holds it. */

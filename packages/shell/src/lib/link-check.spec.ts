@@ -559,6 +559,34 @@ describe('checkLinks()', () => {
       ])
     })
 
+    it('should refuse a `srcset` the parser refuses once per page per place and value, at its writer, and check the rest', () => {
+      const refused = '<img srcset="/missing.jpg 1x, /b.jpg 2q">'
+      const site = linking(
+        `${refused}<p>${refused}</p><source srcset="/missing.jpg 1x, /b.jpg 2q">` +
+          '<img srcset="/c.jpg 0w" src="/d.jpg">'
+      ).page('c.md', '/c/', refused)
+      const error = (path: string, url: string, at: string, srcset: string) => ({
+        path,
+        span: urlKey(url),
+        severity: 'error',
+        message:
+          `\`${path}\` holds \`${at}\` as ${JSON.stringify(srcset)}, where a candidate's ` +
+          'descriptors do not parse, so none of its links can be checked',
+        labels: [],
+      })
+
+      expect(site.checked()).toEqual([
+        error('a.md', '/a/', '<img srcset>', '/missing.jpg 1x, /b.jpg 2q'),
+        error('a.md', '/a/', '<source srcset>', '/missing.jpg 1x, /b.jpg 2q'),
+        error('a.md', '/a/', '<img srcset>', '/c.jpg 0w'),
+        expect.objectContaining({
+          path: 'a.md',
+          message: expect.stringMatching(/"\/d.jpg"/),
+        }),
+        error('c.md', '/c/', '<img srcset>', '/missing.jpg 1x, /b.jpg 2q'),
+      ])
+    })
+
     it('should read a file by its extension, in any case, and no other kind', () => {
       const site = new Site()
         .page('a.md', '/A.HTML', '<a href="/x/">x</a>')

@@ -330,23 +330,27 @@ alike, or it is a handler's failure, its mark keeping what it had. The pass repo
 errors: a handler that fails on a body, and fragments a body collects and nothing in it
 places, are warned at by its page, which resolves the same marks over the same fragments.
 Each body is decoded as UTF-8, a leading U+FEFF kept, and its links rebased for reading on
-another page, by the rule Eleventy's HTML base plugin applies to a feed's content over the
-attributes `@11ty/posthtml-urls` walks for it (D46): parsed with parse5 — `<noscript>`
-content included, `<template>` content walked, a namespaced attribute such as `xlink:href`
-left — and each url in an `href`, `src`, `srcset` candidate and the rest that the URL parser
-cannot read on its own resolved against the page's url on the site's origin,
-`lemmon.config.ts`'s `origin`, or, where it names none, made a path from `/`, a url naming a
-host of its own kept; only an attribute that changes is rewritten, so the rest of the body
-stays as rendered. A url the URL parser refuses is kept as written and warned at, at the
-document's front matter, as is a `srcset` candidate the rewrite drops; a document whose url
-names no file is left to its page's render, which reports it. Each body is kept by its
-page's url, the string `plan()` reports, which is what `url.text()` writes; the shell then
-loads again, `build.bodies` carrying them, where the first load carried `{}`. So a
-document's own body reads an empty map in the pass — an index into it is a runtime error
-labelled as rendering the body before any body exists — and its page, rendered after, reads
-every body; a computed binding runs at both loads. An error in the pass stops the build
-before the second load, so that no page, feed or binding reports a body's error again as the
-body it lacks, and an error in the second load stops it before any page renders. Page
+another page (D46): parsed with parse5 — `<noscript>` content included, `<template>` content
+walked — and each url step 8 reads in its elements' attributes, stripped of ASCII
+whitespace, that the URL parser cannot read on its own resolved against the page's url on
+the site's origin, `lemmon.config.ts`'s `origin`, or, where it names none, made a path from
+`/`, a url naming a host of its own kept, and a url that is only a fragment kept where its
+element embeds what it names (an SVG `<use href="#icon">`, a `style` attribute's
+`url(#clip)`); a `<style>`'s text is left as written. Only an attribute holding a url that
+changes is written anew, with only that url changed in its value, double-quoted and its
+character references decoded, so every byte outside such attributes stays as rendered; a
+refresh's url has its quotes percent-encoded, which would end it. A url the URL parser
+refuses is kept as written and warned at, at the document's front matter; a `srcset` that
+`@prettier/parse-srcset` refuses whole, where a candidate's descriptors do not parse, is
+kept as written, unwarned, since step 8 refuses it on the page that prints the body; a
+document whose url names no file is left to its page's render, which reports it. Each body
+is kept by its page's url, the string `plan()` reports, which is what `url.text()` writes;
+the shell then loads again, `build.bodies` carrying them, where the first load carried `{}`.
+So a document's own body reads an empty map in the pass — an index into it is a runtime
+error labelled as rendering the body before any body exists — and its page, rendered after,
+reads every body; a computed binding runs at both loads. An error in the pass stops the
+build before the second load, so that no page, feed or binding reports a body's error again
+as the body it lacks, and an error in the second load stops it before any page renders. Page
 templates and generated pages have no body in the map.
 
 Step 8 (D47) runs once every page has rendered and resolved with no error, so that it
@@ -354,39 +358,41 @@ reports the author's fault and not one downstream of it: a page that failed has 
 file and holds no links. It reads, in memory, every page, asset file and produced file the
 build would write, by its extension, walking each tree with a stack of its own: HTML parsed
 with parse5 as a document with scripting off — the parse the body pass uses — whose links
-are the attributes `@11ty/posthtml-urls` walks (the table the body pass rebases, a `srcset`
-candidate by candidate, a `ping` split at whitespace as HTML splits it) with `<base href>`
-setting the base rather than being checked, a refreshing `meta`'s url, any SVG element's
-`href` and `xlink:href`, an Open Graph url property's `content`, and the `url()`s of a
-`<style>` and a `style` attribute; CSS tokenized by `@csstools/css-tokenizer` (CSS Syntax
-3), its `url()`s and `@import`s; XML parsed by `@xmldom/xmldom`, an `xml-stylesheet`
-instruction's `href` before the root, any element's `href` and `xlink:href`, and the text of
-an RSS `link` without `href`, an RSS channel image's `url`, a sitemap `loc` or `*_loc`, and
-a permalink `guid`, each against its nearest `xml:base`. An XML file is an error where the
-parser reports any error or warning in it (a U+FFFD aside), where it declares an encoding
-other than UTF-8, or where it is not UTF-8, since its links cannot be read. An Atom `id` is
-no link, and a feed's escaped content is its page's, checked there. JavaScript, an HTML page
-whose file does not end `.html`, passthrough files and every other kind are targets only. A
-link the URL parser refuses, one in another scheme than `http` or `https`, and one on
-another host than the config's `origin` — every absolute one, where it names none — are
-skipped, and so is a path the config lists as `served`, one its host answers without a file
-(a redirect, a rewrite); the origin's host on either scheme is the site's own. Any other
-names the file its path maps to as a page's url does, which a page, asset file, produced
-file or passthrough file must claim exactly: one differing only in case or Unicode form is
-an error that names it, since a host matching names exactly serves nothing there, and so is
-a dot-less link to a directory whose `index.html` is written. A fragment into an HTML page
-the build writes must name an element of it by HTML's rule — an `id`, or an `a`'s `name`, as
-written or percent-decoded, `top` and the empty fragment the top, a `:~:` text directive
-dropped — so one only a script satisfies is an error too; one into anything else is not
-checked. Every url an asset hook's manifest maps must name a claimed file too, and one that
-does not is said once, at the config, and not again at each page that prints it. Each fault
-is an error, one per page per url it resolves to, naming each way it is written and every
-attribute it stands in, at the page's writer — its url, its generator's `for:` entry, a
-producer's mark, the config's start for an asset file or a manifest entry — labelled at the
-writer of the file a near miss names, or of the page a missing fragment points into. A
-`served` path the build writes a file at is a warning at the config's start. On the
-limulus-dot-net port branch the check reads about 4,100 links in 59 pages and 10
-stylesheets, in about 65 ms in `lem build` and 45 ms in a `lem dev` rebuild.
+are the attributes on the elements of `@11ty/posthtml-urls`' table (a `srcset` candidate by
+candidate, a `ping` split at whitespace as HTML splits it) with `<base href>` setting the
+base rather than being checked, a refreshing `meta`'s url, any SVG element's `href` and
+`xlink:href`, an Open Graph url property's `content`, and the `url()`s of a `<style>` and a
+`style` attribute — what the body pass rebases, but a `<style>`'s; CSS tokenized by
+`@csstools/css-tokenizer` (CSS Syntax 3), its `url()`s and `@import`s; XML parsed by
+`@xmldom/xmldom`, an `xml-stylesheet` instruction's `href` before the root, any element's
+`href` and `xlink:href`, and the text of an RSS `link` without `href`, an RSS channel
+image's `url`, a sitemap `loc` or `*_loc`, and a permalink `guid`, each against its nearest
+`xml:base`. An XML file is an error where the parser reports any error or warning in it (a
+U+FFFD aside), where it declares an encoding other than UTF-8, or where it is not UTF-8,
+since its links cannot be read; so is a `srcset` that `@prettier/parse-srcset` refuses, once
+per page for each element, attribute and value. An Atom `id` is no link, and a feed's
+escaped content is its page's, checked there. JavaScript, an HTML page whose file does not
+end `.html`, passthrough files and every other kind are targets only. A link the URL parser
+refuses, one in another scheme than `http` or `https`, and one on another host than the
+config's `origin` — every absolute one, where it names none — are skipped, and so is a path
+the config lists as `served`, one its host answers without a file (a redirect, a rewrite);
+the origin's host on either scheme is the site's own. Any other names the file its path maps
+to as a page's url does, which a page, asset file, produced file or passthrough file must
+claim exactly: one differing only in case or Unicode form is an error that names it, since a
+host matching names exactly serves nothing there, and so is a dot-less link to a directory
+whose `index.html` is written. A fragment into an HTML page the build writes must name an
+element of it by HTML's rule — an `id`, or an `a`'s `name`, as written or percent-decoded,
+`top` and the empty fragment the top, a `:~:` text directive dropped — so one only a script
+satisfies is an error too; one into anything else is not checked. Every url an asset hook's
+manifest maps must name a claimed file too, and one that does not is said once, at the
+config, and not again at each page that prints it. Each fault is an error, one per page per
+url it resolves to, naming each way it is written and every attribute it stands in, at the
+page's writer — its url, its generator's `for:` entry, a producer's mark, the config's start
+for an asset file or a manifest entry — labelled at the writer of the file a near miss
+names, or of the page a missing fragment points into. A `served` path the build writes a
+file at is a warning at the config's start. On the limulus-dot-net port branch the check
+reads about 4,100 links in 59 pages and 10 stylesheets, in about 65 ms in `lem build` and
+45 ms in a `lem dev` rebuild.
 
 Step 2 runs once discovery has read the site, before anything compiles. Each document whose
 front matter read — not a page template, which has no markdown and whose definitions every

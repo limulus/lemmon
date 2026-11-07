@@ -3,8 +3,10 @@
 - **Status:** Accepted 2026-10-19, planned 2026-10-18 and settled while building `∆zu0`;
   refines D42's clause on a rendered body reaching a template, and replaces the
   architecture's step 10, a second phase after every other page; its passages on the
-  reload of a page no record typed hold until D48, which refuses such a page
-- **Backlog item:** `∆zu0`
+  reload of a page no record typed hold until D48, which refuses such a page. Revised
+  2026-11-06 (`∆H7Q`): a body's links are read as the link check reads them, by HTML's
+  rules, and rewritten in place
+- **Backlog item:** `∆zu0`; `∆H7Q` (the revision)
 - **Normative text:** `docs/architecture.md` § WASM API, § Build pipeline;
   `docs/language.md` § Ambient types; `docs/shell.md` § `lem build`, and the
   config's `origin`
@@ -81,17 +83,34 @@ only there: a page keeps its links as written. The rule is the one Eleventy's HT
 plugin applies to a feed's content, over the attributes `@11ty/posthtml-urls` walks for it:
 a url the URL parser reads on its own is kept, trimmed; any other is resolved against the
 page's url on the origin. A `srcset`'s candidates and a `ping`'s urls are taken one by one.
-The shell parses the body with parse5 and rewrites only the attributes that change, so every
-other byte stays as rendered (invariant 2 keeps the parsing out of the core). Where the site
-names no origin, a relative url is resolved against the page's url and becomes a path from
-`/`, so a body read on another page of the site still names what it named — one naming a
-host of its own, `\\cdn/x` as much as `//cdn/x`, is kept, and a path that would start `//`
-is written `/.//` so that it names no host. A url the URL parser refuses even against the
-page's url is kept as written and warned at, at the document's front matter: a browser would
-refuse it too, and one mistyped link costs no build. A `srcset` candidate whose descriptors
+_(Revised by `∆H7Q`: the rule is applied over every url the link check reads in an element's
+attributes (D47), by HTML's rules — a `ping` split at whitespace, any SVG element's `href`
+and `xlink:href`, a refreshing `meta`'s url, an Open Graph url's `content`, a `style`
+attribute's urls — each stripped of the ASCII whitespace HTML strips from a url. A url that
+is only a fragment is kept where its element embeds what it names, an SVG
+`<use href="#icon">` or a `style` attribute's `url(#clip)`, since it names part of the body
+itself: `use` loads no other origin's document, and CSS reads a `url(#…)` in the document
+that holds it. A `<style>`'s text is left as written, though the check reads it: what
+`lem-style` collects reaches a body through `bundler()` as a `<link href>`, which is
+rebased.)_ The shell parses the body with parse5 and rewrites only the attributes that
+change, so every other byte stays as rendered (invariant 2 keeps the parsing out of the
+core). _(Revised by `∆H7Q`: only an attribute holding a url that changes, and in its value
+only that url, so a `srcset`'s descriptors, a `ping`'s spacing and the rest of a `style` say
+what they said; the attribute is written anew, double-quoted, its character references
+decoded. A refresh's url has its quotes percent-encoded, since HTML's refresh steps end a
+quoted url at its quote, and a page's url holds `'` as it is.)_ Where the site names no
+origin, a relative url is resolved against the page's url and becomes a path from `/`, so a
+body read on another page of the site still names what it named — one naming a host of its
+own, `\\cdn/x` as much as `//cdn/x`, is kept, and a path that would start `//` is written
+`/.//` so that it names no host. A url the URL parser refuses even against the page's url is
+kept as written and warned at, at the document's front matter: a browser would refuse it
+too, and one mistyped link costs no build. A `srcset` candidate whose descriptors
 `parse-srcset` refuses is warned at the same way where the rebase drops it; what that
-library would print on standard output is said there instead. `∆yOJ`'s link check reads the
-same `origin`.
+library would print on standard output is said there instead. _(Revised by `∆H7Q`: a
+`srcset` is read by `@prettier/parse-srcset`, which refuses one whole where any candidate's
+descriptors do not parse; it is kept as written, its urls unrebased, and nothing is said of
+it here: the link check refuses it, as an error, on the page that prints the body (D47), and
+one message is enough.)_ `∆yOJ`'s link check reads the same `origin`.
 
 **An error in the body pass stops the build before the second load**, so the error
 reported is the author's and not a fault downstream of it — D37's rule for the loader: no
@@ -162,25 +181,36 @@ body it then lacks. A second load that fails stops the build before any page ren
 - `body` in a default (D37) is a document's prose as comrak rendered it at compile;
   `build.bodies` holds its finished body after render. The language doc says both.
 - The rewrite differs from Eleventy's in what parity may see: a relative url's query is
-  kept, where Eleventy resolves the path and fragment alone and drops it; a refreshing
-  `meta`'s `content` is not rebased, since no body holds one; a `srcset` or `ping` none of
-  whose urls changes is left as written, where posthtml-urls always joins it anew — and a
-  `srcset` candidate whose descriptors `parse-srcset` refuses is dropped from a rewritten
-  one, as Eleventy drops it, and warned at; parse5 builds a browser's tree, so an element
-  its tree builder drops — a `<form>` nested in another, an `<a>` in a `<select>` — keeps
-  its url as written, where posthtml rewrites every tag it sees, an element it copies is
+  kept, where Eleventy resolves the path and fragment alone and drops it; a body's links are
+  read as the link check reads them, so a refreshing `meta`'s url, any SVG element's `href`
+  and `xlink:href`, an Open Graph url's `content` and a `style` attribute's urls are
+  rebased, where Eleventy leaves them — but a url that is only a fragment where its element
+  embeds what it names, and a `<style>`'s text, which are kept as written — and a `ping` is
+  split at whitespace, where posthtml-urls splits it at commas; a url that changes is
+  rewritten in place, so a `srcset`'s descriptors and commas and a `ping`'s spacing stay as
+  written, where posthtml-urls joins every list it rewrites anew, and a url in CSS is
+  written as a single-quoted string and a refresh's url with its quotes percent-encoded; a
+  `srcset` in which any candidate's descriptors do not parse is kept as written, its urls
+  unrebased, and its page's link check fails the build at it, where Eleventy drops that
+  candidate from a list it joins anew; parse5 builds a browser's tree, so an element its
+  tree builder drops — a `<form>` nested in another, an `<a>` in a `<select>` — keeps its
+  url as written, where posthtml rewrites every tag it sees, an element it copies is
   rewritten once, where it was written, and an `<image src>`, which it reads as `<img>`, is
   rebased where Eleventy leaves it; tag and attribute names are matched as a browser does,
   so `<A HREF>` is rebased where Eleventy matches case and leaves it; the text inside a
   `<textarea>`, `<xmp>` or `<iframe>` is text, where posthtml rewrites the tags it reads
   there; a `<noscript>`'s content is parsed and rebased, as posthtml parses it; a value's
-  entities are decoded before it is resolved, so `/caf&eacute;/` becomes `/caf%C3%A9/`
-  where Eleventy writes `/café/`; a path's doubled slash is kept, `/a//b`, where
-  Eleventy's path join collapses it; with an origin, `\\cdn.example/x` names that host as
-  a browser reads it, `https://cdn.example/x`, where Eleventy gives a path on the origin;
-  a namespaced attribute, SVG's `xlink:href`, is left, as there; and a rewritten attribute
-  is written double-quoted by its name in lower case, every other byte as rendered, where
-  posthtml serializes the whole body again.
+  entities are decoded before it is resolved, so `/caf&eacute;/` becomes `/caf%C3%A9/` where
+  Eleventy writes `/café/`; a path's doubled slash is kept, `/a//b`, where Eleventy's path
+  join collapses it; with an origin, `\\cdn.example/x` names that host as a browser reads
+  it, `https://cdn.example/x`, where Eleventy gives a path on the origin; and a rewritten
+  attribute is written double-quoted by its name in lower case, its character references
+  decoded, every other byte as rendered, where posthtml serializes the whole body again.
+  _(Revised by `∆H7Q`; until then a refreshing `meta`, an SVG element's `href` but an `a`'s,
+  `xlink:href`, Open Graph urls and `style` attributes were left, as Eleventy leaves them, a
+  `ping` was split at commas, and a `srcset` was read by `parse-srcset` 1.0.2 and joined
+  anew where a candidate changed, one whose descriptors it refused dropped, as Eleventy
+  drops it.)_
 - The pass is cheap on limulus.net, measured on a copy of the port: its 25 bodies render
   in 0.3 ms and are resolved and rebased in about 9 ms, and the second load takes about
   6.5 ms, so a warm build — `lem dev`'s rebuild — goes from about 427 ms to about 442 ms,

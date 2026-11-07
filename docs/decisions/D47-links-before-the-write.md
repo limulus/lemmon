@@ -2,8 +2,10 @@
 
 - **Status:** Accepted 2026-10-19, planned the same day and settled while building `∆yOJ`;
   moves the architecture's link/asset integrity check from Post-process, after the write,
-  to a Check step before it, and retires Post-process
-- **Backlog item:** `∆yOJ`
+  to a Check step before it, and retires Post-process. Revised 2026-11-07 (`∆H7Q`): a
+  `srcset` that `@prettier/parse-srcset` refuses is an error, as an XML document whose
+  links cannot be read is, and the body pass reads a body's links as the check reads them
+- **Backlog item:** `∆yOJ`; `∆H7Q` (the revision)
 - **Normative text:** `docs/architecture.md` § Build pipeline (step 8);
   `docs/shell.md` § `lem build` (step 7), and the config's `served`
 
@@ -37,9 +39,10 @@ pattern over the text**, chosen by the file's extension. HTML (`.html`) is parse
 parse5 as a document with scripting off, the parse the body pass uses (D46), and its links
 are the attributes of `@11ty/posthtml-urls`' table, which `links.ts` now holds for both —
 a `srcset` candidate by candidate, a `ping`'s urls split at whitespace as HTML splits them
-(the body pass keeps posthtml-urls' commas), `<base href>` setting the base the rest
-resolve against rather than being checked — and three rows the table lacks for this use: a
-refreshing `meta`'s url, by HTML's refresh steps; any SVG element's `href` and
+(the body pass keeps posthtml-urls' commas; _revised by `∆H7Q`: it splits them so too, and
+reads every url here an element's attributes hold_), `<base href>` setting the base the
+rest resolve against rather than being checked — and three rows the table lacks for this
+use: a refreshing `meta`'s url, by HTML's refresh steps; any SVG element's `href` and
 `xlink:href` (`use`, `image`, `feImage`, `a`); and the `content` of Open Graph's url
 properties, a vocabulary, since titles such as "TILs: git" parse as URLs too. A
 `<style>`'s text and a `style` attribute are CSS. CSS (`.css`, and inline) is tokenized by
@@ -61,12 +64,17 @@ than the call stack goes (invariant 8).
 **An XML document whose links cannot be read is an error.** That is one the XML parser
 refuses — at an error, and at a warning too, each of which marks markup that is not
 well-formed, but the one at a U+FFFD, which UTF-8 may hold; one that declares an encoding
-other than UTF-8, which is all the check reads, so that ISO-8859-1 bytes are not misread
-as links to names that do not exist; and one that is not UTF-8. xmldom expands no entity a
-document declares, so a document using its own is refused, a billion-laughs one in 2 ms.
-It is not a strict parser in every place, though: a bare `&` before whitespace, a NUL and
-a lone surrogate pass it, which a feed reader's parser would refuse, so a feed the check
-passes is not thereby proven well-formed.
+other than UTF-8, which is all the check reads, so that ISO-8859-1 bytes are not misread as
+links to names that do not exist; and one that is not UTF-8. xmldom expands no entity a
+document declares, so a document using its own is refused, a billion-laughs one in 2 ms. It
+is not a strict parser in every place, though: a bare `&` before whitespace, a NUL and a
+lone surrogate pass it, which a feed reader's parser would refuse, so a feed the check
+passes is not thereby proven well-formed. _(Revised by `∆H7Q`: a `srcset` that
+`@prettier/parse-srcset` refuses, which it does whole where any candidate's descriptors do
+not parse, is an error too, once per page for each element, attribute and value, at the
+page's writer. No link in it can be read, so none can be checked, while a browser drops only
+the candidate at fault and loads the rest; `parse-srcset` 1.0.2 had dropped that candidate
+too, and the check read the others.)_
 
 **A link resolves as a browser resolves it, and names a file exactly.** A url the URL
 parser refuses even against its base is skipped — a body keeps such a link and is warned

@@ -9,7 +9,8 @@
 import type { Diagnostic, Label } from '@limulus/lemmon-core'
 import { Buffer } from 'node:buffer'
 
-import { cssLinks, htmlLinks, xmlLinks, type Link } from './link-scan.ts'
+import { cssLinks, htmlLinks, xmlLinks, type HtmlLinks, type Link } from './link-scan.ts'
+import { stripped } from './links.ts'
 import { pageName } from './plugins.ts'
 import { FILE_START, LIST } from './program.ts'
 import {
@@ -51,12 +52,16 @@ interface Broken {
   label?: Label
 }
 
-/** One scanned file: its claim, and what links it holds or why none could be read. */
+/**
+ * One scanned file: its claim, and what links it holds or why none could be read, and in
+ * an HTML page each `srcset` whose links cannot be.
+ */
 interface Scanned {
   output: Output
   writer: Writer
   links: Link[]
   refused?: string
+  unreadable?: HtmlLinks['unreadable']
 }
 
 /**
@@ -65,9 +70,12 @@ interface Scanned {
  * placed at the file's writer, a page's url or its generator's `for:` entry, a producer's
  * mark, the config's start for an asset hook's file, and naming each way the url is
  * written and each place it stands; one per manifest entry that names no file, at the
- * config's start, whose url no page is then faulted for again; and one per XML file
- * whose links cannot be read. And a warning at the config's start for each `served` path
- * that names a file the build writes, which a link to it is then not checked against.
+ * config's start, whose url no page is then faulted for again; one per XML file whose
+ * links cannot be read; and one per HTML file per distinct `srcset`, by where it stands
+ * and its value, that `@prettier/parse-srcset` refuses, since no link in it can be read
+ * and so none checked, as a browser that drops only the candidate at fault still loads
+ * the others. And a warning at the config's start for each `served` path that names a
+ * file the build writes, which a link to it is then not checked against.
  *
  * A link is resolved against its base, a page's own url on the site's origin, and is
  * skipped where the URL parser refuses it, it names a scheme other than `http` or `https`
@@ -91,14 +99,16 @@ export function checkLinks(check: LinkCheck): Diagnostic[] {
     const kind = /\.(html|css|xml)$/i.exec(output.file)?.[1].toLowerCase()
     if (kind === undefined) continue
     if (kind === 'html') {
-      const { links, targets: ids } = htmlLinks(decoder.decode(output.bytes), base)
+      const {
+        links,
+        unreadable,
+        targets: ids,
+      } = htmlLinks(decoder.decode(output.bytes), base)
       targets.set(output.file, ids)
-      scanned.push({ output, writer, links })
+      scanned.push({ output, writer, links, unreadable })
     } else if (kind === 'css') {
-      const links = cssLinks(decoder.decode(output.bytes)).map((link) => ({
-        ...link,
-        base,
-      }))
+      const css = cssLinks(decoder.decode(output.bytes))
+      const links = css.map(({ url, at }) => ({ url, at, base }))
       scanned.push({ output, writer, links })
     } else {
       scanned.push({ output, writer, links: [], ...xmlLinks(output.bytes, base) })
@@ -182,7 +192,7 @@ export function checkLinks(check: LinkCheck): Diagnostic[] {
       labels: broken.label === undefined ? [] : [broken.label],
     })
   }
-  for (const { output, writer, links, refused } of scanned) {
+  for (const { output, writer, links, refused, unreadable = [] } of scanned) {
     const place = { path: writer.path, span: writer.span ?? FILE_START }
     if (refused !== undefined) {
       diagnostics.push({
@@ -192,6 +202,21 @@ export function checkLinks(check: LinkCheck): Diagnostic[] {
         labels: [],
       })
       continue
+    }
+    // By where each stands and as written, however often the file holds it.
+    const said = new Set<string>()
+    for (const { at, srcset } of unreadable) {
+      const key = JSON.stringify([at, srcset])
+      if (said.has(key)) continue
+      said.add(key)
+      diagnostics.push({
+        ...place,
+        severity: 'error',
+        message:
+          `${subject(output.file, writer)} holds \`${at}\` as ${JSON.stringify(srcset)}, ` +
+          "where a candidate's descriptors do not parse, so none of its links can be checked",
+        labels: [],
+      })
     }
     // By the url each resolves to, however it is written and wherever it stands.
     const verdicts = new Map<string, Faulted | undefined>()
@@ -297,11 +322,6 @@ function indicates(ids: Set<string>, hash: string): boolean {
   if (raw === '' || ids.has(raw)) return true
   const decoded = percentDecoded(raw)
   return ids.has(decoded) || decoded.toLowerCase() === 'top'
-}
-
-/** `url` without the ASCII whitespace HTML strips from either end of one. */
-function stripped(url: string): string {
-  return url.replace(/^[\t\n\f\r ]+|[\t\n\f\r ]+$/g, '')
 }
 
 /**
