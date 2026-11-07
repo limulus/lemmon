@@ -201,6 +201,18 @@ describe('rebaseLinks()', () => {
       )
     })
 
+    it('should replace the whole attribute it rewrites, however it was written', () => {
+      expect(absolute('<img src="./a.png"alt="x">')).toBe(
+        `<img src="${on('a.png')}"alt="x">`
+      )
+      expect(absolute("<p style='a:url(./a.png)'x>p</p>")).toBe(
+        `<p style="a:url('${on('a.png')}')"x>p</p>`
+      )
+      expect(absolute('<a href>a</a><a href = ./y class=z>y</a><a HREF=./w/>w</a>')).toBe(
+        `<a href="${on('')}">a</a><a href="${on('y')}" class=z>y</a><a href="${on('w/')}">w</a>`
+      )
+    })
+
     it('should leave every other byte of the body as it was', () => {
       const before =
         '<h2 id="x">Café &amp; ’</h2>\r\n<!-- <a href="./c"> -->\n' +

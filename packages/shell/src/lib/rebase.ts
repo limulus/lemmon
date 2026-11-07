@@ -107,13 +107,14 @@ export function rebaseLinks(body: string, url: string, origin?: string): Rebased
       attributes.set(link.key, [...(attributes.get(link.key) ?? []), link])
     }
     for (const [key, links] of attributes) {
-      const { startOffset, endOffset } = location.attrs![key]
+      const { startOffset } = location.attrs![key]
       if (seen.has(startOffset)) continue
       seen.add(startOffset)
       const { value } = links[0]
       const rebased = rewritten(value, links)
       if (rebased === value) continue
-      splices.set(startOffset, { end: endOffset, text: `${key}="${escaped(rebased)}"` })
+      const end = attributeEnd(body, startOffset, key)
+      splices.set(startOffset, { end, text: `${key}="${escaped(rebased)}"` })
     }
   }
   let rebased = body
@@ -144,6 +145,20 @@ function written(url: string, { token, refresh }: AttributeUrl): string {
     .replace(/['\\]/g, '\\$&')
     .replace(/[\n\f\r]/g, (newline) => `\\${newline.charCodeAt(0).toString(16)} `)
   return token === 'url' ? `url('${string}')` : `'${string}'`
+}
+
+/**
+ * Where the attribute whose name, `key`, starts at `start` in `body` ends: past its value,
+ * quoted or not, or past its name where it has none. Read from the text, as the HTML
+ * tokenizer reads it, since parse5 8 ends a quoted value's attribute at its name where
+ * another attribute follows the quote unspaced, `<img src="a.png"alt="">`. HTML lowers
+ * the case of an attribute's name in ASCII alone, so `key` is as long as the name was.
+ */
+function attributeEnd(body: string, start: number, key: string): number {
+  const name = start + key.length
+  const value = /(?:[\t\n\f\r ]*=[\t\n\f\r ]*(?:"[^"]*"|'[^']*'|[^\t\n\f\r >]*))?/y
+  value.lastIndex = name
+  return name + value.exec(body)![0].length
 }
 
 /** `value` as a double-quoted attribute value holds it. */
