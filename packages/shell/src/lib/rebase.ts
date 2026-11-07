@@ -150,9 +150,10 @@ function written(url: string, { token, refresh }: AttributeUrl): string {
 /**
  * Where the attribute whose name, `key`, starts at `start` in `body` ends: past its value,
  * quoted or not, or past its name where it has none. Read from the text, as the HTML
- * tokenizer reads it, since parse5 8 ends a quoted value's attribute at its name where
- * another attribute follows the quote unspaced, `<img src="a.png"alt="">`. HTML lowers
- * the case of an attribute's name in ASCII alone, so `key` is as long as the name was.
+ * tokenizer reads it, since parse5 8.1 ends an attribute at its name where an `=` is
+ * followed by no value, `<a href=>` (as 8.0 did where another attribute followed a quoted
+ * value unspaced). HTML lowers the case of an attribute's name in ASCII alone, so `key`
+ * is as long as the name was.
  */
 function attributeEnd(body: string, start: number, key: string): number {
   const name = start + key.length

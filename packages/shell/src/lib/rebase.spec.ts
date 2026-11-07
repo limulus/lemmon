@@ -211,6 +211,9 @@ describe('rebaseLinks()', () => {
       expect(absolute('<a href>a</a><a href = ./y class=z>y</a><a HREF=./w/>w</a>')).toBe(
         `<a href="${on('')}">a</a><a href="${on('y')}" class=z>y</a><a href="${on('w/')}">w</a>`
       )
+      expect(absolute('<a href=>a</a><a href = >b</a>')).toBe(
+        `<a href="${on('')}">a</a><a href="${on('')}">b</a>`
+      )
     })
 
     it('should leave every other byte of the body as it was', () => {
