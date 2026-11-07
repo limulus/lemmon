@@ -22,18 +22,18 @@ import { parse } from 'yaml'
 
 import { expectClean } from './lib/diagnostics.ts'
 import {
-  loadCore,
-  type JsonValue,
-  type RenderResult,
-  type SourceFileInput,
-} from '../packages/core/src/index.ts'
-import {
   compareRendered,
   renderedPage,
   type Display,
   type Forgiveness,
   type RenderedElement,
-} from '../packages/shell/src/index.ts'
+} from './lib/rendered-html.ts'
+import {
+  loadCore,
+  type JsonValue,
+  type RenderResult,
+  type SourceFileInput,
+} from '../packages/core/src/index.ts'
 
 const FIXTURES = 'tests/fidelity/the-rebound'
 const PAGE_PATH = 'feed/the-rebound/index.md'

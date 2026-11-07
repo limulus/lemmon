@@ -587,10 +587,11 @@ function pairOf(o: RenderedNode | null, t: RenderedNode | null): Pair | null {
 
 /**
  * Compares two rendered pages; `ours` is the page under test and `theirs` the
- * reference. Within a parent, comparison stops at the first child it cannot pair, or
- * whose text differs — one extra child would otherwise misalign every sibling after it
- * and report each as a change — while a pair whose attributes differ is reported and
- * its siblings are still compared.
+ * reference. Their doctypes, and the document modes those set, are compared first, a
+ * difference in either offered to no class. Within a parent, comparison stops at the
+ * first child it cannot pair, or whose text differs — one extra child would otherwise
+ * misalign every sibling after it and report each as a change — while a pair whose
+ * attributes differ is reported and its siblings are still compared.
  */
 export function compareRendered(
   ours: RenderedPage,

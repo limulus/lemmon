@@ -13,10 +13,11 @@ npm run test:fidelity
 The harness (`scripts/render-the-rebound.ts`) compiles everything in one call, renders
 the document, feeds its HTML back through `loadData` as `page.content`, renders
 `driver.lem`, and compares the result against `fixtures/reference.html` as rendered HTML
-(`renderedPage` and `compareRendered`, in `packages/shell/src/lib/rendered-html.ts`, the
-comparator limulus.net's `npm run parity` uses too): parse5 trees, attributes by value,
-text after browser-style white-space processing. Every remaining difference must be one of
-the forgiveness classes below or the run exits non-zero.
+(`renderedPage` and `compareRendered`, in `scripts/lib/rendered-html.ts`, the
+comparator limulus.net's `npm run parity` used through the shell until `∆GJ9`): parse5
+trees, attributes by value, text after browser-style white-space processing. Every
+remaining difference must be one of the forgiveness classes below or the run exits
+non-zero.
 
 The timings are not gated. `npm run test:fidelity -- --time` repeats the loads and
 renders, prints a per-call table, and holds the page's render time against the <1 ms/page

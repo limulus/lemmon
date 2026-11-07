@@ -711,13 +711,14 @@ variables its scripts read as `process.env.NAME` (D45).
   escaping never emits `<`.
 - cargo-fuzz on parser and VM (the LSP feeds them half-typed garbage).
 - wasm-bindgen-test through Node for the real boundary.
-- The limulus.net parity harness (architecture doc 3) is the end-to-end acceptance bar.
-  It compares *rendered* HTML, never bytes (D28): the shell's `renderedPage` models
-  the UA stylesheet's white-space processing so that everything D26 and D28 move is
-  invisible to the comparison by construction, while a changed space inside `pre` or
-  between two inline runs still fails (`∆Ma4`). `compareRendered` walks two such pages and
-  consults a caller's forgiveness classes where it would report a difference — an
-  attribute, a text run, an element one side lacks — and offers each matched pair to a
-  class that may take its subtree over, counting what each forgives; `npm run parity` in
-  the port branch holds every class to its expected count per page, as the fidelity
-  harness does for the-rebound (`∆Zo7`).
+- The limulus.net parity harness (architecture doc 3) was the end-to-end acceptance bar,
+  met when slice 6 was accepted on 2026-11-07. It compares *rendered* HTML, never bytes
+  (D28): `renderedPage` (`scripts/lib/rendered-html.ts`) models the UA stylesheet's
+  white-space processing so that everything D26 and D28 move is invisible to the
+  comparison by construction, while a changed space inside `pre` or between two inline
+  runs still fails (`∆Ma4`). `compareRendered` walks two such pages and consults a
+  caller's forgiveness classes where it would report a difference — an attribute, a text
+  run, an element one side lacks — and offers each matched pair to a class that may take
+  its subtree over, counting what each forgives; the fidelity harness holds every class to
+  its expected count for the-rebound, as `npm run parity` in the port branch did per page,
+  through the shell's API from `∆Zo7` until `∆GJ9`.

@@ -31,7 +31,6 @@ export type {
   ProducerContext,
 } from './lib/plugins.ts'
 export { SiteError } from './lib/program.ts'
-export * from './lib/rendered-html.ts'
 export * from './lib/site.ts'
 export {
   walk,

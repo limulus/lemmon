@@ -818,7 +818,7 @@ re-indenting either would make the output depend on a value's shape at run time.
 none of this licenses is touching whitespace HTML renders — inline formatting contexts,
 `pre`/`textarea` — which is output semantics and survives byte for byte. A fidelity gate
 therefore compares rendered HTML: never raw bytes, and never bytes with whitespace
-collapsed blindly (D15's "normalized"; `packages/shell/src/lib/rendered-html.ts`).
+collapsed blindly (D15's "normalized"; `scripts/lib/rendered-html.ts`).
 
 ## Escaping
 
