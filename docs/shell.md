@@ -674,9 +674,9 @@ npm install --save-dev @limulus/lemmon-shell
 ```
 
 `npx lem build` then runs the installed `lem`. The two packages are released together at
-one version, and the shell depends on exactly that core. They are not yet on npm (`∆PiI`);
-`npm run test:pack` packs both, installs the tarballs into an empty project and builds a
-site there, as a published install would.
+one version, and the shell depends on exactly that core. Before a release, `npm run
+test:pack` packs both, installs the tarballs into an empty project and builds a site there,
+as an install from npm would.
 
 ## Running from a checkout
 

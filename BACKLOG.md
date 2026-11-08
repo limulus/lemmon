@@ -37,13 +37,9 @@ display, and the merge commit's subject, is listed in `∆oAl`'s journal entry.
 Eric merges the cutover branch and limulus.net deploys with `lem`, its CloudFront config
 untouched.
 
-- `∆PiI` Publish the core and shell to npm
-  - Both ship built code, the core with its `.wasm` and the shell's `lem` as JavaScript,
-    released from lemmon's CI by `semantic-release` through trusted publishing
 - `∆FnH` limulus.net's CI gets lemmon
   - The site installs the published `@limulus/lemmon-shell` in place of `file:../lemmon`,
     which a CI checkout cannot resolve
-  - needs: `∆PiI`
 
 ## After the cutover
 
