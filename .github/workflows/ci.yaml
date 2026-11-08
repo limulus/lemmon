@@ -1,7 +1,7 @@
 name: Continuous Integration
 
-# Publishing is absent: nothing here is released yet. The packages will be released by
-# semantic-release through npm's trusted publishing (∆PiI), whose publish job lands here.
+# `release`, last, publishes both packages from main: a push to main of a `feat`, `fix`,
+# `perf` or `revert` commit, or of a breaking change, releases them.
 #
 # Shape: build the wasm once, consume it many times. `wasm` produces the artifact and
 # `wasm-check` exercises it on every node version, so each runtime is tested against the
@@ -159,3 +159,37 @@ jobs:
           name: wasm
           path: packages/core/artifacts/wasm/
       - run: npm run wasm:check
+
+  # Releases both packages, at one version, when the commits on main since the last release
+  # hold one that releases (the `ci.yaml` header lists them). semantic-release picks
+  # the version, sets it in both manifests, pins the shell to that core, reruns `test:pack`
+  # at it, tags the commit, and publishes the core and then the shell through npm's trusted
+  # publishing, which names this file as the workflow allowed to publish them, so the job
+  # holds no npm token. The `.wasm` is the one every job above tested, and the job waits
+  # for all of them, so that nothing red ships. It runs on every push: on any branch but
+  # the ones `.releaserc.json` names, main alone, semantic-release releases nothing.
+  release:
+    needs: [ rust, rust-coverage, wasm, verify, pack, wasm-check ]
+    runs-on: ubuntu-latest
+    name: release
+    permissions:
+      contents: write # the tag and the GitHub release
+      id-token: write # npm's trusted publishing, and the provenance it attests
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # semantic-release reads every commit and tag since the last release.
+          fetch-depth: 0
+      # No npm cache: what publishes is installed from the lockfile alone.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - run: npm ci
+      - uses: actions/download-artifact@v7
+        with:
+          name: wasm
+          path: packages/core/artifacts/wasm/
+      - run: npm run build
+      - run: npx semantic-release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

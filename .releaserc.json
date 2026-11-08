@@ -1,0 +1,18 @@
+{
+  "branches": ["main"],
+  "plugins": [
+    ["@semantic-release/commit-analyzer", { "preset": "conventionalcommits" }],
+    ["@semantic-release/release-notes-generator", { "preset": "conventionalcommits" }],
+    [
+      "@semantic-release/exec",
+      {
+        "prepareCmd": "npm version ${nextRelease.version} --workspaces --no-git-tag-version --no-workspaces-update && npm pkg set \"dependencies.@limulus/lemmon-core=${nextRelease.version}\" --workspace @limulus/lemmon-shell && npm run test:pack",
+        "publishCmd": "npm publish --workspace @limulus/lemmon-core && npm publish --workspace @limulus/lemmon-shell"
+      }
+    ],
+    [
+      "@semantic-release/github",
+      { "successComment": false, "failComment": false, "releasedLabels": false }
+    ]
+  ]
+}

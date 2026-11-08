@@ -5,7 +5,7 @@ Node/TypeScript **shell** owns files, processes, plugins, and the dev server; a 
 **core** (scanner → parser → bytecode compiler that checks as it lowers → VM, plus comrak
 for markdown, its code blocks left as marks for the shell's highlighters) is compiled to
 WebAssembly and does everything deterministic. Open source under MIT; distributed via npm
-once `∆PiI` publishes it.
+as `@limulus/lemmon-shell` and the `@limulus/lemmon-core` it depends on.
 Its first production site is limulus.net, which it will take over from Eleventy + WebC once
 a parity harness shows zero unexpected output diffs.
 
@@ -139,11 +139,13 @@ variable replaces outright — and the parser's `MAX_DEPTH` and the VM's `MAX_NA
 are sized to it, so raising either means re-running `npm run rust:wasm:test`, which
 `verify` does not include.
 
-Published packages use the `@limulus` scope, named `@limulus/lemmon-<part>` (D18). Root and
-packages are all `"private": true` and CI has no publish job: nothing is released yet, so a
-retired name or tag needs no alias or deprecation message. `∆PiI` releases the core and the
-shell by semantic-release through trusted publishing. Do not publish anything, or
-re-enable publishing, without Eric.
+Published packages use the `@limulus` scope, named `@limulus/lemmon-<part>` (D18). The root
+is `"private": true`; the core and the shell are released together, at one version, by CI's
+`release` job: semantic-release (`.releaserc.json`) through npm's trusted publishing, which
+allows only `ci.yaml` to publish them. **A push to main of a commit that releases — a
+`feat`, `fix`, `perf` or `revert`, or a breaking change — publishes both to npm**, so push
+main only when Eric asks, and never publish by hand. A retired name or tag still gets no alias or deprecation message: its
+commit is a breaking change, released as a major, as the READMEs warn readers to expect.
 
 ## Commands
 
@@ -428,9 +430,9 @@ clean of unintended changes and `npm run verify` passing — read `git diff` bef
 so, and name which gates ran, since `verify` covers the fidelity comparison but not the
 ABI suite or either timing mode; committing is separate and user-initiated.
 
-commitlint enforces `@commitlint/config-conventional` on every commit. Nothing is released
-from this repo yet, but the history must stay release-grade so release tooling can derive
-versions later: a breaking change bumps major (and must carry a `BREAKING CHANGE:` footer
-describing the migration), `feat` bumps minor, `fix` bumps patch, other types don't bump.
+commitlint enforces `@commitlint/config-conventional` on every commit, and semantic-release
+derives each release's version from the commits since the last: a breaking change bumps
+major (and must carry a `BREAKING CHANGE:` footer describing the migration), `feat` bumps
+minor, `fix`, `perf` and `revert` bump patch, and other types release nothing.
 Prefer the package or crate as the scope — `feat(core): add render()`,
 `fix(shell): handle empty content dir`, `chore(deps): update dependencies`.
