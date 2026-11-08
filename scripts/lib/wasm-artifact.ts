@@ -9,15 +9,16 @@
 import { join } from 'node:path'
 
 /**
- * Where the staged wasm-bindgen output lives: built once by the `wasm` CI job,
- * uploaded, and downloaded by every job that consumes it. Locally, `npm run rust:wasm`
- * populates it and everything wasm-consuming (vitest, the bench harness) reads from it.
- * The set is `wasm-bindgen --target web` output — environment-agnostic ESM glue whose
- * caller supplies the bytes (`initSync`) — so the same files serve Node today and a
- * browser playground later. A home inside the published `@limulus/lemmon-core` package
- * waits until something publishes.
+ * Where the staged wasm-bindgen output lives: inside `@limulus/lemmon-core`, which
+ * publishes it, so the package's loader finds it from its own directory whether it runs
+ * from a checkout or from `node_modules`. Built once by the `wasm` CI job, uploaded, and
+ * downloaded by every job that consumes it. Locally, `npm run rust:wasm` populates it and
+ * everything wasm-consuming (vitest, the bench harness) reads from it. The set is
+ * `wasm-bindgen --target web` output — environment-agnostic ESM glue whose caller
+ * supplies the bytes (`initSync`) — so the same files serve Node today and a browser
+ * playground later.
  */
-export const STAGING_DIR = 'artifacts/wasm'
+export const STAGING_DIR = 'packages/core/artifacts/wasm'
 
 /** The `--out-name` given to wasm-bindgen: the artifact set's shared basename. */
 export const OUT_NAME = 'lemmon-core'

@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { pathToFileURL } from 'node:url'
 
@@ -16,8 +16,9 @@ const STAGING_SUBPATH = 'artifacts/wasm/'
 
 /**
  * The staging directory {@link loadCore} reads by default: the nearest `artifacts/wasm/`
- * at or above `from` that holds a staged artifact — the repo root's, in a checkout —
- * and otherwise the nearest place one would go, so a failure can name where it looked.
+ * at or above `from` that holds a staged artifact — this package's own, which it
+ * publishes — and otherwise the nearest place one would go, so a failure can name where
+ * it looked.
  *
  * Searched rather than counted in `../`s because this module runs from two depths:
  * `src/lib/` under vitest and `dist/esm/lib/` once built.
@@ -35,6 +36,28 @@ export function stagingDirectory(from: URL = new URL(import.meta.url)): URL {
 }
 
 /**
+ * The version in the nearest `package.json` at or above `from`: this package's own,
+ * which a release sets before it publishes, so a published core names the release it
+ * shipped in. The `.wasm` cannot know it, since the release picks it after the `.wasm`
+ * is built and tested.
+ *
+ * Searched rather than counted in `../`s for the reason {@link stagingDirectory} is.
+ */
+export function packageVersion(from: URL = new URL(import.meta.url)): string {
+  let dir = new URL('./', from)
+  while (!existsSync(new URL('package.json', dir))) {
+    const parent = new URL('../', dir)
+    if (parent.href === dir.href)
+      throw new Error(`No package.json at or above ${from.href}`)
+    dir = parent
+  }
+  const manifest = JSON.parse(readFileSync(new URL('package.json', dir), 'utf8')) as {
+    version: string
+  }
+  return manifest.version
+}
+
+/**
  * Instantiates the glue over the given bytes (or compiled module) and returns a fresh
  * {@link Core}. Instantiation is per glue module and idempotent, so every call after
  * the first reuses the instance and just constructs another resident core.
@@ -44,11 +67,12 @@ export function createCore(
   wasm: BufferSource | WebAssembly.Module
 ): Core {
   glue.initSync({ module: wasm })
-  // Asked before a core is constructed: in an instance an earlier call trapped, this is
-  // the first call to trap again, and a core constructed before it would be left for the
-  // glue's finalizer to free in that instance, a throw no caller could catch.
-  const version = glue.version()
-  return new Core(new glue.Core(), version)
+  // Asked before a core is constructed, as the cheapest call there is: in an instance an
+  // earlier call trapped, it is the first to trap again, and a core constructed before it
+  // would be left for the glue's finalizer to free in that instance, a throw no caller
+  // could catch. What it answers is the crates' version, which no release changes.
+  glue.version()
+  return new Core(new glue.Core(), packageVersion())
 }
 
 /**

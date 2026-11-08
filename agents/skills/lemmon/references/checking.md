@@ -20,7 +20,7 @@ checkout's bin, which finds the core staged in that checkout (`npm run rust:wasm
 rebuilds it):
 
 ```sh
-node --conditions=source /path/to/lemmon/packages/shell/bin/lem.ts check
+node --conditions=source /path/to/lemmon/packages/shell/bin/lem.js check
 ```
 
 A page — a document, or a template with front matter — is typed the way the shell types it:

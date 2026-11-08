@@ -163,7 +163,7 @@ npm run lint:fix       # autofix lint — never concurrently with verify
 npm run tscc           # typecheck root .ts config files + every package
 npm run build          # emit packages/*/dist/{esm,types}
 npm run clean:js       # dist, coverage, *.tsbuildinfo — what `prebuild` runs
-npm run clean          # clean:js + artifacts/ + a literal ./target; it does NOT reach a
+npm run clean          # clean:js + staged .wasm + a literal ./target; it does NOT reach a
                        # redirected CARGO_TARGET_DIR — prefer `cargo clean -p <crate>` there
 
 npx vitest run packages/core/src/lib/core.spec.ts    # single test file
@@ -179,8 +179,9 @@ npm run rust:cov       # Rust coverage ratchet — its own CI job (instrumentati
                        # own RUSTFLAGS + target tree); needs `cargo install cargo-llvm-cov`.
                        # Never concurrently with verify; a ratchet failing for no visible
                        # reason wants `<target>/llvm-cov-target` deleted and a rerun
-npm run rust:wasm      # cross-compile the boundary + stage into artifacts/wasm/. Needs
-                       # wasm-bindgen-cli at the exact version pinned in Cargo.toml.
+npm run rust:wasm      # cross-compile the boundary + stage into the core package's
+                       # artifacts/wasm/, which it publishes. Needs wasm-bindgen-cli at
+                       # the exact version pinned in Cargo.toml.
                        # `verify:js` runs it first; run it by hand before `npx vitest`,
                        # `wasm:check`, the fidelity harness, or the bench
 npm run wasm:check     # compile the staged .wasm under this Node, assert exports/imports
@@ -198,6 +199,10 @@ npm run test:fixtures  # the other leg of verify:js: every corpus fixture whose
                        # error diagnostic. It diffs no output
 npm run wasm:bench     # test:fixtures' scenarios repeated, with the marshalling table —
                        # numbers only; correctness is the corpus gate's job
+npm run test:pack      # pack both packages, install the tarballs into an empty project,
+                       # and build a site there with the installed `lem`. Needs `npm run
+                       # build`, a staged .wasm and the network, so it is CI's `pack` job,
+                       # not a leg of verify
 ```
 
 CI is build-once/consume-many: a `wasm` job stages and uploads the artifact, and the
@@ -216,7 +221,7 @@ timing modes are not in the pre-push gate: CI's `verify` job runs `wasm:bench` a
 that checks the 1 ms/page criterion — runs only by hand.
 
 `lem build` is real: in a directory with a `lemmon.config.ts` (`docs/shell.md` describes
-it), the bin at `packages/shell/bin/lem.ts` runs the plugins the config lists
+it), the bin at `packages/shell/bin/lem.js` runs the plugins the config lists
 over each document's text and for their asset files, compiles the site in two calls — the
 assets' manifest on its declaration — loads it, renders each document's body alone and
 loads again with every body in `build.bodies`, its links rebased on the config's `origin`
@@ -229,9 +234,13 @@ never touches the output directory; both print each diagnostic with the source i
 beneath, from the text the build read. `lem dev` watches the input (chokidar), rebuilds
 the whole site once changes settle, and serves the output at `127.0.0.1` with the
 config's `dev.headers`, reloading the open pages over a WebSocket after a build with no
-error; it reads the config once. The bin runs from source under the `source` export
-condition, so the limulus-dot-net port branch depends on this checkout with `file:` and
-sees every edit without a build. A shell plugin that reproduces limulus.net's output pins
+error; it reads the config once. The bin is plain JavaScript, so that an installed package
+runs it, and loads the shell's source under the `source` condition and its build
+otherwise: the limulus-dot-net port branch depends on this checkout with `file:`, so its
+`lem` runs this checkout's build after an `npm run build` here, or every edit unbuilt when
+the port runs the bin as `node --conditions=source <lemmon>/packages/shell/bin/lem.js`
+(`docs/shell.md` §Running from a checkout).
+A shell plugin that reproduces limulus.net's output pins
 its tool exactly (highlight.js 11.9.0; esbuild 0.24.0 with esbuild-plugin-wasm 1.1.0),
 since a release inside a range moves the spans and hashes parity compares exactly, and a
 tool whose output depends on its working directory runs from the asset hook's `root`,

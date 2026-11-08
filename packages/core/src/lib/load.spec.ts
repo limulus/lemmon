@@ -1,16 +1,17 @@
-import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
+import { readFileSync } from 'node:fs'
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { setFlagsFromString } from 'node:v8'
 import { runInNewContext } from 'node:vm'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { WasmBoundary } from './boundary.ts'
-import { createCore, loadCore, stagingDirectory } from './load.ts'
+import { createCore, loadCore, packageVersion, stagingDirectory } from './load.ts'
 
-const stagingDir = new URL('../../../../artifacts/wasm/', import.meta.url)
+const stagingDir = new URL('../../artifacts/wasm/', import.meta.url)
 
 describe('stagingDirectory()', () => {
   it('should find the staged artifact by walking up from a module', () => {
@@ -19,7 +20,7 @@ describe('stagingDirectory()', () => {
 
   it('should find it from the built layout as well as the source one', () => {
     // The bug this guards: counting `../`s from src/lib/ sends the built
-    // dist/esm/lib/ copy looking under packages/ instead of the repo root.
+    // dist/esm/lib/ copy looking under dist/ instead of the package's root.
     const built = new URL('../../dist/esm/lib/load.js', import.meta.url)
     expect(stagingDirectory(built).href).toBe(stagingDir.href)
   })
@@ -79,13 +80,34 @@ describe('createCore()', () => {
     first.free()
   })
 
-  it('should carry the version the glue reports for the core it was built from', async () => {
-    const glue = (await import(new URL('lemmon-core.js', stagingDir).href)) as WasmBoundary
-    const bytes = await readFile(new URL('lemmon-core_bg.wasm', stagingDir))
-    const core = createCore(glue, bytes)
-    expect(core.version).toBe(glue.version())
-    expect(core.version).toMatch(/^\d+\.\d+\.\d+/)
-    core.free()
+  it("should name the core by this package's version, not the one its glue reports", () => {
+    // A stand-in glue, so that the version it reports differs from the manifest's: the
+    // real one reports the crates' 0.0.0, which this checkout's manifest also says.
+    const glue = {
+      initSync() {},
+      version: () => '9.9.9-the-crates',
+      Core: class {},
+    } as unknown as WasmBoundary
+    const manifest = JSON.parse(
+      readFileSync(new URL('../../package.json', import.meta.url), 'utf8')
+    ) as { version: string }
+    expect(createCore(glue, new Uint8Array()).version).toBe(manifest.version)
+  })
+})
+
+describe('packageVersion()', () => {
+  it('should read the version of the nearest package.json above a module', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'lemmon-manifest-'))
+    await writeFile(join(dir, 'package.json'), '{ "version": "1.2.3" }\n')
+    await mkdir(join(dir, 'dist', 'esm', 'lib'), { recursive: true })
+    const module = pathToFileURL(join(dir, 'dist', 'esm', 'lib', 'load.js'))
+    expect(packageVersion(module)).toBe('1.2.3')
+  })
+
+  it('should say where it looked when no package.json is above it', () => {
+    expect(() => packageVersion(new URL('file:///nowhere/at/all.js'))).toThrow(
+      'No package.json at or above file:///nowhere/at/all.js'
+    )
   })
 })
 

@@ -2,6 +2,9 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "allowImportingTsExtensions": true,
+    // For the bin, which is JavaScript so that an installed package can run it.
+    "allowJs": true,
+    "checkJs": true,
     "incremental": true,
     "noEmit": true,
     "tsBuildInfoFile": "./tsconfig.tsbuildinfo"

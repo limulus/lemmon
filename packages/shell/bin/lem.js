@@ -1,5 +1,8 @@
-#!/usr/bin/env -S node --conditions=source
-import { run } from '../src/lib/cli.ts'
+#!/usr/bin/env node
+// Plain JavaScript, since Node strips no types from a file under `node_modules`. `#cli` is
+// this package's source under the `source` condition, which a checkout runs with, and its
+// build otherwise, which is what an installed package runs.
+import { run } from '#cli'
 
 process.exitCode = await run(process.argv.slice(2), {
   stdout: process.stdout,
@@ -11,7 +14,7 @@ process.exitCode = await run(process.argv.slice(2), {
   // that way too.
   interrupted() {
     const controller = new AbortController()
-    const signals = ['SIGINT', 'SIGTERM'] as const
+    const signals = ['SIGINT', 'SIGTERM']
     const stop = () => {
       for (const signal of signals) process.off(signal, stop)
       controller.abort()

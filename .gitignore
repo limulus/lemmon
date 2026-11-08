@@ -113,5 +113,6 @@ dist
 /target
 crates/*/target
 
-# Staged wasm artifact (built by `npm run rust:wasm`, uploaded by CI)
-/artifacts
+# Staged wasm artifact (built by `npm run rust:wasm`, uploaded by CI), which the core
+# package publishes
+/packages/core/artifacts

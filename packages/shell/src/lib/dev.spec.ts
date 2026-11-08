@@ -323,7 +323,7 @@ describe('lem dev', { timeout: 30_000 }, () => {
   })
 
   it('should stop on Ctrl-C, run as the bin', async () => {
-    const bin = fileURLToPath(new URL('../../bin/lem.ts', import.meta.url))
+    const bin = fileURLToPath(new URL('../../bin/lem.js', import.meta.url))
     const cwd = project(SITE, PASSTHROUGH)
     const child = spawn(
       process.execPath,

@@ -13,7 +13,7 @@
   "scripts": {
     "prebuild": "npm run clean:js",
     "build": "node node_modules/typescript-7/bin/tsc --build tsconfig.build.json",
-    "clean": "npm run clean:js && del-cli target artifacts",
+    "clean": "npm run clean:js && del-cli target packages/core/artifacts",
     "clean:js": "del-cli \"*.tsbuildinfo\" \"packages/*/*.tsbuildinfo\" coverage \"packages/*/dist\"",
     "corpus:bless": "UPDATE_CORPUS=1 cargo test --workspace",
     "lint": "eslint . --max-warnings 0",
@@ -26,6 +26,7 @@
     "test": "vitest run --coverage",
     "test:fidelity": "node --conditions=source scripts/render-the-rebound.ts",
     "test:fixtures": "node scripts/bench-wasm.ts",
+    "test:pack": "node scripts/check-pack.ts",
     "tscc": "node node_modules/typescript-7/bin/tsc --build tsconfig.json packages/*/tsconfig.json",
     "verify": "concurrently -c cyan,magenta,blue,yellow npm:verify:js npm:rust",
     "verify:js": "(is-ci || npm run rust:wasm) && concurrently -c cyan,magenta,blue,green,yellow npm:lint npm:test npm:tscc npm:test:fidelity npm:test:fixtures",

@@ -80,7 +80,7 @@ the files that changed.
   and `null` where the render failed.
 - `loadCore(dir?)` loads the WebAssembly and returns a `Core`, and
   `createCore(glue, bytes)` makes one from WebAssembly you load yourself. `core.version`
-  names the core the WebAssembly was built from.
+  is this package's version.
 
 Each exported type documents its fields in its doc comment, so an editor shows the
 contract as you write the call.

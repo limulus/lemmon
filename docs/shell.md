@@ -665,11 +665,25 @@ of a browser's six HTTP/1.1 connections to a host for every tab open on it. It o
 again every second after it closes, and reloads once one opens, so a restarted `lem dev`
 reloads the pages still open on it.
 
+## Installing
+
+A site installs the shell, which brings the core it drives, the core's `.wasm` inside it:
+
+```sh
+npm install --save-dev @limulus/lemmon-shell
+```
+
+`npx lem build` then runs the installed `lem`. The two packages are released together at
+one version, and the shell depends on exactly that core. They are not yet on npm (`∆PiI`);
+`npm run test:pack` packs both, installs the tarballs into an empty project and builds a
+site there, as a published install would.
+
 ## Running from a checkout
 
-The `lem` bin is `packages/shell/bin/lem.ts`, which Node runs directly, under the `source`
-export condition so that this package and `@limulus/lemmon-core` load from their `src/`. A
-site can therefore depend on a checkout with `file:` and see every edit without a build:
+The `lem` bin is `packages/shell/bin/lem.js`, plain JavaScript, since Node strips no types
+from a file under `node_modules`. It imports the CLI through the package's private `#cli`
+import, which is the package's `src/` under the `source` condition and its build
+otherwise. A site can depend on a checkout with `file:`:
 
 ```json
 {
@@ -679,7 +693,13 @@ site can therefore depend on a checkout with `file:` and see every edit without 
 
 npm links the directory and leaves its dependencies to the checkout's own `node_modules`,
 `@limulus/lemmon-core` among them, so nothing is fetched; the core finds the staged
-`.wasm` in the checkout's `artifacts/wasm/`, so run `npm run rust:wasm` there first.
-Importing the package from a site's own code needs the condition too
-(`node --conditions=source`, and `customConditions: ["source"]` for its typecheck), or a
-`npm run build` in the checkout first.
+`.wasm` in its own `artifacts/wasm/`, so run `npm run rust:wasm` there first. The linked
+`lem` runs the checkout's build, so run `npm run build` there after each edit. To see
+every edit without one, run the bin under the condition, which then reaches every import
+in the process, the site's own imports of the package included:
+
+```sh
+node --conditions=source ../lemmon/packages/shell/bin/lem.js build
+```
+
+A site's typecheck reads the source the same way with `customConditions: ["source"]`.

@@ -24,8 +24,8 @@ const decoder = new TextDecoder()
 export class Core {
   readonly #core: BoundaryCore
   /**
-   * The version of the core the `.wasm` was built from — what a build names itself
-   * with, since the same source can render differently under another core.
+   * The version of `@limulus/lemmon-core` this core was loaded from — what a build names
+   * itself with, since the same source can render differently under another core.
    */
   readonly version: string
 

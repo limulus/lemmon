@@ -1,7 +1,6 @@
 {
   "name": "@limulus/lemmon-shell",
   "version": "0.0.0",
-  "private": true,
   "description": "Lemmon shell: CLI, content walker, plugin host, and dev server",
   "keywords": [
     "lemmon",
@@ -17,14 +16,22 @@
       "import": "./dist/esm/index.js"
     }
   },
+  "imports": {
+    "#cli": {
+      "source": "./src/lib/cli.ts",
+      "default": "./dist/esm/lib/cli.js"
+    }
+  },
   "bin": {
-    "lem": "./bin/lem.ts"
+    "lem": "./bin/lem.js"
   },
   "files": [
     "ambient.lem",
     "bin",
     "dist",
-    "src"
+    "src",
+    "!src/**/*.spec.ts",
+    "!src/mocks"
   ],
   "type": "module",
   "engines": {
@@ -41,6 +48,9 @@
     "url": "https://limulus.net/"
   },
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "bugs": {
     "url": "https://github.com/limulus/lemmon/issues"
   },

@@ -6,7 +6,7 @@
 export interface WasmBoundary {
   /** Instantiates the module; idempotent — later calls return the first instance. */
   initSync(module: { module: BufferSource | WebAssembly.Module }): unknown
-  /** The version of the core the `.wasm` was built from. */
+  /** The crates' version, `0.0.0`: a release sets `@limulus/lemmon-core`'s, not theirs. */
   version(): string
   /** The resident core class; construct one per worker. */
   Core: new () => BoundaryCore

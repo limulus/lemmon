@@ -1,7 +1,6 @@
 {
   "name": "@limulus/lemmon-core",
   "version": "0.0.0",
-  "private": true,
   "description": "Lemmon core: typed wrapper around the Rust/WASM compiler and VM",
   "keywords": [
     "lemmon",
@@ -18,8 +17,10 @@
     }
   },
   "files": [
+    "artifacts",
     "dist",
-    "src"
+    "src",
+    "!src/**/*.spec.ts"
   ],
   "type": "module",
   "engines": {
@@ -36,6 +37,9 @@
     "url": "https://limulus.net/"
   },
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "bugs": {
     "url": "https://github.com/limulus/lemmon/issues"
   },

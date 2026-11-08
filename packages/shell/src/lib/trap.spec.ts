@@ -52,7 +52,7 @@ const OVERFLOW = {
  */
 const SMALL_STACK = 300
 
-const BIN = fileURLToPath(new URL('../../bin/lem.ts', import.meta.url))
+const BIN = fileURLToPath(new URL('../../bin/lem.js', import.meta.url))
 
 /** What `lem` says for a trap, after `the core failed with `. */
 const SAID = /^lem: the core failed with (.+), and cannot run again in this process\n/

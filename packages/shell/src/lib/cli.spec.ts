@@ -401,7 +401,7 @@ describe('run()', () => {
     it('should name the line of a syntax error in the config, run as Node runs it', () => {
       // Vitest compiles the config itself and words the error its own way; the bin is
       // where Node's own loader reports one, placing the line in the stack alone.
-      const bin = fileURLToPath(new URL('../../bin/lem.ts', import.meta.url))
+      const bin = fileURLToPath(new URL('../../bin/lem.js', import.meta.url))
       const cwd = tempDir({
         'lemmon.config.ts': "export default {\n  input: 'www',\n  output: ,\n}\n",
         'package.json': '{ "type": "module" }\n',

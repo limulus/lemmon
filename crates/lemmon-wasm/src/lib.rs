@@ -35,7 +35,11 @@ use wire::{
     HostInput, LineIndexes, PageRef, PlannedOut, RenderMeta, encode_render,
 };
 
-/// The version of the core this `.wasm` was built from.
+/// The version of the crates this `.wasm` was built from, which stays `0.0.0`: the crates
+/// are never published, and a release picks its version after the `.wasm` is built, so
+/// the version a build names is `@limulus/lemmon-core`'s, read from its `package.json`.
+/// `createCore` still calls this first, as the cheapest call that traps in a poisoned
+/// instance.
 #[wasm_bindgen]
 #[must_use]
 pub fn version() -> String {
