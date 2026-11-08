@@ -203,8 +203,8 @@ npm run wasm:bench     # test:fixtures' scenarios repeated, with the marshalling
                        # numbers only; correctness is the corpus gate's job
 npm run test:pack      # pack both packages, install the tarballs into an empty project,
                        # and build a site there with the installed `lem`. Needs `npm run
-                       # build`, a staged .wasm and the network, so it is CI's `pack` job,
-                       # not a leg of verify
+                       # build`, a staged .wasm and the network, so CI's `verify` job runs
+                       # it after its build, and it is not a leg of `npm run verify`
 ```
 
 CI is build-once/consume-many: a `wasm` job stages and uploads the artifact, and the
