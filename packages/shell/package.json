@@ -23,7 +23,7 @@
     }
   },
   "bin": {
-    "lem": "./bin/lem.js"
+    "lem": "bin/lem.js"
   },
   "files": [
     "ambient.lem",
