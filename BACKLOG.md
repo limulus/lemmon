@@ -39,9 +39,6 @@ records the seven articles the cutover changed without listing them (`∆i6r`).
 Eric merges the cutover branch and limulus.net deploys with `lem`, its CloudFront config
 untouched.
 
-- `∆FnH` limulus.net's CI gets lemmon
-  - The site installs the published `@limulus/lemmon-shell` in place of `file:../lemmon`,
-    which a CI checkout cannot resolve
 
 ## After the cutover
 
