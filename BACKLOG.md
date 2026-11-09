@@ -33,13 +33,18 @@ them, `∆Oyi`'s records why dprint left slice 2, and `∆H7Q`'s records the las
 ### 7. Live on Lemmon
 
 What Eric checks before the merge, the S3 and CDK dry runs, the logo on a P3 and an sRGB
-display, and the merge commit's subject, is listed in `∆oAl`'s journal entry.
+display, and the merge commit's subject, is listed in `∆oAl`'s journal entry. The merge is
+a merge commit (`--no-ff`) whose message ends in a `Revision: quiet` trailer, so that CD
+records the seven articles the cutover changed without listing them (`∆i6r`).
 Eric merges the cutover branch and limulus.net deploys with `lem`, its CloudFront config
 untouched.
 
 - `∆FnH` limulus.net's CI gets lemmon
   - The site installs the published `@limulus/lemmon-shell` in place of `file:../lemmon`,
     which a CI checkout cannot resolve
+- `∆i6r` Opt a change out of limulus.net's revision history
+  - A change to an article's text that readers need not see, as the cutover's lem calls
+    are in six posts, still records a revision the page shows; the author needs a way out
 
 ## After the cutover
 
@@ -92,6 +97,18 @@ What a site much larger than limulus.net needs from the build.
 - `∆JXK` Retire the architecture artifacts
   - The repo docs take in what only the three private Claude Artifacts hold, D01–D24's
     rationale, the diagrams and the migration plan, so that the docs are the whole record
+
+### What the port left behind
+
+What limulus.net and the shell carry only because the port had to reproduce Eleventy's
+output exactly, retired once the site is live on Lemmon.
+
+- `∆b7l` Retire limulus.net's stylesheet copies
+  - A script copies the site's stylesheets into generated `.lem` files, since a CSS bundle
+    collects only `lem-style` blocks; the bundle could take files, or the site link them
+- `∆ppA` Move the shell's tools off their parity pins
+  - highlight.js, esbuild and esbuild-plugin-wasm are pinned exactly so that parity could
+    compare limulus.net's spans and hashes; esbuild 0.24.0 carries GHSA-67mh-4wv8-2f99
 
 ## Defects
 
