@@ -22,9 +22,9 @@ const WORDS_PER_MINUTE: u64 = 200;
 /// does, which counts `<em>re</em>read` as two and is the price of not building a DOM
 /// (invariant 2). A partial second rounds up, so anything with a word in it takes time.
 ///
-/// The Eleventy build counts words in the markdown *source* instead, where a link is
-/// its URL and a fenced block is its code. A page near a rounding boundary can
-/// therefore differ by a minute, which the parity harness forgives as its narrow
+/// limulus.net's Eleventy build counted words in the markdown *source* instead, where a
+/// link is its URL and a fenced block is its code. A page near a rounding boundary could
+/// therefore differ by a minute, which the parity harness forgave as its narrow
 /// `reading-time` class and is not a bug here: counting what a reader sees is the
 /// better answer.
 pub(super) fn reading_time(_vm: &mut dyn Machine, args: &[Value]) -> Result<Value, Fault> {

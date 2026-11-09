@@ -424,13 +424,13 @@ minified ES modules with source maps, `/lib/*` left to the browser, a `.wasm` im
 instantiated by `esbuild-plugin-wasm` 1.1.0, each bundle beside its source as
 `[dir]/[name].[hash]` — and maps each entry's URL as its source names it,
 `/lib/x/index.js`, to the URL its bundle ships at. Each bundle is named by what it ships
-as, as limulus.net's Eleventy build names one: each `XXXXXXXX` placeholder in it takes
+as, as limulus.net's Eleventy build named one: each `XXXXXXXX` placeholder in it takes
 the file name the entry it names ships under, that entry named first; its map names the
 root's path relative to itself; and its `[hash]` is eight base32 characters of the
 SHA-256 of the two, so a loader is renamed with its worker (D09, D10, D45). It bundles on
 every build, about 0.2 s of a limulus.net rebuild. With the site's `11ty/` asset names
-its files come out byte for byte Eleventy's, wherever the checkout is, so long as esbuild
-writes its path into the map as it is: one holding a `"`, a `\` or a character outside
+its files came out byte for byte Eleventy's, wherever the checkout was, so long as esbuild
+wrote its path into the map as it is: one holding a `"`, a `\` or a character outside
 ASCII is escaped there, and stays absolute, on both sides.
 
 - Step 2's data hooks are not yet run (`∆wOn`), so a `plugin("…")` source is an error at

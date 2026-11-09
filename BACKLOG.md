@@ -13,36 +13,10 @@ Standing initiative for reshaping working code. It comes first so that document 
 gives a refactor priority: reshaping is cheapest before more code is built on what it
 reshapes.
 
-## limulus.net on Lemmon
-
-Exit criterion (architecture doc 3, D15): `lem build` over a Lemmon-ported limulus-dot-net
-produces a `dist/` that the parity harness reports as zero unexpected diffs against the 11ty
-build, and limulus.net cuts over with its CloudFront config untouched (D13). The work is cut
-into slices, each an epic that ends in software Eric runs: the last sentence of its
-description is the acceptance test, and nothing from the next slice starts before it is
-true. The shell is built here (`@limulus/lemmon-shell`, docs/architecture.md §Build
-pipeline, §Shell plugin API); the port lives in limulus-dot-net on a branch while 11ty stays
-green on main, and that branch is where every slice is accepted. A language or core feature
-lands inside the slice that needs it.
-Slices 1 to 3, a page from `lem build`, styled output, and the daily loop of `lem dev` and
-`lem check`, were accepted on 2026-10-17, slices 4 and 5, every document page and then the
-index and generated pages, on 2026-10-18, and slice 6, the feeds, the sitemap and the
-cutover prepared on a local branch, on 2026-11-07; their items' journal entries record
-them, `∆Oyi`'s records why dprint left slice 2, and `∆H7Q`'s records the last parity run.
-
-### 7. Live on Lemmon
-
-What Eric checks before the merge, the S3 and CDK dry runs, the logo on a P3 and an sRGB
-display, and the merge commit's subject, is listed in `∆oAl`'s journal entry. The merge is
-a merge commit (`--no-ff`) whose message ends in a `Revision: quiet` trailer, so that CD
-records the seven articles the cutover changed without listing them (`∆i6r`).
-Eric merges the cutover branch and limulus.net deploys with `lem`, its CloudFront config
-untouched.
-
-
 ## After the cutover
 
-Work the port does not need, in priority order. Each epic holds one or two items today.
+What follows limulus.net going live on Lemmon on 2026-11-08, in priority order. Each epic
+holds one or two items today.
 
 ### A second site
 
@@ -95,7 +69,7 @@ What a site much larger than limulus.net needs from the build.
 ### What the port left behind
 
 What limulus.net and the shell carry only because the port had to reproduce Eleventy's
-output exactly, retired once the site is live on Lemmon.
+output exactly, to retire now that the site is live on Lemmon.
 
 - `∆b7l` Retire limulus.net's stylesheet copies
   - A script copies the site's stylesheets into generated `.lem` files, since a CSS bundle
@@ -175,8 +149,8 @@ initiative before starting it.
   - A key read from the record at render reaches no handler unless one lists it, so a
     mistyped computed key keeps its default content and nothing says so (D42)
 - `∆wOb` Formatted HTML for limulus.net
-  - Eleventy's dprint transform formats 28 of its 55 pages and fails on the rest; after the
-    cutover none would be formatted unless the site adds a `transformOutput` plugin
+  - Eleventy's dprint transform formatted 28 of its 55 pages and failed on the rest; since
+    the cutover none is formatted, unless the site adds a `transformOutput` plugin
   - needs: `∆fwn`
 - `∆fwn` The `transformOutput` hook
   - A plugin rewrites each page's finished bytes before the write; built once for `∆Oyi`

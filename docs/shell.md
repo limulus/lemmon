@@ -148,7 +148,7 @@ placeholder, the entry's URL with `XXXXXXXX` where the hash goes (D10):
 Before a bundle is named, each placeholder in a string names the entry at its path, found
 from the bundle's own logical path where it is relative, and the file name that entry
 ships under — so that entry is named first — is spliced in as written, as limulus.net's
-Eleventy build splices the hash in: `'worker.XXXXXXXX.js'` becomes `"worker.ABCD2345.js"`,
+Eleventy build spliced the hash in: `'worker.XXXXXXXX.js'` becomes `"worker.ABCD2345.js"`,
 the same length, so the map's columns hold. A `.` or `..` segment resolves as a browser
 resolves it, but a path holding an empty segment, `'/lib//y/…'`, names no entry, since the
 browser would ask for another URL than the entry's. One naming no entry fails the hook at
@@ -164,7 +164,7 @@ its module, is first made relative to the map. So an edit to a worker alone rena
 every bundle that names it, which a CDN holding each hashed name for a year needs, and no
 name depends on where the project is, so long as esbuild writes that path into the map as
 it is: one holding a `"`, a `\` or a character outside ASCII is escaped there, and stays
-absolute, as it does in Eleventy's build. Eleventy's build also writes an unhashed
+absolute, as it did in Eleventy's build. Eleventy's build also wrote an unhashed
 `/lib/x/index.js` re-exporting each bundle; this one does not, since nothing loads one.
 
 Each option is optional, and one it does not take is refused when the config loads:
@@ -186,8 +186,8 @@ esbuild({
 esbuild runs from the config file's directory, wherever `lem` was started, so that its
 messages name each source from there, and the hook resolves the directories through
 symbolic links first, as esbuild resolves the sources. On the limulus-dot-net port branch
-its 37 files — 18 bundles, their maps and a `.wasm` — are byte for byte Eleventy's, with
-the `11ty/` asset names above, and so are a copy's elsewhere.
+its 37 files — 18 bundles, their maps and a `.wasm` — were byte for byte Eleventy's, with
+the `11ty/` asset names above, and so were a copy's elsewhere.
 esbuild's errors fail the hook, an error at the config's start carrying esbuild's message,
 file and position; its warnings are written to standard error as esbuild words them, and
 the build goes on. Every build bundles again, `lem check` too, since `asset()` compiles
@@ -656,8 +656,8 @@ is 404, a small page carrying the reload client — with a `Content-Type` from `
 by extension, `Cache-Control: no-cache`, and the config's `dev.headers` on every response;
 every other refusal is plain text. An HTML page gets
 `<script type="module" src="/.lemmon/reload.js"></script>` before its last `</body>` in
-the bytes sent, the file on disk left as built, so the parity harness can read a
-`lem dev` output — once the output has been cleaned and built again, since a page
+the bytes sent, the file on disk left as built, so that a `lem dev` output is what
+`lem build` writes — once the output has been cleaned and built again, since a page
 deleted since the last clean build is still there. That client, a file so that a page
 allowing only `script-src 'self'` still runs it, opens a WebSocket to `/.lemmon/reload`
 and reloads on any message — a WebSocket rather than server-sent events, which hold one

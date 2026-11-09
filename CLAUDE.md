@@ -6,8 +6,8 @@ Node/TypeScript **shell** owns files, processes, plugins, and the dev server; a 
 for markdown, its code blocks left as marks for the shell's highlighters) is compiled to
 WebAssembly and does everything deterministic. Open source under MIT; distributed via npm
 as `@limulus/lemmon-shell` and the `@limulus/lemmon-core` it depends on.
-Its first production site is limulus.net, which it will take over from Eleventy + WebC once
-a parity harness shows zero unexpected output diffs.
+Its first production site is limulus.net, which it took over from Eleventy + WebC on
+2026-11-08, once a parity harness showed zero unexpected output diffs.
 
 **Status:** early implementation, sequenced in `BACKLOG.md`; Phase 0 (the spike — one real
 page rendering end-to-end from the WASM core) is done, and the rest is cut into slices that
@@ -16,7 +16,7 @@ limulus.net's feed posts on its `lemmon-port` branch, styled output with `npm ru
 parity:look`'s screenshots, and the daily loop of `lem dev` and `lem check`, were
 accepted on 2026-10-17, the fourth and fifth, every document page and then the index and
 generated pages, on 2026-10-18, and the sixth, feeds, sitemap and the cutover prepared on
-a local branch, on 2026-11-07; the seventh, the site live on Lemmon, follows the refactors.
+a local branch, on 2026-11-07, and the seventh, the site live on Lemmon, on 2026-11-08.
 The language runs end to end — scanner → parser → typed AST → compiler → VM, with `.md`
 through document mode — and what each stage settled is the decision index
 (`docs/decisions/README.md`, D01–D48), which is the status. The shape to hold in mind:
@@ -238,14 +238,14 @@ the whole site once changes settle, and serves the output at `127.0.0.1` with th
 config's `dev.headers`, reloading the open pages over a WebSocket after a build with no
 error; it reads the config once. The bin is plain JavaScript, so that an installed package
 runs it, and loads the shell's source under the `source` condition and its build
-otherwise. limulus.net depends on the release (its `lemmon-port` branch still links this
-checkout with `file:`); linked to this checkout with `npm install --no-save
-<lemmon>/packages/shell`, its `lem` runs this checkout's build after an `npm run build`
-here, or every edit unbuilt when it runs the bin as `node --conditions=source
+otherwise. limulus.net depends on the release; linked to this checkout with `npm install
+--no-save <lemmon>/packages/shell`, its `lem` runs this checkout's build after an `npm run
+build` here, or every edit unbuilt when it runs the bin as `node --conditions=source
 <lemmon>/packages/shell/bin/lem.js` (`docs/shell.md` §Running from a checkout).
 A shell plugin that reproduces limulus.net's output pins
 its tool exactly (highlight.js 11.9.0; esbuild 0.24.0 with esbuild-plugin-wasm 1.1.0),
-since a release inside a range moves the spans and hashes parity compares exactly, and a
+since a release inside a range moved the spans and hashes parity compared exactly (until
+`∆ppA`), and a
 tool whose output depends on its working directory runs from the asset hook's `root`,
 never `process.cwd()`.
 
@@ -395,9 +395,9 @@ building.
   note it in the PR, move on.
 - Take a decision number against every checkout (`git worktree list`), not just this
   branch: another session's uncommitted record has held the next ID.
-- The eventual acceptance bar is the limulus.net parity harness (doc 3 of the architecture
-  set), which compares rendered HTML, not bytes (D28); nothing in the core may assume that
-  site's specifics to pass it. When the question is whether something is needed, count
+- limulus.net was the acceptance bar, through a parity harness (doc 3 of the architecture
+  set) that compared rendered HTML, not bytes (D28); nothing in the core may assume that
+  site's specifics. When the question is whether something is needed, count
   that site's source first (its checkout sits beside this repo): six void component
   calls and zero bodied ones settled document mode's shape in minutes.
 - Fix a confirmed finding now when it is small and in scope of the crate being touched,

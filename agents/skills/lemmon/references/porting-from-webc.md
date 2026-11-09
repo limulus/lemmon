@@ -23,7 +23,7 @@ Four things change in kind, not just in spelling:
   calling the next one with what it captured.
 
 The examples compile against the `site.lem` sketch below, written for them; the port
-(`∆foi`) designs the real one. Exact markup, class names and whitespace are the parity
+(`∆foi`) designed the real one. Exact markup, class names and whitespace were the parity
 harness's to judge (`∆Zo7`), not these examples'.
 
 ```lem site.lem
