@@ -702,4 +702,17 @@ in the process, the site's own imports of the package included:
 node --conditions=source ../lemmon/packages/shell/bin/lem.js build
 ```
 
-A site's typecheck reads the source the same way with `customConditions: ["source"]`.
+A site's typecheck reads a linked checkout's source the same way with
+`customConditions: ["source"]`.
+
+A site that depends on a release links a checkout in without changing its manifest:
+
+```sh
+npm install --no-save ../lemmon/packages/shell
+```
+
+npm links the directory as it does for `file:`, and leaves `package.json` and
+`package-lock.json` as they were, so `npm ci` puts the release back. The condition is for a
+linked checkout only: the release ships its `src/` too, so under the condition an installed
+`lem` stops at a file Node will not strip under `node_modules`, and a typecheck checks the
+release's source as if it were the site's.

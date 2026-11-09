@@ -238,10 +238,11 @@ the whole site once changes settle, and serves the output at `127.0.0.1` with th
 config's `dev.headers`, reloading the open pages over a WebSocket after a build with no
 error; it reads the config once. The bin is plain JavaScript, so that an installed package
 runs it, and loads the shell's source under the `source` condition and its build
-otherwise: the limulus-dot-net port branch depends on this checkout with `file:`, so its
-`lem` runs this checkout's build after an `npm run build` here, or every edit unbuilt when
-the port runs the bin as `node --conditions=source <lemmon>/packages/shell/bin/lem.js`
-(`docs/shell.md` §Running from a checkout).
+otherwise. limulus.net depends on the release (its `lemmon-port` branch still links this
+checkout with `file:`); linked to this checkout with `npm install --no-save
+<lemmon>/packages/shell`, its `lem` runs this checkout's build after an `npm run build`
+here, or every edit unbuilt when it runs the bin as `node --conditions=source
+<lemmon>/packages/shell/bin/lem.js` (`docs/shell.md` §Running from a checkout).
 A shell plugin that reproduces limulus.net's output pins
 its tool exactly (highlight.js 11.9.0; esbuild 0.24.0 with esbuild-plugin-wasm 1.1.0),
 since a release inside a range moves the spans and hashes parity compares exactly, and a
