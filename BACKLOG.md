@@ -42,9 +42,6 @@ untouched.
 - `∆FnH` limulus.net's CI gets lemmon
   - The site installs the published `@limulus/lemmon-shell` in place of `file:../lemmon`,
     which a CI checkout cannot resolve
-- `∆i6r` Opt a change out of limulus.net's revision history
-  - A change to an article's text that readers need not see, as the cutover's lem calls
-    are in six posts, still records a revision the page shows; the author needs a way out
 
 ## After the cutover
 
