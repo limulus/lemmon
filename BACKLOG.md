@@ -78,6 +78,14 @@ output exactly, to retire now that the site is live on Lemmon.
   - highlight.js, esbuild and esbuild-plugin-wasm are pinned exactly so that parity could
     compare limulus.net's spans and hashes; esbuild 0.24.0 carries GHSA-67mh-4wv8-2f99
 
+### For the Lemmon app
+
+What the app that writes posts for a Lemmon site needs from the renderer.
+
+- `∆dl2` Strikethrough in Markdown
+  - Turn on comrak's strikethrough so `~~text~~` renders struck: the Lemmon app writes it
+    for a strike in pasted text, and it shows as tildes until then (D08 lists the extensions)
+
 ## Defects
 
 Standing section for confirmed bugs in landed code that block nothing else. It sits last so
